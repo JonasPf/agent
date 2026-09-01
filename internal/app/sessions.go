@@ -7,36 +7,35 @@ import (
 	"time"
 )
 
-// NewSession creates a session and writes its prompt entry, which is the
-// complete system prompt as sent and is fixed for the life of the session.
-// Any part of cfg left empty falls back to the seed, then to the most recently
-// used session, then to the configured default.
-func (a *App) NewSession(cfg SessionConfig, seed *Session) (*Session, error) {
-	base := SessionConfig{Model: a.cfg.DefaultModel}
+// baseConfig is the configuration a new session starts from when the request
+// does not fully specify one: the seed's, else the most recently used session's,
+// else the configured default.
+func (a *App) baseConfig(seed *Session) SessionConfig {
 	if seed == nil {
 		if recent := a.store.Sessions(); len(recent) > 0 {
 			seed = recent[0]
 		}
 	}
 	if seed != nil {
-		base = seed.SessionConfig
+		return seed.SessionConfig
 	}
-	if cfg.Model == "" {
-		cfg.Model = base.Model
-	}
-	if cfg.EnabledTools == nil {
-		cfg.EnabledTools = base.EnabledTools
-	}
-	if cfg.EnabledSkills == nil {
-		cfg.EnabledSkills = base.EnabledSkills
-	}
+	return SessionConfig{Model: a.cfg.DefaultModel}
+}
 
+// NewSession creates a session under an already resolved configuration and
+// writes its prompt entry, which is the complete system prompt as sent and is
+// fixed for the life of the session.
+func (a *App) NewSession(cfg SessionConfig, continuedFrom string) (*Session, error) {
+	if cfg.Model == "" {
+		cfg.Model = a.cfg.DefaultModel
+	}
 	now := time.Now()
 	s := &Session{
 		ID:              newID(),
 		Title:           "New session",
 		SessionConfig:   cfg,
 		Status:          "active",
+		ContinuedFrom:   continuedFrom,
 		RotateAtTokens:  a.cfg.RotateAtTokens,
 		CarryOverTokens: a.cfg.CarryOverTokens,
 		CreatedAt:       now,
@@ -56,7 +55,7 @@ func (a *App) NewSession(cfg SessionConfig, seed *Session) (*Session, error) {
 // and reconfiguration are the same operation — a session's configuration is
 // fixed, so changing it is exactly the act of continuing in a new one.
 func (a *App) Rotate(pred *Session, cfg SessionConfig, archive bool, why string) (*Session, error) {
-	succ, err := a.NewSession(cfg, pred)
+	succ, err := a.NewSession(cfg, pred.ID)
 	if err != nil {
 		return nil, err
 	}

@@ -100,9 +100,47 @@ func (a *App) hSessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, out)
 }
 
+// optionalSet is a set of names as it arrives over the wire, with three states
+// a plain []string cannot hold apart: absent, meaning inherit; null, meaning
+// every one of them; or a list, meaning exactly those.
+type optionalSet struct {
+	set     []string
+	present bool
+}
+
+func (o *optionalSet) UnmarshalJSON(b []byte) error {
+	o.present = true
+	if string(b) == "null" {
+		o.set = nil
+		return nil
+	}
+	return json.Unmarshal(b, &o.set)
+}
+
+// configRequest is a session configuration as requested. Layering it over a base
+// is what makes a rotation that changes one field keep the rest.
+type configRequest struct {
+	Model         string      `json:"model"`
+	EnabledTools  optionalSet `json:"enabled_tools"`
+	EnabledSkills optionalSet `json:"enabled_skills"`
+}
+
+func (c configRequest) applyTo(base SessionConfig) SessionConfig {
+	if c.Model != "" {
+		base.Model = c.Model
+	}
+	if c.EnabledTools.present {
+		base.EnabledTools = c.EnabledTools.set
+	}
+	if c.EnabledSkills.present {
+		base.EnabledSkills = c.EnabledSkills.set
+	}
+	return base
+}
+
 func (a *App) hCreateSession(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		SessionConfig
+		configRequest
 		From string `json:"from"`
 	}
 	_ = readJSON(r, &in)
@@ -110,7 +148,11 @@ func (a *App) hCreateSession(w http.ResponseWriter, r *http.Request) {
 	if in.From != "" {
 		seed = a.store.Session(in.From)
 	}
-	s, err := a.NewSession(in.SessionConfig, seed)
+	from := ""
+	if seed != nil {
+		from = seed.ID
+	}
+	s, err := a.NewSession(in.applyTo(a.baseConfig(seed)), from)
 	if err != nil {
 		fail(w, 500, "%v", err)
 		return
@@ -141,13 +183,13 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Title         *string   `json:"title"`
-		Model         *string   `json:"model"`
-		Status        *string   `json:"status"`
-		Muted         *bool     `json:"muted"`
-		Summary       *string   `json:"summary"`
-		EnabledTools  *[]string `json:"enabled_tools"`
-		EnabledSkills *[]string `json:"enabled_skills"`
+		Title         *string     `json:"title"`
+		Model         *string     `json:"model"`
+		Status        *string     `json:"status"`
+		Muted         *bool       `json:"muted"`
+		Summary       *string     `json:"summary"`
+		EnabledTools  optionalSet `json:"enabled_tools"`
+		EnabledSkills optionalSet `json:"enabled_skills"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
@@ -156,7 +198,7 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	if in.Title != nil {
 		s.Title = *in.Title
 	}
-	if in.Model != nil || in.EnabledTools != nil || in.EnabledSkills != nil {
+	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present {
 		fail(w, 409, "a session's model, tools, and skills are fixed for its life; "+
 			"POST /sessions/%s/rotate to continue this conversation under a new configuration", s.ID)
 		return
@@ -229,7 +271,7 @@ func (a *App) hRotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		SessionConfig
+		configRequest
 		Archive bool `json:"archive"`
 	}
 	_ = readJSON(r, &in)
@@ -237,7 +279,7 @@ func (a *App) hRotate(w http.ResponseWriter, r *http.Request) {
 	if in.Archive {
 		why = "rotation"
 	}
-	succ, err := a.Rotate(s, in.SessionConfig, in.Archive, why)
+	succ, err := a.Rotate(s, in.applyTo(s.SessionConfig), in.Archive, why)
 	if err != nil {
 		fail(w, 500, "%v", err)
 		return

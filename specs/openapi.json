@@ -101,14 +101,14 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Tool names this session may use. Omitted, it is inherited. Null means every tool."
+                    "description": "Tool names defined in this session's prompt. Three states: omit it to inherit, send null for every one, send a list for exactly those."
                   },
                   "enabled_skills": {
                     "type": "array",
                     "items": {
                       "type": "string"
                     },
-                    "description": "Skill names this session is offered. Omitted, it is inherited. Null means every skill."
+                    "description": "Skill names indexed in this session's prompt. Three states: omit it to inherit, send null for every one, send a list for exactly those."
                   },
                   "from": {
                     "type": "string",
@@ -1107,14 +1107,14 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Omitted, the predecessor's set is kept."
+                    "description": "Tool names for the successor. Three states: omit it to keep the predecessor's, send null for every one, send a list for exactly those."
                   },
                   "enabled_skills": {
                     "type": "array",
                     "items": {
                       "type": "string"
                     },
-                    "description": "Omitted, the predecessor's set is kept."
+                    "description": "Skill names for the successor. Three states: omit it to keep the predecessor's, send null for every one, send a list for exactly those."
                   }
                 }
               }
