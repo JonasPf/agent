@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Memory — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a class="here" href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Memory</h1>
+<p class="lede">What the agent carries between conversations, visible at the top of every one.</p>
+
+<p>Context is what is on screen now. Memory is what survives when the conversation ends. They are
+different things and are stored differently.</p>
+
+<h2>Visible recall</h2>
+
+<p>Memory is loaded automatically into the system prompt at the start of every session. It is not hidden
+there: the system prompt is itself the first entry of the transcript, and memory is one of its
+sections — the only editable one.</p>
+
+<pre><code>┌─ prompt · 4,180 tokens                          ─┐
+│  persona             310 tokens         expand   │
+│  memory · 12 items   480 tokens    edit collapse │
+│    • prefers Go                                  │
+│    • sqlite, never a vector database             │
+│    • answers: lead with the action               │
+│    …9 more                                       │
+│  skills · 6          190 tokens         expand   │
+│  tools · 12        3,200 tokens         expand   │
+└──────────────────────────────────────────────────┘
+
+you:   what did we decide about the database?
+agent: sqlite, one table prefix per tool.</code></pre>
+
+<p>Loading is automatic so recall does not depend on the agent thinking to look. Rendering is visible so
+its influence on an answer can always be traced.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every session's prompt entry contains a memory section listing every item in force.</li>
+<li>The entry is editable; edits take effect on the next turn.</li>
+<li>Deleting an item from the section deletes it from storage.</li>
+<li>A session with no memory shows an empty memory section rather than omitting it.</li>
+<li>Memory forms part of the cacheable prefix and does not change during a session.</li>
+</ul>
+</div>
+
+<h2>Writing</h2>
+
+<p>The agent writes memory through a tool call, which appears in the transcript where it happened and
+takes effect immediately. The written item joins the memory section of the next session's prompt.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A memory write is a visible transcript entry naming what was stored.</li>
+<li>A written item is available to the current turn and every subsequent one.</li>
+<li>A write appends to the end of the transcript and does not modify the prompt entry in place.</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>Why appending rather than re-injecting.</strong> Rewriting the memory section mid-session would
+change the system prompt and invalidate the cached prefix for the whole conversation. Appending leaves
+it intact.
+</div>
+
+<h2>Storage</h2>
+
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><code>text</code></td><td>The item, one fact.</td></tr>
+<tr><td><code>created_at</code></td><td>When it was written.</td></tr>
+<tr><td><code>source_session</code></td><td>Where it came from, so it can be traced back.</td></tr>
+</table>
+
+<h2>Consolidation</h2>
+
+<p>Memory has a fixed capacity. A write that would exceed it fails and returns an error stating what is
+already stored. The agent must then remove or merge items before retrying, in the same turn.</p>
+
+<p>Failing loudly is deliberate. Silently dropping the oldest item produces an agent that quietly forgets
+and cannot tell you it has.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A write exceeding capacity returns an error and stores nothing.</li>
+<li>The error names the current items so consolidation can be done without a further lookup.</li>
+<li>No item is ever removed automatically.</li>
+<li>Capacity defaults to 8,000 characters, is configurable, and is shown in the interface alongside current usage.</li>
+</ul>
+</div>
+
+<h2>Relationship to search</h2>
+
+<p>Memory is curated and small. Transcript search is exhaustive and large. Memory answers "what is
+always true"; search answers "what was said that one time". Neither replaces the other, and search is
+described under <a href="sessions.html">Sessions</a>.</p>
+
+<footer><a href="skills.html">← Skills</a> · <a href="webui.html">Web UI →</a></footer>
+</div>
+</body></html>

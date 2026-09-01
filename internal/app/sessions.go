@@ -1,0 +1,257 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+)
+
+// NewSession creates a session and writes its prompt entry, which is the
+// complete system prompt as sent and is fixed for the life of the session.
+func (a *App) NewSession(model string, seed *Session) (*Session, error) {
+	if model == "" {
+		model = a.cfg.DefaultModel
+		if seed != nil {
+			model = seed.Model
+		}
+	}
+	now := time.Now()
+	s := &Session{
+		ID:              newID(),
+		Title:           "New session",
+		Model:           model,
+		Status:          "active",
+		RotateAtTokens:  a.cfg.RotateAtTokens,
+		CarryOverTokens: a.cfg.CarryOverTokens,
+		CreatedAt:       now,
+		LastActiveAt:    now,
+	}
+	// A new session inherits the enabled set of the most recently used session.
+	if seed != nil {
+		s.EnabledTools, s.EnabledSkills = seed.EnabledTools, seed.EnabledSkills
+		s.ContinuedFrom = seed.ID
+	} else if recent := a.store.Sessions(); len(recent) > 0 {
+		s.EnabledTools, s.EnabledSkills = recent[0].EnabledTools, recent[0].EnabledSkills
+	}
+	if err := a.store.PutSession(s); err != nil {
+		return nil, err
+	}
+	sections := a.systemSections(s)
+	a.append(s.ID, Entry{Type: "event", EventKind: "prompt", Sections: sections,
+		Text: fmt.Sprintf("system prompt · %d tokens", sectionsTotal(sections))})
+	return s, nil
+}
+
+// Fork seeds a successor from a predecessor: summary first, then the most recent
+// complete turns that fit the carry-over budget. Rotation, fork, and resume are
+// the same operation.
+func (a *App) Fork(pred *Session, archive bool, why string) (*Session, error) {
+	succ, err := a.NewSession(pred.Model, pred)
+	if err != nil {
+		return nil, err
+	}
+	if pred.Summary != "" {
+		a.append(succ.ID, Entry{Type: "message", Role: "user", CarriedFrom: pred.ID,
+			Text: "[summary of " + pred.ID + "]\n" + pred.Summary})
+	}
+	for _, e := range carryOver(a.store.Entries(pred.ID), pred.CarryOverTokens) {
+		e.CarriedFrom = pred.ID
+		e.Usage = nil
+		a.append(succ.ID, e)
+	}
+	a.append(succ.ID, Entry{Type: "event", EventKind: "carried_over", CarriedFrom: pred.ID,
+		Text: fmt.Sprintf("seeded from %s (%s)", pred.ID, why)})
+
+	pred.ContinuedBy = succ.ID
+	if archive {
+		pred.Status = "archived"
+	}
+	_ = a.store.PutSession(pred)
+	if archive {
+		if err := a.store.MoveJobs(pred.ID, succ.ID); err != nil {
+			return nil, err
+		}
+	}
+	a.append(pred.ID, Entry{Type: "event", EventKind: "rotation",
+		Text: fmt.Sprintf("continued in %s (%s)", succ.ID, why)})
+	succ.Title = pred.Title
+	_ = a.store.PutSession(succ)
+	a.hub.Broadcast(wsEvent{Kind: "sessions"})
+	return succ, nil
+}
+
+// carryOver returns the trailing complete turns that fit a token budget, oldest
+// first. A turn is carried whole or not at all.
+func carryOver(entries []Entry, budget int) []Entry {
+	var msgs []Entry
+	for _, e := range entries {
+		if e.Type == "message" {
+			msgs = append(msgs, e)
+		}
+	}
+	// A turn starts at a user message and runs to just before the next one.
+	var starts []int
+	for i, e := range msgs {
+		if e.Role == "user" {
+			starts = append(starts, i)
+		}
+	}
+	total := 0
+	pick := len(starts)
+	for i := len(starts) - 1; i >= 0; i-- {
+		end := len(msgs)
+		if i+1 < len(starts) {
+			end = starts[i+1]
+		}
+		size := 0
+		for _, e := range msgs[starts[i]:end] {
+			size += estTokens(e.Text) + estTokens(string(e.ToolResult))
+		}
+		if total+size > budget {
+			break
+		}
+		total += size
+		pick = i
+	}
+	if pick >= len(starts) {
+		return nil
+	}
+	return msgs[starts[pick]:]
+}
+
+// LiveSession follows continued_by to the live session of a chain.
+func (a *App) LiveSession(id string) *Session {
+	s := a.store.Session(id)
+	seen := map[string]bool{}
+	for s != nil && s.ContinuedBy != "" && !seen[s.ID] {
+		seen[s.ID] = true
+		next := a.store.Session(s.ContinuedBy)
+		if next == nil {
+			break
+		}
+		s = next
+	}
+	return s
+}
+
+func (a *App) append(sessionID string, e Entry) Entry {
+	out, err := a.store.Append(sessionID, e)
+	if err != nil {
+		return out
+	}
+	a.hub.Broadcast(wsEvent{Kind: "entry", SessionID: sessionID, Entry: &out})
+	return out
+}
+
+func (a *App) appendEvent(sessionID string, e Entry) Entry {
+	e.Type = "event"
+	return a.append(sessionID, e)
+}
+
+// SetAvailability records a change to the enabled set as its own entry, which
+// sits after everything cached and so costs a handful of tokens.
+func (a *App) SetAvailability(s *Session, tools, skills []string, toolsSet, skillsSet bool) {
+	var parts []string
+	if toolsSet {
+		s.EnabledTools = tools
+		parts = append(parts, "tools: "+describeSet(tools, len(a.tools.All())))
+	}
+	if skillsSet {
+		s.EnabledSkills = skills
+		parts = append(parts, "skills: "+describeSet(skills, len(a.skills.All())))
+	}
+	_ = a.store.PutSession(s)
+	if len(parts) > 0 {
+		a.appendEvent(s.ID, Entry{EventKind: "availability_change",
+			Text: "available now — " + strings.Join(parts, "; ")})
+	}
+}
+
+func describeSet(set []string, total int) string {
+	if set == nil {
+		return fmt.Sprintf("all %d", total)
+	}
+	if len(set) == 0 {
+		return "none"
+	}
+	return strings.Join(set, ", ")
+}
+
+// maybeSummarise updates the rolling summary once a session has grown enough.
+// The update reads only the previous summary and the entries since it.
+func (a *App) maybeSummarise(ctx context.Context, s *Session) {
+	entries := a.store.Entries(s.ID)
+	var added []Entry
+	grown := 0
+	for _, e := range entries {
+		if e.Seq >= s.SummarySeq && e.Type == "message" {
+			added = append(added, e)
+			grown += estTokens(e.Text)
+		}
+	}
+	if grown < a.cfg.SummaryEvery || len(added) == 0 {
+		return
+	}
+	var sb strings.Builder
+	if s.Summary != "" {
+		fmt.Fprintf(&sb, "Previous summary:\n%s\n\n", s.Summary)
+	}
+	sb.WriteString("New messages since:\n")
+	for _, e := range added {
+		fmt.Fprintf(&sb, "%s: %s\n", e.Role, truncate(e.Text, 2000))
+	}
+	sb.WriteString("\nWrite the updated summary. Keep it under 250 words. State decisions, open questions, and anything a successor conversation would need. No preamble.")
+
+	res, err := a.or.Chat(ctx, ChatRequest{Model: s.Model, Messages: []ChatMessage{
+		{Role: "system", Content: "You maintain a rolling summary of a conversation."},
+		{Role: "user", Content: sb.String()},
+	}}, nil)
+	if err != nil {
+		return
+	}
+	now := time.Now()
+	s.Summary = strings.TrimSpace(res.Text)
+	s.SummaryUpdated = &now
+	s.SummarySeq = len(entries)
+	s.Cost += res.Usage.Cost
+	_ = a.store.PutSession(s)
+	a.appendEvent(s.ID, Entry{EventKind: "summary",
+		Text: fmt.Sprintf("summary updated (%d messages since last)", len(added)), Usage: &res.Usage})
+}
+
+// maybeRotate opens a successor when the session passes its size threshold.
+// It runs only between turns.
+func (a *App) maybeRotate(s *Session) *Session {
+	if s.Status != "active" {
+		return s
+	}
+	if projectedTokens(a.store.Entries(s.ID)) < s.RotateAtTokens {
+		return s
+	}
+	succ, err := a.Fork(s, true, "rotation")
+	if err != nil {
+		return s
+	}
+	a.Notify(Notification{Title: "Conversation rotated",
+		Body: fmt.Sprintf("%q continues in a new session.", s.Title), SessionID: succ.ID, Silent: true})
+	return succ
+}
+
+// titleIfNeeded gives a session a title within one turn of its first user message.
+func (a *App) titleIfNeeded(ctx context.Context, s *Session, firstUserText string) {
+	if s.Title != "New session" && s.Title != "" {
+		return
+	}
+	res, err := a.or.Chat(ctx, ChatRequest{Model: s.Model, Messages: []ChatMessage{
+		{Role: "user", Content: "Title this conversation in at most six words. Reply with the title alone, no quotes.\n\n" + truncate(firstUserText, 1000)},
+	}}, nil)
+	if err != nil || strings.TrimSpace(res.Text) == "" {
+		s.Title = truncate(firstUserText, 40)
+	} else {
+		s.Title = strings.Trim(strings.TrimSpace(res.Text), `"`)
+	}
+	s.Cost += res.Usage.Cost
+	_ = a.store.PutSession(s)
+	a.hub.Broadcast(wsEvent{Kind: "sessions"})
+}

@@ -1,0 +1,1544 @@
+window.OPENAPI_SPEC = {
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Agent API",
+    "version": "1.0.0",
+    "description": "Single-operator agent. No authentication: reachability over the tailnet is the only access control. A WebSocket at /ws streams transcript entries, token deltas, job ticks, and breaker changes; every state change delivered there is also retrievable from the endpoints below."
+  },
+  "servers": [
+    {
+      "url": "https://agent.tailnet.ts.net",
+      "description": "Tailscale Serve"
+    }
+  ],
+  "tags": [
+    {
+      "name": "sessions"
+    },
+    {
+      "name": "jobs"
+    },
+    {
+      "name": "dead-letters"
+    },
+    {
+      "name": "memory"
+    },
+    {
+      "name": "tools"
+    },
+    {
+      "name": "skills"
+    },
+    {
+      "name": "system"
+    }
+  ],
+  "paths": {
+    "/sessions": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "List sessions, most recently active first.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "archived"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sessions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Session"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Create a session.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "continued_from": {
+                    "type": "string",
+                    "description": "Seed the new session with that session's summary. Used for fork and resume; rotation does the same automatically."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Get a session.",
+        "responses": {
+          "200": {
+            "description": "Session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "description": "An archived session is returned as it was. Follow continued_by to reach the live session of its chain."
+      },
+      "patch": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Update title, model, status, or enabled tools and skills.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "archived"
+                    ]
+                  },
+                  "enabled_tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "enabled_skills": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "muted": {
+                    "type": "boolean"
+                  },
+                  "force": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Disable a tool even though a job depends on it."
+                  },
+                  "summary": {
+                    "type": "string",
+                    "description": "Edit the rolling summary."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Refused: a job in this session references a tool being disabled. Retry with force=true to disable anyway.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "blocking_jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "tool": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Changing enabled_tools or enabled_skills does not alter the system prompt and does not invalidate the cached prefix: every tool and skill is always present in the prompt, and availability is enforced when a call is dispatched. The change is appended to the transcript so the model sees it."
+      },
+      "delete": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Delete a session, its transcript, and its jobs.",
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          }
+        }
+      }
+    },
+    "/sessions/{id}/transcript": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Read transcript entries. Returns the complete stored record, including entries not sent to the model.",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "Entry sequence number to page backwards from.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "name": "include_events",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entries, oldest first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Entry"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{id}/messages": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Send a user message. Queues behind any turn already running in this session.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "attachments": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Upload ids."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted; results stream over /ws.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entry_seq": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Full-text search across all transcripts.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "session_id": {
+                        "type": "string"
+                      },
+                      "session_title": {
+                        "type": "string"
+                      },
+                      "entry_seq": {
+                        "type": "integer"
+                      },
+                      "snippet": {
+                        "type": "string"
+                      },
+                      "created_at": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List jobs.",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create a job attached to a session.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobSpec"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Rejected: a job without a check may not tick more often than every fifteen minutes."
+          }
+        }
+      }
+    },
+    "/jobs/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get a job.",
+        "responses": {
+          "200": {
+            "description": "Job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Update a job.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobSpec"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Delete a job. Does not create a dead letter.",
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          }
+        }
+      }
+    },
+    "/dead-letters": {
+      "get": {
+        "tags": [
+          "dead-letters"
+        ],
+        "summary": "List dead letters.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "closed"
+              ],
+              "default": "open"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dead letters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DeadLetter"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Deleting a session deletes its dead letters, since replay requires that session."
+      }
+    },
+    "/dead-letters/{id}/replay": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "dead-letters"
+        ],
+        "summary": "Recreate the job from its stored specification with a fresh expiry.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expires_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Job recreated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          }
+        },
+        "description": "The recreated job is attached to the live session of its original session's chain, not to an archived predecessor."
+      }
+    },
+    "/dead-letters/{id}/dismiss": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "dead-letters"
+        ],
+        "summary": "Close a dead letter without replaying it.",
+        "responses": {
+          "200": {
+            "description": "Dismissed."
+          }
+        }
+      }
+    },
+    "/memory": {
+      "get": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "List memory items and capacity usage.",
+        "responses": {
+          "200": {
+            "description": "Memory.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MemoryItem"
+                      }
+                    },
+                    "used": {
+                      "type": "integer"
+                    },
+                    "capacity": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Add an item.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored."
+          },
+          "409": {
+            "description": "Capacity exceeded. Nothing was stored; the body lists current items so they can be consolidated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MemoryItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/{id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "patch": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Edit an item.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "memory"
+        ],
+        "summary": "Delete an item.",
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          }
+        }
+      }
+    },
+    "/tools": {
+      "get": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "List loaded tools and any that failed validation.",
+        "responses": {
+          "200": {
+            "description": "Tools.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "loaded": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Tool"
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Report each tool's enabled state for this session."
+          }
+        ]
+      }
+    },
+    "/tools/reload": {
+      "post": {
+        "tags": [
+          "tools"
+        ],
+        "summary": "Validate and register tools from disk. Previously loaded tools keep working if a new one fails.",
+        "responses": {
+          "200": {
+            "description": "Reload result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "added": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "removed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "commit": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "List skills with their descriptions.",
+        "responses": {
+          "200": {
+            "description": "Skills.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Skill"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/uploads": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Upload a file into the workspace.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "content_type": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File exceeds 100 MB."
+          }
+        },
+        "description": "Maximum 100 MB per file. Uploads belong to the workspace and are deleted with the session that referenced them."
+      }
+    },
+    "/push/subscriptions": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Register a Web Push subscription for this device.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "endpoint",
+                  "keys"
+                ],
+                "properties": {
+                  "endpoint": {
+                    "type": "string"
+                  },
+                  "keys": {
+                    "type": "object",
+                    "properties": {
+                      "p256dh": {
+                        "type": "string"
+                      },
+                      "auth": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registered."
+          }
+        }
+      }
+    },
+    "/models": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Models that support tool calling, with context window and price. Cached from OpenRouter, refreshed daily.",
+        "responses": {
+          "200": {
+            "description": "Models.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "context_length": {
+                        "type": "integer"
+                      },
+                      "price_prompt": {
+                        "type": "string"
+                      },
+                      "price_completion": {
+                        "type": "string"
+                      },
+                      "explicit_cache_control": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Credit, usage, and scheduler health.",
+        "responses": {
+          "200": {
+            "description": "Status.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "credit_remaining": {
+                      "type": "number"
+                    },
+                    "usage_today": {
+                      "type": "number"
+                    },
+                    "breaker": {
+                      "type": "string",
+                      "enum": [
+                        "closed",
+                        "open"
+                      ]
+                    },
+                    "breaker_reason": {
+                      "type": "string"
+                    },
+                    "jobs_active": {
+                      "type": "integer"
+                    },
+                    "dead_letters_open": {
+                      "type": "integer"
+                    },
+                    "breaker_probe_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true,
+                      "description": "When the next held job will be retried to test whether the breaker can close."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "NotFound": {
+        "description": "No such resource."
+      }
+    },
+    "schemas": {
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "ULID."
+          },
+          "title": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived"
+            ]
+          },
+          "enabled_tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Tools callable in this session. Null means all. A new session inherits the most recently used set."
+          },
+          "enabled_skills": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Skills readable in this session. Null means all. A new session inherits the most recently used set."
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "unread": {
+            "type": "integer"
+          },
+          "job_count": {
+            "type": "integer"
+          },
+          "entry_count": {
+            "type": "integer"
+          },
+          "context_used": {
+            "type": "integer",
+            "description": "Projected tokens against the model's window."
+          },
+          "cost": {
+            "type": "number"
+          },
+          "cache_hit_rate": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_active_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rolling summary of this session, updated incrementally. Not part of this session's prompt; used to seed a successor."
+          },
+          "summary_updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "continued_from": {
+            "type": "string",
+            "nullable": true,
+            "description": "The session this one was seeded from, by rotation, fork, or resume."
+          },
+          "rotate_at_tokens": {
+            "type": "integer",
+            "description": "Projected size at which this session rotates into a successor. Chosen for cost, not for the model's context limit."
+          },
+          "carry_over_tokens": {
+            "type": "integer",
+            "description": "Token budget for complete recent turns copied into a successor alongside the summary. Default 5000."
+          },
+          "continued_by": {
+            "type": "string",
+            "nullable": true,
+            "description": "The session that succeeded this one. Following continued_by to its end gives the live session of this chain."
+          }
+        }
+      },
+      "Entry": {
+        "type": "object",
+        "description": "A transcript entry. Entries of type event are shown to the user and never sent to the model.",
+        "properties": {
+          "seq": {
+            "type": "integer"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "message",
+              "event"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant",
+              "tool"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "tool_call": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "arguments": {
+                "type": "object"
+              },
+              "result": {
+                "type": "object"
+              }
+            }
+          },
+          "job_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set when this entry was produced by a job."
+          },
+          "status": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "fired",
+              "not_fired"
+            ],
+            "description": "Tick outcome. Consecutive entries sharing job_id and status collapse in the projection. For a check tick this reflects whether the check matched; for a model tick, whether notify was called."
+          },
+          "event_kind": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "prompt",
+              "availability_change",
+              "tool_added",
+              "job_check",
+              "summary",
+              "rotation",
+              "carried_over",
+              "memory_write",
+              "model_change",
+              "breaker"
+            ]
+          },
+          "usage": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "prompt_tokens": {
+                "type": "integer"
+              },
+              "completion_tokens": {
+                "type": "integer"
+              },
+              "cached_tokens": {
+                "type": "integer"
+              },
+              "cost": {
+                "type": "number"
+              },
+              "tokens_per_second": {
+                "type": "number"
+              }
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sections": {
+            "type": "array",
+            "nullable": true,
+            "description": "Present on a prompt entry: the system prompt as sent, split into readable sections.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "enum": [
+                    "persona",
+                    "memory",
+                    "skills_index",
+                    "tool_schemas",
+                    "platform"
+                  ]
+                },
+                "text": {
+                  "type": "string"
+                },
+                "tokens": {
+                  "type": "integer"
+                },
+                "editable": {
+                  "type": "boolean",
+                  "description": "True only for memory."
+                }
+              }
+            }
+          }
+        }
+      },
+      "JobSpec": {
+        "type": "object",
+        "required": [
+          "session_id",
+          "schedule",
+          "prompt"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "An interval (2m), a cron expression (0 9 * * *), or an RFC 3339 instant."
+          },
+          "check": {
+            "type": "string",
+            "nullable": true,
+            "description": "A shell command. Exit status zero means the condition is met. Omit for a job whose condition requires judgement, in which case the model runs every tick and signals by calling notify."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What the agent is asked when the job runs. For a job without a check, calling the notify tool during the run is what marks the condition met; a run that does not call it is recorded as an event and produces no message."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Defaults to 24 hours after creation."
+          },
+          "on_condition_met": {
+            "type": "string",
+            "enum": [
+              "delete",
+              "continue"
+            ],
+            "default": "delete"
+          }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "An interval (2m), a cron expression (0 9 * * *), or an RFC 3339 instant."
+          },
+          "check": {
+            "type": "string",
+            "nullable": true,
+            "description": "A shell command. Exit status zero means the condition is met. Omit for a job whose condition requires judgement, in which case the model runs every tick and signals by calling notify."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "What the agent is asked when the job runs. For a job without a check, calling the notify tool during the run is what marks the condition met; a run that does not call it is recorded as an event and produces no message."
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Defaults to 24 hours after creation."
+          },
+          "on_condition_met": {
+            "type": "string",
+            "enum": [
+              "delete",
+              "continue"
+            ],
+            "default": "delete"
+          },
+          "id": {
+            "type": "string"
+          },
+          "run_count": {
+            "type": "integer"
+          },
+          "next_run_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_status": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "fired",
+              "not_fired"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DeadLetter": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "job_spec": {
+            "$ref": "#/components/schemas/JobSpec"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "expired",
+              "error",
+              "unavailable"
+            ]
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "run_count": {
+            "type": "integer"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MemoryItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "source_session": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Tool": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "db_prefix": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "parameters": {
+            "type": "object",
+            "description": "JSON Schema exposed to the model."
+          },
+          "has_panel": {
+            "type": "boolean"
+          },
+          "loaded_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether this tool is callable in the requested session."
+          }
+        }
+      },
+      "Skill": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "One line. Only this and the name reach the system prompt."
+          },
+          "bytes": {
+            "type": "integer"
+          }
+        }
+      }
+    }
+  }
+}
+;

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skills — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a class="here" href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Skills</h1>
+<p class="lede">A skill is a document that teaches the agent how to do one thing. It is prose, not code.</p>
+
+<p>Skills are how the agent accumulates competence. A tool adds a capability; a skill adds judgement
+about when and how to use one.</p>
+
+<h2>Form</h2>
+
+<pre><code>skills/writing-tools.md
+
+---
+name: writing-tools
+description: How to author a new tool for this agent.
+---
+
+A tool is a directory under tools/ containing…</code></pre>
+
+<h2>Progressive disclosure</h2>
+
+<p>Only the name and description of each skill appear in the system prompt. The agent loads a skill's
+full text when it judges the skill relevant.</p>
+
+<p>This is what allows the collection to grow. Twenty skills cost a few hundred characters of context
+rather than twenty documents' worth.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The system prompt lists every enabled skill's name and description and no skill's body.</li>
+<li>A skill's description is a single line.</li>
+<li>Reading a skill is a tool call visible in the transcript.</li>
+<li>Adding a skill requires no restart.</li>
+<li>A skill with malformed frontmatter is skipped, and the failure is visible in the interface.</li>
+</ul>
+</div>
+
+<h2>Self-authoring</h2>
+
+<p>The agent writes skills. After completing work that required figuring something out, it records what
+it learned so the next attempt starts from the answer.</p>
+
+<p>Skills are the safe half of self-improvement: a poor skill is poor prose, whereas a poor tool is an
+executable that fails at three in the morning. Where a lesson can be written as a skill rather than
+built as a tool, it should be.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The agent can create, edit, and delete skills.</li>
+<li>Every skill is readable and editable in the interface.</li>
+<li>Reading a disabled skill returns an error result; the skill stays listed in the prompt.</li>
+<li>Skills are stored as files in version control, not in the database.</li>
+</ul>
+</div>
+
+<h2>Required skills</h2>
+
+<table>
+<tr><th>Skill</th><th>Teaches</th></tr>
+<tr><td><code>writing-tools</code></td><td>The tool directory convention, manifest format, execution contract, and reload. States that tools are built in their own conversation, so the work is not replayed by jobs attached to another.</td></tr>
+<tr><td><code>writing-skills</code></td><td>What belongs in a skill, and when a lesson is a skill rather than a tool.</td></tr>
+<tr><td><code>scheduling</code></td><td>How to turn a condition into a shell command, which is nearly always possible; when it genuinely is not; choosing expiry and interval.</td></tr>
+<tr><td><code>memory-discipline</code></td><td>What is worth remembering, and how to consolidate when memory is full.</td></tr>
+</table>
+
+<footer><a href="tools.html">← Tools</a> · <a href="memory.html">Memory →</a></footer>
+</div>
+</body></html>

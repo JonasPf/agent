@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tools — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Tools</h1>
+<p class="lede">A tool is a directory containing an executable and a manifest. Nothing more.</p>
+
+<p>The agent can write one, and does so when the capability it needs does not exist. Because a tool is
+a file on disk rather than compiled-in code, adding one requires no restart and no rebuild.</p>
+
+<h2>Layout</h2>
+
+<pre><code>tools/deploys/
+  manifest.json     required — identity, parameter schema, database prefix
+  run               required — executable, any language
+  schema.sql        optional — tables, applied on load
+  ui/panel.js       optional — an interface panel for this tool's data</code></pre>
+
+<h2>Manifest</h2>
+
+<pre><code>{
+  "name": "deploys",
+  "description": "Query deployment status and history.",
+  "db_prefix": "deploys_",
+  "timeout_seconds": 30,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": { "type": "string", "enum": ["status", "history"] },
+      "service": { "type": "string" }
+    },
+    "required": ["action"]
+  }
+}</code></pre>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li><code>description</code> is a single sentence.</li>
+<li><code>db_prefix</code> is unique across tools and every table the tool creates begins with it.</li>
+<li><code>parameters</code> is a valid JSON Schema object and is exposed verbatim to the model.</li>
+<li>A manifest missing a required field prevents that tool from loading and does not affect other tools.</li>
+</ul>
+</div>
+
+<h2>Execution</h2>
+
+<p>A tool call runs the executable as a subprocess. Parameters arrive as JSON on standard input; the
+result is JSON on standard output. Two environment variables are provided: the database path and the
+tool's table prefix.</p>
+
+<pre><code>stdin   {"action": "status", "service": "web"}
+stdout  {"ok": true, "content": "web: deployed 12m ago, healthy"}
+        {"ok": false, "error": "service 'web' not found"}</code></pre>
+
+<p>A tool that fails returns an error the model can read and act on. A tool that crashes, times out, or
+writes unparseable output is reported to the model in the same shape, so a broken tool degrades the
+turn rather than the process.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A tool exceeding its timeout is killed and reported as an error result.</li>
+<li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
+<li>Standard error is captured and stored with the result, not shown to the model.</li>
+<li>Tool results are recorded as transcript entries.</li>
+</ul>
+</div>
+
+<h2>Loading</h2>
+
+<p>Tools load at start and on explicit request. The agent calls a reload after writing one; there is no
+directory watcher, because a tool appearing halfway through being written is worse than one appearing
+a moment later.</p>
+
+<p>Loading validates before registering. A tool is registered only if its manifest parses, its schema is
+valid, its executable is executable, its database prefix is unused, and a trial invocation returns
+parseable output.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A reload makes a newly written tool callable within the same session by appending its definition to the transcript, without restarting and without invalidating the cached prefix.</li>
+<li>A tool failing validation is not registered, and the reason is returned to the caller.</li>
+<li>A failed reload leaves previously loaded tools working.</li>
+<li>A successful reload commits the tool directory to version control.</li>
+<li>Reloading applies any new <code>schema.sql</code> exactly once per tool version.</li>
+</ul>
+</div>
+
+<h2>Self-authoring</h2>
+
+<p>Writing a tool is an ordinary task the agent performs with its file and shell tools, guided by a
+skill that describes this convention. It is not a special mechanism.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A request for a capability that does not exist results in a tool being written, loaded, and used in the same conversation.</li>
+<li>A newly created tool appears in the interface, marked as new, with its manifest readable.</li>
+<li>A disabled tool returns an error result naming the session it is disabled in, rather than being absent.</li>
+<li>Deleting a tool removes it from the model's schema list and leaves its tables intact.</li>
+</ul>
+</div>
+
+<h2>Interface plugins</h2>
+
+<p>A tool that stores data may ship a panel to display it. The panel is a JavaScript module the web
+interface loads and mounts under that tool's name. A memory tool shows what it remembers; a scheduler
+tool shows its jobs.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A tool with a panel gains a navigable section in the interface without changes to the interface itself.</li>
+<li>A tool without a panel is still fully usable.</li>
+<li>A panel that fails to load reports the failure and does not prevent the rest of the interface from working.</li>
+<li>Panels read tool data through the API, not by querying the database directly.</li>
+</ul>
+</div>
+
+<h2>Built-in tools</h2>
+
+<table>
+<tr><th>Tool</th><th>Purpose</th></tr>
+<tr><td><code>bash</code>, <code>read</code>, <code>write</code>, <code>edit</code></td><td>Filesystem and shell access within the workspace.</td></tr>
+<tr><td><code>web_search</code>, <code>web_fetch</code></td><td>Retrieve information from the internet.</td></tr>
+<tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
+<tr><td><code>memory</code></td><td>Write and revise durable memory.</td></tr>
+<tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
+<tr><td><code>skill_read</code></td><td>Load the full text of a skill.</td></tr>
+<tr><td><code>reload_tools</code></td><td>Validate and register tools from disk.</td></tr>
+<tr><td><code>notify</code></td><td>Send an interrupting notification.</td></tr>
+</table>
+
+<footer><a href="jobs.html">← Jobs</a> · <a href="skills.html">Skills →</a></footer>
+</div>
+</body></html>

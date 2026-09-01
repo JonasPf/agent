@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent — Specification</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a class="here" href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Agent</h1>
+<p class="lede">A single-user autonomous agent that runs on your own hardware, reachable from your phone.</p>
+
+<p>It holds long-lived conversations, schedules work that runs inside those conversations, remembers
+what you tell it, and writes its own tools when the ones it has are not enough.</p>
+
+<h2>Design principle</h2>
+
+<p><strong>Nothing happens that you cannot see.</strong> Every scheduled action is a row you can read.
+Every memory the agent carries is visible at the top of the conversation. Every check it performs
+leaves a line in the transcript. There is no background process whose effects appear without
+explanation.</p>
+
+<p>This principle decides the arguments. Where a hidden mechanism would be cheaper or more capable,
+the visible one wins unless the cost is prohibitive.</p>
+
+<h2>What it is not</h2>
+
+<ul>
+<li>Not multi-user. One person, one tailnet, no login.</li>
+<li>Not a hosted service. One container on hardware you control.</li>
+<li>Not a coding agent. It can write code, but its purpose is standing tasks and recall.</li>
+</ul>
+
+<h2>Shape</h2>
+
+<div class="mermaid">
+flowchart LR
+  P["Phone / browser<br/>(PWA)"]
+  subgraph C["single container"]
+    G["Gateway<br/>HTTP + WebSocket"]
+    L["Agent loop"]
+    S["Scheduler"]
+    T["Tools"]
+    D[("SQLite")]
+    G --> L
+    G --> S
+    S --> L
+    L --> T
+    T --> D
+    L --> D
+    G --> D
+  end
+  P -.->|"Tailscale"| G
+  L -->|"OpenAI-compatible"| O["OpenRouter"]
+  G -->|"outbound push"| W["Apple / Google<br/>push service"]
+  W -.->|"APNs / FCM"| P
+</div>
+
+<h2>Sections</h2>
+
+<div class="grid">
+<a href="architecture.html"><b>Architecture</b><span>Components, storage, model access, deployment surface.</span></a>
+<a href="sessions.html"><b>Sessions</b><span>Transcripts, entry types, projection, summaries, rotation.</span></a>
+<a href="jobs.html"><b>Jobs</b><span>Scheduling, deterministic checks, dead letters, circuit breaker.</span></a>
+<a href="tools.html"><b>Tools</b><span>Manifest convention, execution contract, hot loading, UI plugins.</span></a>
+<a href="skills.html"><b>Skills</b><span>Progressive disclosure, self-authoring.</span></a>
+<a href="memory.html"><b>Memory</b><span>Visible recall, write discipline, session search.</span></a>
+<a href="webui.html"><b>Web UI</b><span>Mobile surface, notifications, per-session controls.</span></a>
+<a href="mock.html"><b>UI mock</b><span>Rendered mobile interface.</span></a>
+<a href="api.html"><b>API</b><span>OpenAPI 3 reference.</span></a>
+<a href="adrs.html"><b>Decisions</b><span>Ten ADRs covering every tradeoff made.</span></a>
+</div>
+
+<h2>Cross-cutting requirements</h2>
+
+<h3>R1 — Documentation is concise</h3>
+<p>All documentation — this specification, tool manifests, skills, README, code comments — states what
+is true in the fewest words that remain unambiguous. Documentation that restates the code, narrates
+history, or hedges is a defect.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every page in this specification is readable end to end in under five minutes.</li>
+<li>Every feature states acceptance criteria; no feature is described only in prose.</li>
+<li>No document describes implementation steps, migration history, or the state of the work.</li>
+<li>A tool manifest's <code>description</code> is one sentence. A skill's <code>description</code> is one line.</li>
+<li>Any document that duplicates another is deleted rather than cross-referenced.</li>
+</ul>
+</div>
+
+<h3>R2 — Everything the agent does is inspectable</h3>
+<p>Any action taken on the user's behalf is recoverable from stored state without reading logs.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every model call belongs to a session whose full transcript is retrievable.</li>
+<li>Every scheduled action exists as a job row before it runs and leaves an entry after it runs.</li>
+<li>Every message the agent did not produce in direct reply to the user is attributed to its cause.</li>
+<li>No state affecting agent behaviour exists only in a system prompt the user cannot read.</li>
+</ul>
+</div>
+
+<h3>R3 — Single operator</h3>
+<p>The system serves exactly one person and holds no concept of accounts, roles, or sharing.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>No login, session cookie, or authorisation check exists in the application.</li>
+<li>Network reachability is the only access control.</li>
+<li>No stored record carries an owner or tenant identifier.</li>
+</ul>
+</div>
+
+<footer>Specification. Decisions with tradeoffs are recorded in <a href="adrs.html">ADRs</a>.</footer>
+</div>
+<script src="vendor/mermaid.min.js"></script>
+<script>
+mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'neutral'});
+</script>
+</body></html>

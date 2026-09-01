@@ -1,0 +1,278 @@
+package app
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Tool is either a builtin or a directory containing a manifest and an executable.
+type Tool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	DBPrefix    string         `json:"db_prefix"`
+	Timeout     int            `json:"timeout_seconds"`
+	Parameters  map[string]any `json:"parameters"`
+	HasPanel    bool           `json:"has_panel"`
+	LoadedAt    time.Time      `json:"loaded_at"`
+	Builtin     bool           `json:"builtin"`
+	Dir         string         `json:"-"`
+	run         builtinFn      `json:"-"`
+}
+
+type builtinFn func(ctx context.Context, tc *ToolCtx, args json.RawMessage) (any, error)
+
+// ToolCtx is what a tool call knows about where it is running.
+type ToolCtx struct {
+	App       *App
+	SessionID string
+	JobID     string
+	Fired     *bool
+}
+
+type LoadFailure struct {
+	Dir    string `json:"dir"`
+	Reason string `json:"reason"`
+}
+
+type Registry struct {
+	db       *sql.DB
+	mu       sync.RWMutex
+	tools    map[string]*Tool
+	order    []string
+	failures []LoadFailure
+	dir      string
+	dbPath   string
+	applied  map[string]bool
+}
+
+func NewRegistry(dir, dbPath string, db *sql.DB) *Registry {
+	return &Registry{tools: map[string]*Tool{}, dir: dir, dbPath: dbPath, db: db, applied: map[string]bool{}}
+}
+
+func (r *Registry) register(t *Tool) {
+	if _, ok := r.tools[t.Name]; !ok {
+		r.order = append(r.order, t.Name)
+	}
+	t.LoadedAt = time.Now()
+	r.tools[t.Name] = t
+}
+
+func (r *Registry) Get(name string) *Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.tools[name]
+}
+
+func (r *Registry) All() []*Tool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*Tool, 0, len(r.tools))
+	for _, n := range r.order {
+		out = append(out, r.tools[n])
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Builtin != out[j].Builtin {
+			return out[i].Builtin
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+func (r *Registry) Failures() []LoadFailure {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]LoadFailure(nil), r.failures...)
+}
+
+// Load scans the tool directory. A tool that fails validation is not registered
+// and previously loaded tools keep working.
+func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.failures = nil
+	var loaded []string
+
+	entries, err := os.ReadDir(r.dir)
+	if err != nil {
+		return nil, []LoadFailure{{Dir: r.dir, Reason: err.Error()}}
+	}
+	prefixes := map[string]string{}
+	for _, t := range r.tools {
+		if t.DBPrefix != "" {
+			prefixes[t.DBPrefix] = t.Name
+		}
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(r.dir, e.Name())
+		t, err := loadToolDir(dir)
+		if err != nil {
+			r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: err.Error()})
+			continue
+		}
+		if owner, ok := prefixes[t.DBPrefix]; ok && owner != t.Name {
+			r.failures = append(r.failures, LoadFailure{Dir: e.Name(),
+				Reason: fmt.Sprintf("db_prefix %q already used by %s", t.DBPrefix, owner)})
+			continue
+		}
+		if err := r.applySchema(t); err != nil {
+			r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: "schema.sql: " + err.Error()})
+			continue
+		}
+		prefixes[t.DBPrefix] = t.Name
+		r.register(t)
+		loaded = append(loaded, t.Name)
+	}
+	return loaded, r.failures
+}
+
+func loadToolDir(dir string) (*Tool, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		return nil, fmt.Errorf("manifest.json: %w", err)
+	}
+	var t Tool
+	if err := json.Unmarshal(b, &t); err != nil {
+		return nil, fmt.Errorf("manifest.json: %w", err)
+	}
+	if t.Name == "" || t.Description == "" || t.DBPrefix == "" || t.Parameters == nil {
+		return nil, fmt.Errorf("manifest missing name, description, db_prefix, or parameters")
+	}
+	if typ, _ := t.Parameters["type"].(string); typ != "object" {
+		return nil, fmt.Errorf("parameters must be a JSON Schema object")
+	}
+	run := filepath.Join(dir, "run")
+	st, err := os.Stat(run)
+	if err != nil {
+		return nil, fmt.Errorf("run: %w", err)
+	}
+	if st.Mode()&0o111 == 0 {
+		return nil, fmt.Errorf("run is not executable")
+	}
+	if t.Timeout <= 0 {
+		t.Timeout = 30
+	}
+	_, err = os.Stat(filepath.Join(dir, "ui", "panel.js"))
+	t.HasPanel = err == nil
+	t.Dir = dir
+	return &t, nil
+}
+
+func (r *Registry) applySchema(t *Tool) error {
+	path := filepath.Join(t.Dir, "schema.sql")
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	key := t.Name + ":" + fmt.Sprint(len(b))
+	if r.applied[key] {
+		return nil
+	}
+	if _, err := r.db.Exec(string(b)); err != nil {
+		return err
+	}
+	r.applied[key] = true
+	return nil
+}
+
+// Schemas returns every tool definition, exactly as the model receives them.
+func (r *Registry) Schemas() []ToolSchema {
+	out := []ToolSchema{}
+	for _, t := range r.All() {
+		out = append(out, ToolSchema{Type: "function", Function: ToolSchemaFn{
+			Name: t.Name, Description: t.Description, Parameters: t.Parameters}})
+	}
+	return out
+}
+
+type toolResult struct {
+	OK      bool   `json:"ok"`
+	Content string `json:"content,omitempty"`
+	Error   string `json:"error,omitempty"`
+	stderr  string
+}
+
+func errResult(format string, a ...any) toolResult {
+	return toolResult{OK: false, Error: fmt.Sprintf(format, a...)}
+}
+
+// Call runs a tool. A crash, timeout, or unparseable output becomes an error
+// result the model can read, never a failed turn.
+func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json.RawMessage) toolResult {
+	t := r.Get(name)
+	if t == nil {
+		return errResult("no tool named %q", name)
+	}
+	sess := tc.App.store.Session(tc.SessionID)
+	if sess != nil && !sess.toolEnabled(name) {
+		return errResult("tool %q is disabled in session %s", name, tc.SessionID)
+	}
+	if t.Builtin {
+		out, err := t.run(ctx, tc, args)
+		if err != nil {
+			return errResult("%s", err.Error())
+		}
+		switch v := out.(type) {
+		case string:
+			return toolResult{OK: true, Content: v}
+		default:
+			b, _ := json.Marshal(v)
+			return toolResult{OK: true, Content: string(b)}
+		}
+	}
+
+	cctx, cancel := context.WithTimeout(ctx, time.Duration(t.Timeout)*time.Second)
+	defer cancel()
+	bin, err := filepath.Abs(filepath.Join(t.Dir, "run"))
+	if err != nil {
+		return errResult("tool %q: %v", name, err)
+	}
+	cmd := exec.CommandContext(cctx, bin)
+	cmd.Dir = tc.App.cfg.Workspace
+	cmd.Stdin = strings.NewReader(string(args))
+	cmd.Env = append(os.Environ(),
+		"AGENT_DB="+r.dbPath,
+		"AGENT_DB_PREFIX="+t.DBPrefix,
+		"AGENT_SESSION="+tc.SessionID)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	stdout, err := cmd.Output()
+	if cctx.Err() == context.DeadlineExceeded {
+		res := errResult("tool %q exceeded its %ds timeout", name, t.Timeout)
+		res.stderr = stderr.String()
+		return res
+	}
+	if err != nil {
+		res := errResult("tool %q failed: %v", name, err)
+		res.stderr = stderr.String()
+		return res
+	}
+	var res toolResult
+	if err := json.Unmarshal(stdout, &res); err != nil {
+		res = errResult("tool %q returned unparseable output: %s", name, truncate(string(stdout), 400))
+	}
+	res.stderr = stderr.String()
+	return res
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}

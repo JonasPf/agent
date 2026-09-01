@@ -1,0 +1,61 @@
+:root {
+  --bg: #fbfaf8; --fg: #1c1b19; --muted: #6b6862; --line: #e2ded6;
+  --card: #ffffff; --accent: #9a5b2e; --code-bg: #f3f0ea;
+  --ok: #2f6f45; --warn: #8a6d1f; --bad: #96342c;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614; --fg: #e8e4dc; --muted: #9a958c; --line: #2f2c28;
+    --card: #1e1d1a; --accent: #d08a55; --code-bg: #232120;
+    --ok: #7fb894; --warn: #d3b463; --bad: #e0857c;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+}
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 24px 96px; }
+nav.top {
+  border-bottom: 1px solid var(--line); background: var(--card);
+  position: sticky; top: 0; z-index: 10;
+}
+nav.top .wrap { padding: 12px 24px; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+nav.top a { color: var(--muted); text-decoration: none; font-size: 14px; }
+nav.top a:hover { color: var(--fg); }
+nav.top a.here { color: var(--accent); font-weight: 600; }
+nav.top .brand { font-weight: 700; color: var(--fg); margin-right: 8px; font-size: 14px; letter-spacing: .02em; }
+h1 { font-size: 30px; margin: 40px 0 6px; letter-spacing: -.02em; }
+h2 { font-size: 20px; margin: 40px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+h3 { font-size: 16px; margin: 26px 0 6px; }
+.lede { color: var(--muted); margin: 0 0 8px; font-size: 17px; }
+p, li { margin: 8px 0; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 13.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+pre { background: var(--code-bg); padding: 14px 16px; border-radius: 8px; overflow-x: auto;
+  border: 1px solid var(--line); font-size: 13px; line-height: 1.55; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px; display: block; overflow-x: auto; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.ac { border-left: 3px solid var(--accent); background: var(--card); padding: 2px 18px 10px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+.ac h4 { margin: 12px 0 4px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); }
+.ac ul { margin: 0; padding-left: 20px; }
+.ac li { margin: 5px 0; font-size: 14.5px; }
+.note { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 14.5px; }
+.note strong { color: var(--accent); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 20px 0; }
+.grid a { display: block; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--card); text-decoration: none; color: var(--fg); }
+.grid a:hover { border-color: var(--accent); }
+.grid a b { display: block; font-size: 15px; margin-bottom: 3px; }
+.grid a span { color: var(--muted); font-size: 13.5px; line-height: 1.45; display: block; }
+.mermaid { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin: 20px 0; text-align: center; overflow-x: auto; }
+.adr { border: 1px solid var(--line); border-radius: 10px; padding: 4px 20px 16px; margin: 20px 0; background: var(--card); }
+.adr h3 { margin-top: 16px; }
+.adr .meta { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.adr h4 { margin: 14px 0 2px; font-size: 13px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+.pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line);
+  color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+footer { border-top: 1px solid var(--line); margin-top: 60px; padding-top: 16px; color: var(--muted); font-size: 13px; }
+a { color: var(--accent); }

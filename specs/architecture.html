@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Architecture — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a class="here" href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Architecture</h1>
+<p class="lede">One process, one container, one user.</p>
+
+<h2>Components</h2>
+
+<table>
+<tr><th>Component</th><th>Responsibility</th></tr>
+<tr><td><b>Gateway</b></td><td>Serves the HTTP API, the web UI, and a WebSocket stream. The only network surface.</td></tr>
+<tr><td><b>Agent loop</b></td><td>Assembles a request from a session, calls the model, dispatches tool calls, appends results, repeats until the model stops calling tools.</td></tr>
+<tr><td><b>Scheduler</b></td><td>Ticks once per second. Fires due jobs into their sessions. Owns dead lettering and the circuit breaker.</td></tr>
+<tr><td><b>Tool registry</b></td><td>Scans the tool directory, validates manifests, exposes schemas to the model, executes tools as subprocesses.</td></tr>
+<tr><td><b>Store</b></td><td>SQLite for structured state and full-text search. JSONL files for transcripts.</td></tr>
+</table>
+
+<p>All five run in one process. There is no message broker, no worker pool, and no inter-service protocol.</p>
+
+<h2>Storage</h2>
+
+<p>Transcripts are JSONL files on disk, one per session, appended to and never rewritten. They are the
+source of truth.</p>
+
+<p>SQLite holds everything else: sessions metadata, jobs, dead letters, memory, tool state, push
+subscriptions, and a full-text index over transcript entries. Both the metadata and the index are
+derived from the JSONL files and can be rebuilt from them.</p>
+
+<div class="note">
+<strong>Why both.</strong> A transcript is an append-only log and belongs in a file. Everything else is
+queried, filtered, and joined, and belongs in a table. Rebuildability means a corrupt database costs
+a restart, not data.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Deleting the SQLite file and restarting reconstructs all session metadata and search indexes from the JSONL transcripts.</li>
+<li>SQLite runs in WAL mode.</li>
+<li>No transcript entry is ever modified or deleted once written.</li>
+<li>Tool tables are namespaced by a prefix declared in the tool's manifest.</li>
+</ul>
+</div>
+
+<h2>Model access</h2>
+
+<p>All model calls go to OpenRouter over its OpenAI-compatible API. The model is selected per session
+and can be changed mid-session.</p>
+
+<p>Three OpenRouter endpoints are consumed beyond inference:</p>
+
+<table>
+<tr><th>Endpoint</th><th>Used for</th></tr>
+<tr><td><code>/models</code></td><td>Populating the model picker, context-window sizes, and per-token prices. Cached, refreshed daily. Models are filtered to those whose <code>supported_parameters</code> include <code>tools</code>.</td></tr>
+<tr><td><code>/key</code></td><td>Remaining credit and usage totals shown in the UI.</td></tr>
+<tr><td><code>/chat/completions</code></td><td>Inference, streamed.</td></tr>
+</table>
+
+<h3>Prompt caching</h3>
+
+<p>Caching is not free. A cache write costs more than an ordinary read — 1.25x for a five-minute
+lifetime, 2x for an hour — so a prefix that is written and then read only once or twice costs
+<em>more</em> than not caching at all. Break-even is around three calls within the lifetime.</p>
+
+<p>Long-lived sessions frequently sit below that. A session whose only job uses a deterministic check
+makes no model calls at all between firings, so caching it would double the cost of each isolated
+call.</p>
+
+<p>The cache is therefore requested only when another call is expected before it expires.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>For providers requiring explicit cache breakpoints, the request carries a cache marker at the end of the stable prefix.</li>
+<li>A cache write is requested only when a further call is expected within its lifetime: the user turned recently, or the session has a model-invoking job due sooner than the lifetime.</li>
+<li>Active conversation requests the five-minute lifetime; a session with a frequent model-invoking job requests the hour.</li>
+<li>An isolated call on an idle session requests no cache write.</li>
+<li>Reported cached-token counts and cache discount are recorded per call and surfaced in the UI.</li>
+<li>Providers that cache automatically receive no cache markers.</li>
+</ul>
+</div>
+
+<h2>Deployment surface</h2>
+
+<div class="mermaid">
+flowchart TB
+  subgraph N["your devices"]
+    PH["Phone (PWA)"]
+    LP["Laptop browser"]
+  end
+  TS{{"Tailscale Serve<br/>HTTPS, real certificate"}}
+  PH --> TS
+  LP --> TS
+  TS --> GW["Gateway :8080"]
+  GW --> OR["OpenRouter"]
+  GW --> PS["Push service"]
+  PS -.->|"APNs / FCM"| PH
+</div>
+
+<p>The container publishes no ports to the public internet. Tailscale Serve terminates HTTPS with a
+certificate valid for the tailnet hostname, which satisfies the browser's secure-context requirement
+for service workers and notifications.</p>
+
+<p>Push notifications reach the phone through Apple's or Google's push service, which the gateway
+contacts outbound. Notification delivery therefore does not depend on the phone being on the tailnet.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The container exposes no port reachable from outside the tailnet.</li>
+<li>The web UI is served over HTTPS with a certificate the browser trusts without exception.</li>
+<li>Notifications are delivered to the phone when it is not connected to the tailnet.</li>
+<li>Opening a notification while off the tailnet fails visibly rather than showing a blank screen.</li>
+</ul>
+</div>
+
+<h2>Process boundaries</h2>
+
+<p>The agent, its tools, and the gateway run as one user in one container. Tools the agent writes have
+the same access as the agent itself, including the model API key and the database.</p>
+
+<p>The working directory is a git repository. Every tool reload commits the tool directory, so a tool
+that breaks the system is reverted rather than reconstructed.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The workspace is a git repository with an initial commit created at first start.</li>
+<li>A successful tool reload produces a commit containing the tool directory's current state.</li>
+<li>Reverting to any commit and restarting yields a working system.</li>
+</ul>
+</div>
+
+<p>The tradeoff is recorded in <a href="adrs.html#adr-004">ADR-004</a>.</p>
+
+<footer><a href="index.html">← Overview</a></footer>
+</div>
+<script src="vendor/mermaid.min.js"></script>
+<script>
+mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'neutral'});
+</script>
+</body></html>

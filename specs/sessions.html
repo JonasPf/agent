@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sessions — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a class="here" href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Sessions</h1>
+<p class="lede">A session is a conversation. It is the only container for model interaction.</p>
+
+<p>There is one kind of session. Scheduled work runs inside an existing conversation rather than in a
+private one of its own, so a session is always something a person started and can read.</p>
+
+<h2>Identity</h2>
+
+<table>
+<tr><th>Field</th><th>Meaning</th></tr>
+<tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste.</td></tr>
+<tr><td><code>title</code></td><td>Generated from the first user message. Editable.</td></tr>
+<tr><td><code>model</code></td><td>Current model. Changeable mid-session.</td></tr>
+<tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>.</td></tr>
+<tr><td><code>continued_from</code></td><td>The session this one was seeded from, if any.</td></tr>
+<tr><td><code>continued_by</code></td><td>The session that succeeded this one, if any.</td></tr>
+<tr><td><code>enabled_tools</code></td><td>Tool names available in this session. Absent means all.</td></tr>
+<tr><td><code>enabled_skills</code></td><td>Skill names offered in this session. Absent means all.</td></tr>
+</table>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every session appears in the session list; none are hidden by kind or origin.</li>
+<li>A session receives a title within one turn of its first user message.</li>
+<li>Changing the model mid-session does not truncate or rewrite the transcript.</li>
+<li>Disabling a tool in one session does not affect any other session.</li>
+<li>The system prompt as sent is retrievable for any session.</li>
+</ul>
+</div>
+
+<h2>Position zero</h2>
+
+<p>Every session opens with a prompt entry: the complete system prompt as sent, split into sections you
+can expand. Persona, memory, the skills index, and the full tool definitions are all there.</p>
+
+<pre><code>┌─ prompt · 4,180 tokens                        ─┐
+│  persona            310 tokens        expand   │
+│  memory · 12 items  480 tokens   edit expand   │
+│  skills · 6         190 tokens        expand   │
+│  tools · 12       3,200 tokens        expand   │
+└────────────────────────────────────────────────┘</code></pre>
+
+<p>Nothing that shapes the agent's behaviour is anywhere else. Scrolling to the top of a conversation
+shows exactly what it was told, including every tool definition it can see.</p>
+
+<p>The entry is a record of what was sent, so it is not sent again and costs nothing. Sections are
+collapsed by default, because tool definitions are long and are usually not what you came to read.</p>
+
+<h3>When the prompt changes</h3>
+
+<p>Entries are never rewritten, so a mid-session change does not edit position zero. Toggling a tool,
+toggling a skill, changing the model, or writing a memory each writes its own entry at the point it
+happened, naming what changed.</p>
+
+<p>The conversation therefore carries the prompt's whole history in order: what it started as, and every
+change since, each where it occurred.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every session's first entry is the system prompt as sent, sectioned and expandable.</li>
+<li>Tool definitions are shown in full, exactly as the model receives them.</li>
+<li>Each section shows its token count, and the entry shows the total.</li>
+<li>The memory section is editable in place; no other section is.</li>
+<li>The prompt entry is not sent to the model.</li>
+<li>Every change to the prompt after session start writes its own entry naming what changed.</li>
+</ul>
+</div>
+
+<h2>Availability</h2>
+
+<p>Which tools and skills a session may use is session state, changeable at any time, and changing it
+costs nothing.</p>
+
+<p>That is possible because the prompt does not carry the enabled set. <strong>Every tool definition and
+every skill description is always in the prompt</strong>, for every session. What changes is whether a
+call is allowed:</p>
+
+<ol>
+<li>Toggling appends an entry at the end of the transcript naming the current set.</li>
+<li>A call to a tool that is not enabled returns an error result saying so.</li>
+<li>Reading a skill that is not enabled returns the same.</li>
+</ol>
+
+<p>The prompt is therefore fixed for the life of a session and its cached prefix is never invalidated.
+The appended entry sits after everything cached, so it costs a handful of tokens. The model is told
+what it may use, and if it tries anyway it is refused and can react.</p>
+
+<div class="note">
+<strong>The general rule.</strong> The system prompt is fixed at session start; everything that changes
+afterwards is appended. A tool the agent writes mid-session becomes callable the same way — its
+definition is appended as an entry, and moves into the prompt at the next session.
+</div>
+
+<p>A new session inherits the set from the most recent one, so the common case needs no interaction.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Enabling or disabling a tool or skill mid-session does not invalidate the session's cached prefix.</li>
+<li>A change appends an entry naming the resulting set, and takes effect on the next turn.</li>
+<li>Calling a disabled tool returns an error result rather than failing the turn.</li>
+<li>A new session starts with the enabled set of the most recently used session.</li>
+<li>The prompt entry lists every tool and marks which are enabled.</li>
+</ul>
+</div>
+
+<h2>Transcript entries</h2>
+
+<p>A transcript holds two kinds of entry. The distinction is what makes a conversation both complete
+and affordable.</p>
+
+<table>
+<tr><th>Type</th><th>Written by</th><th>Shown to user</th><th>Sent to model</th></tr>
+<tr><td><code>message</code></td><td>user, assistant, tool result</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>event</code></td><td>system: job checks, summary updates, rotations, availability changes, model changes</td><td>yes</td><td>no</td></tr>
+</table>
+
+<p>An event costs nothing. A job that checks a condition every two minutes writes seven hundred events
+a day, all readable, none of them consuming context or money.</p>
+
+<h2>Projection</h2>
+
+<p>What is stored and what is sent are different. A single projection step converts a transcript into
+the message list for a model call.</p>
+
+<div class="mermaid">
+flowchart LR
+  T["Transcript<br/>(JSONL, complete)"] --> P{{"Projection"}}
+  P --> M["Messages<br/>(sent to model)"]
+  P -.->|"drop"| E["events"]
+  P -.->|"collapse"| C["repeated job ticks<br/>→ one line + count"]
+</div>
+
+<p>The projection applies three rules and nothing else:</p>
+
+<ol>
+<li>Entries of type <code>event</code> are dropped.</li>
+<li>Consecutive entries sharing a <code>job_id</code> and a <code>status</code> collapse into a single line carrying the repetition count and the elapsed span. A tick's status is <code>fired</code> or <code>not_fired</code>.</li>
+<li>Everything else passes through unchanged.</li>
+</ol>
+
+<p>Collapsing preserves the count deliberately. "Checked forty-seven times over three hours with no
+change" supports a conclusion that "checked once" does not.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Projection is a pure function of a transcript; running it twice on the same input gives the same output.</li>
+<li>No event entry ever appears in a model request.</li>
+<li>Five consecutive ticks with identical status project to one line stating five occurrences and the time span.</li>
+<li>Only the trailing run of ticks is collapsed; a run followed by a later user message is never re-collapsed.</li>
+<li>Collapsing never removes an entry from the stored transcript.</li>
+</ul>
+</div>
+
+<div class="note">
+<strong>Why only the trailing run.</strong> Caching keys on a stable prefix. Rewriting the middle of a
+conversation invalidates everything after it. Collapsing only the tail shortens the part that is
+cheapest to resend and leaves the cached prefix untouched.
+</div>
+
+<h2>Rolling summary</h2>
+
+<p>Every session maintains a summary of itself, updated as it grows rather than assembled under pressure
+when the context fills.</p>
+
+<p>The update is incremental: the summariser sees the previous summary and the messages added since,
+never the whole conversation. That is what keeps it cheap — the cost of an update depends on how much
+was added, not on how long the conversation has become.</p>
+
+<p>It runs on the session's model, like everything else. One model is used throughout the system.</p>
+
+<p>The summary is not part of its own session's prompt. Putting it there would rewrite the prefix on
+every update and invalidate the cache — the thing the whole design protects. It lives beside the
+session and is used only to seed another one.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The summary updates after roughly every four thousand tokens of growth, and writes a visible event entry.</li>
+<li>An update reads only the previous summary and the messages since it, not the full transcript.</li>
+<li>Summaries run on the session's model; no part of the system selects a model of its own.</li>
+<li>The summary is visible and editable in the interface.</li>
+<li>Updating the summary does not alter the session's prompt or invalidate its cached prefix.</li>
+<li>A session that has never grown past the threshold has no summary and needs none.</li>
+</ul>
+</div>
+
+<h2>Rotation</h2>
+
+<p>When a conversation passes a size threshold, it does not compact. It rotates: a new session opens,
+seeded with the summary, and the old one is archived intact.</p>
+
+<p>The threshold is chosen for cost, not for the model's context limit. Those limits now reach a million
+tokens, far past the point where every call becomes expensive: input is charged per token, so a session
+that has grown to eighty thousand tokens costs four times one at twenty thousand, on every single call
+and whether or not it is cached. The default threshold is forty thousand projected tokens.</p>
+
+<p>The summary alone is not enough to continue with. It says what the conversation is about, but the
+last few exchanges are exactly what compresses worst and matters most — three options the agent just
+offered, a question waiting to be answered, the file it was working on.</p>
+
+<p>So a successor opens with the summary and then as many of the most recent turns as fit in a token
+budget, oldest of those first. The budget is a size, not a message count, because messages range from
+a line to a whole file. Turns are copied whole: never half of an exchange, and never an assistant
+message separated from the tool results it produced.</p>
+
+<p>The successor therefore starts at a known size — around six thousand tokens by default, against a
+rotation threshold of forty thousand — so it has room to grow before rotating again.</p>
+
+<h3>Identity across a rotation</h3>
+
+<p>A successor gets a new identifier. Reusing the predecessor's would mean an identifier that silently
+starts addressing different content, which is the one thing the design does not do anywhere else.</p>
+
+<p>It would not avoid the problem either. The predecessor still exists and is still readable, so it needs
+an identifier of its own — and if the archive is the one that gets renamed, then every reference that
+pointed at it now resolves to something else. Something has to be renamed; it should be the thing
+nobody has a link to yet.</p>
+
+<p>References are kept working by following the chain forward instead:</p>
+
+<ul>
+<li>Jobs move to the successor when their session rotates.</li>
+<li>Replaying a dead letter attaches the job to the live session of the chain, not to the archived one recorded in its specification.</li>
+<li>Opening an archived session from a notification or a link follows <code>continued_by</code> to the live session, and says that it did.</li>
+</ul>
+
+<p>This is the same operation as forking a session or resuming an old one. All three create a session
+whose <code>continued_from</code> names its predecessor, seeded with that predecessor's summary and
+recent turns. Rotation is automatic; the other two are asked for.</p>
+
+<div class="note">
+<strong>Why rotate rather than compact.</strong> Compaction rewrites the prefix at the worst possible
+moment, pays for a large summarisation turn under pressure, and leaves a conversation that is half
+transcript and half summary. Rotation costs nothing at the moment it happens, because the summary
+already exists, and the successor starts with a clean prefix that caches from its first turn.
+</div>
+
+<p>Exact history is not lost: the predecessor's transcript stays on disk and remains searchable, so
+something said before a rotation is still retrievable by search.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Passing the size threshold opens a successor session seeded with the summary and archives the predecessor.</li>
+<li>The successor also carries the most recent complete turns that fit a token budget, defaulting to five thousand.</li>
+<li>A turn is carried whole or not at all, including any tool results it produced.</li>
+<li>Carried turns are marked as coming from the predecessor and link back to their place in it.</li>
+<li>A successor has an identifier of its own; no identifier ever comes to address different content.</li>
+<li>Following <code>continued_by</code> from any session in a chain reaches the live one.</li>
+<li>A link to an archived session resolves to the live session and reports the redirection.</li>
+<li>The threshold is configurable, defaults to forty thousand projected tokens, and is always below the model's context limit.</li>
+<li>Rotation happens only between turns, never during one.</li>
+<li>The successor records its predecessor, and the interface links both ways.</li>
+<li>Jobs attached to the predecessor move to the successor.</li>
+<li>Forking and resuming use the same mechanism and are available from the interface.</li>
+<li>Search finds content in archived predecessors.</li>
+</ul>
+</div>
+
+<h2>Ordering</h2>
+
+<p>A session executes strictly one turn at a time. User messages and job runs enter the same queue for
+that session, and a job never interleaves with a turn in progress.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Two turns never run concurrently in one session.</li>
+<li>A job firing while a user turn is running waits and then runs.</li>
+<li>A user message queued behind a job run is not reordered ahead of it or dropped.</li>
+<li>Different sessions run concurrently without blocking each other.</li>
+</ul>
+</div>
+
+<h2>Search</h2>
+
+<p>A <code>session_search</code> tool queries a full-text index over all transcript entries across all
+sessions, so the agent can retrieve something said in a conversation that is no longer open.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Search returns matches from sessions other than the current one.</li>
+<li>Each result identifies its session and position so the user can open it.</li>
+<li>Event entries are searchable.</li>
+<li>The index is rebuildable from transcripts alone.</li>
+</ul>
+</div>
+
+<footer><a href="index.html">← Overview</a> · <a href="jobs.html">Jobs →</a></footer>
+</div>
+<script src="vendor/mermaid.min.js"></script>
+<script>
+mermaid.initialize({startOnLoad:true,theme:matchMedia('(prefers-color-scheme: dark)').matches?'dark':'neutral'});
+</script>
+</body></html>

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Decisions — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a class="here" href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Decisions</h1>
+<p class="lede">Fifteen choices with real tradeoffs. Each states what was given up.</p>
+
+<div class="adr" id="adr-001">
+<div class="meta">ADR-001 · accepted</div>
+<h3>Write the agent loop rather than adopt a framework</h3>
+<h4>Context</h4>
+<p>The loop that assembles a request, calls a model, dispatches tool calls, and repeats is a few hundred
+lines. Existing agent frameworks provide it along with abstractions for tools, memory, and sessions,
+all of which this system defines differently.</p>
+<h4>Decision</h4>
+<p>Implement the loop directly against an OpenAI-compatible client. Adopt no agent framework.</p>
+<h4>Consequences</h4>
+<p>Full control over projection, caching, and per-session tool sets, which every framework models
+differently or not at all. In exchange, streaming tool-call reassembly, interrupt handling, and
+provider quirks must be handled here. This is the smallest component in the system, and it is the one
+every other decision depends on.</p>
+</div>
+
+<div class="adr" id="adr-002">
+<div class="meta">ADR-002 · accepted</div>
+<h3>Reach models through OpenRouter only</h3>
+<h4>Context</h4>
+<p>Talking to a provider directly gives the cleanest access to that provider's features. A broker gives
+one credential, one wire format, and hundreds of models.</p>
+<h4>Decision</h4>
+<p>Use OpenRouter exclusively, over its OpenAI-compatible API.</p>
+<h4>Consequences</h4>
+<p>Model choice, per-model pricing, context windows, and remaining credit are all available as
+endpoints, which turns four interface requirements into API calls rather than hand-maintained tables.
+The cost is that caching behaviour now varies by provider: some cache automatically, others require
+explicit markers, and prompt assembly must branch on which. Streaming tool-call deltas are also less
+consistent across providers than they are against a single vendor.</p>
+</div>
+
+<div class="adr" id="adr-003">
+<div class="meta">ADR-003 · accepted</div>
+<h3>SQLite and flat files; no vector database</h3>
+<h4>Context</h4>
+<p>Recall across conversations is usually built on embeddings and a vector store.</p>
+<h4>Decision</h4>
+<p>Store transcripts as append-only files and everything else in SQLite with a full-text index. Add no
+embedding model and no vector store.</p>
+<h4>Consequences</h4>
+<p>The whole system is one file plus a directory, backed up by copying and rebuilt by replaying. Search
+matches words rather than meaning, so a query phrased differently from the original text can miss.
+Curated memory carries the weight that semantic search would otherwise carry, which is why memory is
+small and deliberate rather than automatic.</p>
+</div>
+
+<div class="adr" id="adr-004">
+<div class="meta">ADR-004 · accepted</div>
+<h3>One container, one user, no privilege separation</h3>
+<h4>Context</h4>
+<p>The agent writes executables and runs them. Those executables run beside the gateway, the scheduler,
+the database, and the model API key. Separating them into another user or another container is
+possible and would bound the damage.</p>
+<h4>Decision</h4>
+<p>Run the gateway, the agent, and all tools as one user in one container. Make the workspace a git
+repository and commit on every tool reload.</p>
+<h4>Consequences</h4>
+<p>A tool the agent writes can modify the scheduler, read the key, and alter the database. The realistic
+failure is not attack but accident, and version control makes accidents revertible rather than
+unrecoverable. This is acceptable for a single-operator system on private hardware and would not be
+acceptable if the system were shared or exposed. Revisit if either changes.</p>
+</div>
+
+<div class="adr" id="adr-005">
+<div class="meta">ADR-005 · accepted</div>
+<h3>Tailscale only; no authentication in the application</h3>
+<h4>Context</h4>
+<p>The interface must work from a phone. That normally means public exposure and therefore login,
+sessions, and abuse handling — for a service whose main feature is running arbitrary code.</p>
+<h4>Decision</h4>
+<p>Publish nothing to the public internet. Serve over Tailscale, which supplies a stable hostname and a
+trusted certificate. Treat network reachability as the only access control.</p>
+<h4>Consequences</h4>
+<p>Authentication, session cookies, cross-site request forgery, and rate limiting leave the specification
+entirely. Push notifications still work, because delivery is outbound to the push service rather than
+inbound to the gateway. The cost is that the interface is unreachable when the tailnet is down, and
+sharing anything with another person is impossible without changing this decision.</p>
+</div>
+
+<div class="adr" id="adr-006">
+<div class="meta">ADR-006 · accepted</div>
+<h3>Jobs run inside the conversation that created them</h3>
+<h4>Context</h4>
+<p>Scheduled work is usually given a fresh session with no history, which is cheap and keeps the
+conversation clean. The alternative is to run it in the conversation where it was requested.</p>
+<h4>Decision</h4>
+<p>A job holds a session identifier and runs there. There is no separate session kind for scheduled work.</p>
+<h4>Consequences</h4>
+<p>The job's instruction does not have to restate its own context — which deploy, which repository, what
+the user cared about — because the conversation already contains it. Removing that translation step
+removes the most common source of a job doing the wrong thing. Results appear where the request was
+made. The costs are that model-invoking ticks replay the conversation, making caching essential rather
+than optional, and that those ticks accumulate in the transcript and bring rotation forward. Both are
+mitigated by ADR-008 and ADR-009, which together keep most ticks free and most tick output out of
+context.</p>
+</div>
+
+<div class="adr" id="adr-007">
+<div class="meta">ADR-007 · accepted</div>
+<h3>No heartbeat</h3>
+<h4>Context</h4>
+<p>Comparable systems wake the agent every thirty minutes in its main conversation to look for anything
+needing attention. It catches open loops nobody scheduled.</p>
+<h4>Decision</h4>
+<p>Do not implement a heartbeat. Proactive behaviour comes only from jobs the agent creates explicitly
+when asked.</p>
+<h4>Consequences</h4>
+<p>Every future action is a row that can be read, edited, and deleted before it happens. When the agent
+misunderstands a request, the mistake is visible immediately rather than at three in the morning.
+Forty-eight full-context turns a day disappear, which is the single largest recurring cost in the
+designs that have one. What is lost is the catch-all: a commitment the user never phrased as a request
+is never noticed. That mechanism was unreliable — it depended on the model re-reading a long
+conversation and spotting something — and dead letters cover the failure that matters, which is a job
+that stops without its condition ever being met.</p>
+</div>
+
+<div class="adr" id="adr-008">
+<div class="meta">ADR-008 · accepted</div>
+<h3>Evaluate deterministic conditions without the model</h3>
+<h4>Context</h4>
+<p>Most of what people ask to be told about is a fact, not a judgement: an exit code, an HTTP status, a
+file appearing. Systems that spawn an agent for every scheduled run pay a model call to read a status
+code.</p>
+<h4>Decision</h4>
+<p>A job may carry a check: a shell command whose exit status decides the question. The model runs only
+when it exits zero. A job without a check calls the model every tick and may not tick more often than
+every fifteen minutes.</p>
+<h4>Consequences</h4>
+<p>A two-minute poll costs nothing until the moment it fires, which makes frequent polling reasonable and
+makes ADR-006 affordable. A check-less job, by contrast, runs on its session's model in its session's
+context, so its cost is whatever a turn in that conversation costs. Nothing about a job is configured
+separately — no model of its own, no context of its own — because the rotation threshold already bounds
+what a turn can cost, and a second set of knobs would only hide the price.</p>
+<p>The agent must therefore decide whether a condition is expressible as a command, and sometimes it
+will reach for judgement where a command would have done. Three things push against that: the
+scheduling skill treats a check as the default, a check-less job has to record why no command would
+work, and the fifteen-minute floor bounds the cost when it still happens.</p>
+</div>
+
+<div class="adr" id="adr-009">
+<div class="meta">ADR-009 · accepted</div>
+<h3>What is stored is not what is sent</h3>
+<h4>Context</h4>
+<p>Visibility and cost pull in opposite directions. Seven hundred daily check results make a conversation
+legible and unaffordable at the same time.</p>
+<h4>Decision</h4>
+<p>Keep the complete transcript. Derive the model's message list from it through a single projection that
+drops event entries, collapses consecutive identical job ticks into one line with a count, and passes
+everything else through.</p>
+<h4>Consequences</h4>
+<p>The conflict dissolves: every tick is visible and nearly all of them are free. All future context
+handling belongs in one pure function that can be tested directly.
+The risk is drift — what the user reads and what the model read are no longer identical — so the
+interface must make clear which entries were never sent.</p>
+</div>
+
+<div class="adr" id="adr-010">
+<div class="meta">ADR-010 · accepted</div>
+<h3>The system prompt is the first entry of the transcript</h3>
+<h4>Context</h4>
+<p>A system prompt is normally invisible: the agent's persona, its memory, and the definitions of every
+tool it can call all shape its behaviour from outside the conversation. Memory is the sharpest case —
+retrieved by a tool it is visible but unreliable, since the agent must decide to look and cannot know
+what it does not know; placed in the prompt it is reliable but hidden.</p>
+<h4>Decision</h4>
+<p>Assemble the system prompt as usual, then write it as the session's first entry, split into
+expandable sections with token counts. Memory is one of those sections, and the only editable one.
+Because entries are immutable, later changes — a tool toggled, a memory written, the model changed —
+each append their own entry where they occur.</p>
+<h4>Consequences</h4>
+<p>Nothing that shapes behaviour lives outside the conversation, so requirement R2 is satisfied by
+construction rather than by an extra endpoint. Recall stops depending on the agent's judgement, and any
+answer can be traced by scrolling up. A wrong memory is corrected in place instead of by asking the
+agent to correct itself. Token counts per section make context bloat visible at the point where it is
+caused. The entry itself is never sent, so it costs nothing. The cost is that the prompt's current
+state must be read as the opening entry plus the changes after it, rather than as one canonical
+document; sections are collapsed by default because tool definitions are long.</p>
+</div>
+
+<div class="adr" id="adr-011">
+<div class="meta">ADR-011 · accepted</div>
+<h3>Two notification tiers, with the agent choosing between them</h3>
+<h4>Context</h4>
+<p>Notifying on everything trains the user to ignore notifications, which fails silently and completely.
+Notifying on nothing defeats the purpose of a phone interface.</p>
+<h4>Decision</h4>
+<p>New assistant output updates a silent badge. Interrupting notifications are sent only when the agent
+calls a notify tool, or when a dead letter or the circuit breaker fires. The latter two cannot be
+suppressed.</p>
+<h4>Consequences</h4>
+<p>The agent writes the notification, so it says what happened rather than showing a truncated first
+line, and the decision to interrupt is a visible tool call that can be audited and corrected. The risk
+is under-notification: the agent stays quiet when the user wanted to know. The two unsuppressable
+triggers cover the cases where silence would be worst.</p>
+</div>
+
+<div class="adr" id="adr-012">
+<div class="meta">ADR-012 · accepted</div>
+<h3>No subagents</h3>
+<h4>Context</h4>
+<p>Isolating a long sub-task keeps a conversation lean. This matters more here than elsewhere, because
+ADR-006 means anything bloating a conversation is replayed by every job attached to it.</p>
+<h4>Decision</h4>
+<p>Do not implement subagents. When work should be isolated, the user opens another conversation.</p>
+<h4>Consequences</h4>
+<p>One session kind, no spawning, no fan-out, no result-summarisation protocol, and no nesting rules.
+The cost is that the agent cannot isolate work on its own initiative, so a long tool-building session
+in a conversation that also holds a job will be replayed by that job. The mitigation is convention
+rather than mechanism: build tools in their own conversation. Revisit if that convention proves too
+easy to forget.</p>
+</div>
+
+<div class="adr" id="adr-013">
+<div class="meta">ADR-013 · accepted</div>
+<h3>The notify tool is the firing signal for judgement jobs</h3>
+<h4>Context</h4>
+<p>A job with a check has an unambiguous trigger: the command exits zero. A job whose condition needs
+judgement produces prose, and something has to decide whether that prose means the condition was met.
+The alternatives were parsing a sentinel out of the reply, or requiring a structured verdict alongside
+it.</p>
+<h4>Decision</h4>
+<p>A judgement job fires when the model calls the notify tool during its run. A run that does not call it
+is recorded as an event with status <code>not_fired</code> and produces no message.</p>
+<h4>Consequences</h4>
+<p>Firing, notifying, and recording become one auditable act rather than three mechanisms that can
+disagree. Nothing parses prose, so a job cannot fire because of a stray word. The sentinel field this
+replaces is deleted. Every tick gains a status, which is what allows the projection to collapse quiet
+runs — without it, judgement polls would never collapse, and those are the only ticks that cost money.
+The cost is that a job cannot fire quietly: firing always interrupts. A condition worth polling for
+that is not worth a notification has no expression here, and would need a second, silent signal if one
+is ever wanted.</p>
+</div>
+
+<div class="adr" id="adr-014">
+<div class="meta">ADR-014 · accepted</div>
+<h3>Availability is enforced at dispatch, not by editing the prompt</h3>
+<h4>Context</h4>
+<p>Tools and skills should be switchable per session, including mid-session. The obvious implementation
+is to include only the enabled ones in the prompt. That makes every toggle rewrite the prefix and
+therefore pay a full cache write across the whole conversation — worst on exactly the long, job-bearing
+sessions where toggling is most useful.</p>
+<h4>Decision</h4>
+<p>Always include every tool definition and skill description in the prompt. Keep the enabled set as
+session state, append an entry naming it whenever it changes, and refuse calls to anything not enabled.</p>
+<h4>Consequences</h4>
+<p>Toggling becomes free and instant, and the prompt is fixed for the life of a session, which is what
+makes its cached prefix durable. It generalises: a tool written mid-session is appended the same way
+and needs no prompt rewrite either. The costs are that the prompt always carries every definition, so a
+session using three tools still pays for thirty — at cached rates, and only once — and that the model
+can attempt a disabled tool and waste a call. The appended entry tells it what is available; the
+refusal catches it when it forgets.</p>
+</div>
+
+<div class="adr" id="adr-015">
+<div class="meta">ADR-015 · accepted</div>
+<h3>Summarise continuously and rotate, rather than compact</h3>
+<h4>Context</h4>
+<p>The usual answer to a full context window is compaction: at the limit, summarise the older messages
+and continue in the same session. That does expensive work at the worst moment, rewrites the cached
+prefix exactly when the conversation is longest, and leaves a session that is half transcript and half
+summary.</p>
+<h4>Decision</h4>
+<p>Maintain a rolling summary of every session, updated incrementally as the session grows, stored
+beside the session rather than in its prompt. At the context limit, open a successor
+session seeded with that summary and archive the predecessor. Forking a session and resuming an old one
+are the same operation, asked for rather than automatic.</p>
+<h4>Consequences</h4>
+<p>Reaching the threshold costs nothing, because the summary already exists. The successor starts with a
+short, clean prefix that caches from its first turn, instead of a rewritten long one. Each update is
+bounded by how much was added rather than by the conversation's length, so it stays cheap on the
+session's own model and the system never has to choose a second one. Three features —
+rotation, fork, resume — become one mechanism and one field. Compaction is deleted along with its event
+kind, its markers, and the interface for expanding them.</p>
+<p>The summary must stay out of its own session's prompt: putting it there would rewrite the prefix on
+every update, which is the cost this decision exists to avoid. Exact history is not lost, since the
+predecessor's transcript remains searchable, but the model can no longer quote it directly — it has to
+search. Rotation is also a visible discontinuity, so it happens only between turns, never mid-task.</p>
+<p>A summary alone would still make that discontinuity sharp, because the most recent exchanges are
+what a summary compresses worst. The successor therefore carries the last complete turns that fit a
+token budget as well. Budgeting by size rather than by message count keeps the successor's starting
+size predictable, which is what rotation exists to control.</p>
+<p>Rotation is triggered by size, not by cache expiry and not by the context limit. Absorbing a cold
+cache is cheap; discarding a live conversation to avoid it would trade continuity for almost nothing.
+Context limits are the wrong trigger for the opposite reason — at a million tokens they are far beyond
+the point where every call has become expensive. The threshold is a cost decision and is configurable.</p>
+</div>
+
+<footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
+</div>
+</body></html>

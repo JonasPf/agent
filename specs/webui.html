@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Web UI — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a class="here" href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>Web UI</h1>
+<p class="lede">A phone-first interface. The laptop gets the same pages, wider.</p>
+
+<p>See the <a href="mock.html">rendered mock</a>.</p>
+
+<h2>Installation</h2>
+
+<p>The interface is a progressive web app installed to the home screen. Installation is required rather
+than optional: on iOS, notifications are only delivered to installed web apps.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The app is installable to the home screen on iOS and Android.</li>
+<li>It launches without browser chrome once installed.</li>
+<li>Opening it while off the tailnet shows a clear connectivity message, not a browser error.</li>
+<li>Every control is operable one-handed on a phone.</li>
+</ul>
+</div>
+
+<h2>Conversation view</h2>
+
+<p>The primary screen. A transcript, an input, and a status line.</p>
+
+<table>
+<tr><th>Element</th><th>Shows</th></tr>
+<tr><td>Prompt entry</td><td>First entry of the transcript. Persona, memory, skills index, and full tool definitions, each collapsible with a token count. Memory is editable.</td></tr>
+<tr><td>Messages</td><td>User and assistant turns, tool calls with their results.</td></tr>
+<tr><td>Events</td><td>Job checks, summary updates, rotations, availability changes — one line each, visually quieter than messages.</td></tr>
+<tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
+<tr><td>Status line</td><td>Model, context used against the window, tokens per second while streaming, session cost.</td></tr>
+</table>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Assistant output streams token by token.</li>
+<li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
+<li>Context usage is shown against the session's rotation threshold, not the model's window.</li>
+<li>The estimated cost of the next call is shown, and whether it will be cached.</li>
+<li>Events are visually distinguishable from messages at a glance.</li>
+<li>Long transcripts scroll to the newest entry without loading the entire history.</li>
+<li>A tool call can be expanded to show its arguments and result.</li>
+<li>Scrolling to the top of any conversation reaches the prompt entry.</li>
+<li>Expanding the tool section shows every tool definition as the model receives it.</li>
+</ul>
+</div>
+
+<h2>Session management</h2>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>All sessions are listed, newest activity first, with title, model, and unread count.</li>
+<li>A session can be created, renamed, archived, and deleted.</li>
+<li>Search finds text across all sessions and opens a result at its position.</li>
+<li>The list shows which sessions have jobs attached.</li>
+<li>A session can be forked, or resumed into a new session, in one action.</li>
+<li>A session seeded from another links back to it, and the predecessor links forward.</li>
+<li>Opening a link to an archived session lands on the live session of its chain and says so.</li>
+<li>The rolling summary is viewable and editable from the session.</li>
+</ul>
+</div>
+
+<h2>Per-session controls</h2>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The model can be changed for a session, choosing from models that support tool calling.</li>
+<li>Each tool and skill can be enabled or disabled for the session individually, at any time.</li>
+<li>Toggling is available both when creating a session and while one is in progress.</li>
+<li>A new session opens with the previous session's set, changeable before the first message.</li>
+<li>Enable-all and disable-all act on the whole list in one tap.</li>
+<li>Changes take effect on the next turn without restarting the session.</li>
+<li>Disabling a tool that a job in this session depends on requires confirmation and names the job.</li>
+</ul>
+</div>
+
+<h2>Files</h2>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A file can be uploaded from a phone, including from the camera and the photo library.</li>
+<li>An uploaded file is written to the workspace and referenced in the transcript by path.</li>
+<li>Images are passed to models that accept them; other files are made available to the agent's file tools.</li>
+<li>Upload progress is shown and a failed upload can be retried.</li>
+<li>Files larger than 100 MB are refused before transfer begins.</li>
+<li>Uploads are deleted with the session that referenced them.</li>
+</ul>
+</div>
+
+<h2>Notifications</h2>
+
+<p>Two tiers, because a phone that buzzes for everything is a phone that gets ignored.</p>
+
+<table>
+<tr><th>Tier</th><th>Trigger</th><th>Behaviour</th></tr>
+<tr><td><b>Badge</b></td><td>Any new assistant message in a session not in the foreground.</td><td>Silent. Increments the count on the app icon.</td></tr>
+<tr><td><b>Interrupt</b></td><td>The agent calls the notify tool; or a dead letter; or the circuit breaker.</td><td>A push notification with sound.</td></tr>
+</table>
+
+<p>The agent decides what is worth interrupting for, and that decision is a visible tool call. Dead
+letters and the circuit breaker interrupt regardless, and this cannot be disabled.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>An interrupting notification carries its full text in the push payload and requires no network fetch to display.</li>
+<li>Notifications are received when the phone is not on the tailnet.</li>
+<li>Opening a notification navigates to the session and position that caused it.</li>
+<li>Badge count reflects unread assistant messages and clears when the session is read.</li>
+<li>A dead letter and a tripped breaker always interrupt.</li>
+<li>Notifications can be muted per session, except the two that always interrupt.</li>
+</ul>
+</div>
+
+<h2>Status and cost</h2>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Remaining OpenRouter credit and usage are displayed and refreshed at least hourly.</li>
+<li>Per-session cost is shown and derives from reported token usage and current model prices.</li>
+<li>Cache hit rate is shown for sessions with jobs attached.</li>
+<li>A tripped circuit breaker is visible from the session list without opening a session.</li>
+</ul>
+</div>
+
+<h2>Panels</h2>
+
+<p>Jobs, dead letters, memory, tools, and skills each have a management panel. Tools that ship their own
+panel appear alongside them.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every job, dead letter, memory item, tool, and skill is viewable and editable without the agent.</li>
+<li>A dead letter can be replayed or dismissed in one action.</li>
+<li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
+</ul>
+</div>
+
+<footer><a href="memory.html">← Memory</a> · <a href="mock.html">UI mock →</a></footer>
+</div>
+</body></html>

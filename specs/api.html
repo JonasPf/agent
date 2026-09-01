@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>API — Agent Spec</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="vendor/swagger-ui.css">
+<style>
+  .swagger-ui { font-size: 14px; }
+  .swagger-ui .topbar { display: none; }
+  .swagger-ui .info { margin: 18px 0; }
+  #swagger { border: 1px solid var(--line); border-radius: 10px; background: #fff; padding: 4px 10px; margin-top: 18px; }
+  @media (prefers-color-scheme: dark) { #swagger { background: #f4f2ee; } }
+</style></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a class="here" href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1>API</h1>
+<p class="lede">The gateway's HTTP surface. The machine-readable document is <a href="openapi.json"><code>openapi.json</code></a>.</p>
+
+<p>There is no authentication. Reaching the gateway over the tailnet is the only access control, as
+described in <a href="adrs.html#adr-005">ADR-005</a>.</p>
+
+<h2>Streaming</h2>
+
+<p>A WebSocket at <code>/ws</code> carries everything that changes: transcript entries as they are
+appended, token deltas during generation, job ticks, dead letters, and circuit breaker transitions.</p>
+
+<p>The socket is a convenience, not a separate source of truth. Every state change delivered over it is
+also retrievable from the endpoints below, so a client that misses messages recovers by reading rather
+than by replaying.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A client that disconnects and reconnects recovers current state from the HTTP endpoints alone.</li>
+<li>Token deltas carry the session and entry they belong to.</li>
+<li>The socket requires no authentication handshake.</li>
+</ul>
+</div>
+
+<h2>Reference</h2>
+
+<div id="swagger"></div>
+
+<footer><a href="mock.html">← UI mock</a> · <a href="adrs.html">Decisions →</a></footer>
+</div>
+<script src="vendor/swagger-ui-bundle.js"></script>
+<script src="openapi.js"></script>
+<script>
+SwaggerUIBundle({
+  spec: window.OPENAPI_SPEC,
+  dom_id: '#swagger',
+  deepLinking: true,
+  defaultModelsExpandDepth: 0,
+  docExpansion: 'list',
+  supportedSubmitMethods: []
+});
+</script>
+</body></html>
