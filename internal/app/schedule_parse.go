@@ -35,6 +35,25 @@ func (oneShotDone) Error() string { return "one-shot schedule already passed" }
 
 var errOneShotDone = oneShotDone{}
 
+// oneShot reports whether a schedule names a single instant rather than a repetition.
+func oneShot(schedule string) bool {
+	_, err := time.Parse(time.RFC3339, strings.TrimSpace(schedule))
+	return err == nil
+}
+
+// jobKind reports how a job decides to fire. A check job asks a command. A due
+// job has no condition at all: it names one instant, and arriving is the whole
+// request. A judgement job asks the model on every tick.
+func jobKind(j *Job) string {
+	switch {
+	case j.Check != "":
+		return "check"
+	case oneShot(j.Schedule):
+		return "due"
+	}
+	return "judgement"
+}
+
 // scheduleInterval reports the gap between firings, or 0 if it is not periodic.
 func scheduleInterval(schedule string) time.Duration {
 	if d, err := time.ParseDuration(strings.TrimSpace(schedule)); err == nil {

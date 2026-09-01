@@ -474,7 +474,8 @@ async function viewJobs(v) {
     const m = el('div', 'm');
     m.append(el('div', 'n', j.prompt));
     m.append(el('div', 's', `${j.schedule} · next ${until(j.next_run_at)} · expires ${until(j.expires_at)} · ${j.run_count} runs`));
-    if (j.check) m.append(el('div', 's', 'check: ' + j.check));
+    if (j.kind === 'check') m.append(el('div', 's', 'check: ' + j.check));
+    else if (j.kind === 'due') m.append(el('span', 'tag', 'reminder · no condition, fires when due'));
     else m.append(el('span', 'tag warn', 'judgement · one model call per tick'));
     if (j.last_status) m.append(el('span', 'tag ' + (j.last_status === 'fired' ? 'ok' : ''), j.last_status));
     const acts = el('div');

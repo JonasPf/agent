@@ -13,6 +13,7 @@ import (
 
 const (
 	minJudgementInterval = 15 * time.Minute
+	checkTimeout         = 60 * time.Second
 	breakerWindow        = 90 * time.Second
 	breakerProbeEvery    = 5 * time.Minute
 	maxJobFailures       = 3
@@ -116,45 +117,85 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 	a := s.app
 	j.RunCount++
 
-	if j.Check != "" {
-		cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		cmd := exec.CommandContext(cctx, "/bin/sh", "-c", j.Check)
-		cmd.Dir = a.cfg.Workspace
-		out, err := cmd.CombinedOutput()
-		cancel()
+	switch j.Kind {
+	case "due":
+		// No condition to test. The user asked for a time, the time arrived,
+		// and arriving is the whole of what they asked for.
+		if _, err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID}); err != nil {
+			s.jobFailed(j, err)
+			return
+		}
+		j.LastStatus = "fired"
+		s.succeeded(j)
+		s.reschedule(j, true)
+
+	case "check":
+		met, err := s.runCheck(ctx, j, sess)
 		if err != nil {
-			// A non-zero exit means the condition is not met. Not a failure.
+			s.jobFailed(j, err)
+			return
+		}
+		if !met {
 			j.LastStatus = "not_fired"
-			a.appendEvent(sess.ID, Entry{EventKind: "job_check", JobID: j.ID, Status: "not_fired",
-				Text: fmt.Sprintf("check: %s → not met", truncate(j.Check, 120))})
 			s.reschedule(j, false)
 			return
 		}
 		j.LastStatus = "fired"
-		a.appendEvent(sess.ID, Entry{EventKind: "job_check", JobID: j.ID, Status: "fired",
-			Text: fmt.Sprintf("check: %s → met%s", truncate(j.Check, 120), summarise(string(out)))})
 		if _, err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID}); err != nil {
 			s.jobFailed(j, err)
 			return
 		}
 		s.succeeded(j)
 		s.reschedule(j, true)
-		return
+
+	default:
+		// The model decides, and signals by calling notify.
+		fired, err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, Buffered: true})
+		if err != nil {
+			s.jobFailed(j, err)
+			return
+		}
+		s.succeeded(j)
+		if fired {
+			j.LastStatus = "fired"
+		} else {
+			j.LastStatus = "not_fired"
+		}
+		s.reschedule(j, fired)
+	}
+}
+
+// runCheck runs the job's check command. It reports whether the condition is
+// met. A non-zero exit is an answer, not a failure; a check that cannot run or
+// will not finish is a failure, so that a check which never decides anything is
+// surfaced rather than looping quietly until the job expires.
+func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, error) {
+	cctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, "/bin/sh", "-c", j.Check)
+	cmd.Dir = s.app.cfg.Workspace
+	// Killing the shell does not close pipes a grandchild still holds, and
+	// CombinedOutput waits for every writer. WaitDelay bounds that wait, so the
+	// timeout above bounds the whole call.
+	cmd.WaitDelay = 5 * time.Second
+	out, err := cmd.CombinedOutput()
+
+	if cctx.Err() != nil {
+		return false, fmt.Errorf("check did not finish within %s: %s", checkTimeout, truncate(j.Check, 120))
+	}
+	var exit *exec.ExitError
+	if err != nil && !errors.As(err, &exit) {
+		return false, fmt.Errorf("check could not run: %w", err)
 	}
 
-	// No check: the model decides, and signals by calling notify.
-	fired, err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, Buffered: true})
-	if err != nil {
-		s.jobFailed(j, err)
-		return
+	met := err == nil
+	status, verdict := "not_fired", "not met"
+	if met {
+		status, verdict = "fired", "met"
 	}
-	s.succeeded(j)
-	if fired {
-		j.LastStatus = "fired"
-	} else {
-		j.LastStatus = "not_fired"
-	}
-	s.reschedule(j, fired)
+	s.app.appendEvent(sess.ID, Entry{EventKind: "job_check", JobID: j.ID, Status: status,
+		Text: fmt.Sprintf("check: %s → %s%s", truncate(j.Check, 120), verdict, summarise(string(out)))})
+	return met, nil
 }
 
 func summarise(out string) string {
@@ -333,12 +374,14 @@ func (a *App) CreateJob(spec JobSpec) (*Job, error) {
 	if strings.TrimSpace(spec.Prompt) == "" {
 		return nil, fmt.Errorf("prompt is required")
 	}
-	if spec.Check == "" {
+	// A one-shot instant with no check is a reminder: it has no condition to
+	// test, so neither the tick floor nor reason_no_check applies to it.
+	if spec.Check == "" && !oneShot(spec.Schedule) {
 		if d := scheduleInterval(spec.Schedule); d > 0 && d < minJudgementInterval {
-			return nil, fmt.Errorf("a job without a check may not tick more often than every 15 minutes (got %s); express the condition as a check command instead", d)
+			return nil, fmt.Errorf("a job without a check may not tick more often than every 15 minutes (got %s); express the condition as a check command, or schedule a single RFC 3339 instant if there is no condition", d)
 		}
 		if strings.TrimSpace(spec.ReasonNoCheck) == "" {
-			return nil, fmt.Errorf("a job without a check must state reason_no_check: why no shell command could decide this condition")
+			return nil, fmt.Errorf("a repeating job without a check must state reason_no_check: why no shell command could decide this condition")
 		}
 	}
 	next, err := nextRun(spec.Schedule, time.Now())
@@ -360,11 +403,12 @@ func (a *App) CreateJob(spec JobSpec) (*Job, error) {
 	j := &Job{ID: newID(), SessionID: sess.ID, Schedule: spec.Schedule, Check: spec.Check,
 		Prompt: spec.Prompt, ExpiresAt: expires, OnConditionMet: onMet,
 		NextRunAt: next, CreatedAt: time.Now()}
+	j.Kind = jobKind(j)
 	if err := a.store.PutJob(j); err != nil {
 		return nil, err
 	}
-	kind := "check"
-	if spec.Check == "" {
+	kind := j.Kind
+	if j.Kind == "judgement" {
 		kind = "judgement, no command could decide it: " + spec.ReasonNoCheck
 	}
 	a.appendEvent(sess.ID, Entry{EventKind: "job_created", JobID: j.ID,
@@ -442,6 +486,7 @@ func (a *App) scheduleTool(ctx context.Context, tc *ToolCtx, args json.RawMessag
 		if in.OnConditionMet != "" {
 			j.OnConditionMet = in.OnConditionMet
 		}
+		j.Kind = jobKind(j)
 		if err := a.store.PutJob(j); err != nil {
 			return nil, err
 		}

@@ -284,6 +284,7 @@ func scanJobs(rows *sql.Rows) ([]*Job, error) {
 		j.ExpiresAt, _ = time.Parse(time.RFC3339, exp)
 		j.NextRunAt, _ = time.Parse(time.RFC3339, next)
 		j.CreatedAt, _ = time.Parse(time.RFC3339, created)
+		j.Kind = jobKind(&j)
 		out = append(out, &j)
 	}
 	return out, rows.Err()

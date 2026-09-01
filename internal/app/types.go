@@ -104,6 +104,9 @@ type Job struct {
 	NextRunAt      time.Time `json:"next_run_at"`
 	LastStatus     string    `json:"last_status"`
 	CreatedAt      time.Time `json:"created_at"`
+
+	// Derived from check and schedule, not persisted as a column.
+	Kind string `json:"kind"` // check | due | judgement
 }
 
 type DeadLetter struct {

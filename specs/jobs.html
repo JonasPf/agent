@@ -33,6 +33,7 @@ context is already present without being restated.</p>
 <tr><td><code>session_id</code></td><td>The conversation this job runs in. Required.</td></tr>
 <tr><td><code>schedule</code></td><td>An interval, a cron expression, or a single absolute time.</td></tr>
 <tr><td><code>check</code></td><td>Optional. A shell command. Exit status zero means the condition is met.</td></tr>
+<tr><td><code>kind</code></td><td>Derived, not stored. <code>check</code>, <code>due</code>, or <code>judgement</code>.</td></tr>
 <tr><td><code>prompt</code></td><td>What the agent is asked when the job runs.</td></tr>
 <tr><td><code>expires_at</code></td><td>When the job stops. Required. Defaults to 24 hours after creation.</td></tr>
 <tr><td><code>on_condition_met</code></td><td><code>delete</code> or <code>continue</code>.</td></tr>
@@ -44,26 +45,97 @@ context is already present without being restated.</p>
 flowchart TB
   A["Tick due"] --> B{"Session busy?"}
   B -->|yes| Z["Wait for next idle tick"]
-  B -->|no| C{"Has check?"}
-  C -->|yes| D["Run check<br/>(no model)"]
-  D --> E{"Exit zero?"}
-  E -->|no| F["Write event entry<br/>zero tokens"]
-  E -->|yes| G["Run prompt as a turn"]
-  C -->|no| G
-  G --> N{"Called notify?"}
-  N -->|no| F2["Event entry<br/>status: not_fired"]
+  B -->|no| K{"Kind"}
+  K -->|due| G["Run prompt as a turn"]
+  K -->|check| D["Run check<br/>(no model)"]
+  K -->|judgement| P["Run prompt as a turn<br/>(buffered)"]
+  D --> E{"Check outcome"}
+  E -->|non-zero| F["Event entry<br/>not_fired, zero tokens"]
+  E -->|timed out, or could not run| X["Job failure<br/>backoff, then dead letter"]
+  E -->|zero| G
+  P --> N{"Called notify?"}
+  N -->|no| F
   N -->|yes| M["Message, attributed"]
-  M --> H{"on_condition_met"}
+  G --> H{"on_condition_met"}
+  M --> H
   H -->|delete| I["Delete job"]
   H -->|continue| J["Schedule next tick"]
 </div>
 
-<p>A job with a check costs nothing until it fires. A job without one calls the model on every tick,
-because deciding whether the condition holds is itself a judgement.</p>
+<h2>Three kinds</h2>
+
+<p>What a job costs, and what it means for it to fire, both follow from how it decides. There are
+three ways, and the first question about any request is which one it is.</p>
+
+<table>
+<tr><th>Kind</th><th>Decided by</th><th>Cost per tick</th><th>Fires when</th></tr>
+<tr><td><code>check</code></td><td>A shell command</td><td>One command, no model</td><td>The command exits zero</td></tr>
+<tr><td><code>due</code></td><td>Nothing</td><td>Nothing until it comes due</td><td>Its instant arrives</td></tr>
+<tr><td><code>judgement</code></td><td>The model</td><td>One model call</td><td>The model calls notify</td></tr>
+</table>
+
+<p>A job with a check costs nothing until it fires. A repeating job without one calls the model on
+every tick, because deciding whether the condition holds is itself a judgement.</p>
 
 <div class="note">
 <strong>Most conditions are not judgements.</strong> "Has the deploy finished" is an exit code. Only
 questions like "has this review turned hostile" need the model on every tick.
+</div>
+
+<h3>Due jobs are reminders</h3>
+
+<p>"Remind me in five minutes" names no condition. Nothing is being watched; the schedule is the
+entire request. A job whose schedule is a single instant and which carries no check is a
+<em>due</em> job: it comes due once, fires, and is done.</p>
+
+<div class="note">
+<strong>Why this is its own kind.</strong> Without it, every request has to be bent into a condition,
+and a request that has none gets a fabricated one — a check that sleeps until the time arrives.
+That check is tested repeatedly, is killed at its timeout, and reads as a condition that is never
+met, so the reminder never arrives. The vocabulary has to admit that some requests are about the
+clock and nothing else.
+</div>
+
+<p>Because a due job has no condition, neither of the constraints that govern check-less jobs applies
+to it. The fifteen-minute floor exists to bound the cost of repeated model calls, and a due job makes
+one call, once. <code>reason_no_check</code> exists to record why a command could not decide a
+condition, and there is no condition to decide.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A job with no check whose schedule is a single instant is accepted without <code>reason_no_check</code> and regardless of how soon it falls.</li>
+<li>A due job fires on the run in which it comes due, whether or not the model calls notify.</li>
+<li>A repeating job with no check is still rejected below a fifteen-minute interval, and still requires <code>reason_no_check</code>.</li>
+<li>The interface distinguishes the three kinds, and marks only judgement jobs with their per-tick cost.</li>
+</ul>
+</div>
+
+<h3>What a check may do</h3>
+
+<p>A check is a question asked over and over, so it has to answer the moment it is asked. It runs with
+a sixty second timeout and is killed at it. A check that sleeps, polls, or waits for anything is a
+mistake in the job, not a condition that happens to be false.</p>
+
+<p>So the two outcomes are kept apart. A non-zero exit is an answer: the condition does not hold, the
+tick costs nothing, and the job waits for the next one. A check that times out or cannot be run at
+all has decided nothing, and is a job failure — it backs off, and after three it becomes a dead
+letter. A check that never decides anything must be visible, not quiet.</p>
+
+<div class="note">
+<strong>Killing the shell is not enough.</strong> A check that spawns a child leaves that child
+holding the output pipe, and reading the check's output waits for every writer to close it. The
+timeout has to bound the wait for output too, or a check that spawns a sleeping child outlives the
+deadline meant to stop it.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A check is killed at sixty seconds, including one that has spawned a child holding its output pipe.</li>
+<li>A check that times out, or that cannot be run, is a job failure and not a condition that is unmet.</li>
+<li>A check that exits non-zero is a condition that is unmet, and costs no model tokens.</li>
+</ul>
 </div>
 
 <p>A job runs on its session's model, in its session's context, like any other turn. Nothing about a job
@@ -96,8 +168,8 @@ check first and to fall back to judgement only when no command could decide the 
 
 <h2>Firing</h2>
 
-<p>A job with a check fires when its command exits zero. A job without one fires when the model calls the
-notify tool during its run.</p>
+<p>A job with a check fires when its command exits zero. A due job fires by arriving. A judgement job
+fires when the model calls the notify tool during its run.</p>
 
 <p>Calling notify is therefore the condition, the notification, and the record, all at once. A run that
 does not call it produces no message: the turn is written as an event entry with status

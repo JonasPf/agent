@@ -54,16 +54,17 @@ func (a *App) registerBuiltins() {
 	b("web_search", "Search the web and return result titles, URLs, and snippets.",
 		obj(map[string]any{"query": str("Search query.")}, "query"), a.webSearchTool)
 
-	b("schedule", "Create, list, edit, or delete jobs attached to a session.",
+	b("schedule", "Create, list, edit, or delete jobs attached to a session. A job fires in one of three ways: "+
+		"a check command decides it, the model decides it on every tick, or nothing decides it and it simply comes due.",
 		obj(map[string]any{
 			"action":           map[string]any{"type": "string", "enum": []string{"create", "list", "edit", "delete"}},
 			"id":               str("Job id, for edit and delete."),
-			"schedule":         str("An interval (2m), a cron expression (0 9 * * *), or an RFC 3339 instant."),
-			"check":            str("Shell command whose exit status zero means the condition is met. Prefer this."),
+			"schedule":         str("An interval (2m), a cron expression (0 9 * * *), or an RFC 3339 instant. A single instant with no check is a reminder: it comes due once and fires."),
+			"check":            str("Shell command whose exit status zero means the condition is met. Prefer this for anything a command can decide. It is tested repeatedly and must answer at once: never sleep, poll, or wait inside it. Omit it entirely when the request names a time rather than a condition."),
 			"prompt":           str("What to ask the agent when the job runs."),
 			"expires_at":       str("RFC 3339. Defaults to 24 hours out."),
 			"on_condition_met": map[string]any{"type": "string", "enum": []string{"delete", "continue"}},
-			"reason_no_check":  str("Required when creating a job without a check: why no command could decide the condition."),
+			"reason_no_check":  str("Required for a repeating job without a check: why no command could decide the condition. Not needed for a reminder scheduled at a single instant."),
 		}, "action"), a.scheduleTool)
 
 	b("memory", "Write, revise, or remove durable memory.",
