@@ -135,6 +135,13 @@ func (a *App) LiveSession(id string) *Session {
 	return s
 }
 
+// firstLine keeps a title to one short line whatever the model returns.
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	line = strings.Trim(strings.TrimSpace(line), "\"`#*")
+	return truncate(line, 60)
+}
+
 func (a *App) append(sessionID string, e Entry) Entry {
 	out, err := a.store.Append(sessionID, e)
 	if err != nil {
@@ -246,10 +253,9 @@ func (a *App) titleIfNeeded(ctx context.Context, s *Session, firstUserText strin
 	res, err := a.or.Chat(ctx, ChatRequest{Model: s.Model, Messages: []ChatMessage{
 		{Role: "user", Content: "Title this conversation in at most six words. Reply with the title alone, no quotes.\n\n" + truncate(firstUserText, 1000)},
 	}}, nil)
-	if err != nil || strings.TrimSpace(res.Text) == "" {
-		s.Title = truncate(firstUserText, 40)
-	} else {
-		s.Title = strings.Trim(strings.TrimSpace(res.Text), `"`)
+	s.Title = firstLine(res.Text)
+	if err != nil || s.Title == "" {
+		s.Title = firstLine(firstUserText)
 	}
 	s.Cost += res.Usage.Cost
 	_ = a.store.PutSession(s)
