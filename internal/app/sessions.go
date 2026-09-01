@@ -51,17 +51,18 @@ func (a *App) Fork(pred *Session, archive bool, why string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	carried := carryOver(a.store.Entries(pred.ID), pred.CarryOverTokens)
+	a.append(succ.ID, Entry{Type: "event", EventKind: "carried_over", CarriedFrom: pred.ID,
+		Text: fmt.Sprintf("seeded from %s (%s): summary and %d carried messages", pred.ID, why, len(carried))})
 	if pred.Summary != "" {
 		a.append(succ.ID, Entry{Type: "message", Role: "user", CarriedFrom: pred.ID,
 			Text: "[summary of " + pred.ID + "]\n" + pred.Summary})
 	}
-	for _, e := range carryOver(a.store.Entries(pred.ID), pred.CarryOverTokens) {
+	for _, e := range carried {
 		e.CarriedFrom = pred.ID
 		e.Usage = nil
 		a.append(succ.ID, e)
 	}
-	a.append(succ.ID, Entry{Type: "event", EventKind: "carried_over", CarriedFrom: pred.ID,
-		Text: fmt.Sprintf("seeded from %s (%s)", pred.ID, why)})
 
 	pred.ContinuedBy = succ.ID
 	if archive {
