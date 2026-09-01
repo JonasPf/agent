@@ -115,7 +115,7 @@ skill that describes this convention. It is not a special mechanism.</p>
 <ul>
 <li>A request for a capability that does not exist results in a tool being written, loaded, and used in the same conversation.</li>
 <li>A newly created tool appears in the interface, marked as new, with its manifest readable.</li>
-<li>A disabled tool returns an error result naming the session it is disabled in, rather than being absent.</li>
+<li>A tool outside a session's set is absent from that session's prompt, so there is nothing to refuse.</li>
 <li>Deleting a tool removes it from the model's schema list and leaves its tables intact.</li>
 </ul>
 </div>

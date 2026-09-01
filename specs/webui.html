@@ -47,7 +47,7 @@ than optional: on iOS, notifications are only delivered to installed web apps.</
 <tr><th>Element</th><th>Shows</th></tr>
 <tr><td>Prompt entry</td><td>First entry of the transcript. Persona, memory, skills index, and full tool definitions, each collapsible with a token count. Memory is editable.</td></tr>
 <tr><td>Messages</td><td>User and assistant turns, tool calls with their results.</td></tr>
-<tr><td>Events</td><td>Job checks, summary updates, rotations, availability changes — one line each, visually quieter than messages.</td></tr>
+<tr><td>Events</td><td>Job checks, summary updates, rotations, dead letters — one line each, visually quieter than messages.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
 <tr><td>Status line</td><td>Model, context used against the window, tokens per second while streaming, session cost.</td></tr>
 </table>
@@ -76,7 +76,7 @@ than optional: on iOS, notifications are only delivered to installed web apps.</
 <li>A session can be created, renamed, archived, and deleted.</li>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>The list shows which sessions have jobs attached.</li>
-<li>A session can be forked, or resumed into a new session, in one action.</li>
+<li>A session can be forked, or rotated into a new session, in one action.</li>
 <li>A session seeded from another links back to it, and the predecessor links forward.</li>
 <li>Opening a link to an archived session lands on the live session of its chain and says so.</li>
 <li>The rolling summary is viewable and editable from the session.</li>
@@ -89,7 +89,8 @@ than optional: on iOS, notifications are only delivered to installed web apps.</
 <h4>Acceptance criteria</h4>
 <ul>
 <li>The model can be changed for a session, choosing from models that support tool calling.</li>
-<li>Each tool and skill can be enabled or disabled for the session individually, at any time.</li>
+<li>The controls screen shows the session's fixed configuration, and offers a new one that takes effect by rotating.</li>
+<li>Starting a conversation offers the same choice of model, tools, and skills, prefilled from the most recent session.</li>
 <li>Toggling is available both when creating a session and while one is in progress.</li>
 <li>A new session opens with the previous session's set, changeable before the first message.</li>
 <li>Enable-all and disable-all act on the whole list in one tap.</li>

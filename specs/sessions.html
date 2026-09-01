@@ -31,12 +31,12 @@ private one of its own, so a session is always something a person started and ca
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste.</td></tr>
 <tr><td><code>title</code></td><td>Generated from the first user message. Editable.</td></tr>
-<tr><td><code>model</code></td><td>Current model. Changeable mid-session.</td></tr>
+<tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life.</td></tr>
 <tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>.</td></tr>
 <tr><td><code>continued_from</code></td><td>The session this one was seeded from, if any.</td></tr>
 <tr><td><code>continued_by</code></td><td>The session that succeeded this one, if any.</td></tr>
-<tr><td><code>enabled_tools</code></td><td>Tool names available in this session. Absent means all.</td></tr>
-<tr><td><code>enabled_skills</code></td><td>Skill names offered in this session. Absent means all.</td></tr>
+<tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
+<tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
 </table>
 
 <div class="ac">
@@ -44,8 +44,8 @@ private one of its own, so a session is always something a person started and ca
 <ul>
 <li>Every session appears in the session list; none are hidden by kind or origin.</li>
 <li>A session receives a title within one turn of its first user message.</li>
-<li>Changing the model mid-session does not truncate or rewrite the transcript.</li>
-<li>Disabling a tool in one session does not affect any other session.</li>
+<li>A session's model, tools, and skills cannot be changed after it is created.</li>
+<li>The configuration of one session does not affect any other.</li>
 <li>The system prompt as sent is retrievable for any session.</li>
 </ul>
 </div>
@@ -68,14 +68,14 @@ shows exactly what it was told, including every tool definition it can see.</p>
 <p>The entry is a record of what was sent, so it is not sent again and costs nothing. Sections are
 collapsed by default, because tool definitions are long and are usually not what you came to read.</p>
 
-<h3>When the prompt changes</h3>
+<h3>The prompt does not change</h3>
 
-<p>Entries are never rewritten, so a mid-session change does not edit position zero. Toggling a tool,
-toggling a skill, changing the model, or writing a memory each writes its own entry at the point it
-happened, naming what changed.</p>
+<p>Position zero is not a snapshot that later drifts. It is the prompt, for the whole life of the
+session. Nothing that shapes behaviour can move underneath a conversation, because everything that
+shapes it is chosen before the conversation starts.</p>
 
-<p>The conversation therefore carries the prompt's whole history in order: what it started as, and every
-change since, each where it occurred.</p>
+<p>Writing a memory is the one thing that changes what a <em>later</em> session is told, and it takes
+effect there rather than here: the entry records it, and the next session's prompt carries it.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -85,45 +85,61 @@ change since, each where it occurred.</p>
 <li>Each section shows its token count, and the entry shows the total.</li>
 <li>The memory section is editable in place; no other section is.</li>
 <li>The prompt entry is not sent to the model.</li>
-<li>Every change to the prompt after session start writes its own entry naming what changed.</li>
+<li>The prompt a session is sent is identical on its first turn and its last.</li>
 </ul>
 </div>
 
-<h2>Availability</h2>
+<h2>Configuration</h2>
 
-<p>Which tools and skills a session may use is session state, changeable at any time, and changing it
-costs nothing.</p>
+<p>A session's model, its tools, and its skills are one thing: the configuration. It is chosen when the
+session is created and fixed for the session's life.</p>
 
-<p>That is possible because the prompt does not carry the enabled set. <strong>Every tool definition and
-every skill description is always in the prompt</strong>, for every session. What changes is whether a
-call is allowed:</p>
-
-<ol>
-<li>Toggling appends an entry at the end of the transcript naming the current set.</li>
-<li>A call to a tool that is not enabled returns an error result saying so.</li>
-<li>Reading a skill that is not enabled returns the same.</li>
-</ol>
-
-<p>The prompt is therefore fixed for the life of a session and its cached prefix is never invalidated.
-The appended entry sits after everything cached, so it costs a handful of tokens. The model is told
-what it may use, and if it tries anyway it is refused and can react.</p>
+<p>So the prompt carries exactly what the session can use. The tool definitions in position zero are the
+tools that are callable; the skills index lists the skills that can be read. There is no second,
+smaller set hiding behind a larger one.</p>
 
 <div class="note">
-<strong>The general rule.</strong> The system prompt is fixed at session start; everything that changes
-afterwards is appended. A tool the agent writes mid-session becomes callable the same way — its
-definition is appended as an entry, and moves into the prompt at the next session.
+<strong>Changing it is continuing.</strong> To run on a different model, or with a different set of
+tools, you rotate: the conversation continues in a new session under the new configuration, carrying
+its summary and recent turns across. There is no other way to change it, and no need for one.
 </div>
 
-<p>A new session inherits the set from the most recent one, so the common case needs no interaction.</p>
+<h3>Why fixed</h3>
+
+<p>The alternative is to make configuration mutable and pay for it somewhere. Rewriting the prompt on
+every change invalidates the cached prefix, worst on exactly the long conversations where a change is
+most tempting. Keeping the prompt fixed while varying what is <em>allowed</em> avoids that, but buys it
+with a permanent gap between what the prompt says and what is true: every definition present, some of
+them refusals waiting to happen, an appended entry to explain the difference, and a dispatch check to
+enforce it.</p>
+
+<p>Rotation removes the dilemma rather than picking a side. A change of configuration is a change of
+prompt, a change of prompt is a new session, and a new session is a thing the system already does well:
+the summary and the recent turns come across, the jobs come across, and the cached prefix of the old
+session was never invalidated because it was never touched.</p>
+
+<p>What that removes, concretely: the enabled set no longer diverges from the prompt, no entry has to
+announce a change mid-conversation, no call has to be refused for being disabled, a skill outside the
+session's set is simply not a skill it has, and a job that runs days later runs under the same
+configuration it was created under.</p>
+
+<div class="note">
+<strong>What is still mutable.</strong> Title, muted, status, and the rolling summary. None of them
+appear in the prompt, so none of them can invalidate it.
+</div>
+
+<p>A new session inherits the configuration of the most recently used one, so the common case needs no
+interaction: the choice is there when it is wanted and absent when it is not.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Enabling or disabling a tool or skill mid-session does not invalidate the session's cached prefix.</li>
-<li>A change appends an entry naming the resulting set, and takes effect on the next turn.</li>
-<li>Calling a disabled tool returns an error result rather than failing the turn.</li>
-<li>A new session starts with the enabled set of the most recently used session.</li>
-<li>The prompt entry lists every tool and marks which are enabled.</li>
+<li>The prompt defines exactly the session's enabled tools, and indexes exactly its enabled skills.</li>
+<li>A request to change a session's model, tools, or skills is refused, and names rotation as the way.</li>
+<li>Rotating accepts a configuration; anything not given is inherited from the predecessor.</li>
+<li>A rotation that changes the configuration names what changed, in both sessions' transcripts.</li>
+<li>A new session inherits the configuration of the most recently used session.</li>
+<li>Nothing that can be changed mid-session appears in the system prompt.</li>
 </ul>
 </div>
 
@@ -135,7 +151,7 @@ and affordable.</p>
 <table>
 <tr><th>Type</th><th>Written by</th><th>Shown to user</th><th>Sent to model</th></tr>
 <tr><td><code>message</code></td><td>user, assistant, tool result</td><td>yes</td><td>yes</td></tr>
-<tr><td><code>event</code></td><td>system: job checks, summary updates, rotations, availability changes, model changes</td><td>yes</td><td>no</td></tr>
+<tr><td><code>event</code></td><td>system: job checks, summary updates, rotations, dead letters</td><td>yes</td><td>no</td></tr>
 </table>
 
 <p>An event costs nothing. A job that checks a condition every two minutes writes seven hundred events

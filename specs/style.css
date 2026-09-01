@@ -55,6 +55,8 @@ th { font-weight: 600; color: var(--muted); font-size: 13px; text-transform: upp
 .adr h3 { margin-top: 16px; }
 .adr .meta { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .adr h4 { margin: 14px 0 2px; font-size: 13px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+.adr.superseded { opacity: .72; border-style: dashed; }
+.adr.superseded h3 { text-decoration: line-through; text-decoration-thickness: 1px; }
 .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line);
   color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 footer { border-top: 1px solid var(--line); margin-top: 60px; padding-top: 16px; color: var(--muted); font-size: 13px; }

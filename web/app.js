@@ -108,6 +108,7 @@ function render() {
     case 'skills': return viewSkills(v);
     case 'search': return viewSearch(v);
     case 'settings': return viewSettings(v);
+    case 'new': return viewNew(v);
     case 'toolpanel': return viewToolPanel(v);
     default: return viewSessions(v);
   }
@@ -119,7 +120,7 @@ async function viewSessions(v) {
   setHeader('agent', false);
   const bar = el('div');
   const nw = el('button', 'act primary', '+ new conversation');
-  nw.onclick = async () => { const s = await post('/sessions', {}); location.hash = '#session/' + s.id; };
+  nw.onclick = () => location.hash = '#new';
   const search = el('button', 'act', 'search');
   search.onclick = () => location.hash = '#search';
   bar.append(nw, search);
@@ -175,7 +176,7 @@ async function viewSession(v) {
     mk('controls', () => location.hash = '#settings/' + state.session.id),
     mk('jobs', () => location.hash = '#jobs/' + state.session.id),
     mk('summary', showSummary),
-    mk('fork', async () => { const s = await post('/sessions/' + state.session.id + '/fork', { archive: false }); location.hash = '#session/' + s.id; }),
+    mk('fork', async () => { const s = await post('/sessions/' + state.session.id + '/rotate', { archive: false }); location.hash = '#session/' + s.id; }),
     mk(state.session.muted ? 'unmute' : 'mute', async () => { await patch('/sessions/' + state.session.id, { muted: !state.session.muted }); render(); })
   );
   v.append(controls);
@@ -358,7 +359,79 @@ async function showSummary() {
   v.append(ta, save);
 }
 
-// ---------- per-session controls ----------
+// ---------- session configuration ----------
+
+const describeSet = (set, noun) => set == null ? 'all ' + noun : (set.length ? set.length + ' ' + noun : 'no ' + noun);
+
+// configEditor renders a configuration and returns a reader for it. It does not
+// save anything: a configuration only ever takes effect by starting a session,
+// because model, tools, and skills are fixed for a session's life.
+async function configEditor(v, current) {
+  const cfg = {
+    model: current.model || null,
+    enabled_tools: current.enabled_tools == null ? null : current.enabled_tools.slice(),
+    enabled_skills: current.enabled_skills == null ? null : current.enabled_skills.slice(),
+  };
+
+  v.append(el('h2', null, 'model'));
+  const sel = el('select', 'text');
+  const models = state.models.length ? state.models : (state.models = await api('/models').catch(() => []));
+  const opts = models.length ? models : [{ id: cfg.model || '' }];
+  for (const m of opts) {
+    const o = el('option', null, `${m.id}${m.context_length ? '  \u00b7 ' + Math.round(m.context_length / 1000) + 'k' : ''}`);
+    o.value = m.id;
+    if (m.id === cfg.model) o.selected = true;
+    sel.append(o);
+  }
+  if (!cfg.model) cfg.model = sel.value;
+  sel.onchange = () => { cfg.model = sel.value; };
+  v.append(sel);
+
+  const picker = async (label, path, key) => {
+    const data = await api(path);
+    const names = (data.tools || data.skills).map(x => x.name);
+    v.append(el('h2', null, label));
+    const wrap = el('div');
+    const draw = () => {
+      wrap.innerHTML = '';
+      for (const n of names) {
+        const on = cfg[key] === null || cfg[key].includes(n);
+        const p = el('button', 'pill' + (on ? ' on' : ''), n);
+        p.onclick = () => {
+          const cur = cfg[key] === null ? names.slice() : cfg[key].slice();
+          cfg[key] = on ? cur.filter(x => x !== n) : cur.concat(n);
+          if (cfg[key].length === names.length) cfg[key] = null;
+          draw();
+        };
+        wrap.append(p);
+      }
+    };
+    const bar = el('div');
+    const all = el('button', 'act', 'all');
+    const none = el('button', 'act', 'none');
+    all.onclick = () => { cfg[key] = null; draw(); };
+    none.onclick = () => { cfg[key] = []; draw(); };
+    bar.append(all, none);
+    v.append(bar, wrap);
+    draw();
+  };
+  await picker('tools', '/tools', 'enabled_tools');
+  await picker('skills', '/skills', 'enabled_skills');
+
+  return () => cfg;
+}
+
+async function viewNew(v) {
+  setHeader('New conversation', true);
+  const recent = state.sessions[0] || (await api('/sessions').catch(() => []) || [])[0] || {};
+  const read = await configEditor(v, recent);
+  const start = el('button', 'act primary', 'start conversation');
+  start.onclick = async () => {
+    const s = await post('/sessions', read());
+    location.hash = '#session/' + s.id;
+  };
+  v.append(el('h2', null, ''), start);
+}
 
 async function viewSettings(v) {
   const id = state.arg;
@@ -366,45 +439,17 @@ async function viewSettings(v) {
   const s = res.session;
   setHeader('Controls', true);
 
-  v.append(el('h2', null, 'model'));
-  const sel = el('select', 'text');
-  const models = state.models.length ? state.models : (state.models = await api('/models').catch(() => []));
-  const opts = models.length ? models : [{ id: s.model, name: s.model }];
-  for (const m of opts) {
-    const o = el('option', null, `${m.id}${m.context_length ? '  · ' + Math.round(m.context_length / 1000) + 'k' : ''}`);
-    o.value = m.id;
-    if (m.id === s.model) o.selected = true;
-    sel.append(o);
-  }
-  sel.onchange = async () => { await patch('/sessions/' + id, { model: sel.value }); toast({ title: 'Model changed', body: sel.value }); };
-  v.append(sel);
+  v.append(el('p', 'note', `This conversation runs on ${s.model} with ${describeSet(s.enabled_tools, 'tools')} ` +
+    `and ${describeSet(s.enabled_skills, 'skills')}, fixed for its life. Changing any of it continues ` +
+    `the conversation in a new session, carrying the summary and recent turns across.`));
 
-  const toggles = async (label, path, current, setter) => {
-    const data = await api(path + '?session_id=' + id);
-    const items = data.tools || data.skills;
-    v.append(el('h2', null, label));
-    const bar = el('div');
-    const all = el('button', 'act', 'enable all');
-    const none = el('button', 'act', 'disable all');
-    all.onclick = async () => { await setter(null); render(); };
-    none.onclick = async () => { await setter([]); render(); };
-    bar.append(all, none);
-    v.append(bar);
-    const wrap = el('div');
-    for (const it of items) {
-      const p = el('button', 'pill' + (it.enabled ? ' on' : ''), it.name);
-      p.onclick = async () => {
-        const enabled = items.filter(x => x.enabled).map(x => x.name);
-        const next = it.enabled ? enabled.filter(n => n !== it.name) : enabled.concat(it.name);
-        await setter(next);
-        render();
-      };
-      wrap.append(p);
-    }
-    v.append(wrap);
+  const read = await configEditor(v, s);
+  const go = el('button', 'act primary', 'continue in a new session');
+  go.onclick = async () => {
+    const succ = await post('/sessions/' + id + '/rotate', Object.assign({ archive: true }, read()));
+    location.hash = '#session/' + succ.id;
   };
-  await toggles('tools', '/tools', s.enabled_tools, val => patch('/sessions/' + id, { enabled_tools: val }));
-  await toggles('skills', '/skills', s.enabled_skills, val => patch('/sessions/' + id, { enabled_skills: val }));
+  v.append(el('h2', null, ''), go);
 
   v.append(el('h2', null, 'danger'));
   const d = el('button', 'act', 'delete conversation');

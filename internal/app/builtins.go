@@ -310,12 +310,11 @@ func (a *App) skillReadTool(ctx context.Context, tc *ToolCtx, args json.RawMessa
 	if err := decode(args, &in); err != nil {
 		return nil, err
 	}
+	// The index in the prompt lists exactly the session's skills, so one outside
+	// it is not a refusal, it simply is not there.
 	sess := a.store.Session(tc.SessionID)
-	if sess != nil && !sess.skillEnabled(in.Name) {
-		return nil, fmt.Errorf("skill %q is disabled in session %s", in.Name, tc.SessionID)
-	}
 	sk := a.skills.Get(in.Name)
-	if sk == nil {
+	if sk == nil || (sess != nil && !sess.skillEnabled(in.Name)) {
 		return nil, fmt.Errorf("no skill named %q", in.Name)
 	}
 	return sk.Body, nil

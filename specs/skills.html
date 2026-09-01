@@ -47,7 +47,7 @@ rather than twenty documents' worth.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The system prompt lists every enabled skill's name and description and no skill's body.</li>
+<li>The system prompt lists the name and description of every skill enabled for the session, and no skill's body.</li>
 <li>A skill's description is a single line.</li>
 <li>Reading a skill is a tool call visible in the transcript.</li>
 <li>Adding a skill requires no restart.</li>
@@ -69,7 +69,7 @@ built as a tool, it should be.</p>
 <ul>
 <li>The agent can create, edit, and delete skills.</li>
 <li>Every skill is readable and editable in the interface.</li>
-<li>Reading a disabled skill returns an error result; the skill stays listed in the prompt.</li>
+<li>A skill outside a session's set is absent from its index, and reading it by name reports no such skill.</li>
 <li>Skills are stored as files in version control, not in the database.</li>
 </ul>
 </div>

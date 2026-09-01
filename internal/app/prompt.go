@@ -42,18 +42,25 @@ func (a *App) systemSections(sess *Session) []Section {
 	}
 
 	var skillText strings.Builder
-	skills := a.skills.All()
+	var skills []*Skill
+	for _, sk := range a.skills.All() {
+		if sess.skillEnabled(sk.Name) {
+			skills = append(skills, sk)
+		}
+	}
 	if len(skills) == 0 {
 		skillText.WriteString("(none)")
 	}
-	for _, s := range skills {
-		fmt.Fprintf(&skillText, "- %s: %s\n", s.Name, s.Description)
+	for _, sk := range skills {
+		fmt.Fprintf(&skillText, "- %s: %s\n", sk.Name, sk.Description)
 	}
 
-	schemas, _ := json.MarshalIndent(a.tools.Schemas(), "", "  ")
+	schemas, _ := json.MarshalIndent(a.tools.SchemasFor(sess), "", "  ")
 
 	platform := fmt.Sprintf(`Session %s on model %s. Workspace is %s.
 Transcript entries are append-only. Events you see in the interface are not sent to you.
+This session's model, tools, and skills are fixed for its life; they change only by
+continuing in a new session, which carries this conversation over.
 This session rotates into a successor at about %d projected tokens.`,
 		sess.ID, sess.Model, a.cfg.Workspace, sess.RotateAtTokens)
 

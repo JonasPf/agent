@@ -51,7 +51,7 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) (bool, err
 	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID, Fired: &fired}
 
 	for round := 0; round < maxToolRounds; round++ {
-		req := ChatRequest{Model: s.Model, Messages: msgs, Tools: a.tools.Schemas()}
+		req := ChatRequest{Model: s.Model, Messages: msgs, Tools: a.tools.SchemasFor(s)}
 		a.hub.Broadcast(wsEvent{Kind: "turn_start", SessionID: s.ID})
 		res, err := a.or.Chat(ctx, req, func(d string) {
 			a.hub.Broadcast(wsEvent{Kind: "delta", SessionID: s.ID, Text: d})

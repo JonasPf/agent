@@ -256,8 +256,8 @@ that is not worth a notification has no expression here, and would need a second
 is ever wanted.</p>
 </div>
 
-<div class="adr" id="adr-014">
-<div class="meta">ADR-014 · accepted</div>
+<div class="adr superseded" id="adr-014">
+<div class="meta">ADR-014 · superseded by <a href="#adr-016">ADR-016</a></div>
 <h3>Availability is enforced at dispatch, not by editing the prompt</h3>
 <h4>Context</h4>
 <p>Tools and skills should be switchable per session, including mid-session. The obvious implementation
@@ -274,6 +274,11 @@ and needs no prompt rewrite either. The costs are that the prompt always carries
 session using three tools still pays for thirty — at cached rates, and only once — and that the model
 can attempt a disabled tool and waste a call. The appended entry tells it what is available; the
 refusal catches it when it forgets.</p>
+<h4>Why it was superseded</h4>
+<p>The costs turned out to be structural rather than incidental. Keeping the prompt honest required an
+entry to announce each change, a dispatch check to refuse calls, and a permanent gap between what the
+prompt defines and what the session can do — and the gap had to be explained everywhere it surfaced.
+<a href="#adr-016">ADR-016</a> takes the requirement away instead of paying for it.</p>
 </div>
 
 <div class="adr" id="adr-015">
@@ -308,6 +313,33 @@ size predictable, which is what rotation exists to control.</p>
 cache is cheap; discarding a live conversation to avoid it would trade continuity for almost nothing.
 Context limits are the wrong trigger for the opposite reason — at a million tokens they are far beyond
 the point where every call has become expensive. The threshold is a cost decision and is configurable.</p>
+</div>
+
+<div class="adr" id="adr-016">
+<div class="meta">ADR-016 · accepted</div>
+<h3>A session's configuration is fixed; rotation is how it changes</h3>
+<h4>Context</h4>
+<p><a href="#adr-014">ADR-014</a> made tools and skills switchable mid-session by always defining every
+one of them in the prompt and refusing calls to the rest. It worked, and it left the prompt permanently
+out of step with the session: definitions present for tools that cannot be called, an appended entry to
+say which, a dispatch check to enforce it, a distinct error for a skill that exists but is off, and a
+job created on Monday able to run on Wednesday under different rules. The model was, separately, the
+one setting that <em>did</em> rewrite session state mid-conversation, with its own entry kind.</p>
+<h4>Decision</h4>
+<p>Treat model, tools, and skills as one immutable configuration chosen at session creation. The prompt
+defines exactly the enabled tools and indexes exactly the enabled skills. Changing any of it is a
+rotation: the conversation continues in a new session under the new configuration, carrying its
+summary, recent turns, and jobs across. Rotation, fork, resume, and reconfiguration become one
+operation.</p>
+<h4>Consequences</h4>
+<p>Five special cases disappear: the availability entry, the model-change entry, the dispatch refusal,
+the disabled-skill error, and the divergence between the prompt and the session. The prompt a session
+is sent on its last turn is the prompt it was sent on its first, so position zero is a description
+rather than a snapshot. Caching is unaffected, because a changed configuration was always going to be a
+changed prefix and now it is honestly a different session. The cost is that changing one setting starts
+a new conversation, which is heavier than a toggle — the carry-over makes it cheap, but it is not free,
+and it is deliberately the same weight as any other rotation. A session that wants twelve tools still
+defines twelve; one that wants three now defines three, and pays for three.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

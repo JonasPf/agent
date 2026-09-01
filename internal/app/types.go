@@ -46,14 +46,23 @@ type Section struct {
 	Editable bool   `json:"editable"`
 }
 
+// SessionConfig is everything about a session that shapes its system prompt: the
+// model that reads it, the tools defined in it, the skills indexed in it. It is
+// chosen when the session is created and fixed for the session's life. Changing
+// any of it means rotating into a successor that carries the conversation over.
+type SessionConfig struct {
+	Model         string   `json:"model"`
+	EnabledTools  []string `json:"enabled_tools"`  // nil means every tool
+	EnabledSkills []string `json:"enabled_skills"` // nil means every skill
+}
+
 // Session metadata. Stored as meta.json beside the transcript, so SQLite is derived.
+// The config is embedded, so it flattens into the same JSON object it always was.
 type Session struct {
-	ID              string     `json:"id"`
-	Title           string     `json:"title"`
-	Model           string     `json:"model"`
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	SessionConfig
 	Status          string     `json:"status"` // active | archived
-	EnabledTools    []string   `json:"enabled_tools"`
-	EnabledSkills   []string   `json:"enabled_skills"`
 	Muted           bool       `json:"muted"`
 	Unread          int        `json:"unread"`
 	Summary         string     `json:"summary"`
@@ -78,6 +87,24 @@ type Session struct {
 
 func (s *Session) toolEnabled(name string) bool  { return inSet(s.EnabledTools, name) }
 func (s *Session) skillEnabled(name string) bool { return inSet(s.EnabledSkills, name) }
+
+// sameAs reports whether two configurations would produce the same prompt.
+func (c SessionConfig) sameAs(o SessionConfig) bool {
+	return c.Model == o.Model && sameSet(c.EnabledTools, o.EnabledTools) &&
+		sameSet(c.EnabledSkills, o.EnabledSkills)
+}
+
+func sameSet(a, b []string) bool {
+	if (a == nil) != (b == nil) || len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
 
 func inSet(set []string, name string) bool {
 	if set == nil {

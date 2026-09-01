@@ -190,10 +190,16 @@ func (r *Registry) applySchema(t *Tool) error {
 	return nil
 }
 
-// Schemas returns every tool definition, exactly as the model receives them.
-func (r *Registry) Schemas() []ToolSchema {
+// SchemasFor returns the tool definitions a session may use, exactly as the
+// model receives them. A session's enabled set is fixed for its life, so the
+// prompt can carry precisely the callable tools and nothing else needs to
+// enforce availability.
+func (r *Registry) SchemasFor(sess *Session) []ToolSchema {
 	out := []ToolSchema{}
 	for _, t := range r.All() {
+		if sess != nil && !sess.toolEnabled(t.Name) {
+			continue
+		}
 		out = append(out, ToolSchema{Type: "function", Function: ToolSchemaFn{
 			Name: t.Name, Description: t.Description, Parameters: t.Parameters}})
 	}
@@ -217,10 +223,6 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	t := r.Get(name)
 	if t == nil {
 		return errResult("no tool named %q", name)
-	}
-	sess := tc.App.store.Session(tc.SessionID)
-	if sess != nil && !sess.toolEnabled(name) {
-		return errResult("tool %q is disabled in session %s", name, tc.SessionID)
 	}
 	if t.Builtin {
 		out, err := t.run(ctx, tc, args)

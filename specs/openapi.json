@@ -82,7 +82,7 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Create a session.",
+        "summary": "Create a session with its configuration.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -93,11 +93,26 @@
                     "type": "string"
                   },
                   "model": {
-                    "type": "string"
-                  },
-                  "continued_from": {
                     "type": "string",
-                    "description": "Seed the new session with that session's summary. Used for fork and resume; rotation does the same automatically."
+                    "description": "Omitted, it is inherited from the seed session, then from the most recently used one, then from the configured default."
+                  },
+                  "enabled_tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Tool names this session may use. Omitted, it is inherited. Null means every tool."
+                  },
+                  "enabled_skills": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Skill names this session is offered. Omitted, it is inherited. Null means every skill."
+                  },
+                  "from": {
+                    "type": "string",
+                    "description": "Seed the new session's configuration from that session."
                   }
                 }
               }
@@ -115,7 +130,8 @@
               }
             }
           }
-        }
+        },
+        "description": "A session's model, tools, and skills are fixed once it exists. They are chosen here, or inherited, and afterwards change only by rotating."
       }
     },
     "/sessions/{id}": {
@@ -150,7 +166,7 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Update title, model, status, or enabled tools and skills.",
+        "summary": "Update title, status, muted, or the rolling summary.",
         "requestBody": {
           "required": true,
           "content": {
@@ -161,9 +177,6 @@
                   "title": {
                     "type": "string"
                   },
-                  "model": {
-                    "type": "string"
-                  },
                   "status": {
                     "type": "string",
                     "enum": [
@@ -171,25 +184,8 @@
                       "archived"
                     ]
                   },
-                  "enabled_tools": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "enabled_skills": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
                   "muted": {
                     "type": "boolean"
-                  },
-                  "force": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Disable a tool even though a job depends on it."
                   },
                   "summary": {
                     "type": "string",
@@ -212,7 +208,7 @@
             }
           },
           "409": {
-            "description": "Refused: a job in this session references a tool being disabled. Retry with force=true to disable anyway.",
+            "description": "Refused: the body carried model, enabled_tools, or enabled_skills. A session's configuration is fixed for its life; POST /sessions/{id}/rotate to continue the conversation under a new one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -220,20 +216,6 @@
                   "properties": {
                     "error": {
                       "type": "string"
-                    },
-                    "blocking_jobs": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "tool": {
-                            "type": "string"
-                          }
-                        }
-                      }
                     }
                   }
                 }
@@ -241,7 +223,7 @@
             }
           }
         },
-        "description": "Changing enabled_tools or enabled_skills does not alter the system prompt and does not invalidate the cached prefix: every tool and skill is always present in the prompt, and availability is enforced when a call is dispatched. The change is appended to the transcript so the model sees it."
+        "description": "This endpoint changes nothing that shapes the system prompt, so it can never invalidate a cached prefix. Model, tools, and skills are not accepted here at all: they are fixed for the life of a session and move only through a rotation."
       },
       "delete": {
         "tags": [
@@ -1092,6 +1074,69 @@
             }
           }
         }
+      }
+    },
+    "/sessions/{id}/rotate": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Continue this conversation in a new session.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "archive": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Archive the predecessor and move its jobs to the successor. False leaves both live, which is a fork."
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Omitted, the predecessor's is kept."
+                  },
+                  "enabled_tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Omitted, the predecessor's set is kept."
+                  },
+                  "enabled_skills": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Omitted, the predecessor's set is kept."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The successor session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "description": "Rotation, fork, resume, and reconfiguration are one operation. The successor is seeded with the predecessor's summary and the most recent complete turns that fit the carry-over budget, and starts under the configuration given here, defaulting to the predecessor's. Both entries name what changed."
       }
     }
   },

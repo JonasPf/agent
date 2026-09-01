@@ -9,30 +9,38 @@ import (
 
 // NewSession creates a session and writes its prompt entry, which is the
 // complete system prompt as sent and is fixed for the life of the session.
-func (a *App) NewSession(model string, seed *Session) (*Session, error) {
-	if model == "" {
-		model = a.cfg.DefaultModel
-		if seed != nil {
-			model = seed.Model
+// Any part of cfg left empty falls back to the seed, then to the most recently
+// used session, then to the configured default.
+func (a *App) NewSession(cfg SessionConfig, seed *Session) (*Session, error) {
+	base := SessionConfig{Model: a.cfg.DefaultModel}
+	if seed == nil {
+		if recent := a.store.Sessions(); len(recent) > 0 {
+			seed = recent[0]
 		}
 	}
+	if seed != nil {
+		base = seed.SessionConfig
+	}
+	if cfg.Model == "" {
+		cfg.Model = base.Model
+	}
+	if cfg.EnabledTools == nil {
+		cfg.EnabledTools = base.EnabledTools
+	}
+	if cfg.EnabledSkills == nil {
+		cfg.EnabledSkills = base.EnabledSkills
+	}
+
 	now := time.Now()
 	s := &Session{
 		ID:              newID(),
 		Title:           "New session",
-		Model:           model,
+		SessionConfig:   cfg,
 		Status:          "active",
 		RotateAtTokens:  a.cfg.RotateAtTokens,
 		CarryOverTokens: a.cfg.CarryOverTokens,
 		CreatedAt:       now,
 		LastActiveAt:    now,
-	}
-	// A new session inherits the enabled set of the most recently used session.
-	if seed != nil {
-		s.EnabledTools, s.EnabledSkills = seed.EnabledTools, seed.EnabledSkills
-		s.ContinuedFrom = seed.ID
-	} else if recent := a.store.Sessions(); len(recent) > 0 {
-		s.EnabledTools, s.EnabledSkills = recent[0].EnabledTools, recent[0].EnabledSkills
 	}
 	if err := a.store.PutSession(s); err != nil {
 		return nil, err
@@ -43,13 +51,17 @@ func (a *App) NewSession(model string, seed *Session) (*Session, error) {
 	return s, nil
 }
 
-// Fork seeds a successor from a predecessor: summary first, then the most recent
-// complete turns that fit the carry-over budget. Rotation, fork, and resume are
-// the same operation.
-func (a *App) Fork(pred *Session, archive bool, why string) (*Session, error) {
-	succ, err := a.NewSession(pred.Model, pred)
+// Rotate seeds a successor from a predecessor: summary first, then the most
+// recent complete turns that fit the carry-over budget. Rotation, fork, resume,
+// and reconfiguration are the same operation — a session's configuration is
+// fixed, so changing it is exactly the act of continuing in a new one.
+func (a *App) Rotate(pred *Session, cfg SessionConfig, archive bool, why string) (*Session, error) {
+	succ, err := a.NewSession(cfg, pred)
 	if err != nil {
 		return nil, err
+	}
+	if changed := describeConfigChange(pred.SessionConfig, succ.SessionConfig); changed != "" {
+		why += ", " + changed
 	}
 	carried := carryOver(a.store.Entries(pred.ID), pred.CarryOverTokens)
 	a.append(succ.ID, Entry{Type: "event", EventKind: "carried_over", CarriedFrom: pred.ID,
@@ -157,28 +169,27 @@ func (a *App) appendEvent(sessionID string, e Entry) Entry {
 	return a.append(sessionID, e)
 }
 
-// SetAvailability records a change to the enabled set as its own entry, which
-// sits after everything cached and so costs a handful of tokens.
-func (a *App) SetAvailability(s *Session, tools, skills []string, toolsSet, skillsSet bool) {
+// describeConfigChange names the parts of a configuration that differ, for the
+// entries either side of a rotation. It is what replaced the mid-session
+// availability and model-change entries: the same record, at the only point the
+// configuration can now move.
+func describeConfigChange(from, to SessionConfig) string {
 	var parts []string
-	if toolsSet {
-		s.EnabledTools = tools
-		parts = append(parts, "tools: "+describeSet(tools, len(a.tools.All())))
+	if from.Model != to.Model {
+		parts = append(parts, "model "+from.Model+" → "+to.Model)
 	}
-	if skillsSet {
-		s.EnabledSkills = skills
-		parts = append(parts, "skills: "+describeSet(skills, len(a.skills.All())))
+	if !sameSet(from.EnabledTools, to.EnabledTools) {
+		parts = append(parts, "tools "+describeSet(from.EnabledTools)+" → "+describeSet(to.EnabledTools))
 	}
-	_ = a.store.PutSession(s)
-	if len(parts) > 0 {
-		a.appendEvent(s.ID, Entry{EventKind: "availability_change",
-			Text: "available now — " + strings.Join(parts, "; ")})
+	if !sameSet(from.EnabledSkills, to.EnabledSkills) {
+		parts = append(parts, "skills "+describeSet(from.EnabledSkills)+" → "+describeSet(to.EnabledSkills))
 	}
+	return strings.Join(parts, "; ")
 }
 
-func describeSet(set []string, total int) string {
+func describeSet(set []string) string {
 	if set == nil {
-		return fmt.Sprintf("all %d", total)
+		return "all"
 	}
 	if len(set) == 0 {
 		return "none"
@@ -237,7 +248,7 @@ func (a *App) maybeRotate(s *Session) *Session {
 	if projectedTokens(a.store.Entries(s.ID)) < s.RotateAtTokens {
 		return s
 	}
-	succ, err := a.Fork(s, true, "rotation")
+	succ, err := a.Rotate(s, s.SessionConfig, true, "size")
 	if err != nil {
 		return s
 	}

@@ -24,7 +24,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("DELETE /sessions/{id}", a.hDeleteSession)
 	mux.HandleFunc("GET /sessions/{id}/transcript", a.hTranscript)
 	mux.HandleFunc("POST /sessions/{id}/messages", a.hSendMessage)
-	mux.HandleFunc("POST /sessions/{id}/fork", a.hFork)
+	mux.HandleFunc("POST /sessions/{id}/rotate", a.hRotate)
 	mux.HandleFunc("POST /sessions/{id}/read", a.hMarkRead)
 	mux.HandleFunc("GET /search", a.hSearch)
 
@@ -102,15 +102,15 @@ func (a *App) hSessions(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) hCreateSession(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Model string `json:"model"`
-		From  string `json:"from"`
+		SessionConfig
+		From string `json:"from"`
 	}
 	_ = readJSON(r, &in)
 	var seed *Session
 	if in.From != "" {
 		seed = a.store.Session(in.From)
 	}
-	s, err := a.NewSession(in.Model, seed)
+	s, err := a.NewSession(in.SessionConfig, seed)
 	if err != nil {
 		fail(w, 500, "%v", err)
 		return
@@ -156,11 +156,10 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	if in.Title != nil {
 		s.Title = *in.Title
 	}
-	if in.Model != nil && *in.Model != s.Model {
-		old := s.Model
-		s.Model = *in.Model
-		a.appendEvent(s.ID, Entry{EventKind: "model_change",
-			Text: fmt.Sprintf("model changed from %s to %s", old, s.Model)})
+	if in.Model != nil || in.EnabledTools != nil || in.EnabledSkills != nil {
+		fail(w, 409, "a session's model, tools, and skills are fixed for its life; "+
+			"POST /sessions/%s/rotate to continue this conversation under a new configuration", s.ID)
+		return
 	}
 	if in.Status != nil {
 		s.Status = *in.Status
@@ -170,16 +169,6 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Summary != nil {
 		s.Summary = *in.Summary
-	}
-	if in.EnabledTools != nil || in.EnabledSkills != nil {
-		var t, k []string
-		if in.EnabledTools != nil {
-			t = *in.EnabledTools
-		}
-		if in.EnabledSkills != nil {
-			k = *in.EnabledSkills
-		}
-		a.SetAvailability(s, t, k, in.EnabledTools != nil, in.EnabledSkills != nil)
 	}
 	_ = a.store.PutSession(s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
@@ -230,21 +219,25 @@ func (a *App) hSendMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(202)
 }
 
-func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
+// hRotate continues a conversation in a new session. Any configuration field
+// left out keeps the predecessor's, so a plain rotation and a reconfiguration
+// are the same request.
+func (a *App) hRotate(w http.ResponseWriter, r *http.Request) {
 	s := a.store.Session(r.PathValue("id"))
 	if s == nil {
 		fail(w, 404, "no such session")
 		return
 	}
 	var in struct {
+		SessionConfig
 		Archive bool `json:"archive"`
 	}
 	_ = readJSON(r, &in)
 	why := "fork"
 	if in.Archive {
-		why = "resume"
+		why = "rotation"
 	}
-	succ, err := a.Fork(s, in.Archive, why)
+	succ, err := a.Rotate(s, in.SessionConfig, in.Archive, why)
 	if err != nil {
 		fail(w, 500, "%v", err)
 		return
