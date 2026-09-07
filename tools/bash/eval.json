@@ -1,0 +1,32 @@
+{
+  "cases": [
+    {
+      "name": "runs a command",
+      "prompt": "Use the shell to print the text 'hello from bash' and tell me what it printed.",
+      "tools": [
+        "bash"
+      ],
+      "expect": {
+        "tool": "bash",
+        "args_match": {
+          "command": "hello from bash"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "reads the workspace",
+      "prompt": "List the files in the workspace using the shell.",
+      "tools": [
+        "bash"
+      ],
+      "expect": {
+        "tool": "bash",
+        "args_match": {
+          "command": "ls"
+        },
+        "clean": true
+      }
+    }
+  ]
+}

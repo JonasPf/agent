@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "name": "searches past conversations",
+      "prompt": "Search our past conversations for anything about deployments.",
+      "tools": [
+        "session_search"
+      ],
+      "expect": {
+        "tool": "session_search",
+        "args_match": {
+          "query": "(?i)deploy"
+        },
+        "clean": true
+      }
+    }
+  ]
+}

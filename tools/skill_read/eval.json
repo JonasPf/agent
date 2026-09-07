@@ -1,0 +1,18 @@
+{
+  "cases": [
+    {
+      "name": "reads the skill before scheduling",
+      "prompt": "Read the scheduling skill and tell me its first rule.",
+      "tools": [
+        "skill_read"
+      ],
+      "expect": {
+        "tool": "skill_read",
+        "args": {
+          "name": "scheduling"
+        },
+        "clean": true
+      }
+    }
+  ]
+}

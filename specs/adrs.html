@@ -20,7 +20,7 @@
 <div class="wrap">
 
 <h1>Decisions</h1>
-<p class="lede">Fifteen choices with real tradeoffs. Each states what was given up.</p>
+<p class="lede">Twenty-five choices with real tradeoffs. Each states what was given up.</p>
 
 <div class="adr" id="adr-001">
 <div class="meta">ADR-001 · accepted</div>
@@ -77,13 +77,14 @@ small and deliberate rather than automatic.</p>
 the database, and the model API key. Separating them into another user or another container is
 possible and would bound the damage.</p>
 <h4>Decision</h4>
-<p>Run the gateway, the agent, and all tools as one user in one container. Make the workspace a git
-repository and commit on every tool reload.</p>
+<p>Run the gateway, the agent, and all tools as one user in one container. (This decision originally
+added a git repository over the workspace, committed on every tool reload;
+<a href="#adr-017">ADR-017</a> removed it.)</p>
 <h4>Consequences</h4>
 <p>A tool the agent writes can modify the scheduler, read the key, and alter the database. The realistic
-failure is not attack but accident, and version control makes accidents revertible rather than
-unrecoverable. This is acceptable for a single-operator system on private hardware and would not be
-acceptable if the system were shared or exposed. Revisit if either changes.</p>
+failure is not attack but accident, and an accident is repaired by editing the tool that caused it.
+This is acceptable for a single-operator system on private hardware and would not be acceptable if the
+system were shared or exposed. Revisit if either changes.</p>
 </div>
 
 <div class="adr" id="adr-005">
@@ -97,9 +98,10 @@ sessions, and abuse handling — for a service whose main feature is running arb
 trusted certificate. Treat network reachability as the only access control.</p>
 <h4>Consequences</h4>
 <p>Authentication, session cookies, cross-site request forgery, and rate limiting leave the specification
-entirely. Push notifications still work, because delivery is outbound to the push service rather than
-inbound to the gateway. The cost is that the interface is unreachable when the tailnet is down, and
-sharing anything with another person is impossible without changing this decision.</p>
+entirely. The cost is that the interface is unreachable when the tailnet is down, and sharing anything
+with another person is impossible without changing this decision. Since
+<a href="#adr-026">ADR-026</a> there is no outbound notification path either, so a phone off the
+tailnet learns nothing at all until it reconnects.</p>
 </div>
 
 <div class="adr" id="adr-006">
@@ -135,8 +137,9 @@ misunderstands a request, the mistake is visible immediately rather than at thre
 Forty-eight full-context turns a day disappear, which is the single largest recurring cost in the
 designs that have one. What is lost is the catch-all: a commitment the user never phrased as a request
 is never noticed. That mechanism was unreliable — it depended on the model re-reading a long
-conversation and spotting something — and dead letters cover the failure that matters, which is a job
-that stops without its condition ever being met.</p>
+conversation and spotting something — and a job's run log covers the failure that matters, which is a
+job that has been waking for weeks without its condition ever being met
+(<a href="#adr-028">ADR-028</a>).</p>
 </div>
 
 <div class="adr" id="adr-008">
@@ -149,7 +152,7 @@ code.</p>
 <h4>Decision</h4>
 <p>A job may carry a check: a shell command whose exit status decides the question. The model runs only
 when it exits zero. A job without a check calls the model every tick and may not tick more often than
-every fifteen minutes.</p>
+every fifteen minutes. (<a href="#adr-029">ADR-029</a> later removed that floor; the rest stands.)</p>
 <h4>Consequences</h4>
 <p>A two-minute poll costs nothing until the moment it fires, which makes frequent polling reasonable and
 makes ADR-006 affordable. A check-less job, by contrast, runs on its session's model in its session's
@@ -159,7 +162,10 @@ what a turn can cost, and a second set of knobs would only hide the price.</p>
 <p>The agent must therefore decide whether a condition is expressible as a command, and sometimes it
 will reach for judgement where a command would have done. Three things push against that: the
 scheduling skill treats a check as the default, a check-less job has to record why no command would
-work, and the fifteen-minute floor bounds the cost when it still happens.</p>
+work, and the fifteen-minute floor bounds the cost when it still happens. Two of those three are since
+gone — <code>reason_no_check</code> with <a href="#adr-023">ADR-023</a> and the floor with
+<a href="#adr-029">ADR-029</a> — leaving the skill, and the cost visible on the job rather than
+capped.</p>
 </div>
 
 <div class="adr" id="adr-009">
@@ -203,7 +209,7 @@ document; sections are collapsed by default because tool definitions are long.</
 </div>
 
 <div class="adr" id="adr-011">
-<div class="meta">ADR-011 · accepted</div>
+<div class="meta">ADR-011 · superseded by <a href="#adr-026">ADR-026</a></div>
 <h3>Two notification tiers, with the agent choosing between them</h3>
 <h4>Context</h4>
 <p>Notifying on everything trains the user to ignore notifications, which fails silently and completely.
@@ -217,6 +223,8 @@ suppressed.</p>
 line, and the decision to interrupt is a visible tool call that can be audited and corrected. The risk
 is under-notification: the agent stays quiet when the user wanted to know. The two unsuppressable
 triggers cover the cases where silence would be worst.</p>
+<p><b>Superseded.</b> The tiers were built and did not deliver. See
+<a href="#adr-026">ADR-026</a>.</p>
 </div>
 
 <div class="adr" id="adr-012">
@@ -235,8 +243,8 @@ rather than mechanism: build tools in their own conversation. Revisit if that co
 easy to forget.</p>
 </div>
 
-<div class="adr" id="adr-013">
-<div class="meta">ADR-013 · accepted</div>
+<div class="adr superseded" id="adr-013">
+<div class="meta">ADR-013 · superseded by <a href="#adr-021">ADR-021</a></div>
 <h3>The notify tool is the firing signal for judgement jobs</h3>
 <h4>Context</h4>
 <p>A job with a check has an unambiguous trigger: the command exits zero. A job whose condition needs
@@ -316,7 +324,7 @@ the point where every call has become expensive. The threshold is a cost decisio
 </div>
 
 <div class="adr" id="adr-016">
-<div class="meta">ADR-016 · accepted</div>
+<div class="meta">ADR-016 · accepted, amended by <a href="#adr-019">ADR-019</a></div>
 <h3>A session's configuration is fixed; rotation is how it changes</h3>
 <h4>Context</h4>
 <p><a href="#adr-014">ADR-014</a> made tools and skills switchable mid-session by always defining every
@@ -340,6 +348,619 @@ changed prefix and now it is honestly a different session. The cost is that chan
 a new conversation, which is heavier than a toggle — the carry-over makes it cheap, but it is not free,
 and it is deliberately the same weight as any other rotation. A session that wants twelve tools still
 defines twelve; one that wants three now defines three, and pays for three.</p>
+</div>
+
+<div class="adr" id="adr-017">
+<div class="meta">ADR-017 · accepted</div>
+<h3>The workspace is not version controlled</h3>
+<h4>Context</h4>
+<p><a href="#adr-004">ADR-004</a> answered "the agent can break itself" with a git repository: commit on
+every tool reload, so a bad tool is reverted rather than reconstructed. The mechanism never worked as
+described. The repository had to be rooted at a directory holding the workspace, the tools, and the
+skills, which is not the workspace but its parent — and outside a container that parent is the
+operator's own source checkout, so the agent committed the operator's work as its own. Startup staged
+everything it found and committed with <code>--allow-empty</code>, producing one commit per boot, all
+with the same message. Nothing ever read the history back: there is no revert path in the product, no
+interface onto it, and no acceptance criterion that exercises one.</p>
+<h4>Decision</h4>
+<p>Remove it. The agent creates no repository, makes no commits, and has no opinion about version
+control.</p>
+<h4>Consequences</h4>
+<p>A tool that breaks the system is fixed by editing the tool, which is what actually happened anyway.
+The safety argument in ADR-004 loses a clause it was not honouring; what is genuinely lost is a
+recovery path that was never built, not one that was working. An operator who wants the directory
+versioned can keep it in a repository of their own, on their own terms — the agent no longer competes
+with them for it. The system now has no automatic recovery from a self-inflicted break, which is the
+honest position for a prototype and is worth revisiting with a mechanism someone would actually use.</p>
+</div>
+
+<div class="adr" id="adr-018">
+<div class="meta">ADR-018 · accepted</div>
+<h3>Settings come from the environment, backed by a file the environment overrides</h3>
+<h4>Context</h4>
+<p>Every setting, including the model API key, was read from the process environment alone. That is
+correct for a container, where the environment is declared once and reproduced on every start, and
+poor everywhere else: outside one, the settings live in whichever shell last exported them. The key is
+the sharp case. Its absence does not fail at startup — the agent warns and runs — it fails hours later,
+inside a scheduled job, as three retries and a dead letter.</p>
+<h4>Decision</h4>
+<p>Read a file of <code>KEY=VALUE</code> lines from the working directory at startup and fill in
+anything the environment has not already set. The environment wins. The file is optional, covers every
+setting rather than the key alone, and is excluded from version control.</p>
+<h4>Consequences</h4>
+<p>The container path is unchanged: an environment declared there overrides a file that is not present
+anyway. Outside one, the settings survive a new terminal and a reboot.</p>
+<p>The precedence runs this way because the opposite is a trap. A file that beat the environment would
+make an explicit override on the command line silently do nothing, and the failure would look like the
+override being wrong rather than being ignored — a worse bug than the problem the file solves.</p>
+<p>The cost is a credential sitting in a plaintext file, which is a real weakening: anything that can
+read the working directory can read the key, where before it had to read a process's environment. For a
+single-operator system on private hardware that is the same threat model <a href="#adr-004">ADR-004</a>
+already accepted, and the file is mode 600 with a startup warning when it is not. It would not be
+acceptable on a shared machine, and a secret manager is the answer there rather than a better file.</p>
+</div>
+
+<div class="adr superseded" id="adr-019">
+<div class="meta">ADR-019 · superseded by <a href="#adr-022">ADR-022</a></div>
+<h3>A configuration settles at the first turn, not at creation</h3>
+<h4>Context</h4>
+<p><a href="#adr-016">ADR-016</a> made model, tools, and skills one immutable configuration and wrote
+the prompt at the moment the session was created, which froze a session the instant it existed. In the
+interface that made forking a dead end. A fork inherits its predecessor's configuration and is fixed
+before the operator has seen it, so changing anything about a fork meant deciding it on a screen before
+the fork existed, while starting a fresh conversation meant opening a session and configuring it. The
+same act — continue from here under different settings — behaved two different ways depending on where
+it started.</p>
+<h4>Decision</h4>
+<p>The configuration settles at the session's first turn rather than at its creation. The prompt entry
+is written when the first turn is assembled. Until then the session has no prompt, and its model, tools,
+and skills are editable in place; from the first turn onward everything ADR-016 decided holds
+unchanged.</p>
+<h4>Consequences</h4>
+<p>Fork, open the controls, change the tools, send — the same sequence as starting a conversation,
+because they are the same operation. None of what ADR-016 removed comes back: there is still exactly one
+prompt per session, still no change mid-conversation, and still no gap between the prompt and the
+session, because a session that has not taken a turn has told the model nothing and has nothing to be
+out of step with. Position zero is still the prompt as sent — it is written when it is first sent rather
+than when it is first known.</p>
+<p>Two costs. A session that has never run has no prompt entry, so the prompt is retrievable only once
+the session has taken a turn; before that the controls screen shows the configuration it would be built
+from. And the refusal on <code>PATCH</code> becomes conditional rather than absolute, which is one more
+state than a flat no.</p>
+</div>
+
+<div class="adr" id="adr-020">
+<div class="meta">ADR-020 · accepted</div>
+<h3>Keep the core small; ship capability as tools on disk</h3>
+<h4>Context</h4>
+<p>Twelve tools were compiled into the binary. Each was a Go function with direct access to the store,
+the hub, and the scheduler. A tool on disk has none of that: it is a subprocess that must ask over the
+HTTP API. The compiled ones were faster to write and faster to run, and every one of them could have
+been a directory instead.</p>
+<h4>Decision</h4>
+<p>The core is the loop, the scheduler, the store, the gateway, and the tool registry. Everything the
+model can invoke is a tool directory on disk. A capability is compiled in only when running it outside
+the process would not work; today that is <code>reload_tools</code> alone, and the specification names
+it. Tools reach the system through the API the interface already uses, given
+<code>AGENT_URL</code>, <code>AGENT_SESSION</code>, and <code>AGENT_JOB</code>.</p>
+<h4>Consequences</h4>
+<p>Every capability becomes readable and replaceable without a toolchain, by the operator and by the
+agent — which is what the tools system was for, and which compiled-in tools quietly opted out of. The
+API stops being an interface convenience and becomes the system's one internal contract, so a
+capability the API cannot express is now visible as a gap rather than hidden behind a function call.
+The cost is a subprocess and a local round trip per call, and two new failure modes — exec and socket —
+that previously could not occur. Both surface as ordinary error results, so a turn degrades the same
+way it already did. A tool that needs something the API does not expose cannot be written until the API
+exposes it, which is a constraint on the core, deliberately.</p>
+</div>
+
+<div class="adr" id="adr-021">
+<div class="meta">ADR-021 · accepted</div>
+<h3>A judgement job records every run; notify is no longer a firing signal</h3>
+<h4>Context</h4>
+<p><a href="#adr-013">ADR-013</a> made calling notify the firing signal for a judgement job. A run that
+did not call it was buffered, discarded, and replaced by one event line. That kept transcripts short:
+a job polling every fifteen minutes wakes ninety-six times a day, and only the run that mattered was
+kept.</p>
+<h4>Decision</h4>
+<p>Delete the buffer and the firing signal. Every run of a judgement job is written to the transcript in
+full, attributed to its job. A judgement job reschedules after every run and ends by being deleted or
+by expiring. The model ends its own job by calling the schedule tool, an ordinary visible tool call.
+notify becomes what its name says: it sends a notification, and nothing else.</p>
+<h4>Consequences</h4>
+<p>The rule that nothing happens the operator cannot see now holds without exception; ADR-013 was the
+one place the system discarded its own work and reported a summary instead. notify loses its reach into
+the turn that called it, which is what let it move out of the core under
+<a href="#adr-020">ADR-020</a> — the two decisions are the same decision seen twice. The cost is real
+and was accepted knowingly: a polling job now spends context and money on runs that find nothing, and
+sessions carrying such a job rotate far more often. Firing and notifying are also no longer the same
+act, so a job can now decide its condition is met without interrupting, which ADR-013 could not
+express.</p>
+</div>
+
+<div class="adr" id="adr-022">
+<div class="meta">ADR-022 · accepted</div>
+<h3>A configuration is fixed at creation; the prompt is written there too</h3>
+<h4>Context</h4>
+<p><a href="#adr-019">ADR-019</a> let a session's model, tools, and skills stay editable until its
+first turn, so that forking and starting a conversation felt the same. The cost was a second state for
+a session to be in. Every surface had to branch on it: the interface showed a different notice, a
+different button, and a different action; <code>PATCH</code> refused conditionally rather than
+absolutely; a session could exist with no prompt entry, so anything reading position zero had to cope
+with its absence.</p>
+<h4>Decision</h4>
+<p>A session's configuration is fixed when the session is created, and its prompt entry is written at
+the same moment. There is no window in which a session exists and its configuration is open. The
+configuration is chosen before the session exists, on the screen that creates it — which is what
+forking and starting a conversation now both do.</p>
+<h4>Consequences</h4>
+<p>One state instead of two. Every session has a prompt entry from the moment it exists, so position
+zero is never absent and nothing downstream branches on whether it is there. <code>PATCH</code> refuses
+a configuration change flatly, with one answer rather than two. What ADR-019 was protecting is kept by
+moving the choice earlier rather than by keeping it open later: fork now opens the same configuration
+screen as a new conversation, and creates the session when it is confirmed.</p>
+<p>The cost is that a fork is no longer one tap — it is a screen and then a tap. In exchange, a
+configuration cannot be changed after a session exists, which is the property the rest of the design
+already assumed everywhere else.</p>
+</div>
+
+<div class="adr" id="adr-023">
+<div class="meta">ADR-023 · accepted · <code>until</code> removed by <a href="#adr-028">ADR-028</a>, floor removed by <a href="#adr-029">ADR-029</a></div>
+<h3>A job has no kind; scheduling is four independent fields</h3>
+<h4>Context</h4>
+<p>A job was classified into one of three kinds — check, due, judgement — derived from whether it had a
+check and whether its schedule named a single instant. Behaviour then branched on the kind, and each
+kind needed exemptions from rules written for another: a reminder was exempt from the fifteen-minute
+floor, from <code>reason_no_check</code>, and should have been exempt from expiry but was not, so any
+reminder set further ahead than a day was deleted before it arrived. A recurring action with no
+condition — a daily briefing — was classified as a judgement and made to explain why no command could
+decide a question nobody had asked.</p>
+<h4>Decision</h4>
+<p>Remove the concept. A job is <code>schedule</code>, <code>prompt</code>, and three optional fields:
+<code>check</code> gates whether a wake acts, <code>after_acting</code> says whether the job survives a
+wake that did, and <code>until</code> stops waking. Nothing derives a kind and nothing branches on one.
+<code>on_condition_met</code> and <code>reason_no_check</code> are deleted, and no job receives a
+deadline it did not ask for.</p>
+<h4>Consequences</h4>
+<p>Sixteen catalogued requests, from a birthday months out to a two-minute deploy poll, are expressed in
+the same four fields with no exemption anywhere; the interface shows those fields rather than a label it
+computed. The scheduler collapses to one path: check if there is one, act, reschedule if repeating. The
+cost rule survives on its own terms — a recurring wake with no check runs a turn every time, so it may
+not recur faster than every fifteen minutes — and applies uniformly instead of being attached to a
+category. (<a href="#adr-029">ADR-029</a> later removed that floor as well.)</p>
+<p>The third field was first called <code>repeat</code>. An eval showed models reading that as a
+question about cadence and answering it from the request's own words: "tell me when the deploy finishes,
+check every two minutes" set it true and left a finished watch firing forever, while the same request
+without the cadence phrase set it correctly three times out of three. A name describing the schedule
+cannot be asked a question about the job's ending, so it is named for the moment it applies to.</p>
+
+<p>Two things are given up. <code>reason_no_check</code> was a nudge toward cheap checks, and it is
+gone; the scheduling skill and the floor are what remain. And with no default deadline, a job watching
+for something that never happens now waits indefinitely rather than giving up after a day — it stays a
+visible row, and <code>until</code> is there for requests that deserve one, but nothing volunteers it.</p>
+<p><b>Amended.</b> <a href="#adr-028">ADR-028</a> removes <code>until</code> as well, leaving three
+fields. A job that waits forever is now answered by reading its run log, not by a deadline that deletes
+it.</p>
+</div>
+
+<div class="adr" id="adr-024">
+<div class="meta">ADR-024 · accepted</div>
+<h3>A session owns a working directory</h3>
+<h4>Context</h4>
+<p>Every session's tools ran in one shared workspace. Two conversations working on files of the same
+name overwrote each other, an upload had to be filed under a path the interface assembled by hand, and
+a fork continued the words of a conversation but not the files it was working on. Nothing said which
+conversation a file belonged to, so nothing could carry it, copy it, or delete it with one.</p>
+<h4>Decision</h4>
+<p>Each session owns a directory under the workspace, named for the session. Tools and check commands
+run in it, uploads land in it, and a relative path in a tool call resolves inside it. It is created
+with the session, copied when the session is continued — rotation, fork, and resume alike — and
+deleted with the session.</p>
+<h4>Consequences</h4>
+<p>Files gain the same lifecycle as the conversation that produced them, which is what makes an export
+possible at all: a session and its directory are one thing to carry. A path that would leave the
+directory is refused by the file tools.</p>
+<p><b>Corrected.</b> This decision claimed the isolation was "real rather than conventional". It was
+not: <code>read</code>, <code>write</code>, and <code>edit</code> refused an escaping path, and
+<code>bash</code> — a shell, which does what it is told — did not, so one session's tools could read
+another's files and the operator's API key. <a href="#adr-030">ADR-030</a> makes the claim true by
+moving the boundary into the operating system.</p>
+<p>The cost is copying. A continuation duplicates the predecessor's directory, and rotation is
+automatic, so a conversation holding a large working directory pays for it every time it rotates. The
+alternative — successor and predecessor sharing one directory — was rejected because a fork's writes
+would then reach the session it was forked from, which is exactly what a fork is for avoiding. Nothing
+is shared by default any more: a tool that wants a place common to every session has to name one.</p>
+</div>
+
+<div class="adr" id="adr-025">
+<div class="meta">ADR-025 · accepted</div>
+<h3>A session exports as a zip and imports under its own identifier</h3>
+<h4>Context</h4>
+<p>A conversation was only retrievable from the machine holding it. Moving one to another agent, or
+keeping a copy before deleting it, meant copying a session directory, the rows belonging to it in
+SQLite, and its files, and knowing which was which.</p>
+<h4>Decision</h4>
+<p>An export is one zip mirroring what is on disk: <code>meta.json</code>,
+<code>transcript.jsonl</code>, <code>jobs.json</code>, <code>dead_letters.json</code>, and the working
+directory under <code>files/</code>. An import restores all of it under the identifier the archive
+carries; an identifier already present is refused. Memory is not in the archive.</p>
+<h4>Consequences</h4>
+<p>An archive is readable with <code>unzip</code> and a text editor, so a backup does not depend on this
+program to be worth anything. Keeping the identifier means a restored conversation is the one it was:
+its links, its jobs, and its dead letters still name it, and re-importing after a deletion is a
+restore rather than a duplicate. The price is that restoring over a session still present is refused
+rather than merged — the identifier would otherwise address two different conversations, which is the
+one thing the design does not do anywhere.</p>
+<p>Memory is left out because it is durable across every conversation rather than owned by one:
+carrying it would change what every later session is told, silently, on import. A job whose next run
+has already passed fires on the next tick after an import, exactly as it would for an agent that had
+been switched off.</p>
+</div>
+
+<div class="adr" id="adr-026">
+<div class="meta">ADR-026 · accepted · amended by <a href="#adr-027">ADR-027</a></div>
+<h3>No notifications at all</h3>
+<h4>Context</h4>
+<p><a href="#adr-011">ADR-011</a> gave the system two notification tiers and a notify tool for the
+agent to reach the operator with. All of it was built: web push with VAPID keys, a service worker, a
+subscription table, per-session muting, and a fallback that showed the notification inside the app
+when the operating system would not. None of it delivered a single notification on the operator's own
+devices. Each layer failed for a different reason &mdash; permission never granted, a browser that
+disables the push service by default, an origin without a secure context &mdash; and every failure
+looked the same from the outside: a reminder that quietly did not arrive.</p>
+<h4>Decision</h4>
+<p>Remove the whole stack. No notify tool, no push, no VAPID keys, no service worker, no in-app popup,
+no per-session mute. A reminder is the agent writing in the conversation, and nothing more. Unread
+work is a count in the session list; a dead letter has its own screen; a tripped breaker is a banner
+across the top of every screen.</p>
+<h4>Consequences</h4>
+<p>The agent can no longer reach the operator, so a reminder is only as timely as the next time they
+open the app. That is a real loss and it is the point: the previous design claimed a capability it did
+not have, which is worse than a system that plainly does not interrupt. Everything the agent does
+still leaves a visible record, so R1 holds &mdash; what changes is that the operator goes to the
+record rather than the record coming to them.</p>
+<p>The removal also takes the project's last non-stdlib runtime dependency with it, and deletes the one
+part of the system whose behaviour could not be tested end to end: a push notification's delivery
+depended on a browser, an operating system, and a vendor push service, none of which is in the
+container.</p>
+<p>Re-adding it later means re-deciding it. The pieces are small; the reason they were removed is that
+they did not work, not that they were expensive.</p>
+<p><b>Amended.</b> <a href="#adr-027">ADR-027</a> restores one narrow piece &mdash; the browser's own
+notification for an unread message, while a tab is open. The agent's ability to interrupt is not
+restored, and neither is push.</p>
+</div>
+
+<div class="adr" id="adr-027">
+<div class="meta">ADR-027 · accepted · amends <a href="#adr-026">ADR-026</a></div>
+<h3>The interface notifies about unread messages; the agent still cannot</h3>
+<h4>Context</h4>
+<p><a href="#adr-026">ADR-026</a> removed every notification because the stack that carried them did
+not work. It was right about the stack and too broad about the need: the operator still wants to know
+that the agent has said something while they were looking elsewhere. The part that failed was
+delivery to a device that is not running the app &mdash; push, VAPID, a service worker, a vendor
+service, a permission prompt behind an install. The part that never failed is the browser's own
+notification API, which needs none of that.</p>
+<h4>Decision</h4>
+<p>While a tab is open, a new assistant message in a conversation the operator is not currently reading
+shows a system notification. No push, no service worker, no keys, no subscription, no per-session
+mute. The agent is not involved: there is no notify tool, it cannot choose to interrupt, and it cannot
+suppress one. This is the interface reporting unread output, which is the badge tier of
+<a href="#adr-011">ADR-011</a> raised from a count to a banner &mdash; not the interrupt tier
+returning.</p>
+<h4>Consequences</h4>
+<p>The capability is honest about its limits, which is what the previous design was not: it works while
+the browser runs and does nothing at all otherwise, and the settings screen says which of those a
+device is in. A reminder is still only as timely as an open browser, so a phone with the app closed
+learns nothing &mdash; the same position as ADR-026, and the reason that decision is amended rather
+than reversed.</p>
+<p>Everything here is client-side. No endpoint, no schema, no dependency, and nothing stored: the
+gateway is unchanged, and removing the feature again would mean deleting one file and one call.</p>
+</div>
+
+<div class="adr" id="adr-028">
+<div class="meta">ADR-028 · accepted</div>
+<h3>A job keeps its own run log; dead letters and expiry are removed</h3>
+<h4>Context</h4>
+<p>A job's history lived in the conversation it fired into, which is the wrong place twice over: a
+transcript interleaves the job's wakes with everything else in that conversation, and a job outlives
+the session that created it, so a rotation left its past in a session it no longer belongs to. The
+question the operator actually asks &mdash; "has this been running, and what did it say?" &mdash; had
+no place to be answered.</p>
+<p>Two mechanisms existed because of that gap. A dead letter was a copy of a job taken at the moment
+the system deleted it, so the evidence would survive the deletion. An <code>until</code> deadline
+existed so a job watching for something that never happened would eventually stop. Both are ways of
+managing a system that throws work away on its own.</p>
+<h4>Decision</h4>
+<p>Every wake writes a line to the job's own log: when it was due, when it ran, whether it fired,
+skipped, or failed, and what was said. The log is stored against the job, travels with it in an
+export, and is deleted only when the job is.</p>
+<p>Dead letters are removed entirely, along with <code>until</code> and every notion of expiry. Nothing
+deletes a job but the operator. A job that keeps failing keeps its place, its failures piling up in its
+own log behind an exponential backoff. A job with nothing left to do &mdash; a one-shot that acted, a
+schedule out of wakes &mdash; is marked <code>done</code> and kept, because deleting it would delete
+the record of what it did.</p>
+<h4>Consequences</h4>
+<p>The job list becomes the place jobs are understood, and it is complete: nothing has been silently
+removed from it. "Did that reminder fire?" is answered by looking at the reminder. A failure that used
+to end a job now sits in front of the operator until they decide, which is the right party to decide
+it.</p>
+<p>The cost is that the list grows. A one-shot no longer disappears, so a habit of setting reminders
+leaves a row per reminder, and clearing them is manual. That is the trade taken deliberately: an
+accumulating list is a nuisance, and a job deleted before it was read is a lost instruction.</p>
+<p>Two guards go with the removal. The circuit breaker stays &mdash; it is what stops a billing outage
+filling every job's log with the same failure. And a job whose session no longer exists is now an
+ordinary failure on a backoff rather than a deletion, so it stays visible instead of vanishing with the
+conversation.</p>
+<p>This supersedes the dead-letter half of <a href="#adr-009">ADR-009</a> and removes the deadline
+field that replaced the 24-hour expiry.</p>
+</div>
+
+<div class="adr" id="adr-029">
+<div class="meta">ADR-029 · accepted · amends <a href="#adr-023">ADR-023</a></div>
+<h3>No cost floor on how often a job wakes</h3>
+<h4>Context</h4>
+<p>A job with no check ran a turn on every wake, so <a href="#adr-023">ADR-023</a> held such a job to a
+fifteen-minute floor. It was the last rule in the scheduler that refused a request on the system's
+behalf.</p>
+<p>Asked for a stretch reminder every ten minutes, the agent was refused and routed around it in two
+turns: it created a one-shot whose prompt was "remind them, then schedule the next one ten minutes from
+now". Same cadence, same model call per wake, plus a schedule call on top &mdash; and instead of one
+legible row the operator got a chain of jobs, each existing for one wake. The floor made the outcome
+more expensive and less visible than the thing it forbade.</p>
+<h4>Decision</h4>
+<p>Remove the floor. Any schedule is accepted. The distinction it was built on is kept where it belongs:
+a check makes a wake free, the scheduling skill says to reach for one, and a job's schedule, check, and
+run count sit on the row where the operator can see what it costs.</p>
+<h4>Consequences</h4>
+<p>A ten-minute reminder is one job that wakes every ten minutes, which is what was asked for and the
+cheapest way to do it. <code>scheduleInterval</code> and the floor's error message go with the rule,
+and the scheduler stops having an opinion about what the operator may want.</p>
+<p>The cost is real and now unguarded: a repeating job with a tight cadence and no check calls the model
+on every wake, and nothing refuses it. The check is that this is visible &mdash; on the job, in its run
+log, and in the session's own cost line &mdash; rather than prevented. A guard that is trivially
+sidestepped by the very agent it constrains was not buying safety; it was buying a worse
+implementation of the same request.</p>
+</div>
+
+<div class="adr" id="adr-030">
+<div class="meta">ADR-030 · accepted · corrects <a href="#adr-024">ADR-024</a></div>
+<h3>The working-directory boundary is the operating system's, not the tool's</h3>
+<h4>Context</h4>
+<p><a href="#adr-024">ADR-024</a> gave each session a working directory and said the isolation was real
+rather than conventional. It was conventional. The file tools called a helper that refused a path
+outside the directory; <code>bash</code> could not, because it is a shell and a shell does what it is
+told. Run exactly as the registry runs it, a shell in one session read another session's file and the
+<code>OPENROUTER_API_KEY</code> out of <code>.env</code>. Every tool the agent writes for itself would
+have had the same reach, and the specification said otherwise.</p>
+<h4>Decision</h4>
+<p>Confine every tool subprocess and every check command in an OS sandbox: Seatbelt on macOS,
+bubblewrap on Linux. A tool may read what it needs in order to run, may read and write its own
+session's directory, and may not touch another session's or the file holding the API key.</p>
+<p>No library is adopted. The search for a cross-platform one found none: the Go options are Linux-only,
+and the ones that do span platforms — Anthropic's own <code>sandbox-runtime</code> among them — are a
+branch over these same two primitives written in another language. Importing a Node runtime into the
+container, or a Go library whose non-Linux build silently isolates nothing, both cost more than the
+hundred lines of branch.</p>
+<p>Where neither primitive exists, nothing is enforced and the system says so — at startup, in
+<code>/status</code>, and on the settings screen. There is no switch to turn it off: a setting whose
+only use is to disable a boundary is a special case that has to be honoured everywhere the boundary is
+reasoned about, and the absence of the primitive already covers the only honest reason to be without
+it.</p>
+<h4>Consequences</h4>
+<p>The claim ADR-024 made is now true, and there is a test that would have caught it being false: it
+drives the real registry and the real <code>bash</code> tool, and asserts the reach fails. On a machine
+with no sandbox that test asserts the system reports the absence instead, so it never passes by
+accident.</p>
+<p>Two costs. The container needs the <code>bubblewrap</code> package, and bubblewrap needs
+unprivileged user namespaces, which some runtimes restrict — where it cannot run, the agent says it is
+not enforcing rather than pretending. And the paths must be resolved before they reach a profile: on
+macOS <code>/var</code> and <code>/tmp</code> are symlinks into <code>/private</code>, and an
+unresolved path matches nothing, which looks exactly like a sandbox that is working.</p>
+<p>It also closed something that was not noticed until later: neither the tool directory nor the skill
+directory is writable from inside a tool, so the agent could not install either for itself.
+<a href="#adr-033">ADR-033</a> settles that in the specification rather than in the profile.</p>
+<p>This closed the write half only, and only partly: reads stayed open everywhere but two named paths.
+<a href="#adr-034">ADR-034</a> replaces that deny-list with an allow-list. A tool still reaches the system over
+<code>AGENT_URL</code>, which is unauthenticated and will hand it another session's transcript and
+files. That door is open by design and closing it is a separate decision; what changes here is that the
+specification no longer claims it is shut.</p>
+</div>
+
+<div class="adr" id="adr-031">
+<div class="meta">ADR-031 · accepted</div>
+<h3>The agent's messages are rendered as markdown, by a renderer that escapes first</h3>
+<h4>Context</h4>
+<p>The model writes markdown whether or not anything renders it. Shown as source, a turn reads as its
+own seams &mdash; bullet stars, fence lines, pipe tables &mdash; and the parts that carry the most
+information, a table of runs or a block of code, are the parts that read worst. Rendering it means the
+interface builds HTML out of model output, which is the one thing the transcript had never done.</p>
+<h4>Decision</h4>
+<p>Render the assistant's turn as markdown, with a renderer written for this repository
+(<code>web/markdown.js</code>, about 150 lines) rather than a dependency. It escapes the source first
+and emits only tags it constructed itself, so nothing arrives as markup; a link is dropped unless it
+points at <code>http</code>, <code>https</code>, <code>mailto</code>, or a path in this app, and an
+image renders as a link rather than a fetch of a file the operator never asked for. Nested lists and
+reference links are not supported and render as their own text.</p>
+<p>What the operator typed is not rendered, and neither is a job wake: a wake is the job's stored
+prompt, and the operator's message is their own words. Rendering either would show them something
+other than what was said.</p>
+<h4>Consequences</h4>
+<p>A dependency would have been shorter to write and longer to hold: a markdown library and a
+sanitiser are two supply chains, in a project that has none, for a surface this small. The cost is
+that the renderer is ours to be wrong about &mdash; so its escaping, its link scheme check, and its
+behaviour on a turn still streaming are tested directly, and the wiring is tested through the real
+<code>renderEntry</code> against a DOM.</p>
+<p>Markdown is now the shape of the transcript, so a change to the renderer changes how every past
+message reads. It is deliberately incomplete rather than partly correct: an unsupported construct
+stays visible as its source, which is the state the interface was in before this decision.</p>
+</div>
+
+<div class="adr" id="adr-032">
+<div class="meta">ADR-032 · accepted</div>
+<h3>The carried summary is system context, not a user message</h3>
+<h4>Context</h4>
+<p>Rotation seeded a successor by writing its predecessor's summary into the transcript as a message
+with role <code>user</code>, prefixed <code>[summary of &lt;id&gt;]</code>. That put words in the
+operator's mouth in the one slot whose meaning is that the operator is speaking now, and it read worst
+exactly where it mattered: a job wake fires into a session nobody is watching, and the first thing the
+model saw there was a user turn the operator never typed.</p>
+<h4>Decision</h4>
+<p>The summary travels in the successor's system prompt, as a <code>carried_summary</code> section
+beside memory and platform. It is held in its own field, separate from the session's own rolling
+summary, and read from the predecessor before the prompt entry is written &mdash; the prompt entry is
+what every later turn sends, so a summary arriving after it would mean sending one prompt and recording
+another. Once written it is never rewritten, so it sits inside the cached prefix instead of discarding
+it on every summariser update.</p>
+<p>The text is also written into the <code>carried_over</code> event. The projection drops events, so
+the append-only transcript keeps the record of what the successor started from without the model paying
+for it twice.</p>
+<h4>Consequences</h4>
+<p>Two summary fields now exist and mean different things: <code>summary</code> is what this session is
+writing for whoever comes next and is never shown to its own model; <code>carried_summary</code> is what
+the previous session wrote and is fixed for this one's life. Only the first is editable.</p>
+<p>The summary is no longer a line in the message list, so an operator reading the successor's
+transcript finds it in the prompt entry and in the seeding event rather than inline. That is the same
+place the rest of the inherited context already lives.</p>
+</div>
+
+<div class="adr" id="adr-033">
+<div class="meta">ADR-033 · accepted</div>
+<h3>The agent does not modify itself</h3>
+<h4>Context</h4>
+<p>The specification led with an agent that writes its own tools, and said it writes its own skills too.
+Neither had been true since <a href="#adr-030">ADR-030</a> put every tool subprocess in an OS sandbox:
+the tool directory and the skill directory are outside every writable path, so a tool creating
+<code>tools/&lt;name&gt;/</code> or <code>skills/&lt;name&gt;.md</code> is refused by the kernel. No route
+on the API writes either &mdash; <code>POST /tools/reload</code> registers what is already on disk, and
+there is no write route for skills at all. The interface could not edit a skill either, though the
+specification claimed it could.</p>
+<p>So the headline capability had been dead for as long as the sandbox had existed, and three documents
+described it in detail.</p>
+<h4>Decision</h4>
+<p>Remove self-modification from the system, rather than restore it. The agent does not write tools and
+does not write skills. Both are authored by the operator, on the filesystem, with whatever editor they
+already use. <code>reload_tools</code> stays compiled in and stays callable: it is how a running agent
+picks up what the operator has just installed.</p>
+<p>The <code>writing-tools</code> and <code>writing-skills</code> skills are deleted. A skill exists to
+tell the model how to do something it can do; instructions for an action the kernel refuses are worse
+than no instructions, because the model spends a turn discovering that.</p>
+<p>The alternative was a rule permitting writes to those two directories. It is a small change to the
+profile and a large one to the boundary: a tool that can write the tool directory can rewrite
+<code>bash</code>, and every later tool call in every session runs whatever it left there. Self-
+modification is the single most consequential thing this system could do, and it was reached by
+accident of scope rather than chosen. Choosing it deliberately remains open; it is not this decision.</p>
+<h4>Consequences</h4>
+<p>The system is meaningfully less autonomous, and the overview, the tool specification, the skill
+specification, and the model's own persona all now say so. A capability the operator believed in and
+had never seen work is gone from the description of the system, which is the point: the specification
+is a claim about behaviour, and one that cannot be exercised is a lie with a citation.</p>
+<p>What is left is the part that was doing the work anyway. The agent reaches its limits and says which
+tool it wants and why. Writing a hundred lines of Python was never the constraint; knowing that the
+capability is missing is.</p>
+<p><a href="#adr-004">ADR-004</a> reasoned about the blast radius of executables the agent writes and
+runs. Its conclusion is unchanged for a tool the operator installs &mdash; it runs beside the gateway,
+the scheduler, and the key. What changed is that nothing arrives there without a person putting it
+there.</p>
+</div>
+
+<div class="adr" id="adr-034">
+<div class="meta">ADR-034 · accepted</div>
+<h3>A tool reads and writes only its own working directory</h3>
+<h4>Context</h4>
+<p><a href="#adr-030">ADR-030</a> confined writes and left reads open: the profile allowed
+<code>file-read*</code> everywhere and then denied two things, the workspace root and the file holding
+the API key. On Linux the same shape, <code>--ro-bind / /</code>. The stated rule was that a tool may
+read the system it needs in order to run, which reads like an allow-list. It was a deny-list, and the
+difference is everything that was never named.</p>
+<p>Measured on the machine this was written on, a tool could read <code>~/.ssh</code> &mdash; including
+the private keys &mdash; <code>~/.config/gh</code>, <code>~/Documents</code>, and every other repository
+on the disk. The container deployment hides how bad that is: there, almost nothing else is on the
+filesystem. On a personal machine, which is where this is meant to run, it is the whole home directory.</p>
+<h4>Decision</h4>
+<p>Reads become an allow-list, and the allowed set is the smallest one in which a tool can start and do
+its job:</p>
+<ul>
+<li>The runtime &mdash; the interpreter, its libraries, and what they load. On macOS that is
+<code>/usr</code>, <code>/System</code>, <code>/Library</code>, <code>/bin</code>, <code>/sbin</code>,
+<code>/opt</code>, <code>/dev</code>, <code>/private/etc</code>, <code>/private/var/db</code>, and the
+root directory itself, which Seatbelt needs in order to resolve any path at all.</li>
+<li>The tool directory, read-only. A tool must be able to load its own executable and the helper beside
+it. This is the agent's own program text: identical for every session, and the same file the operator
+installed.</li>
+<li>Its own working directory, read and write. This is the only writable place.</li>
+<li>The database file it was handed, and the two journal files SQLite creates beside it. Narrowed from
+the whole data directory, which had every session's transcript in it.</li>
+<li>Whatever the operator names in <code>AGENT_READ_PATHS</code>.</li>
+</ul>
+<p>Everything else is denied, including the home directory, the repository the agent is running from,
+and the file holding the API key &mdash; which no longer needs a rule of its own, because it is not in
+any allowed path. The deny-list is gone; there is nothing left to forget to add to it.</p>
+<p><code>AGENT_READ_PATHS</code> is additive operator configuration, not a switch that turns the
+boundary off. It exists because a browser is often installed outside the system roots &mdash; a
+Playwright cache under the home directory, or an application bundle &mdash; and the alternative to
+naming it is a read-everywhere default. In a container, where the browser is at
+<code>/usr/bin/chromium</code>, the variable is unnecessary.</p>
+<p>The temporary directory follows the same rule: a tool is given a <code>TMPDIR</code> inside its own
+working directory rather than the system one, so scratch files are as visible and as confined as
+everything else it writes. A headless browser is pointed at a profile directory there too.</p>
+<h4>Consequences</h4>
+<p>A tool can no longer read a file the operator did not put in the session &mdash; not
+<code>~/notes.md</code>, not a sibling repository. Files reach a conversation by being uploaded into it.
+That is a real loss of convenience on a personal machine, and it is the loss that was being paid for by
+exposing the private keys.</p>
+<p>The cost is a profile that can be wrong in a way that looks like a broken tool. A missing runtime
+path is an <code>Operation not permitted</code> from inside an interpreter, which reads as the tool's
+fault. Against that: the set was derived by running every supplied tool under the profile, the tools
+run under it in the test suite, and <code>AGENT_READ_PATHS</code> is the documented repair.</p>
+<p>Two things were found by building it. A full browser application bundle does not start under the
+profile even with its directory readable, while the headless shell does &mdash; so the headless shell is
+what the tools look for first. And SQLite needs its <code>-wal</code> and <code>-shm</code> files named
+explicitly; allowing only the database file leaves a tool that cannot open its own tables.</p>
+</div>
+
+<div class="adr" id="adr-035">
+<div class="meta">ADR-035 · accepted</div>
+<h3>Tools are written in Go, test-first, in this module</h3>
+<h4>Context</h4>
+<p>Every supplied tool was a Python script. The reason was self-modification: a tool was something the
+agent wrote for itself mid-conversation, and an interpreter meant nothing stood between deciding to
+write one and running it. <a href="#adr-033">ADR-033</a> ended self-modification &mdash; tools are
+written by the operator, on a machine that already has a toolchain &mdash; and the reason went with it.</p>
+<p>What remained was the cost. A tool runs beside the gateway, the scheduler, the database, and the
+model API key, with the agent's own privileges, and it was the only part of the system with none of the
+agent's discipline: no compiler, no <code>go vet</code>, a second language to keep correct, and a
+separate test runner that <code>task test</code> had to know about. The tools were also the part most
+likely to be wrong, because they are where the parsing lives.</p>
+<h4>Decision</h4>
+<p>A tool is a Go package in this module, at <code>tools/&lt;name&gt;</code>, developed test-first, and
+it ships eval cases as it always did. <code>go build ./...</code>, <code>go vet ./...</code>, and
+<code>go test ./...</code> reach every tool without being told they exist, and
+<code>task build</code> compiles each directory to its own <code>run</code>.</p>
+<p>The registry contract does not change and is not narrowed: it executes <code>run</code>, hands it
+JSON on standard input, and reads JSON from standard output. Any language still satisfies it. This is a
+rule about how tools are written in this repository, enforced by review rather than by the loader,
+because a loader that checked would be enforcing a convention the contract does not need.</p>
+<p>The plumbing every tool repeated &mdash; decoding arguments, emitting a result, calling the API,
+refusing a path outside the workspace, driving a headless browser &mdash; moves to
+<code>internal/tool</code>. It sits under <code>internal/</code> rather than <code>tools/</code>
+because the registry treats every directory in the tool directory as a tool, and a shared package there
+would be a permanent load failure.</p>
+<h4>Consequences</h4>
+<p>Arguments are structs rather than dictionaries, so a mistyped parameter is a compile error instead of
+a <code>KeyError</code> at three in the morning. The parsing in <code>web_search</code> and
+<code>web_fetch</code> is now covered by tests that run in the same command as everything else. One
+language, one test runner, one <code>task check</code>.</p>
+<p>Go's regexp has no lookahead, which the Bing result parser had been using to find where one result
+ends. It is now explicit block slicing, which is clearer than the pattern it replaces. Go's
+<code>\s</code> is ASCII-only, so a non-breaking space in a rendered page survived a whitespace collapse
+that Python's Unicode-aware class had absorbed; it is now normalised deliberately. Both were found by
+porting the tests first.</p>
+<p>Two costs, both real. A tool must be built before it runs, so <code>task test</code> depends on
+<code>task build:tools</code> and a bare <code>go test ./...</code> on a fresh clone will not find the
+executables until one build has happened. And a Go tool that links a database driver is several
+megabytes where a script was two kilobytes &mdash; <code>notes</code> is 12 MB. Neither is paid at
+runtime, and neither touches <a href="index.html">R4</a>: the agent is not rebuilt and not restarted
+when a tool changes, which is the property that mattered.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

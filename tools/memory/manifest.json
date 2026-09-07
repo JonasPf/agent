@@ -1,0 +1,31 @@
+{
+  "name": "memory",
+  "description": "Write, revise, or remove durable memory. This is the only record of what is remembered: list it to answer any question about what you know, rather than answering from the conversation.",
+  "db_prefix": "memory_",
+  "timeout_seconds": 30,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "add",
+          "edit",
+          "delete",
+          "list"
+        ]
+      },
+      "id": {
+        "type": "string",
+        "description": "Item id, for edit and delete."
+      },
+      "text": {
+        "type": "string",
+        "description": "The item, one fact."
+      }
+    },
+    "required": [
+      "action"
+    ]
+  }
+}

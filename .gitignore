@@ -1,2 +1,6 @@
 data/
 .env
+
+# Snapshots taken by `task db:clear`
+.backups/
+tools/*/run

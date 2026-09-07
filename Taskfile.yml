@@ -1,0 +1,143 @@
+version: '3'
+
+# Every workflow in the repo. `task` on its own lists them.
+#
+# OPENROUTER_API_KEY is read from .env by the agent itself; the eval command
+# needs it in the environment too, and dotenv puts it there.
+
+dotenv: ['.env']
+
+vars:
+  ADDR: '{{.AGENT_ADDR | default ":8080"}}'
+  BACKUPS: '.backups'
+
+tasks:
+  default:
+    desc: List the available tasks
+    cmds: [task --list]
+    silent: true
+
+  build:
+    desc: Compile the agent and every tool
+    cmds:
+      - go build ./...
+      - task: build:tools
+
+  build:tools:
+    desc: Compile each tool directory to its own `run` executable
+    silent: true
+    cmds:
+      - |
+        set -e
+        for d in tools/*/; do
+          [ -f "$d/manifest.json" ] || continue
+          go build -o "$d/run" "./$d"
+        done
+        echo "tools built"
+
+  run:
+    desc: Run the agent, serving http://localhost{{.ADDR}}
+    deps: [build]
+    cmds:
+      - go run ./cmd/agent
+
+  fmt:
+    desc: Format the Go sources in place
+    cmds:
+      - gofmt -w .
+
+  lint:
+    desc: Report unformatted files and vet problems
+    silent: true
+    cmds:
+      - |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "gofmt needed:"; echo "$unformatted"; exit 1
+        fi
+      - go vet ./...
+
+  test:
+    desc: Run every test suite — Go (agent and tools) and the browser helpers
+    cmds:
+      - task: test:go
+      - task: test:web
+
+  test:go:
+    desc: Go tests, including every tool's own
+    deps: [build:tools]
+    cmds:
+      - go test ./...
+
+  test:web:
+    desc: Browser helper tests (node's built-in runner)
+    cmds:
+      - node --test web/*.test.js
+
+  check:
+    desc: Everything that must pass before committing
+    cmds:
+      - task: lint
+      - task: build
+      - task: test
+
+  eval:
+    desc: Put each tool's eval.json cases to a real model (costs money; CLI={{.CLI_ARGS}})
+    cmds:
+      - go run ./cmd/eval {{.CLI_ARGS}}
+
+  db:clear:
+    desc: Move sessions, jobs, memory, and session files to a timestamped backup and start fresh
+    silent: true
+    cmds:
+      - |
+        set -e
+        if lsof -ti tcp{{.ADDR}} >/dev/null 2>&1; then
+          echo "The agent is running on {{.ADDR}}. Stop it first, then rerun." >&2
+          exit 1
+        fi
+        stamp=$(date +%Y%m%d-%H%M%S)
+        dest="{{.BACKUPS}}/$stamp"
+        mkdir -p "$dest"
+        for f in data/sessions data/agent.db data/agent.db-wal data/agent.db-shm; do
+          [ -e "$f" ] && mv "$f" "$dest"/ || true
+        done
+        # Session working directories are session state too, and an orphaned one
+        # outlives every record of what put it there.
+        [ -d workspace ] && mv workspace "$dest"/workspace || true
+        mkdir -p data/sessions workspace
+        echo "backed up to $dest"
+
+  db:restore:
+    desc: Restore the most recent db:clear backup
+    silent: true
+    cmds:
+      - |
+        set -e
+        latest=$(ls -1d {{.BACKUPS}}/*/ 2>/dev/null | tail -1)
+        if [ -z "$latest" ]; then echo "no backups in {{.BACKUPS}}" >&2; exit 1; fi
+        rm -rf data/sessions data/agent.db data/agent.db-wal data/agent.db-shm workspace
+        cp -R "$latest"/. data/
+        if [ -d "data/workspace" ]; then mv data/workspace workspace; fi
+        echo "restored from $latest"
+
+  db:status:
+    desc: Count what the running agent currently holds
+    silent: true
+    cmds:
+      - |
+        base="http://localhost{{.ADDR}}"
+        for r in sessions jobs dead-letters; do
+          printf '%-14s ' "$r"
+          curl -sf "$base/$r" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d) if d else 0)' \
+            || echo "(agent not running)"
+        done
+        printf '%-14s ' memory
+        curl -sf "$base/memory" | python3 -c 'import sys,json;print(len(json.load(sys.stdin).get("items") or []))' 2>/dev/null || echo "-"
+        printf '%-14s ' tools
+        curl -sf "$base/tools" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d["tools"]),"loaded, failures:",d.get("failures"))' 2>/dev/null || echo "-"
+
+  tools:reload:
+    desc: Ask the running agent to reload tools from disk
+    cmds:
+      - curl -fsS -X POST http://localhost{{.ADDR}}/tools/reload -o /dev/null -w 'reload %{http_code}\n'

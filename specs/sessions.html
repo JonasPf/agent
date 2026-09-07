@@ -44,9 +44,9 @@ private one of its own, so a session is always something a person started and ca
 <ul>
 <li>Every session appears in the session list; none are hidden by kind or origin.</li>
 <li>A session receives a title within one turn of its first user message.</li>
-<li>A session's model, tools, and skills cannot be changed after it is created.</li>
+<li>A session's model, tools, and skills cannot be changed once the session exists.</li>
 <li>The configuration of one session does not affect any other.</li>
-<li>The system prompt as sent is retrievable for any session.</li>
+<li>The system prompt as sent is retrievable for any session that has taken a turn.</li>
 </ul>
 </div>
 
@@ -54,6 +54,10 @@ private one of its own, so a session is always something a person started and ca
 
 <p>Every session opens with a prompt entry: the complete system prompt as sent, split into sections you
 can expand. Persona, memory, the skills index, and the full tool definitions are all there.</p>
+
+<p>It is written when the session is created, from the configuration chosen before it existed. A session
+therefore has a prompt from its first moment, and nothing reading position zero has to allow for its
+absence.</p>
 
 <pre><code>┌─ prompt · 4,180 tokens                        ─┐
 │  persona            310 tokens        expand   │
@@ -80,19 +84,20 @@ effect there rather than here: the entry records it, and the next session's prom
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every session's first entry is the system prompt as sent, sectioned and expandable.</li>
+<li>Every session's first entry, once it has taken a turn, is the system prompt as sent, sectioned and expandable.</li>
 <li>Tool definitions are shown in full, exactly as the model receives them.</li>
 <li>Each section shows its token count, and the entry shows the total.</li>
 <li>The memory section is editable in place; no other section is.</li>
 <li>The prompt entry is not sent to the model.</li>
+<li>A session that has not taken a turn has no prompt entry, and its configuration is still editable.</li>
 <li>The prompt a session is sent is identical on its first turn and its last.</li>
 </ul>
 </div>
 
 <h2>Configuration</h2>
 
-<p>A session's model, its tools, and its skills are one thing: the configuration. It is chosen when the
-session is created and fixed for the session's life.</p>
+<p>A session's model, its tools, and its skills are one thing: the configuration. It is chosen before
+the conversation starts and fixed from the session's first turn.</p>
 
 <p>So the prompt carries exactly what the session can use. The tool definitions in position zero are the
 tools that are callable; the skills index lists the skills that can be read. There is no second,
@@ -100,8 +105,8 @@ smaller set hiding behind a larger one.</p>
 
 <div class="note">
 <strong>Changing it is continuing.</strong> To run on a different model, or with a different set of
-tools, you rotate: the conversation continues in a new session under the new configuration, carrying
-its summary and recent turns across. There is no other way to change it, and no need for one.
+tools, you rotate: the conversation continues in a new session under the new configuration, carrying its
+summary and recent turns across. There is no other way to change it, and no need for one.
 </div>
 
 <h3>Why fixed</h3>
@@ -124,18 +129,21 @@ session's set is simply not a skill it has, and a job that runs days later runs 
 configuration it was created under.</p>
 
 <div class="note">
-<strong>What is still mutable.</strong> Title, muted, status, and the rolling summary. None of them
-appear in the prompt, so none of them can invalidate it.
+<strong>What is still mutable.</strong> Title, status, and the rolling summary. None of them
+appear in the prompt, so none of them can invalidate it. Model, tools, and skills never do.
 </div>
 
-<p>A new session inherits the configuration of the most recently used one, so the common case needs no
-interaction: the choice is there when it is wanted and absent when it is not.</p>
+<p>A new session inherits the configuration of the most recently used one, and a fork inherits its
+predecessor's, so the common case is a screen you confirm without changing anything. Both are the same
+screen, reached the same way, and both are answered before the session exists.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>The prompt defines exactly the session's enabled tools, and indexes exactly its enabled skills.</li>
+<li>A session's configuration is chosen before it is created and cannot be changed afterwards.</li>
 <li>A request to change a session's model, tools, or skills is refused, and names rotation as the way.</li>
+<li>Every session has a prompt entry from the moment it exists.</li>
 <li>Rotating accepts a configuration; anything not given is inherited from the predecessor.</li>
 <li>A rotation that changes the configuration names what changed, in both sessions' transcripts.</li>
 <li>A new session inherits the configuration of the most recently used session.</li>
@@ -151,11 +159,49 @@ and affordable.</p>
 <table>
 <tr><th>Type</th><th>Written by</th><th>Shown to user</th><th>Sent to model</th></tr>
 <tr><td><code>message</code></td><td>user, assistant, tool result</td><td>yes</td><td>yes</td></tr>
-<tr><td><code>event</code></td><td>system: job checks, summary updates, rotations, dead letters</td><td>yes</td><td>no</td></tr>
+<tr><td><code>event</code></td><td>system: job checks, rotations, failures</td><td>yes</td><td>no</td></tr>
+<tr><td><code>prompt</code></td><td>system, at creation: the prompt as sent</td><td>yes</td><td>no</td></tr>
 </table>
 
-<p>An event costs nothing. A job that checks a condition every two minutes writes seven hundred events
-a day, all readable, none of them consuming context or money.</p>
+<h3>What an event is for</h3>
+
+<p>An event exists only where nothing else records what happened. A check that exits non-zero costs no
+model call and produces no message, so without an event a job that polled for six hours leaves no trace
+at all — and a job that died on its first tick would look identical. That difference is the whole
+justification, and it is the test every event has to pass.</p>
+
+<table>
+<tr><th>Event</th><th>Records</th></tr>
+<tr><td><code>job_check</code></td><td>A check ran and what it decided. Nothing else records a tick that did not fire.</td></tr>
+<tr><td><code>job_error</code></td><td>A job failed. Failing is not something the model says.</td></tr>
+<tr><td><code>error</code></td><td>A turn failed.</td></tr>
+<tr><td><code>rotation</code></td><td>The conversation continued in a new session.</td></tr>
+<tr><td><code>carried_over</code></td><td>Which turns arrived from a predecessor.</td></tr>
+</table>
+
+<p>Nothing else is an event. An action whose result already appears in the transcript — a tool call
+answering for itself — is not written twice, and one whose result is a row on another screen is recorded
+by that row. Creating a job, adding a tool, updating the summary, and uploading a file are all of these,
+so none of them writes an entry.</p>
+
+<div class="note">
+<strong>Cheapness is not a reason.</strong> An event costs no tokens, which is an argument for keeping
+one that carries information and no argument at all for keeping one that repeats a line already on the
+screen. A transcript is read by a person; its budget is attention, not tokens.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A check job that never fires still leaves one entry per tick.</li>
+<li>Creating a job, registering a tool, updating a summary, and uploading a file write no transcript entry.</li>
+<li>Every event kind that exists records something no other entry and no other screen records.</li>
+<li>The prompt is its own entry type, not an event.</li>
+<li>A wake is attributed to its job, named in the speaker itself. The operator is never shown as the author of a turn they did not type.</li>
+<li>The job attribution appears once, on the wake, and not on the replies it produced.</li>
+<li>Every message carries the time it was written, with the date shown once it is not today's.</li>
+</ul>
+</div>
 
 <h2>Projection</h2>
 
@@ -168,15 +214,27 @@ flowchart LR
   P --> M["Messages<br/>(sent to model)"]
   P -.->|"drop"| E["events"]
   P -.->|"collapse"| C["repeated job ticks<br/>→ one line + count"]
+  P -.->|"mark"| W["job wake<br/>→ names its job, operator absent"]
 </div>
 
-<p>The projection applies three rules and nothing else:</p>
+<p>The projection applies five rules and nothing else:</p>
 
 <ol>
 <li>Entries of type <code>event</code> are dropped.</li>
-<li>Consecutive entries sharing a <code>job_id</code> and a <code>status</code> collapse into a single line carrying the repetition count and the elapsed span. A tick's status is <code>fired</code> or <code>not_fired</code>.</li>
+<li>Consecutive <code>job_check</code> events sharing a <code>job_id</code> and a <code>status</code> collapse into a single line carrying the repetition count and the elapsed span. Only a wake with a check produces these; a wake that acts produces messages, which are never collapsed.</li>
+<li>A user entry carrying a <code>job_id</code> is a wake, and is marked as one: it names the job, says how late it ran when that is more than a minute, and states that the operator is not present. A user entry without one is what the operator typed, and is left alone.</li>
+<li>A failed run projects as one line saying the turn above produced no reply, and carrying the failure. Every other event is dropped.</li>
 <li>Everything else passes through unchanged.</li>
 </ol>
+
+<p>The turn's own user message goes through the projection too, rather than being assembled
+separately. Two ways of putting a user turn on the wire is two rules to keep in step, and when they
+drifted the wake marker was the thing that went missing.</p>
+
+<p>A failure is the one event the model is shown, because a turn that failed left its input in the
+transcript with nothing after it. Two wakes of one job then read as the same instruction given twice,
+and the model answers it twice &mdash; one reminder reaching the operator as two. The line between them
+is what makes the first one legible as a run that died.</p>
 
 <p>Collapsing preserves the count deliberately. "Checked forty-seven times over three hours with no
 change" supports a conclusion that "checked once" does not.</p>
@@ -185,7 +243,11 @@ change" supports a conclusion that "checked once" does not.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Projection is a pure function of a transcript; running it twice on the same input gives the same output.</li>
-<li>No event entry ever appears in a model request.</li>
+<li>A user entry carrying a job id reaches the model marked as a wake, naming the job and saying the operator is not present.</li>
+<li>A wake that ran more than a minute after it was due says how late it is and when it was due; a punctual one says nothing about the clock.</li>
+<li>A user entry with no job id reaches the model exactly as it was typed.</li>
+<li>No event entry appears in a model request, except a failure, which appears as one derived line.</li>
+<li>A wake whose run failed is followed in the request by a line saying it produced no reply, so an unanswered instruction is never mistaken for a repeated one.</li>
 <li>Five consecutive ticks with identical status project to one line stating five occurrences and the time span.</li>
 <li>Only the trailing run of ticks is collapsed; a run followed by a later user message is never re-collapsed.</li>
 <li>Collapsing never removes an entry from the stored transcript.</li>
@@ -213,15 +275,21 @@ was added, not on how long the conversation has become.</p>
 every update and invalidate the cache — the thing the whole design protects. It lives beside the
 session and is used only to seed another one.</p>
 
+<p>Growth is measured on the messages as the model would receive them, not on their text. A session
+that spends its context on tool results — fetched pages, command output — carries almost
+nothing in the text of its own turns, and measuring text alone would let it rotate on tokens the
+summariser never counted, handing its successor an empty summary.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The summary updates after roughly every four thousand tokens of growth, and writes a visible event entry.</li>
+<li>The summary updates after roughly every four thousand tokens of growth.</li>
 <li>An update reads only the previous summary and the messages since it, not the full transcript.</li>
 <li>Summaries run on the session's model; no part of the system selects a model of its own.</li>
 <li>The summary is visible and editable in the interface.</li>
 <li>Updating the summary does not alter the session's prompt or invalidate its cached prefix.</li>
 <li>A session that has never grown past the threshold has no summary and needs none.</li>
+<li>Growth counts the projected messages, so a session growing only in tool results is still summarised.</li>
 </ul>
 </div>
 
@@ -239,8 +307,17 @@ and whether or not it is cached. The default threshold is forty thousand project
 last few exchanges are exactly what compresses worst and matters most — three options the agent just
 offered, a question waiting to be answered, the file it was working on.</p>
 
-<p>So a successor opens with the summary and then as many of the most recent turns as fit in a token
-budget, oldest of those first. The budget is a size, not a message count, because messages range from
+<p>The predecessor's summary reaches the successor in its system prompt, as a <code>carried_summary</code>
+section. It is not a message: the user role means the operator is speaking, and the summary is not
+something they said. It is frozen when the successor is created — read before the prompt entry is
+written, and never rewritten afterwards — so it sits inside the cached prefix rather than breaking
+it, and the prompt the transcript records is the prompt that is sent. The successor's own rolling
+summary starts empty and is a separate field; the two never overwrite each other. The text is also
+written into the <code>carried_over</code> event, which the projection drops, so the append-only
+transcript records what the successor started from at no cost in tokens.</p>
+
+<p>So a successor opens with the summary in its prompt and then as many of the most recent turns as fit
+in a token budget, oldest of those first. The budget is a size, not a message count, because messages range from
 a line to a whole file. Turns are copied whole: never half of an exchange, and never an assistant
 message separated from the tool results it produced.</p>
 
@@ -261,8 +338,7 @@ nobody has a link to yet.</p>
 
 <ul>
 <li>Jobs move to the successor when their session rotates.</li>
-<li>Replaying a dead letter attaches the job to the live session of the chain, not to the archived one recorded in its specification.</li>
-<li>Opening an archived session from a notification or a link follows <code>continued_by</code> to the live session, and says that it did.</li>
+<li>Opening an archived session from a link follows <code>continued_by</code> to the live session, and says that it did.</li>
 </ul>
 
 <p>This is the same operation as forking a session or resuming an old one. All three create a session
@@ -283,6 +359,8 @@ something said before a rotation is still retrievable by search.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Passing the size threshold opens a successor session seeded with the summary and archives the predecessor.</li>
+<li>The carried summary reaches the successor's model in the system prompt, not as a user message.</li>
+<li>The carried summary is fixed for the successor's life and recorded in its <code>carried_over</code> event.</li>
 <li>The successor also carries the most recent complete turns that fit a token budget, defaulting to five thousand.</li>
 <li>A turn is carried whole or not at all, including any tool results it produced.</li>
 <li>Carried turns are marked as coming from the predecessor and link back to their place in it.</li>
@@ -310,6 +388,57 @@ that session, and a job never interleaves with a turn in progress.</p>
 <li>A job firing while a user turn is running waits and then runs.</li>
 <li>A user message queued behind a job run is not reordered ahead of it or dropped.</li>
 <li>Different sessions run concurrently without blocking each other.</li>
+</ul>
+</div>
+
+<h2>Working directory</h2>
+
+<p>Each session owns a directory. Its tools run in it, its uploads land in it, and a relative path in a
+tool call means a file in it. Nothing is shared: two conversations writing <code>notes.txt</code> write
+two files.</p>
+
+<p>A continuation carries files as well as words. Rotation, fork, and resume all start the successor
+from a copy of the predecessor's directory, so a conversation continues with the files it was working
+on, and neither session's later writes reach the other.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A session's tools run in that session's directory, and no other session's tools can read it.</li>
+<li>A file uploaded to a session is written there, and its tools see it immediately.</li>
+<li>A continuation starts from a copy of its predecessor's directory; writes after that are independent.</li>
+<li>The files a session holds are listed, downloaded, and deleted through the API.</li>
+<li>A path that would leave the session's directory is refused.</li>
+<li>Deleting a session deletes its directory.</li>
+<li>A session reports what it occupies on disk: its transcript and its working directory.</li>
+</ul>
+</div>
+
+<h2>Export and import</h2>
+
+<p>A session travels as one zip: <code>meta.json</code>, <code>transcript.jsonl</code>,
+<code>jobs.json</code>, <code>job_runs.json</code>, and the working directory under
+<code>files/</code>. The archive mirrors what is on disk, so it can be read without this program.</p>
+
+<p>An import restores the session under the identifier it already carries: a restored conversation is
+the one it was rather than a copy of it, and its links, its jobs, and its files all still name it. An
+identifier already present is therefore a conflict and the import is refused rather than merged.</p>
+
+<div class="note">
+<strong>Memory is not in it.</strong> Memory is durable across every conversation rather than owned by
+one, so an archive that carried it would change what every later session is told, silently, on import.
+An export is a session and nothing wider.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>An export carries the session's metadata, transcript, jobs, their run logs, and working directory.</li>
+<li>An import restores all of them, in whichever agent reads the archive.</li>
+<li>An imported transcript is searchable and its jobs run.</li>
+<li>An import naming a session already present is refused, and says which.</li>
+<li>An archive that is not a session is refused and nothing is altered.</li>
+<li>Memory is not exported.</li>
 </ul>
 </div>
 

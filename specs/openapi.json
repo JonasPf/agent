@@ -19,9 +19,6 @@
       "name": "jobs"
     },
     {
-      "name": "dead-letters"
-    },
-    {
       "name": "memory"
     },
     {
@@ -166,7 +163,7 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Update title, status, muted, or the rolling summary.",
+        "summary": "Update title, status, or the rolling summary.",
         "requestBody": {
           "required": true,
           "content": {
@@ -183,9 +180,6 @@
                       "active",
                       "archived"
                     ]
-                  },
-                  "muted": {
-                    "type": "boolean"
                   },
                   "summary": {
                     "type": "string",
@@ -463,7 +457,7 @@
             }
           },
           "422": {
-            "description": "Rejected: a job without a check may not tick more often than every fifteen minutes."
+            "description": "Rejected: the schedule, the prompt, or after_acting is not valid."
           }
         }
       }
@@ -527,107 +521,10 @@
         "tags": [
           "jobs"
         ],
-        "summary": "Delete a job. Does not create a dead letter.",
+        "summary": "Delete a job. Its run log goes with it.",
         "responses": {
           "204": {
             "description": "Deleted."
-          }
-        }
-      }
-    },
-    "/dead-letters": {
-      "get": {
-        "tags": [
-          "dead-letters"
-        ],
-        "summary": "List dead letters.",
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "open",
-                "closed"
-              ],
-              "default": "open"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Dead letters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DeadLetter"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "description": "Deleting a session deletes its dead letters, since replay requires that session."
-      }
-    },
-    "/dead-letters/{id}/replay": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "post": {
-        "tags": [
-          "dead-letters"
-        ],
-        "summary": "Recreate the job from its stored specification with a fresh expiry.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "expires_at": {
-                    "type": "string",
-                    "format": "date-time"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Job recreated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Job"
-                }
-              }
-            }
-          }
-        },
-        "description": "The recreated job is attached to the live session of its original session's chain, not to an archived predecessor."
-      }
-    },
-    "/dead-letters/{id}/dismiss": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "post": {
-        "tags": [
-          "dead-letters"
-        ],
-        "summary": "Close a dead letter without replaying it.",
-        "responses": {
-          "200": {
-            "description": "Dismissed."
           }
         }
       }
@@ -940,49 +837,6 @@
         "description": "Maximum 100 MB per file. Uploads belong to the workspace and are deleted with the session that referenced them."
       }
     },
-    "/push/subscriptions": {
-      "post": {
-        "tags": [
-          "system"
-        ],
-        "summary": "Register a Web Push subscription for this device.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "endpoint",
-                  "keys"
-                ],
-                "properties": {
-                  "endpoint": {
-                    "type": "string"
-                  },
-                  "keys": {
-                    "type": "object",
-                    "properties": {
-                      "p256dh": {
-                        "type": "string"
-                      },
-                      "auth": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Registered."
-          }
-        }
-      }
-    },
     "/models": {
       "get": {
         "tags": [
@@ -1057,9 +911,6 @@
                       "type": "string"
                     },
                     "jobs_active": {
-                      "type": "integer"
-                    },
-                    "dead_letters_open": {
                       "type": "integer"
                     },
                     "breaker_probe_at": {
@@ -1138,6 +989,72 @@
         },
         "description": "Rotation, fork, resume, and reconfiguration are one operation. The successor is seeded with the predecessor's summary and the most recent complete turns that fit the carry-over budget, and starts under the configuration given here, defaulting to the predecessor's. Both entries name what changed."
       }
+    },
+    "/jobs/{id}/runs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "A job's run log: every wake, what came of it, and what was said. Newest first.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job's runs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "job_id": {
+                        "type": "string"
+                      },
+                      "session_id": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When the wake ran."
+                      },
+                      "due_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "When it was scheduled for. Differs from at when the host slept or the session was busy."
+                      },
+                      "outcome": {
+                        "type": "string",
+                        "enum": [
+                          "fired",
+                          "skipped",
+                          "failed"
+                        ]
+                      },
+                      "message": {
+                        "type": "string",
+                        "description": "What the agent said, why the check said no, or what went wrong."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1192,9 +1109,6 @@
             },
             "nullable": true,
             "description": "Skills readable in this session. Null means all. A new session inherits the most recently used set."
-          },
-          "muted": {
-            "type": "boolean"
           },
           "unread": {
             "type": "integer"
@@ -1402,7 +1316,7 @@
           },
           "prompt": {
             "type": "string",
-            "description": "What the agent is asked when the job runs. For a job without a check, calling the notify tool during the run is what marks the condition met; a run that does not call it is recorded as an event and produces no message."
+            "description": "What the agent is asked when the job runs. "
           },
           "expires_at": {
             "type": "string",
@@ -1436,7 +1350,7 @@
           },
           "prompt": {
             "type": "string",
-            "description": "What the agent is asked when the job runs. For a job without a check, calling the notify tool during the run is what marks the condition met; a run that does not call it is recorded as an event and produces no message."
+            "description": "What the agent is asked when the job runs. "
           },
           "expires_at": {
             "type": "string",

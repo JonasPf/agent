@@ -8,7 +8,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,22 +16,34 @@ import (
 )
 
 type Config struct {
-	Addr            string
-	DataDir         string
-	Workspace       string
-	ToolsDir        string
-	SkillsDir       string
-	WebDir          string
-	RepoRoot        string
+	Addr      string
+	DataDir   string
+	Workspace string
+	ToolsDir  string
+	SkillsDir string
+	WebDir    string
+	EnvFile   string
+	// ReadPaths are directories the operator adds to what a tool may read,
+	// beyond the runtime. A browser installed outside the system roots is the
+	// case it exists for. It only adds; nothing here removes a boundary.
+	ReadPaths       string
 	DefaultModel    string
 	RotateAtTokens  int
 	CarryOverTokens int
 	SummaryEvery    int
 	MemoryCapacity  int
 	APIKey          string
-	VAPIDPublic     string
-	VAPIDPrivate    string
-	VAPIDSubject    string
+}
+
+// BaseURL is the address a tool uses to reach the API. Tools run beside the
+// gateway in the same container, so this is always the loopback address: a tool
+// asks the system for what it needs the same way the interface does.
+func (c Config) BaseURL() string {
+	addr := c.Addr
+	if strings.HasPrefix(addr, ":") {
+		addr = "127.0.0.1" + addr
+	}
+	return "http://" + addr
 }
 
 func envOr(k, def string) string {
@@ -51,35 +62,81 @@ func envInt(k string, def int) int {
 	return def
 }
 
+// loadEnvFile fills environment variables from a file of KEY=VALUE lines, so
+// secrets and settings live somewhere durable instead of in a shell the operator
+// has to remember to prepare. A variable already set in the environment always
+// wins, which keeps a one-off override on the command line working.
+//
+// The file is optional. Blank lines and # comments are skipped, a leading
+// "export " is tolerated, and a value may be wrapped in single or double quotes.
+func loadEnvFile(path string) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	if fi, err := os.Stat(path); err == nil && fi.Mode().Perm()&0o077 != 0 {
+		log.Printf("warning: %s is readable by other users; chmod 600 it", path)
+	}
+	n := 0
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if len(v) > 1 && (v[0] == '"' && v[len(v)-1] == '"' || v[0] == '\'' && v[len(v)-1] == '\'') {
+			v = v[1 : len(v)-1]
+		}
+		if k == "" {
+			continue
+		}
+		if _, set := os.LookupEnv(k); set {
+			continue
+		}
+		if os.Setenv(k, v) == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		log.Printf("config: %d variables from %s", n, path)
+	}
+}
+
 func LoadConfig() Config {
+	envFile := envOr("AGENT_ENV", ".env")
+	loadEnvFile(envFile)
 	return Config{
+		EnvFile:         envFile,
 		Addr:            envOr("AGENT_ADDR", ":8080"),
 		DataDir:         envOr("AGENT_DATA", "data"),
 		Workspace:       envOr("AGENT_WORKSPACE", "workspace"),
 		ToolsDir:        envOr("AGENT_TOOLS", "tools"),
+		ReadPaths:       os.Getenv("AGENT_READ_PATHS"),
 		SkillsDir:       envOr("AGENT_SKILLS", "skills"),
 		WebDir:          envOr("AGENT_WEB", "web"),
-		RepoRoot:        envOr("AGENT_REPO", "."),
 		DefaultModel:    envOr("AGENT_MODEL", "anthropic/claude-sonnet-4.5"),
 		RotateAtTokens:  envInt("AGENT_ROTATE_TOKENS", 40000),
 		CarryOverTokens: envInt("AGENT_CARRY_TOKENS", 5000),
 		SummaryEvery:    envInt("AGENT_SUMMARY_EVERY", 4000),
 		MemoryCapacity:  envInt("AGENT_MEMORY_CAPACITY", 8000),
 		APIKey:          os.Getenv("OPENROUTER_API_KEY"),
-		VAPIDPublic:     os.Getenv("AGENT_VAPID_PUBLIC"),
-		VAPIDPrivate:    os.Getenv("AGENT_VAPID_PRIVATE"),
-		VAPIDSubject:    envOr("AGENT_VAPID_SUBJECT", "mailto:operator@localhost"),
 	}
 }
 
 type App struct {
-	cfg    Config
-	store  *Store
-	tools  *Registry
-	skills *Skills
-	or     *OpenRouter
-	hub    *Hub
-	sched  *Scheduler
+	cfg     Config
+	sandbox *Sandbox
+	store   *Store
+	tools   *Registry
+	skills  *Skills
+	or      *OpenRouter
+	hub     *Hub
+	sched   *Scheduler
 
 	qmu    sync.Mutex
 	queues map[string]chan func()
@@ -104,20 +161,22 @@ func Run() error {
 	if err != nil {
 		return err
 	}
+	sandbox := NewSandbox(cfg)
 	a := &App{
-		cfg:    cfg,
-		store:  st,
-		tools:  NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
-		skills: NewSkills(cfg.SkillsDir),
-		or:     NewOpenRouter(cfg.APIKey),
-		hub:    NewHub(),
-		queues: map[string]chan func(){},
-		busy:   map[string]bool{},
+		cfg:     cfg,
+		sandbox: sandbox,
+		store:   st,
+		tools:   NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
+		skills:  NewSkills(cfg.SkillsDir),
+		or:      NewOpenRouter(cfg.APIKey),
+		hub:     NewHub(),
+		queues:  map[string]chan func(){},
+		busy:    map[string]bool{},
 	}
+	log.Print(sandbox.Describe())
 	a.registerBuiltins()
 	loaded, failures := a.tools.Load(a)
 	log.Printf("tools: %d builtin, %d from disk, %d failed", len(a.tools.All())-len(loaded), len(loaded), len(failures))
-	a.initGit()
 
 	a.sched = NewScheduler(a)
 	go a.sched.Run(context.Background())
@@ -127,42 +186,11 @@ func Run() error {
 	return http.ListenAndServe(cfg.Addr, mux)
 }
 
-// git runs a git command in the repository root, which holds the workspace,
-// the tools, and the skills.
-func (a *App) git(args ...string) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = a.cfg.RepoRoot
-	_ = cmd.Run()
-}
-
-// initGit makes the working directory a git repository so a tool that breaks
-// the system is reverted rather than reconstructed.
-func (a *App) initGit() {
-	if _, err := os.Stat(filepath.Join(a.cfg.RepoRoot, ".git")); err != nil {
-		a.git("init", "-q")
-	}
-	gitignore := filepath.Join(a.cfg.RepoRoot, ".gitignore")
-	if _, err := os.Stat(gitignore); err != nil {
-		_ = os.WriteFile(gitignore, []byte("data/\n"), 0o644)
-	}
-	a.git("add", "-A")
-	a.git("-c", "user.email=agent@localhost", "-c", "user.name=agent",
-		"commit", "-q", "-m", "initial", "--allow-empty")
-}
-
-// commitTools records the tool directory's current state after a reload.
-func (a *App) commitTools(msg string) {
-	target := a.cfg.ToolsDir
-	if rel, err := filepath.Rel(a.cfg.RepoRoot, a.cfg.ToolsDir); err == nil && !strings.HasPrefix(rel, "..") {
-		target = rel
-	}
-	a.git("add", "-A", "--", target)
-	a.git("-c", "user.email=agent@localhost", "-c", "user.name=agent", "commit", "-q", "-m", msg)
-}
-
-// ReloadTools validates and registers tools from disk. A newly registered tool
-// becomes callable in the current session by appending its definition, without
-// invalidating the cached prefix.
+// ReloadTools validates and registers tools from disk. A newly registered tool is
+// not in the prompt of any session already running, so it takes effect in the
+// sessions started after it, the way a written memory does. The calling session
+// gets an entry saying so, which is a visible record rather than something the
+// model is told.
 func (a *App) ReloadTools(sessionID string) ([]string, []LoadFailure) {
 	before := map[string]bool{}
 	for _, t := range a.tools.All() {
@@ -175,16 +203,7 @@ func (a *App) ReloadTools(sessionID string) ([]string, []LoadFailure) {
 			added = append(added, n)
 		}
 	}
-	if len(failures) == 0 {
-		a.commitTools("tools: reload")
-	}
-	if sessionID != "" {
-		for _, n := range added {
-			t := a.tools.Get(n)
-			a.appendEvent(sessionID, Entry{EventKind: "tool_added",
-				Text: fmt.Sprintf("tool added: %s — %s", t.Name, t.Description)})
-		}
-	}
+	_ = added // the reload result names what was added; nothing writes it twice
 	return loaded, failures
 }
 

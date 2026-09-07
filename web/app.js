@@ -13,7 +13,24 @@ const api = async (path, opts) => {
 const post = (p, b) => api(p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) });
 const patch = (p, b) => api(p, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const del = p => api(p, { method: 'DELETE' });
+
+// Wherever one session names another, the identifier is the only route between
+// them. Rendered as text it is 21 characters to copy by hand, so every occurrence
+// becomes a link. Built from split parts, so nothing but text and anchors is ever
+// inserted — the id came from the transcript, not from a template.
+function sessionLinks(text) {
+  const frag = document.createDocumentFragment();
+  for (const p of splitSessionIds(text)) {
+    if (!p.id) { frag.append(document.createTextNode(p.text)); continue; }
+    const a = el('a', 'sid', p.text);
+    a.href = '#session/' + p.id;
+    a.title = 'open session ' + p.id;
+    frag.append(a);
+  }
+  return frag;
+}
 const fmtMoney = v => '$' + (v || 0).toFixed(4);
+const fmtBytes = n => !n ? '0 B' : n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' kB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB';
 const ago = t => {
   const d = (Date.now() - new Date(t)) / 1000;
   if (d < 60) return Math.max(0, Math.round(d)) + 's ago';
@@ -30,7 +47,7 @@ const until = t => {
   return 'in ' + Math.round(d / 86400) + 'd';
 };
 
-const state = { view: null, session: null, entries: [], streaming: '', sessions: [], models: [], status: null, collapsed: {} };
+const state = { view: null, session: null, entries: [], streaming: '', sessions: [], models: [], status: null, collapsed: {}, sort: 'recent' };
 
 // ---------- routing ----------
 
@@ -56,6 +73,7 @@ function connect() {
 }
 function handle(e) {
   if (e.kind === 'entry' || e.kind === 'transient') {
+    if (e.kind === 'entry') announce(e.entry, e.session_id);
     if (state.view === 'session' && e.session_id === state.arg) {
       if (e.kind === 'entry') state.entries.push(e.entry);
       state.streaming = '';
@@ -68,15 +86,28 @@ function handle(e) {
     }
   } else if (e.kind === 'turn_start') {
     state.streaming = '';
-  } else if (e.kind === 'notification') {
-    toast(e.notification);
-    if (state.view === 'session') loadStatus();
-  } else if (e.kind === 'sessions' || e.kind === 'jobs' || e.kind === 'dead_letters' || e.kind === 'status') {
-    if (['sessions', 'jobs', 'dead', 'panels'].includes(state.view)) render();
+  } else if (e.kind === 'sessions' || e.kind === 'jobs' || e.kind === 'status') {
+    if (['sessions', 'jobs', 'panels'].includes(state.view)) render();
     if (e.kind === 'status') loadStatus();
   }
 }
 
+// announce shows a system notification for a message the operator is not
+// looking at. It is best-effort by design: without permission the unread count
+// in the session list is the whole signal, and nothing opens inside the app.
+function announce(entry, sessionID) {
+  if (!shouldNotify(entry, sessionID, { view: state.view, arg: state.arg, visible: !document.hidden })) return;
+  if (!canShowSystemNotification({ hasNotification: 'Notification' in window, permission: 'Notification' in window ? Notification.permission : '' })) return;
+  const known = (state.sessions || []).find(x => x.id === sessionID);
+  const n = messageNotification(entry, sessionID, known && known.title);
+  try {
+    const sys = new Notification(n.title, { body: n.body, tag: n.tag });
+    sys.onclick = () => { window.focus(); location.hash = '#session/' + n.sessionID; sys.close(); };
+  } catch (err) {}
+}
+
+// toast is in-app feedback for what the operator just did: an upload that
+// failed, a reload that worked. Nothing the agent does arrives this way.
 function toast(n) {
   if (!n) return;
   const t = el('div', 'toast');
@@ -102,12 +133,13 @@ function render() {
     case 'session': return viewSession(v);
     case 'panels': return viewPanels(v);
     case 'jobs': return viewJobs(v);
-    case 'dead': return viewDead(v);
     case 'memory': return viewMemory(v);
     case 'tools': return viewTools(v);
     case 'skills': return viewSkills(v);
     case 'search': return viewSearch(v);
     case 'settings': return viewSettings(v);
+    case 'fork': return viewFork(v);
+    case 'files': return viewFiles(v);
     case 'new': return viewNew(v);
     case 'toolpanel': return viewToolPanel(v);
     default: return viewSessions(v);
@@ -116,6 +148,16 @@ function render() {
 
 // ---------- sessions list ----------
 
+// Recency is the default because the list is usually read to get back to what
+// you were doing. Size is the other question worth asking of it: rotation copies
+// a session's working directory into its successor, so disk use accumulates down
+// a chain and the biggest holder is never the one you were last in.
+function sortSessions(list, by) {
+  const out = (list || []).slice();
+  if (by === 'size') return out.sort((a, b) => (b.disk_bytes || 0) - (a.disk_bytes || 0));
+  return out.sort((a, b) => new Date(b.last_active_at) - new Date(a.last_active_at));
+}
+
 async function viewSessions(v) {
   setHeader('agent', false);
   const bar = el('div');
@@ -123,7 +165,23 @@ async function viewSessions(v) {
   nw.onclick = () => location.hash = '#new';
   const search = el('button', 'act', 'search');
   search.onclick = () => location.hash = '#search';
-  bar.append(nw, search);
+  const imp = el('button', 'act', 'import');
+  const impFile = el('input'); impFile.type = 'file'; impFile.accept = '.zip'; impFile.hidden = true;
+  imp.onclick = () => impFile.click();
+  impFile.onchange = async () => {
+    if (!impFile.files.length) return;
+    const fd = new FormData();
+    fd.append('file', impFile.files[0]);
+    try {
+      const s = await api('/sessions/import', { method: 'POST', body: fd });
+      location.hash = '#session/' + s.id;
+    } catch (e) { toast({ title: 'Import failed', body: String(e.message) }); }
+    impFile.value = '';
+  };
+  const order = el('button', 'act', 'sort: ' + (state.sort === 'size' ? 'size' : 'recent'));
+  order.title = 'order by last activity or by disk used';
+  order.onclick = () => { state.sort = state.sort === 'size' ? 'recent' : 'size'; render(); };
+  bar.append(nw, search, imp, order, impFile);
   v.append(bar);
 
   const list = await api('/sessions');
@@ -133,7 +191,7 @@ async function viewSessions(v) {
   const section = (label, items) => {
     if (!items.length) return;
     v.append(el('h2', null, label));
-    items.forEach(s => v.append(sessionRow(s)));
+    sortSessions(items, state.sort).forEach(s => v.append(sessionRow(s)));
   };
   section('active', active);
   section('archived', archived);
@@ -145,13 +203,22 @@ function sessionRow(s) {
   const m = el('div', 'm');
   m.append(el('div', 'n', s.title || 'Untitled'));
   const sub = el('div', 's');
-  sub.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.rotate_at_tokens.toLocaleString()} tok · ${fmtMoney(s.cost)} · ${ago(s.last_active_at)}`;
+  sub.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.rotate_at_tokens.toLocaleString()} tok · ${fmtMoney(s.cost)} · ${fmtBytes(s.disk_bytes)} · ${ago(s.last_active_at)}`;
   m.append(sub);
   if (s.job_count) { const t = el('span', 'tag on', s.job_count + ' job' + (s.job_count > 1 ? 's' : '')); m.append(t); }
   if (s.continued_by) m.append(el('span', 'tag', '→ continued'));
-  if (s.muted) m.append(el('span', 'tag', 'muted'));
   row.append(m);
   if (s.unread) row.append(el('span', 'badge', String(s.unread)));
+  // Deleting is why the size is shown, so it is offered on the same row rather
+  // than inside the session it would remove.
+  const rm = el('span', 'tag', 'delete');
+  rm.onclick = async e => {
+    e.stopPropagation();
+    if (!confirm('Delete "' + (s.title || 'Untitled') + '", its transcript, its files, and its jobs?')) return;
+    await del('/sessions/' + s.id);
+    render();
+  };
+  row.append(rm);
   row.onclick = () => location.hash = '#session/' + s.id;
   return row;
 }
@@ -176,8 +243,8 @@ async function viewSession(v) {
     mk('controls', () => location.hash = '#settings/' + state.session.id),
     mk('jobs', () => location.hash = '#jobs/' + state.session.id),
     mk('summary', showSummary),
-    mk('fork', async () => { const s = await post('/sessions/' + state.session.id + '/rotate', { archive: false }); location.hash = '#session/' + s.id; }),
-    mk(state.session.muted ? 'unmute' : 'mute', async () => { await patch('/sessions/' + state.session.id, { muted: !state.session.muted }); render(); })
+    mk('files', () => location.hash = '#files/' + state.session.id),
+    mk('fork', () => location.hash = '#fork/' + state.session.id)
   );
   v.append(controls);
 
@@ -198,8 +265,7 @@ async function viewSession(v) {
     if (!file.files.length) return;
     const fd = new FormData();
     fd.append('file', file.files[0]);
-    fd.append('session_id', state.session.id);
-    try { const r = await api('/uploads', { method: 'POST', body: fd }); toast({ title: 'Uploaded', body: r.path }); }
+    try { const r = await api('/sessions/' + state.session.id + '/files', { method: 'POST', body: fd }); toast({ title: 'Uploaded', body: r.path }); }
     catch (e) { toast({ title: 'Upload failed', body: String(e.message) }); }
     file.value = '';
   };
@@ -263,53 +329,83 @@ function renderStreaming() {
   if (!t) return;
   let n = document.getElementById('streaming');
   if (!n) { n = streamNode(); t.append(n); }
-  n.querySelector('.bub').textContent = state.streaming;
+  n.querySelector('.bub').innerHTML = renderMarkdown(state.streaming);
   scrollDown();
 }
 
 function streamNode() {
   const w = el('div', 'msg'); w.id = 'streaming';
-  w.append(el('div', 'who', 'agent'), el('div', 'bub', state.streaming));
+  w.append(el('div', 'who', 'agent'), bubble({ role: 'assistant', text: state.streaming }));
   return w;
 }
 
+// The agent writes markdown, so the agent's turn is rendered as markdown — the
+// only model output in the interface that becomes markup, and markdown.js
+// escapes it before it does. What the operator typed stays exactly as typed:
+// rendering it would rewrite their own words back at them, and a job's wake is
+// the stored prompt, not prose.
+function bubble(e) {
+  const b = el('div', 'bub');
+  if (e.role === 'assistant') { b.className = 'bub md'; b.innerHTML = renderMarkdown(e.text); }
+  else b.textContent = e.text;
+  return b;
+}
+
 function renderEntry(e) {
-  if (e.event_kind === 'prompt') return promptEntry(e);
+  if (e.type === 'prompt') return promptEntry(e);
   if (e.type === 'event') {
-    const bad = ['job_error', 'dead_letter', 'error'].includes(e.event_kind);
-    const n = el('div', 'ev' + (e.job_id ? ' job' : '') + (bad ? ' bad' : ''));
-    const kind = (e.event_kind || 'event').replace(/_/g, ' ');
-    n.textContent = `${kind}${e.status ? ' · ' + e.status : ''} · ${e.text || ''}`;
+    // Laid out as a log line — clock, kind, detail — so it cannot be read as
+    // something the agent said or a tool returned.
+    const n = el('div', 'ev' + (isFailure(e) ? ' bad' : ''));
+    const detail = el('span', 'detail');
+    detail.append(sessionLinks(eventDetail(e)));
+    n.append(el('span', 'at', eventTime(e.created_at)),
+             el('span', 'kind', eventLabel(e)),
+             detail);
     n.title = new Date(e.created_at).toLocaleString();
     return n;
   }
   if (e.role === 'tool') {
-    let res = {}; try { res = JSON.parse(e.tool_result || '{}'); } catch (err) {}
-    const n = el('div', 'tool' + (res.ok === false ? ' err' : ''));
+    const res = toolResult(e.tool_result);
+    const failed = res.ok === false;
+    const body = resultBody(res);
+    const n = el('div', 'tool' + (failed ? ' err' : ''));
     const head = el('div', 't', '← ' + e.tool_name);
     head.style.cursor = 'pointer';
-    const pre = el('pre', null, res.ok === false ? (res.error || '') : (res.content || ''));
-    pre.hidden = true;
-    head.onclick = () => pre.hidden = !pre.hidden;
+    const hint = resultPreview(body);
+    const peek = hint ? el('span', 'peek', '  ·  ' + hint) : null;
+    const pre = el('pre', null, body);
+    // A failure is open by default: an error the operator has to go looking for
+    // is an error they will not see.
+    const show = open => { pre.hidden = !open; if (peek) peek.hidden = open; };
+    show(failed);
+    head.onclick = () => show(pre.hidden);
+    if (peek) head.append(peek);
     n.append(head, pre);
     return n;
   }
-  const w = el('div', 'msg ' + (e.role === 'user' ? 'you' : '') + (e.carried_from ? ' carried' : ''));
-  if (e.job_id) {
-    const a = el('span', 'attr', 'job ' + e.job_id.slice(-6));
-    a.onclick = () => location.hash = '#jobs';
-    w.append(a);
-  }
-  if (e.carried_from) w.append(el('span', 'attr', 'carried from ' + e.carried_from.slice(-6)));
-  w.append(el('div', 'who', e.role === 'user' ? 'you' : 'agent'));
-  if (e.text) w.append(el('div', 'bub', e.text));
+  // Carried messages are marked by the style alone. Which session they came from
+  // is said once, in the seeding event at the top, rather than on every bubble.
+  const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
+  const who = el('div', 'who', speaker(e));
+  // The job's name is the only way back to the row that scheduled it.
+  if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
+  who.append(el('span', 'at', messageTime(e.created_at)));
+  w.append(who);
+  if (e.text) w.append(bubble(e));
   for (const c of (e.tool_calls || [])) {
+    // A call previews what it asked for exactly as its result previews what came
+    // back: half an exchange is not readable on its own.
     const n = el('div', 'tool');
     const head = el('div', 't', '→ ' + c.name);
     head.style.cursor = 'pointer';
-    const pre = el('pre', null, c.arguments);
-    pre.hidden = true;
-    head.onclick = () => pre.hidden = !pre.hidden;
+    const hint = callPreview(c.arguments);
+    const peek = hint ? el('span', 'peek', '  ·  ' + hint) : null;
+    const pre = el('pre', null, callBody(c.arguments));
+    const show = open => { pre.hidden = !open; if (peek) peek.hidden = open; };
+    show(false);
+    head.onclick = () => show(pre.hidden);
+    if (peek) head.append(peek);
     n.append(head, pre);
     w.append(n);
   }
@@ -340,7 +436,7 @@ function promptEntry(e) {
     }
     row.append(toggle);
     sec.append(row);
-    if (open) sec.append(el('pre', null, s.text));
+    if (open) { const pre = el('pre'); pre.append(sessionLinks(s.text)); sec.append(pre); }
     box.append(sec);
   }
   return box;
@@ -364,8 +460,8 @@ async function showSummary() {
 const describeSet = (set, noun) => set == null ? 'all ' + noun : (set.length ? set.length + ' ' + noun : 'no ' + noun);
 
 // configEditor renders a configuration and returns a reader for it. It does not
-// save anything: a configuration only ever takes effect by starting a session,
-// because model, tools, and skills are fixed for a session's life.
+// save anything; what the caller does with it depends on whether the session has
+// taken a turn, which is when model, tools, and skills stop being editable.
 async function configEditor(v, current) {
   const cfg = {
     model: current.model || null,
@@ -374,18 +470,49 @@ async function configEditor(v, current) {
   };
 
   v.append(el('h2', null, 'model'));
+  const search = el('input', 'text');
+  search.type = 'search';
+  search.placeholder = 'search models \u2014 provider, family, or version';
   const sel = el('select', 'text');
-  const models = state.models.length ? state.models : (state.models = await api('/models').catch(() => []));
-  const opts = models.length ? models : [{ id: cfg.model || '' }];
-  for (const m of opts) {
-    const o = el('option', null, `${m.id}${m.context_length ? '  \u00b7 ' + Math.round(m.context_length / 1000) + 'k' : ''}`);
-    o.value = m.id;
-    if (m.id === cfg.model) o.selected = true;
-    sel.append(o);
-  }
-  if (!cfg.model) cfg.model = sel.value;
+  const note = el('p', 'note', '');
+  v.append(search, sel, note);
+
+  // The catalogue runs to hundreds of tool-calling models, so it is narrowed by
+  // the search rather than scrolled. The chosen model stays in the list even
+  // when the query excludes it, so searching can never silently change it.
+  const fill = (models, q) => {
+    sel.innerHTML = '';
+    const keep = cfg.model && !models.some(m => m.id === cfg.model);
+    const opts = (keep ? [{ id: cfg.model }] : []).concat(models);
+    for (const m of (opts.length ? opts : [{ id: cfg.model || '' }])) {
+      const o = el('option', null, `${m.id}${m.context_length ? '  \u00b7 ' + Math.round(m.context_length / 1000) + 'k' : ''}`);
+      o.value = m.id;
+      if (m.id === cfg.model) o.selected = true;
+      sel.append(o);
+    }
+    if (!cfg.model) cfg.model = sel.value;
+    if (models.length) note.textContent = `${models.length} model${models.length === 1 ? '' : 's'}` + (q ? ` match \u201c${q}\u201d` : ' support tool calling');
+    else if (q) note.textContent = `No model matches \u201c${q}\u201d \u2014 keeping ${cfg.model}.`;
+    else note.textContent = `Model list unavailable \u2014 keeping ${cfg.model || 'the default'}.`;
+  };
+
+  // Each keystroke supersedes the one before it, so a slow answer to an earlier
+  // query must not overwrite the list a later one already drew.
+  let seq = 0;
+  const load = async q => {
+    const mine = ++seq;
+    const models = await api('/models' + (q ? '?q=' + encodeURIComponent(q) : '')).catch(() => []);
+    if (mine !== seq) return;
+    if (!q) state.models = models;
+    fill(models, q);
+  };
+  let debounce = null;
+  search.oninput = () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => load(search.value.trim()), 150);
+  };
   sel.onchange = () => { cfg.model = sel.value; };
-  v.append(sel);
+  if (state.models.length) fill(state.models, ''); else await load('');
 
   const picker = async (label, path, key) => {
     const data = await api(path);
@@ -433,15 +560,88 @@ async function viewNew(v) {
   v.append(el('h2', null, ''), start);
 }
 
+// ---------- files ----------
+
+// A session's files are its working directory: what its tools see, what an
+// upload lands in, and what an export carries.
+async function viewFiles(v) {
+  const id = state.arg;
+  setHeader('Files', true);
+  v.append(el('p', 'note',
+    'This conversation has a working directory of its own. Its tools run there, uploads land there, ' +
+    'and a fork starts from a copy of it.'));
+
+  const bar = el('div');
+  const up = el('button', 'act primary', 'upload file');
+  const file = el('input'); file.type = 'file'; file.multiple = true; file.hidden = true;
+  up.onclick = () => file.click();
+  file.onchange = async () => {
+    for (const f of file.files) {
+      up.textContent = 'uploading ' + f.name + '…';
+      const fd = new FormData();
+      fd.append('file', f);
+      try { await api('/sessions/' + id + '/files', { method: 'POST', body: fd }); }
+      catch (e) { toast({ title: 'Upload failed', body: f.name + ': ' + e.message }); }
+    }
+    file.value = '';
+    render();
+  };
+  const exp = el('button', 'act', 'export session');
+  exp.onclick = () => location.href = '/sessions/' + id + '/export';
+  bar.append(up, file, exp);
+  v.append(bar);
+
+  const files = await api('/sessions/' + id + '/files');
+  const inFiles = files.reduce((n, f) => n + f.bytes, 0);
+  const total = (await api('/sessions/' + id)).session.disk_bytes;
+  v.append(el('div', 'status', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
+  if (!files.length) { v.append(el('div', 'empty', 'No files yet.')); return; }
+  for (const f of files) {
+    const row = el('button', 'row-item');
+    const m = el('div', 'm');
+    m.append(el('div', 'n', f.path), el('div', 's', `${fmtBytes(f.bytes)} · ${ago(f.modified_at)}`));
+    row.append(m);
+    const rm = el('span', 'tag', 'delete');
+    rm.onclick = async e => {
+      e.stopPropagation();
+      if (!confirm('Delete ' + f.path + '?')) return;
+      await del('/sessions/' + id + '/files/' + f.path.split('/').map(encodeURIComponent).join('/'));
+      render();
+    };
+    row.append(rm);
+    row.onclick = () => window.open('/sessions/' + id + '/files/' + f.path.split('/').map(encodeURIComponent).join('/'), '_blank');
+    v.append(row);
+  }
+}
+
+// Forking is the same act as starting a conversation: choose the configuration,
+// then create the session. The predecessor's settings are the starting point.
+async function viewFork(v) {
+  const id = state.arg;
+  const res = await api('/sessions/' + id);
+  setHeader('Fork', true);
+  v.append(el('p', 'note',
+    'A fork continues this conversation in a new session, carrying its summary and recent turns ' +
+    'across. Its configuration is chosen here and fixed once the fork exists.'));
+  const read = await configEditor(v, res.session);
+  const go = el('button', 'act primary', 'create fork');
+  go.onclick = async () => {
+    const succ = await post('/sessions/' + id + '/rotate', Object.assign({ archive: false }, read()));
+    location.hash = '#session/' + succ.id;
+  };
+  v.append(el('h2', null, ''), go);
+}
+
 async function viewSettings(v) {
   const id = state.arg;
   const res = await api('/sessions/' + id);
   const s = res.session;
   setHeader('Controls', true);
 
-  v.append(el('p', 'note', `This conversation runs on ${s.model} with ${describeSet(s.enabled_tools, 'tools')} ` +
-    `and ${describeSet(s.enabled_skills, 'skills')}, fixed for its life. Changing any of it continues ` +
-    `the conversation in a new session, carrying the summary and recent turns across.`));
+  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools')} and ${describeSet(s.enabled_skills, 'skills')}`;
+  v.append(el('p', 'note',
+    `This conversation runs on ${runs}, fixed for its life. Changing any of it continues the ` +
+    `conversation in a new session, carrying the summary and recent turns across.`));
 
   const read = await configEditor(v, s);
   const go = el('button', 'act primary', 'continue in a new session');
@@ -450,6 +650,11 @@ async function viewSettings(v) {
     location.hash = '#session/' + succ.id;
   };
   v.append(el('h2', null, ''), go);
+
+  v.append(el('h2', null, 'files'));
+  const files = el('button', 'act', 'files and export');
+  files.onclick = () => location.hash = '#files/' + id;
+  v.append(files);
 
   v.append(el('h2', null, 'danger'));
   const d = el('button', 'act', 'delete conversation');
@@ -473,7 +678,6 @@ async function viewPanels(v) {
   setHeader('Panels', true);
   const items = [
     ['jobs', 'Jobs', 'Schedules attached to conversations'],
-    ['dead', 'Dead letters', 'Jobs that gave up'],
     ['memory', 'Memory', 'What survives a conversation'],
     ['tools', 'Tools', 'Loaded tools and failures'],
     ['skills', 'Skills', 'What the agent knows how to do'],
@@ -500,14 +704,22 @@ async function viewPanels(v) {
       v.append(row);
     }
   } catch (e) {}
+  v.append(el('h2', null, 'device'), notifyControl());
+  // A sandbox that quietly does nothing is worse than none, so this says which.
+  const sb = state.status && state.status.sandbox;
+  if (sb) {
+    v.append(el('h2', null, 'isolation'));
+    const on = sb.mechanism && sb.mechanism !== 'none';
+    v.append(el('span', 'tag ' + (on ? 'on' : 'bad'), 'sandbox · ' + (sb.mechanism || 'none')));
+    v.append(el('div', 's', on
+      ? "A tool reaches this session's working directory and no other."
+      : 'NOT ENFORCED: ' + (sb.reason || '') + ' — a tool can read any session\'s files and the agent\'s own.'));
+  }
   if (state.status && state.status.key) {
     v.append(el('h2', null, 'openrouter'));
     const k = state.status.key;
     v.append(el('div', 's', `usage ${fmtMoney(k.usage)}${k.remaining != null ? ' · remaining ' + fmtMoney(k.remaining) : ''}`));
   }
-  const push = el('button', 'act primary', 'enable notifications');
-  push.onclick = enablePush;
-  v.append(el('h2', null, 'device'), push);
 }
 
 async function viewJobs(v) {
@@ -518,47 +730,63 @@ async function viewJobs(v) {
     const row = el('div', 'row-item');
     const m = el('div', 'm');
     m.append(el('div', 'n', j.prompt));
-    m.append(el('div', 's', `${j.schedule} · next ${until(j.next_run_at)} · expires ${until(j.expires_at)} · ${j.run_count} runs`));
-    if (j.kind === 'check') m.append(el('div', 's', 'check: ' + j.check));
-    else if (j.kind === 'due') m.append(el('span', 'tag', 'reminder · no condition, fires when due'));
-    else m.append(el('span', 'tag warn', 'judgement · one model call per tick'));
-    if (j.last_status) m.append(el('span', 'tag ' + (j.last_status === 'fired' ? 'ok' : ''), j.last_status));
+    m.append(el('span', 'tag ' + (j.status === 'done' ? '' : 'on'), j.status || 'scheduled'));
+    // The job's own settings, as set. Nothing is derived and no category is
+    // inferred — what you see is what the job is.
+    const settings = el('dl', 'settings');
+    const field = (k, val) => { settings.append(el('dt', null, k), el('dd', null, val)); };
+    field('schedule', j.schedule);
+    field('check', j.check || '—');
+    field('after acting', j.after_acting);
+    field('next wake', j.status === 'done' ? '—' : until(j.next_run_at));
+    m.append(settings);
+    m.append(el('div', 's', `${j.run_count} runs` + (j.last_status ? ` · last ${j.last_status.replace(/_/g, ' ')}` : '')));
+    // Nothing refuses a cadence, so the price sits on the row that sets one.
+    const price = jobCost(j.estimate);
+    if (price && j.status !== 'done') m.append(el('div', 's cost', price));
+
+    // The log is what makes a job checkable without reading the conversation it
+    // fires into, so it opens in place rather than on a screen of its own.
+    const log = el('div', 'joblog'); log.hidden = true;
+    const toggle = el('button', 'act', 'log');
+    let loaded = false;
+    toggle.onclick = async () => {
+      log.hidden = !log.hidden;
+      if (log.hidden || loaded) return;
+      loaded = true;
+      log.textContent = 'loading…';
+      try { renderRuns(log, await api('/jobs/' + j.id + '/runs')); }
+      catch (e) { log.textContent = String(e.message); }
+    };
     const acts = el('div');
     const open = el('button', 'act', 'open');
     open.onclick = () => location.hash = '#session/' + j.session_id;
     const rm = el('button', 'act', 'delete');
     rm.onclick = async () => { await del('/jobs/' + j.id); render(); };
-    acts.append(open, rm);
-    m.append(acts);
+    acts.append(toggle, open, rm);
+    m.append(acts, log);
     row.append(m);
     v.append(row);
   }
 }
 
-async function viewDead(v) {
-  setHeader('Dead letters', true);
-  const list = await api('/dead-letters');
-  const open = (list || []).filter(d => d.status === 'open');
-  if (!open.length) { v.append(el('div', 'empty', 'Nothing gave up.')); }
-  for (const d of (list || [])) {
-    const row = el('div', 'row-item');
-    const m = el('div', 'm');
-    m.append(el('div', 'n', d.job_spec.prompt));
-    m.append(el('div', 's', `${d.reason} · ${d.detail || ''} · ${d.run_count} runs · ${ago(d.created_at)}`));
-    m.append(el('span', 'tag ' + (d.status === 'open' ? 'bad' : ''), d.status));
-    if (d.status === 'open') {
-      const acts = el('div');
-      const rep = el('button', 'act primary', 'replay');
-      rep.onclick = async () => { await post('/dead-letters/' + d.id + '/replay', {}); render(); };
-      const dis = el('button', 'act', 'dismiss');
-      dis.onclick = async () => { await post('/dead-letters/' + d.id + '/dismiss', {}); render(); };
-      acts.append(rep, dis);
-      m.append(acts);
-    }
-    row.append(m);
-    v.append(row);
+// renderRuns lists what a job has done, newest first: when it woke, what came
+// of it, and what was said.
+function renderRuns(into, runs) {
+  into.innerHTML = '';
+  if (!runs || !runs.length) { into.append(el('div', 's', 'This job has not run yet.')); return; }
+  for (const r of runs) {
+    const line = el('div', 'run ' + (r.outcome === 'failed' ? 'bad' : ''));
+    const head = el('div', 'h');
+    head.append(el('span', 'at', runTime(r.at)), el('span', 'kind', r.outcome));
+    if (r.due_at && lateBy(r)) head.append(el('span', 'late', lateBy(r)));
+    line.append(head);
+    if (r.message) line.append(el('div', 'b', r.message));
+    into.append(line);
   }
 }
+
+
 
 async function viewMemory(v) {
   setHeader('Memory', true);
@@ -668,37 +896,45 @@ async function viewSearch(v) {
   inp.focus();
 }
 
-// ---------- push ----------
+// ---------- notifications ----------
 
-async function enablePush() {
-  try {
-    if (!('serviceWorker' in navigator)) throw new Error('no service worker support');
-    const reg = await navigator.serviceWorker.register('/sw.js');
-    const perm = await Notification.requestPermission();
-    if (perm !== 'granted') throw new Error('permission ' + perm);
-    const { public_key } = await api('/push/key');
-    if (!public_key) throw new Error('server has no VAPID key');
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlB64(public_key)
-    });
-    await post('/push/subscriptions', sub.toJSON());
-    toast({ title: 'Notifications on', body: 'This device will be interrupted for dead letters and notify calls.' });
-  } catch (e) {
-    toast({ title: 'Notifications unavailable', body: String(e.message) });
+// notifyControl states what this browser will do with a new message, and asks
+// for permission when it can. A device that will never show one has to say so:
+// silence and "working, nothing to report" look identical otherwise.
+function notifyControl() {
+  const box = el('div');
+  const has = 'Notification' in window;
+  const perm = has ? Notification.permission : '';
+  const line = (cls, text) => box.append(el('span', cls, text));
+  if (!has) {
+    line('tag bad', 'notifications · unavailable');
+    box.append(el('div', 's', 'This browser has no notification API here. It needs a secure origin — https, or localhost. The unread count on the session list is the only signal.'));
+    return box;
   }
-}
-
-function urlB64(s) {
-  const pad = '='.repeat((4 - s.length % 4) % 4);
-  const b = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from([...b].map(c => c.charCodeAt(0)));
+  if (perm === 'denied') {
+    line('tag bad', 'notifications · blocked');
+    box.append(el('div', 's', 'Blocked for this site in the browser\'s own settings. Allow it there to turn banners back on.'));
+    return box;
+  }
+  if (perm === 'granted') {
+    line('tag on', 'notifications · on');
+    box.append(el('div', 's', 'A new agent message shows a banner while this browser is open and you are not reading that conversation. Nothing reaches you once the browser is closed.'));
+    return box;
+  }
+  line('tag warn', 'notifications · off');
+  box.append(el('div', 's', 'Not enabled on this device. Until it is, a new message only changes the unread count.'));
+  const b = el('button', 'act primary', 'enable notifications');
+  b.onclick = async () => {
+    try { await Notification.requestPermission(); } catch (e) {}
+    render();
+  };
+  box.append(b);
+  return box;
 }
 
 // ---------- boot ----------
 
 async function boot() {
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   connect();
   route();
   try {

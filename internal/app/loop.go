@@ -11,44 +11,41 @@ import (
 type turnOpts struct {
 	UserText string
 	JobID    string
-	// Buffered holds a job run out of the transcript until it is known to have
-	// fired. A run that does not fire is written as one event entry instead.
-	Buffered bool
+	// DueAt is when a job wake was scheduled for. It is not time.Now(): the two
+	// differ whenever the host slept, the session was busy, or the run was
+	// retried, and the difference is what tells the agent its reminder is stale.
+	DueAt time.Time
 }
 
 const maxToolRounds = 12
 
 // runTurn assembles a request from the session, calls the model, dispatches tool
 // calls, appends results, and repeats until the model stops calling tools.
-func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) (bool, error) {
+func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 	promptEntry, ok := a.promptEntry(s.ID)
 	if !ok {
-		return false, fmt.Errorf("session %s has no prompt entry", s.ID)
+		return fmt.Errorf("session %s has no prompt entry", s.ID)
 	}
 
 	msgs := []ChatMessage{a.systemChatMessage(s, promptEntry.Sections)}
 	msgs = append(msgs, Project(a.store.Entries(s.ID))...)
 
-	user := Entry{Type: "message", Role: "user", Text: opts.UserText, JobID: opts.JobID}
-	if opts.JobID != "" && !opts.Buffered {
+	user := Entry{Type: "message", Role: "user", Text: opts.UserText, JobID: opts.JobID,
+		DueAt: opts.DueAt}
+	if opts.JobID != "" {
 		user.Status = "fired"
 	}
-	var buffer []Entry
-	emit := func(e Entry) Entry {
-		if opts.Buffered {
-			e.Seq = -1
-			e.CreatedAt = time.Now()
-			buffer = append(buffer, e)
-			a.hub.Broadcast(wsEvent{Kind: "transient", SessionID: s.ID, Entry: &e})
-			return e
-		}
-		return a.append(s.ID, e)
+	// Every entry is stored as it is produced. A run is never held back pending
+	// an outcome: what the agent did is what the transcript says it did.
+	emit := func(e Entry) Entry { return a.append(s.ID, e) }
+	// The turn's own user message reaches the model through the projection, like
+	// every earlier one. Building it here as well was how a job wake arrived
+	// stripped of the marker that says the operator is not there to read a reply.
+	if m, ok := toMessage(emit(user)); ok {
+		msgs = append(msgs, m)
 	}
-	emit(user)
-	msgs = append(msgs, ChatMessage{Role: "user", Content: opts.UserText})
 
-	fired := false
-	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID, Fired: &fired}
+	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID}
 
 	for round := 0; round < maxToolRounds; round++ {
 		req := ChatRequest{Model: s.Model, Messages: msgs, Tools: a.tools.SchemasFor(s)}
@@ -58,7 +55,7 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) (bool, err
 		})
 		a.hub.Broadcast(wsEvent{Kind: "turn_end", SessionID: s.ID})
 		if err != nil {
-			return fired, err
+			return err
 		}
 
 		s.Cost += res.Usage.Cost
@@ -69,7 +66,7 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) (bool, err
 		usage := res.Usage
 		assistant := Entry{Type: "message", Role: "assistant", Text: res.Text,
 			ToolCalls: res.ToolCalls, JobID: opts.JobID, Usage: &usage}
-		if opts.JobID != "" && !opts.Buffered {
+		if opts.JobID != "" {
 			assistant.Status = "fired"
 		}
 		emit(assistant)
@@ -97,38 +94,10 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) (bool, err
 		}
 	}
 
-	if opts.Buffered {
-		a.flushBuffered(s, opts.JobID, fired, buffer)
-	}
-
 	a.maybeSummarise(ctx, s)
 	a.maybeRotate(s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
-	return fired, nil
-}
-
-// flushBuffered writes a job run into the transcript. A run that fired becomes
-// ordinary messages attributed to the job; a run that did not becomes one event
-// entry with status not_fired, which is what lets the projection collapse it.
-func (a *App) flushBuffered(s *Session, jobID string, fired bool, buffer []Entry) {
-	if fired {
-		for _, e := range buffer {
-			e.Status = "fired"
-			a.append(s.ID, e)
-		}
-		return
-	}
-	var said []string
-	for _, e := range buffer {
-		if e.Role == "assistant" && strings.TrimSpace(e.Text) != "" {
-			said = append(said, strings.TrimSpace(e.Text))
-		}
-	}
-	text := "checked, condition not met"
-	if len(said) > 0 {
-		text = truncate(strings.Join(said, " "), 600)
-	}
-	a.appendEvent(s.ID, Entry{EventKind: "job_check", JobID: jobID, Status: "not_fired", Text: text})
+	return nil
 }
 
 // systemChatMessage renders the fixed system prompt, adding a cache breakpoint
@@ -194,9 +163,8 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 			return
 		}
 		first := a.lastUserTurn(live.ID).IsZero()
-		if _, err := a.runTurn(ctx, live, turnOpts{UserText: text}); err != nil {
+		if err := a.runTurn(ctx, live, turnOpts{UserText: text}); err != nil {
 			a.appendEvent(live.ID, Entry{EventKind: "error", Text: "turn failed: " + err.Error()})
-			a.Notify(Notification{Title: "Turn failed", Body: err.Error(), SessionID: live.ID})
 			return
 		}
 		if first {

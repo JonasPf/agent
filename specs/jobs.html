@@ -28,86 +28,129 @@ context is already present without being restated.</p>
 
 <h2>Shape</h2>
 
+<p>A job wakes on a schedule and runs a prompt. Everything else is optional and independent.</p>
+
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><code>session_id</code></td><td>The conversation this job runs in. Required.</td></tr>
-<tr><td><code>schedule</code></td><td>An interval, a cron expression, or a single absolute time.</td></tr>
-<tr><td><code>check</code></td><td>Optional. A shell command. Exit status zero means the condition is met.</td></tr>
-<tr><td><code>kind</code></td><td>Derived, not stored. <code>check</code>, <code>due</code>, or <code>judgement</code>.</td></tr>
-<tr><td><code>prompt</code></td><td>What the agent is asked when the job runs.</td></tr>
-<tr><td><code>expires_at</code></td><td>When the job stops. Required. Defaults to 24 hours after creation.</td></tr>
-<tr><td><code>on_condition_met</code></td><td><code>delete</code> or <code>continue</code>.</td></tr>
+<tr><td><code>schedule</code></td><td>When it wakes: an interval (<code>30m</code>), a cron expression (<code>0 9 * * *</code>), or a single absolute time. Required.</td></tr>
+<tr><td><code>prompt</code></td><td>What the agent is asked when it acts. Required.</td></tr>
+<tr><td><code>check</code></td><td>Optional. A shell command run before the prompt; exit status zero means act, anything else means skip this wake. Absent means always act.</td></tr>
+<tr><td><code>after_acting</code></td><td>What becomes of the job once it has acted: <code>stop</code> or <code>continue</code>. Defaults to <code>continue</code>.</td></tr>
+<tr><td><code>status</code></td><td>Derived from what has happened, not set: <code>scheduled</code> until the job has nothing left to do, then <code>done</code>. A done job is kept, with its log.</td></tr>
 </table>
+
+<div class="note">
+<strong>There are no kinds.</strong> A job is not classified, and nothing branches on what sort of job
+it is. Every difference between the cases below is a difference in these values, which is why none of
+them needs an exemption from a rule meant for another.
+</div>
 
 <h2>What a tick does</h2>
 
 <div class="mermaid">
 flowchart TB
-  A["Tick due"] --> B{"Session busy?"}
-  B -->|yes| Z["Wait for next idle tick"]
-  B -->|no| K{"Kind"}
-  K -->|due| G["Run prompt as a turn"]
-  K -->|check| D["Run check<br/>(no model)"]
-  K -->|judgement| P["Run prompt as a turn<br/>(buffered)"]
-  D --> E{"Check outcome"}
-  E -->|non-zero| F["Event entry<br/>not_fired, zero tokens"]
-  E -->|timed out, or could not run| X["Job failure<br/>backoff, then dead letter"]
-  E -->|zero| G
-  P --> N{"Called notify?"}
-  N -->|no| F
-  N -->|yes| M["Message, attributed"]
-  G --> H{"on_condition_met"}
-  M --> H
-  H -->|delete| I["Delete job"]
-  H -->|continue| J["Schedule next tick"]
+  A["Wake due"] --> B{"Session busy?"}
+  B -->|yes| Z["Wait for the next idle tick"]
+  B -->|no| D{"check set?"}
+  D -->|no| G["Run the prompt as a turn"]
+  D -->|yes| E["Run the check<br/>(no model)"]
+  E -->|"exit non-zero"| F["Log: skipped<br/>zero tokens"]
+  E -->|"timed out, or could not run"| X["Log: failed<br/>backoff, job kept"]
+  E -->|"exit zero"| G
+  F --> J
+  G --> L["Log: fired<br/>with what was said"]
+  L --> H{"after_acting"}
+  H -->|stop| I["Mark the job done"]
+  H -->|continue| J["Schedule the next wake"]
+  J --> K{"Another wake?"}
+  K -->|"no, the time has passed"| I
 </div>
 
-<h2>Three kinds</h2>
+<p>One path. A check, if there is one, decides whether this wake acts, and <code>after_acting</code>
+decides whether the job survives it. Nothing consults what sort of job it is, because it is not any
+sort. Every wake writes a line to the job's log, whichever way it went.</p>
 
-<p>What a job costs, and what it means for it to fire, both follow from how it decides. There are
-three ways, and the first question about any request is which one it is.</p>
+<h2>Use cases</h2>
+
+<p>The requests this has to serve, and what each one becomes. A design change is checked against this
+table: a row that cannot be expressed, or that behaves wrongly, is a defect in the design rather than a
+case to turn away. Every row uses the same three fields.</p>
 
 <table>
-<tr><th>Kind</th><th>Decided by</th><th>Cost per tick</th><th>Fires when</th></tr>
-<tr><td><code>check</code></td><td>A shell command</td><td>One command, no model</td><td>The command exits zero</td></tr>
-<tr><td><code>due</code></td><td>Nothing</td><td>Nothing until it comes due</td><td>Its instant arrives</td></tr>
-<tr><td><code>judgement</code></td><td>The model</td><td>One model call</td><td>The model calls notify</td></tr>
+<tr><th>Request</th><th><code>schedule</code></th><th><code>check</code></th><th><code>after_acting</code></th></tr>
+<tr><td>Remind me in five minutes to stretch</td><td>instant</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Wish Ana happy birthday on 14 March</td><td>instant, months out</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Remind me at 16:30 to call the bank</td><td>instant</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Warn me a day before the deadline</td><td>instant</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Post this at 9am</td><td>instant</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Stretch every half hour</td><td><code>30m</code></td><td>&mdash;</td><td>continue</td></tr>
+<tr><td>Drink water hourly during the working day</td><td><code>0 9-17 * * 1-5</code></td><td>&mdash;</td><td>continue</td></tr>
+<tr><td>Daily briefing at eight</td><td><code>0 8 * * *</code></td><td>&mdash;</td><td>continue</td></tr>
+<tr><td>Run the weekly job on Monday morning</td><td><code>0 9 * * 1</code></td><td>&mdash;</td><td>continue</td></tr>
+<tr><td>Weekly digest on Friday afternoon</td><td><code>0 17 * * 5</code></td><td>&mdash;</td><td>continue</td></tr>
+<tr><td>Nag me every ten minutes until I acknowledge</td><td><code>10m</code></td><td>&mdash;</td><td>continue</td></tr>
+<tr><td>Tell me when the deploy finishes</td><td><code>2m</code></td><td>health probe</td><td><b>stop</b></td></tr>
+<tr><td>Follow up if I have not replied by Friday</td><td>instant, Friday</td><td>"have I replied"</td><td>stop</td></tr>
+<tr><td>Check this website for updates</td><td><code>1h</code></td><td>diff command</td><td>continue</td></tr>
+<tr><td>Warn me if the disk goes above 90%</td><td><code>1h</code></td><td>threshold command</td><td>continue</td></tr>
+<tr><td>Watch this thread and tell me if it turns hostile</td><td><code>30m</code></td><td>&mdash;</td><td>continue</td></tr>
 </table>
 
-<p>A job with a check costs nothing until it fires. A repeating job without one calls the model on
-every tick, because deciding whether the condition holds is itself a judgement.</p>
+<h3>What the table decides</h3>
+
+<p><strong>Nothing is exempt from anything.</strong> The three exemptions the old design needed — a
+reminder skipping the cost floor, skipping <code>reason_no_check</code>, and skipping expiry —
+all disappear, because each was an exemption granted to a category, and there are no categories. A
+single absolute time has no interval for a floor to compare against, no condition to explain, and no
+default deadline to escape.</p>
+
+<p><strong>Ending is a field, not a consequence.</strong> "Tell me when the deploy finishes" is the case
+that used to need two mechanisms: a job kind to make the check cheap, and <code>on_condition_met</code>
+to stop it afterwards. It is now <code>after_acting: stop</code> — one field, saying exactly what it
+means at the moment it means it.</p>
+
+<p><strong>Cost is shown, not enforced.</strong> A check runs a shell command and costs nothing; a job
+with no check runs a turn every time it wakes. Nothing refuses a schedule on the strength of that &mdash;
+a floor of fifteen minutes was tried and removed (<a href="adrs.html#adr-029">ADR-029</a>) &mdash; so
+every job carries an estimate instead: how often it wakes, what one wake sends, what that is a day, and
+what it costs where the model's price is known.</p>
+
+<p>The estimate is computed on the way out and never stored, because the thing it prices grows: a wake
+re-sends the system prompt and the conversation as it stands, so today's figure is a floor that rises
+until the session rotates. A gated job estimates nothing per day &mdash; its wakes are a shell command
+&mdash; and reports what the wake that does fire will cost. A schedule that fires once is priced once.
+Where the model catalogue cannot be reached the tokens are still shown; a money figure is never
+invented.</p>
+
+<p>A cron schedule has no single gap between firings &mdash; <code>*/20 9-16 * * 1-5</code> waits twenty
+minutes five times and then sixty-four hours &mdash; so its cadence is counted over a week from the
+moment it is asked and averaged into a day. The count covers one whole week whatever minute the
+question arrives on, including the minute the schedule itself fires on.</p>
 
 <div class="note">
-<strong>Most conditions are not judgements.</strong> "Has the deploy finished" is an exit code. Only
-questions like "has this review turned hostile" need the model on every tick.
+<strong>Why nothing expires.</strong> Jobs once expired 24 hours after creation, which quietly
+destroyed any reminder set further out than a day. A <code>until</code> field replaced it, and then
+that went too (<a href="adrs.html#adr-028">ADR-028</a>): a deadline is a rule that deletes the
+operator's work on a timer, and the run log makes it unnecessary. A job watching for something that
+never happens waits indefinitely — as a visible row, with a log saying how many times it has looked.
+Ending it is the operator's call, and it takes one tap.
 </div>
-
-<h3>Due jobs are reminders</h3>
-
-<p>"Remind me in five minutes" names no condition. Nothing is being watched; the schedule is the
-entire request. A job whose schedule is a single instant and which carries no check is a
-<em>due</em> job: it comes due once, fires, and is done.</p>
-
-<div class="note">
-<strong>Why this is its own kind.</strong> Without it, every request has to be bent into a condition,
-and a request that has none gets a fabricated one — a check that sleeps until the time arrives.
-That check is tested repeatedly, is killed at its timeout, and reads as a condition that is never
-met, so the reminder never arrives. The vocabulary has to admit that some requests are about the
-clock and nothing else.
-</div>
-
-<p>Because a due job has no condition, neither of the constraints that govern check-less jobs applies
-to it. The fifteen-minute floor exists to bound the cost of repeated model calls, and a due job makes
-one call, once. <code>reason_no_check</code> exists to record why a command could not decide a
-condition, and there is no condition to decide.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A job with no check whose schedule is a single instant is accepted without <code>reason_no_check</code> and regardless of how soon it falls.</li>
-<li>A due job fires on the run in which it comes due, whether or not the model calls notify.</li>
-<li>A repeating job with no check is still rejected below a fifteen-minute interval, and still requires <code>reason_no_check</code>.</li>
-<li>The interface distinguishes the three kinds, and marks only judgement jobs with their per-tick cost.</li>
+<li>Every row above is expressible with these fields alone, and behaves as the row says.</li>
+<li>A reminder scheduled arbitrarily far ahead fires, and is never deleted before its time.</li>
+<li>A job with <code>after_acting</code> of <code>stop</code> is marked done after the first wake on which it acts, and not before, and never wakes again.</li>
+<li>Any cadence is accepted. "Remind me every ten minutes" creates one job that wakes every ten minutes.</li>
+<li>Creating a job answers with what it will cost: wakes a day, tokens a turn, tokens a day, and money where the price is known.</li>
+<li>A gated job estimates no daily cost, and says what a wake that fires costs.</li>
+<li>A job that wakes once is priced once rather than per day.</li>
+<li>A cron schedule is priced by its firings over a week, and the figure is the same whether or not the moment it is asked is itself a firing minute.</li>
+<li>An unreachable model catalogue costs the money figures and nothing else.</li>
+<li>The estimate is never stored on the job.</li>
+<li>No job carries or derives a kind, and no behaviour depends on one.</li>
 </ul>
 </div>
 
@@ -139,100 +182,100 @@ deadline meant to stop it.
 </div>
 
 <p>A job runs on its session's model, in its session's context, like any other turn. Nothing about a job
-is configured separately. That keeps the cost of a check-less job proportional to the conversation it
-lives in, which is what the rotation threshold already bounds.</p>
+is configured separately — no model of its own, no context of its own — so the cost of a wake that acts
+is proportional to the conversation it lives in, which the rotation threshold already bounds.</p>
 
-<p>It also makes the difference between the two kinds stark, so the agent is instructed to reach for a
-check first and to fall back to judgement only when no command could decide the question.</p>
-
-<div class="ac">
-<h4>Acceptance criteria</h4>
-<ul>
-<li>The agent attempts to express every condition as a check before creating a check-less job.</li>
-<li>A check-less job records, in the conversation, why no command could decide the condition.</li>
-<li>The interface marks check-less jobs distinctly and shows their cost per tick.</li>
-</ul>
-</div>
+<p>The agent is instructed to reach for a check first, because a check makes a wake free and a missing
+one makes every wake a turn.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A job with a check consumes no model tokens on a tick where the command exits non-zero.</li>
-<li>Every tick writes a transcript entry, whether or not the check passed.</li>
-<li>A job without a check is rejected if its interval is shorter than fifteen minutes.</li>
+<li>A wake whose check exits non-zero consumes no model tokens.</li>
+<li>Every wake writes a transcript entry, whether or not it acted.</li>
 <li>A job whose session is mid-turn defers to the next tick rather than queueing repeats.</li>
-<li>A job created without an explicit expiry receives one 24 hours out.</li>
+<li>The agent attempts to express every condition as a check before creating a job without one.</li>
 <li>A message produced by a job is attributed to that job in the interface.</li>
 </ul>
 </div>
 
-<h2>Firing</h2>
+<h2>Acting</h2>
 
-<p>A job with a check fires when its command exits zero. A due job fires by arriving. A judgement job
-fires when the model calls the notify tool during its run.</p>
+<p>A wake acts when its check exits zero, or when it has no check. Acting runs the prompt as a turn in
+the session, and the whole conversation it produces is written to the transcript, attributed to the
+job.</p>
 
-<p>Calling notify is therefore the condition, the notification, and the record, all at once. A run that
-does not call it produces no message: the turn is written as an event entry with status
-<code>not_fired</code>, which is what lets the projection collapse repeated quiet ticks.</p>
+<p>There is no signal by which the model can mark a wake as significant. It ends a job the way anything
+else ends one: by deleting it with the schedule tool, an ordinary visible call. A job set to
+<code>after_acting: stop</code> deletes itself after the first wake that acts.</p>
 
-<div class="note">
-<strong>Why reuse notify.</strong> A judgement poll needs a way to say "yes, now" that is visible and
-does not depend on parsing prose. The agent already has one, and reusing it means the decision to
-interrupt and the decision that the condition was met are the same auditable act.
-</div>
+<p>A wake reaches the model marked as one, naming the job, saying how late it ran, and saying the
+operator is not present.
+Without that marker a wake is indistinguishable from the operator typing the same words, and the model
+answers it as if someone were reading &mdash; asking a question, or waiting for one. The marker says
+there is no one to answer: say what the wake is for, and leave it in the transcript, which is where
+the operator will read it.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A run of a check-less job that does not call notify produces an event entry and no message.</li>
-<li>A run that calls notify produces a message attributed to the job, and an interrupting notification.</li>
-<li>Every tick entry carries a status of <code>fired</code> or <code>not_fired</code>.</li>
-<li>A job set to delete on firing is deleted after the run in which notify was called.</li>
+<li>A wake reaches the model marked as a wake, naming its job and saying the operator is not present.</li>
+<li>A message the operator typed carries no such marker.</li>
 </ul>
 </div>
 
 <h2>Ending</h2>
 
-<p>A job ends by satisfying its condition, by expiring, or by being deleted. Only the first is a
-success. The other two produce a dead letter.</p>
+<p>A job ends in one of three ways: it acts and stops, its schedule runs out of wakes, or the operator
+deletes it. The first two leave the job in place, marked <code>done</code>, because its log is the
+record of what it did and deleting the row would delete the answer. Only the operator deletes a job,
+and nothing else ever does.</p>
 
 <div class="mermaid">
 stateDiagram-v2
   [*] --> Scheduled
-  Scheduled --> Scheduled: tick, not met
-  Scheduled --> Fired: condition met
-  Fired --> [*]: on_condition_met = delete
-  Fired --> Scheduled: on_condition_met = continue
-  Scheduled --> DeadLetter: expired without firing
-  Scheduled --> DeadLetter: failed 3 times
-  DeadLetter --> Scheduled: replayed
-  DeadLetter --> [*]: dismissed
+  Scheduled --> Scheduled: woke, check said no
+  Scheduled --> Acted: woke and acted
+  Acted --> Done: after_acting = stop
+  Acted --> Scheduled: after_acting = continue
+  Scheduled --> Done: no further wake in the schedule
+  Scheduled --> Scheduled: failed, logged, backed off
+  Done --> [*]: deleted by the operator
+  Scheduled --> [*]: deleted by the operator
 </div>
 
-<h2>Dead letters</h2>
+<p>A reminder ends by the first route: it wakes once, acts, and is marked done. It stays in the list
+with its log, so "did that reminder actually fire?" is answered where the job is, not by reading the
+conversation it fired into.</p>
 
-<p>A job that expires without firing has not failed in any technical sense, yet the thing the user
-asked about never happened. Deleting it silently loses the request. It becomes a dead letter instead.</p>
+<h2>The run log</h2>
+
+<p>Every wake a job has had is recorded on the job: when it was due, when it ran, what came of it, and
+what was said. That is the answer to "has this been running?", and it is kept where the question is
+asked. A job outlives the conversation that created it &mdash; it follows the chain across a rotation
+&mdash; so its history cannot live only in a transcript.</p>
 
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
-<tr><td><code>job_spec</code></td><td>The complete job definition, so it can be recreated exactly.</td></tr>
-<tr><td><code>reason</code></td><td><code>expired</code>, <code>error</code>, or <code>unavailable</code>.</td></tr>
-<tr><td><code>detail</code></td><td>Last error, if any.</td></tr>
-<tr><td><code>run_count</code></td><td>How many times the job ran before dying.</td></tr>
-<tr><td><code>status</code></td><td><code>open</code> or <code>closed</code>.</td></tr>
+<tr><td><code>at</code></td><td>When the wake ran.</td></tr>
+<tr><td><code>due_at</code></td><td>When it was scheduled for. The two differ when the host slept, the session was busy, or the run was retried.</td></tr>
+<tr><td><code>outcome</code></td><td><code>fired</code>, <code>skipped</code>, or <code>failed</code>.</td></tr>
+<tr><td><code>message</code></td><td>What the agent said, why the check said no, or what went wrong.</td></tr>
 </table>
 
-<p>A dead letter notifies immediately rather than waiting to be discovered. Someone waiting to hear
-about a deploy should learn that the watch gave up, at the moment it gives up.</p>
+<p>This replaced dead letters (<a href="adrs.html#adr-028">ADR-028</a>). A dead letter was a copy of a
+job made at the moment the system deleted it, which existed because deleting the job destroyed the
+evidence. Nothing deletes a job now, so nothing has to be preserved from it.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Expiry without firing creates a dead letter and an interrupting notification.</li>
-<li>A dead letter can be replayed into an identical job with a fresh expiry, in one action.</li>
-<li>A job failing repeatedly produces one open dead letter, not one per failure.</li>
-<li>Replaying or dismissing a dead letter closes it rather than deleting it. A replay is visible as the new job it creates.</li>
+<li>Every wake writes one line to the job's log, whether it acted, skipped, or failed.</li>
+<li>A line that acted carries what the agent said; one that failed carries the failure.</li>
+<li>A line records when the wake ran and when it was due, so a late run is visible as one.</li>
+<li>The log belongs to the job and survives the rotation of the session it fires into.</li>
+<li>Deleting a job deletes its log; nothing else does.</li>
+<li>A job's log travels with it in a session export.</li>
 </ul>
 </div>
 
@@ -240,23 +283,23 @@ about a deploy should learn that the watch gave up, at the moment it gives up.</
 
 <table>
 <tr><th>Failure</th><th>Response</th></tr>
-<tr><td>Transient — timeout, 5xx, rate limit</td><td>Retry with exponential backoff, three attempts, then dead letter.</td></tr>
-<tr><td>Credit exhausted, authentication, model withdrawn</td><td>No retry. Trip the circuit breaker.</td></tr>
+<tr><td>Transient — timeout, 5xx, rate limit</td><td>Retried inside the model call. If the wake still fails: a failed line in the log, exponential backoff, and the job keeps its place.</td></tr>
+<tr><td>Credit exhausted, authentication, model withdrawn</td><td>No retry. Trip the circuit breaker. The job keeps its place.</td></tr>
 <tr><td>Tool error inside a run</td><td>Not a job failure. The result is returned to the model, which decides what to do.</td></tr>
 <tr><td>Check command exits non-zero</td><td>The condition is not met. Not a failure.</td></tr>
 </table>
 
 <h3>Circuit breaker</h3>
 
-<p>An exhausted account fails every job at once. Without a breaker, one billing lapse produces dozens
-of dead letters and dozens of notifications describing the same problem.</p>
+<p>An exhausted account fails every job at once. Without a breaker, one billing lapse fills every job's
+log with the same failure and spends the retry budget on each.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Failures across three or more distinct jobs within one tick window pause the scheduler.</li>
-<li>A paused scheduler emits exactly one notification, naming the cause.</li>
-<li>Jobs failing while the breaker is open do not become dead letters.</li>
+<li>A paused scheduler shows one banner across every screen, naming the cause.</li>
+<li>A job failing while the breaker is open waits for the probe rather than counting the outage against itself.</li>
 <li>While the breaker is open, one held job is retried every five minutes as a probe.</li>
 <li>A successful probe closes the breaker, resumes the schedule, and says so.</li>
 <li>The breaker state is visible in the interface.</li>
@@ -271,11 +314,10 @@ itself when the user changes their mind. The same operations are available in th
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every job is visible in the interface with its schedule, next run, and expiry.</li>
+<li>The interface shows a job's own fields — schedule, check, after_acting, prompt — its status, its next wake, and its log, with no derived label.</li>
 <li>A job can be edited or deleted from the interface without involving the agent.</li>
-<li>Deleting a session deletes its jobs and its dead letters, because replay requires that session.</li>
+<li>Deleting a session deletes its jobs, and each job takes its log with it.</li>
 <li>When a session rotates, its jobs move to the successor.</li>
-<li>Replaying a dead letter attaches the job to the live session of the chain, not to an archived predecessor.</li>
 </ul>
 </div>
 

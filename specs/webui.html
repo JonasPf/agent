@@ -27,7 +27,7 @@
 <h2>Installation</h2>
 
 <p>The interface is a progressive web app installed to the home screen. Installation is required rather
-than optional: on iOS, notifications are only delivered to installed web apps.</p>
+than optional: an installed web app gets the full screen and its own icon.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -46,8 +46,8 @@ than optional: on iOS, notifications are only delivered to installed web apps.</
 <table>
 <tr><th>Element</th><th>Shows</th></tr>
 <tr><td>Prompt entry</td><td>First entry of the transcript. Persona, memory, skills index, and full tool definitions, each collapsible with a token count. Memory is editable.</td></tr>
-<tr><td>Messages</td><td>User and assistant turns, tool calls with their results.</td></tr>
-<tr><td>Events</td><td>Job checks, summary updates, rotations, dead letters — one line each, visually quieter than messages.</td></tr>
+<tr><td>Messages</td><td>User and assistant turns, tool calls with their results. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links. What the operator typed is shown as they typed it.</td></tr>
+<tr><td>Events</td><td>Job checks, rotations, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
 <tr><td>Status line</td><td>Model, context used against the window, tokens per second while streaming, session cost.</td></tr>
 </table>
@@ -59,11 +59,23 @@ than optional: on iOS, notifications are only delivered to installed web apps.</
 <li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
 <li>Context usage is shown against the session's rotation threshold, not the model's window.</li>
 <li>The estimated cost of the next call is shown, and whether it will be cached.</li>
-<li>Events are visually distinguishable from messages at a glance.</li>
+<li>An event is laid out as a log line — clock, kind, detail — with no speaker and no bubble, so it cannot be read as a message or a tool result.</li>
+<li>A session identifier appearing in an event or a prompt section is a link to that session.</li>
+<li>The session list is ordered by last activity, and can be reordered by disk used, largest first.</li>
+<li>Each session row shows what it holds on disk and offers a delete that confirms first.</li>
+<li>Carried messages are marked by their styling; where they came from is said once, in the seeding event, not on each one.</li>
+<li>Colour marks a failure and nothing else; a routine tick that did not fire is not coloured.</li>
 <li>Long transcripts scroll to the newest entry without loading the entire history.</li>
 <li>A tool call can be expanded to show its arguments and result.</li>
+<li>A collapsed tool result previews its first line, and a call that returned nothing says so, so an empty result is never mistaken for a missing one.</li>
+<li>A collapsed tool call previews its arguments the same way, and a call made without arguments says so.</li>
+<li>A failed tool call is expanded by default and marked as an error.</li>
 <li>Scrolling to the top of any conversation reaches the prompt entry.</li>
 <li>Expanding the tool section shows every tool definition as the model receives it.</li>
+<li>An assistant message renders its markdown: headings, bullet and numbered lists, tables, block quotes, rules, emphasis, inline code, and fenced code blocks that keep their lines.</li>
+<li>A turn still streaming renders as markdown while it arrives, including a fenced block whose closing fence has not been sent yet.</li>
+<li>A message the operator typed, and a wake carrying a job's stored prompt, are shown verbatim and are never rendered.</li>
+<li>Markup in model output is shown as text and never becomes markup: a link renders only when it points at the web, an address, or this app, and an image renders as a link rather than a fetch.</li>
 </ul>
 </div>
 
@@ -76,6 +88,7 @@ than optional: on iOS, notifications are only delivered to installed web apps.</
 <li>A session can be created, renamed, archived, and deleted.</li>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>The list shows which sessions have jobs attached.</li>
+<li>Every session shows what it occupies on disk, so it is clear what deleting one frees.</li>
 <li>A session can be forked, or rotated into a new session, in one action.</li>
 <li>A session seeded from another links back to it, and the predecessor links forward.</li>
 <li>Opening a link to an archived session lands on the live session of its chain and says so.</li>
@@ -88,53 +101,86 @@ than optional: on iOS, notifications are only delivered to installed web apps.</
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The model can be changed for a session, choosing from models that support tool calling.</li>
-<li>The controls screen shows the session's fixed configuration, and offers a new one that takes effect by rotating.</li>
-<li>Starting a conversation offers the same choice of model, tools, and skills, prefilled from the most recent session.</li>
-<li>Toggling is available both when creating a session and while one is in progress.</li>
-<li>A new session opens with the previous session's set, changeable before the first message.</li>
+<li>The controls screen shows the session's model, tools, and skills, and offers a new configuration, which takes effect by rotating.</li>
+<li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
+<li>Forking opens a configuration screen carrying the predecessor's settings, and creates the fork when it is confirmed.</li>
+<li>Starting a conversation reaches the same screen, prefilled from the most recent session.</li>
+<li>No screen offers to edit the configuration of a session that already exists.</li>
 <li>Enable-all and disable-all act on the whole list in one tap.</li>
-<li>Changes take effect on the next turn without restarting the session.</li>
-<li>Disabling a tool that a job in this session depends on requires confirmation and names the job.</li>
 </ul>
 </div>
 
 <h2>Files</h2>
 
+<p>Every conversation has a files screen: what its working directory holds, what to add to it, and the
+archive of the whole session.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A file can be uploaded from a phone, including from the camera and the photo library.</li>
-<li>An uploaded file is written to the workspace and referenced in the transcript by path.</li>
+<li>An uploaded file is written to the session's working directory and appears in its file list.</li>
+<li>The file list shows every file the session holds with its size and age, and any of them can be downloaded or deleted.</li>
+<li>The files screen states what the session occupies on disk, split between its files and its transcript.</li>
 <li>Images are passed to models that accept them; other files are made available to the agent's file tools.</li>
 <li>Upload progress is shown and a failed upload can be retried.</li>
 <li>Files larger than 100 MB are refused before transfer begins.</li>
-<li>Uploads are deleted with the session that referenced them.</li>
+<li>Uploads are deleted with the session that holds them.</li>
+<li>A session is exported to a zip from its files screen, and an archive is imported from the session list.</li>
 </ul>
 </div>
 
-<h2>Notifications</h2>
+<h2>Assets</h2>
 
-<p>Two tiers, because a phone that buzzes for everything is a phone that gets ignored.</p>
-
-<table>
-<tr><th>Tier</th><th>Trigger</th><th>Behaviour</th></tr>
-<tr><td><b>Badge</b></td><td>Any new assistant message in a session not in the foreground.</td><td>Silent. Increments the count on the app icon.</td></tr>
-<tr><td><b>Interrupt</b></td><td>The agent calls the notify tool; or a dead letter; or the circuit breaker.</td><td>A push notification with sound.</td></tr>
-</table>
-
-<p>The agent decides what is worth interrupting for, and that decision is a visible tool call. Dead
-letters and the circuit breaker interrupt regardless, and this cannot be disabled.</p>
+<p>The interface is served from disk, and its scripts carry no version in their URLs. Every asset is
+therefore sent with <code>Cache-Control: no-cache</code>: the browser may keep a copy but must ask
+before reusing it. Without that, a cached script runs against markup it no longer matches, and the
+failure looks like a bug in the page rather than a stale copy of it.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>An interrupting notification carries its full text in the push payload and requires no network fetch to display.</li>
-<li>Notifications are received when the phone is not on the tailnet.</li>
-<li>Opening a notification navigates to the session and position that caused it.</li>
-<li>Badge count reflects unread assistant messages and clears when the session is read.</li>
-<li>A dead letter and a tripped breaker always interrupt.</li>
-<li>Notifications can be muted per session, except the two that always interrupt.</li>
+<li>Every interface asset is served with <code>Cache-Control: no-cache</code>.</li>
+<li>An unchanged asset revalidates to 304 rather than being sent again.</li>
+</ul>
+</div>
+
+<h2 id="unread">Unread work</h2>
+
+<p>The agent cannot interrupt the operator. It has no notification tool and no way to reach a device
+&mdash; that is <a href="adrs.html#adr-026">ADR-026</a> and it still holds. What the interface may do
+is tell the operator about output they have not read, and it does that in two places.</p>
+
+<p>The first is a count. The session list shows unread assistant messages per session, each job
+carries its own run log, and a tripped breaker is a banner across the top of every screen.</p>
+
+<p>The second is a system notification, on the narrow terms of
+<a href="adrs.html#adr-027">ADR-027</a>: while a tab is open, a new agent message the operator is not
+currently reading shows a banner. It is the browser's own notification API and nothing else &mdash; no
+push service, no service worker, no keys, no subscription &mdash; so it reaches a running browser and
+nothing else. A closed browser learns nothing, and this is stated rather than implied.</p>
+
+<p>The conversation is the title and its newest line is the body, clipped: a banner is a pointer to
+the transcript, not a copy of it. One banner per conversation, replaced as the exchange continues.
+Opening it goes to that session.</p>
+
+<p>Permission is the operator's, asked for once from the settings screen, and the screen states what
+this device will actually do &mdash; on, off, blocked for the site, or an origin without the API at
+all. Where permission is absent the count is the whole of the signal; the interface never opens a
+popup of its own instead.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A new assistant message in a session the operator is not reading shows a system notification, whether the page is hidden or showing another screen.</li>
+<li>A message in the conversation on screen shows no notification.</li>
+<li>A user message, a tool result, an event, and a turn that only called tools show no notification.</li>
+<li>Successive messages in one session replace each other rather than stacking.</li>
+<li>Opening a notification goes to the session that produced it.</li>
+<li>Without permission nothing is shown at all &mdash; no banner and no in-app popup &mdash; and the settings screen says so.</li>
+<li>The system makes no outbound connection to any push service, and nothing reaches a closed browser.</li>
+<li>The session list shows the unread assistant message count for each session, and clears it when the session is read.</li>
+<li>A job that failed shows it in its own log, and a tripped breaker appears as a banner, without either interrupting.</li>
 </ul>
 </div>
 
@@ -152,14 +198,15 @@ letters and the circuit breaker interrupt regardless, and this cannot be disable
 
 <h2>Panels</h2>
 
-<p>Jobs, dead letters, memory, tools, and skills each have a management panel. Tools that ship their own
+<p>Jobs, memory, tools, and skills each have a management panel. Tools that ship their own
 panel appear alongside them.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every job, dead letter, memory item, tool, and skill is viewable and editable without the agent.</li>
-<li>A dead letter can be replayed or dismissed in one action.</li>
+<li>Every job, memory item, tool, and skill is viewable and editable without the agent.</li>
+<li>A job's run log is readable from the job, without opening the conversation it fires into.</li>
+<li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
 </ul>
 </div>

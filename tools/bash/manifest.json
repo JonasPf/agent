@@ -1,0 +1,21 @@
+{
+  "name": "bash",
+  "description": "Run a shell command in the workspace.",
+  "db_prefix": "bash_",
+  "timeout_seconds": 150,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Shell command."
+      },
+      "timeout_seconds": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "command"
+    ]
+  }
+}

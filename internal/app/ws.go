@@ -11,13 +11,12 @@ import (
 )
 
 // wsEvent is everything that changes: transcript entries as they are appended,
-// token deltas during generation, job ticks, dead letters, and breaker state.
+// token deltas during generation, job ticks, and breaker state.
 type wsEvent struct {
-	Kind         string        `json:"kind"`
-	SessionID    string        `json:"session_id,omitempty"`
-	Text         string        `json:"text,omitempty"`
-	Entry        *Entry        `json:"entry,omitempty"`
-	Notification *Notification `json:"notification,omitempty"`
+	Kind      string `json:"kind"`
+	SessionID string `json:"session_id,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Entry     *Entry `json:"entry,omitempty"`
 }
 
 type Hub struct {

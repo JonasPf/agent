@@ -8,8 +8,13 @@ import (
 
 const persona = `You are a single-user autonomous agent running on the operator's own hardware.
 
-You hold long-lived conversations, schedule work that runs inside those conversations, remember what
-you are told, and write your own tools when the ones you have are not enough.
+You hold long-lived conversations, schedule work that runs inside those conversations, and remember what
+you are told.
+
+You cannot modify yourself. Your tools and skills are files the operator writes; you can read them and
+you cannot create, edit, or delete them, and the operating system refuses the attempt rather than
+trusting you not to make it. Your own working directory is the only place you can write. When a task
+needs a tool you do not have, say which tool and why, and stop — do not try to build one.
 
 Nothing you do is hidden. Every scheduled action is a job row the operator can read and delete before
 it runs. Every check leaves a line in this transcript. Say what you did, not what you are about to do.
@@ -26,8 +31,9 @@ Working rules:
   repeating job without one calls the model on every tick.
 - Read a skill before doing work it covers.
 - Write a memory item only for what stays true across conversations.
-- Call notify when something is worth interrupting the operator for. In a job without a check,
-  calling notify is what marks the condition met.`
+- A turn that opens with a job marker is a wake, and the operator is not there to answer. Say what the
+  wake is for and leave it in the transcript; that is where they will read it. Do not ask a question
+  you need answered to finish, and do not wait for one.`
 
 // systemSections builds the prompt as sent, split for display. Tool definitions
 // are shown here exactly as the model receives them; they travel in the tools array.
@@ -57,12 +63,14 @@ func (a *App) systemSections(sess *Session) []Section {
 
 	schemas, _ := json.MarshalIndent(a.tools.SchemasFor(sess), "", "  ")
 
-	platform := fmt.Sprintf(`Session %s on model %s. Workspace is %s.
+	platform := fmt.Sprintf(`Session %s on model %s. Your working directory is %s, private to this
+session; a file uploaded to this conversation lands there, and relative paths in tool calls are
+resolved against it.
 Transcript entries are append-only. Events you see in the interface are not sent to you.
 This session's model, tools, and skills are fixed for its life; they change only by
 continuing in a new session, which carries this conversation over.
 This session rotates into a successor at about %d projected tokens.`,
-		sess.ID, sess.Model, a.cfg.Workspace, sess.RotateAtTokens)
+		sess.ID, sess.Model, a.sessionWorkspace(sess.ID), sess.RotateAtTokens)
 
 	secs := []Section{
 		{Name: "persona", Text: persona},
@@ -70,6 +78,13 @@ This session rotates into a successor at about %d projected tokens.`,
 		{Name: "skills_index", Text: strings.TrimRight(skillText.String(), "\n")},
 		{Name: "platform", Text: platform},
 		{Name: "tool_schemas", Text: string(schemas)},
+	}
+	// Only a continued session has one, and it never changes once set, so it
+	// joins the cached prefix rather than breaking it.
+	if sess.CarriedSummary != "" {
+		secs = append(secs[:2], append([]Section{{Name: "carried_summary",
+			Text: "Summary of " + sess.ContinuedFrom + ", the conversation this one continues:\n" +
+				sess.CarriedSummary}}, secs[2:]...)...)
 	}
 	for i := range secs {
 		secs[i].Tokens = estTokens(secs[i].Text)
@@ -98,10 +113,10 @@ func sectionsTotal(sections []Section) int {
 	return n
 }
 
-// promptEntry returns the session's stored prompt entry, which is fixed for its life.
+// promptEntry returns the session's prompt entry, written when it was created.
 func (a *App) promptEntry(sessionID string) (Entry, bool) {
 	for _, e := range a.store.Entries(sessionID) {
-		if e.EventKind == "prompt" {
+		if e.Type == "prompt" {
 			return e, true
 		}
 	}

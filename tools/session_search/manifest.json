@@ -1,0 +1,21 @@
+{
+  "name": "session_search",
+  "description": "Full-text search across every transcript, including archived sessions.",
+  "db_prefix": "session_search_",
+  "timeout_seconds": 30,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "FTS5 query."
+      },
+      "limit": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "query"
+    ]
+  }
+}

@@ -1,14 +1,25 @@
 {
   "name": "notes",
-  "description": "Keep short freeform notes that outlive a conversation.",
+  "description": "Keep short freeform notes that outlive a conversation. This is the only record of them: list it to answer any question about what has been noted, rather than answering from the conversation.",
   "db_prefix": "notes_",
   "timeout_seconds": 15,
   "parameters": {
     "type": "object",
     "properties": {
-      "action": { "type": "string", "enum": ["add", "list"] },
-      "text": { "type": "string", "description": "The note, when adding." }
+      "action": {
+        "type": "string",
+        "enum": [
+          "add",
+          "list"
+        ]
+      },
+      "text": {
+        "type": "string",
+        "description": "The note, when adding."
+      }
     },
-    "required": ["action"]
+    "required": [
+      "action"
+    ]
   }
 }

@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -28,7 +29,7 @@ type wireFunction struct {
 
 // Project converts a stored transcript into the message list for a model call.
 //
-//  1. Entries of type event are dropped.
+//  1. Entries of type event and the prompt entry are dropped.
 //  2. The trailing run of job ticks sharing job_id and status collapses into one
 //     line carrying the repetition count and the elapsed span.
 //  3. Everything else passes through unchanged.
@@ -60,6 +61,16 @@ func Project(entries []Entry) []ChatMessage {
 		}
 		e := entries[i]
 		if e.Type == "event" {
+			// A failure is the exception to dropping events. The turn it belongs
+			// to left its input in the transcript with no answer, and without
+			// this line the model cannot tell that from an instruction it was
+			// given twice — so it answers it twice.
+			if m, ok := failureMessage(e); ok {
+				out = append(out, m)
+			}
+			continue
+		}
+		if e.Type == "prompt" {
 			continue
 		}
 		if m, ok := toMessage(e); ok {
@@ -67,6 +78,36 @@ func Project(entries []Entry) []ChatMessage {
 		}
 	}
 	return out
+}
+
+// wakeLateThreshold is how late a wake has to be before saying so is worth the
+// words. The scheduler ticks once a second and a busy session defers a wake to
+// the next tick, so a few seconds is the ordinary case, not a fact.
+const wakeLateThreshold = time.Minute
+
+// lateness describes the gap between when a wake was due and when it ran. A
+// wake with no recorded due time says nothing: entries written before this was
+// recorded must not start claiming to be punctual.
+func lateness(e Entry) string {
+	if e.DueAt.IsZero() || e.CreatedAt.IsZero() {
+		return ""
+	}
+	late := e.CreatedAt.Sub(e.DueAt)
+	if late < wakeLateThreshold {
+		return ""
+	}
+	return fmt.Sprintf(" %s late, due %s", late.Round(time.Minute), e.DueAt.Format(time.RFC3339))
+}
+
+// failureMessage renders a run that produced nothing, in the same bracketed
+// shape as a collapsed run of ticks: a line about the conversation rather than
+// a turn in it.
+func failureMessage(e Entry) (ChatMessage, bool) {
+	if e.EventKind != "error" && e.EventKind != "job_error" {
+		return ChatMessage{}, false
+	}
+	return ChatMessage{Role: "user",
+		Content: fmt.Sprintf("[the turn above produced no reply — %s]", e.Text)}, true
 }
 
 func isTick(e Entry) bool {
@@ -95,6 +136,16 @@ func collapsed(run []Entry) ChatMessage {
 func toMessage(e Entry) (ChatMessage, bool) {
 	switch e.Role {
 	case "user":
+		// A job wake and a typed message are both user turns, and without a
+		// marker the model cannot tell them apart. It answered a reminder the
+		// way it answers a person — in the transcript — while the operator was
+		// not looking at it, so the wake says whose it is and that nobody is
+		// there to read the reply.
+		if e.JobID != "" {
+			return ChatMessage{Role: "user",
+				Content: fmt.Sprintf("[job %s woke this session%s; the operator is not present]\n%s",
+					e.JobID, lateness(e), e.Text)}, true
+		}
 		return ChatMessage{Role: "user", Content: e.Text}, true
 	case "assistant":
 		m := ChatMessage{Role: "assistant"}
@@ -126,4 +177,27 @@ func projectedTokens(entries []Entry) int {
 		n += estTokens(string(b))
 	}
 	return n
+}
+
+// messageText renders a projected message as plain text for the summariser.
+// Content arrives as a string or, when a cache marker is attached, as parts;
+// an assistant turn that only calls tools carries its substance in the calls.
+func messageText(m ChatMessage) string {
+	var sb strings.Builder
+	switch c := m.Content.(type) {
+	case string:
+		sb.WriteString(c)
+	case []any:
+		for _, p := range c {
+			if part, ok := p.(map[string]any); ok {
+				if t, ok := part["text"].(string); ok {
+					sb.WriteString(t)
+				}
+			}
+		}
+	}
+	for _, c := range m.ToolCalls {
+		fmt.Fprintf(&sb, "\n[calls %s %s]", c.Function.Name, c.Function.Arguments)
+	}
+	return strings.TrimSpace(sb.String())
 }

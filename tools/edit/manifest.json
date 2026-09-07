@@ -1,0 +1,31 @@
+{
+  "name": "edit",
+  "description": "Replace an exact string in a workspace file.",
+  "db_prefix": "edit_",
+  "timeout_seconds": 30,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Path."
+      },
+      "old": {
+        "type": "string",
+        "description": "Exact text to replace."
+      },
+      "new": {
+        "type": "string",
+        "description": "Replacement text."
+      },
+      "replace_all": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "path",
+      "old",
+      "new"
+    ]
+  }
+}

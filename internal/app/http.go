@@ -1,6 +1,8 @@
 package app
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,17 +28,20 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/messages", a.hSendMessage)
 	mux.HandleFunc("POST /sessions/{id}/rotate", a.hRotate)
 	mux.HandleFunc("POST /sessions/{id}/read", a.hMarkRead)
+	mux.HandleFunc("GET /sessions/{id}/files", a.hSessionFiles)
+	mux.HandleFunc("POST /sessions/{id}/files", a.hUpload)
+	mux.HandleFunc("GET /sessions/{id}/files/{path...}", a.hSessionFile)
+	mux.HandleFunc("DELETE /sessions/{id}/files/{path...}", a.hDeleteSessionFile)
+	mux.HandleFunc("GET /sessions/{id}/export", a.hExportSession)
+	mux.HandleFunc("POST /sessions/import", a.hImportSession)
 	mux.HandleFunc("GET /search", a.hSearch)
 
 	mux.HandleFunc("GET /jobs", a.hJobs)
 	mux.HandleFunc("POST /jobs", a.hCreateJob)
 	mux.HandleFunc("GET /jobs/{id}", a.hJob)
+	mux.HandleFunc("GET /jobs/{id}/runs", a.hJobRuns)
 	mux.HandleFunc("PATCH /jobs/{id}", a.hPatchJob)
 	mux.HandleFunc("DELETE /jobs/{id}", a.hDeleteJob)
-
-	mux.HandleFunc("GET /dead-letters", a.hDeadLetters)
-	mux.HandleFunc("POST /dead-letters/{id}/replay", a.hReplay)
-	mux.HandleFunc("POST /dead-letters/{id}/dismiss", a.hDismiss)
 
 	mux.HandleFunc("GET /memory", a.hMemory)
 	mux.HandleFunc("POST /memory", a.hAddMemory)
@@ -51,15 +56,24 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /skills", a.hSkills)
 	mux.HandleFunc("GET /skills/{name}", a.hSkill)
 
-	mux.HandleFunc("POST /uploads", a.hUpload)
-	mux.HandleFunc("GET /push/key", a.hPushKey)
-	mux.HandleFunc("POST /push/subscriptions", a.hPushSubscribe)
 	mux.HandleFunc("GET /models", a.hModels)
 	mux.HandleFunc("GET /status", a.hStatus)
 	mux.HandleFunc("/ws", a.handleWS)
 
-	mux.Handle("/", http.FileServer(http.Dir(a.cfg.WebDir)))
+	mux.Handle("/", revalidated(http.FileServer(http.Dir(a.cfg.WebDir))))
 	return mux
+}
+
+// revalidated makes the browser ask before reusing an interface asset. The
+// scripts have no version in their URLs, so a heuristically cached app.js runs
+// against markup it no longer matches — which fails silently, looking like a bug
+// in the page rather than a stale copy of it. no-cache still allows a 304, so
+// an unchanged asset costs one conditional request.
+func revalidated(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		h.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -82,6 +96,7 @@ func (a *App) enrich(s *Session) *Session {
 	entries := a.store.Entries(s.ID)
 	out.EntryCount = len(entries)
 	out.ContextUsed = projectedTokens(entries)
+	out.DiskBytes = a.sessionDiskBytes(s.ID)
 	if jobs, err := a.store.SessionJobs(s.ID); err == nil {
 		out.JobCount = len(jobs)
 	}
@@ -186,7 +201,6 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		Title         *string     `json:"title"`
 		Model         *string     `json:"model"`
 		Status        *string     `json:"status"`
-		Muted         *bool       `json:"muted"`
 		Summary       *string     `json:"summary"`
 		EnabledTools  optionalSet `json:"enabled_tools"`
 		EnabledSkills optionalSet `json:"enabled_skills"`
@@ -199,15 +213,14 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		s.Title = *in.Title
 	}
 	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present {
+		// A configuration is chosen before the session exists and fixed once it
+		// does. There is one answer here, not two.
 		fail(w, 409, "a session's model, tools, and skills are fixed for its life; "+
 			"POST /sessions/%s/rotate to continue this conversation under a new configuration", s.ID)
 		return
 	}
 	if in.Status != nil {
 		s.Status = *in.Status
-	}
-	if in.Muted != nil {
-		s.Muted = *in.Muted
 	}
 	if in.Summary != nil {
 		s.Summary = *in.Summary
@@ -218,7 +231,7 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) hDeleteSession(w http.ResponseWriter, r *http.Request) {
-	if err := a.store.DeleteSession(r.PathValue("id")); err != nil {
+	if err := a.DeleteSession(r.PathValue("id")); err != nil {
 		fail(w, 500, "%v", err)
 		return
 	}
@@ -317,6 +330,58 @@ func (a *App) hSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, hits)
 }
 
+// hJobRuns is a job's own history: every wake, what it did, and when. It is
+// the answer to "has this been running?", which used to need reading the
+// conversation the job fires into.
+func (a *App) hJobRuns(w http.ResponseWriter, r *http.Request) {
+	runs, err := a.store.JobRuns(r.PathValue("id"))
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, runs)
+}
+
+// priceJobs attaches each job's estimate. The catalogue call is cached for a
+// day and a failure only costs the money figures, so a job list never depends
+// on reaching OpenRouter.
+func (a *App) priceJobs(ctx context.Context, jobs []*Job) []*Job {
+	prices := map[string]float64{}
+	// No catalogue is not an error: the token figures stand on their own, and a
+	// job list must never fail because a price was unavailable.
+	if a.or != nil {
+		if models, err := a.or.Models(ctx); err == nil {
+			for _, m := range models {
+				prices[m.ID] = m.PromptPrice
+			}
+		}
+	}
+	out := make([]*Job, 0, len(jobs))
+	for _, j := range jobs {
+		out = append(out, a.priceJob(j, prices))
+	}
+	return out
+}
+
+func (a *App) priceJob(j *Job, prices map[string]float64) *Job {
+	copied := *j
+	tokens := 0
+	price := 0.0
+	if s := a.LiveSession(j.SessionID); s != nil {
+		// What a wake actually sends is the system prompt plus the conversation.
+		// Counting only the conversation would put a new session's cost at zero,
+		// when its every turn already carries a few thousand tokens of prompt.
+		tokens = projectedTokens(a.store.Entries(s.ID))
+		if p, ok := a.promptEntry(s.ID); ok {
+			tokens += sectionsTotal(p.Sections)
+		}
+		price = prices[s.Model]
+	}
+	est := estimateJob(j.Schedule, j.Check != "", tokens, price)
+	copied.Estimate = &est
+	return &copied
+}
+
 func (a *App) hJobs(w http.ResponseWriter, r *http.Request) {
 	jobs, err := a.store.Jobs()
 	if err != nil {
@@ -332,7 +397,7 @@ func (a *App) hJobs(w http.ResponseWriter, r *http.Request) {
 		}
 		jobs = out
 	}
-	writeJSON(w, 200, jobs)
+	writeJSON(w, 200, a.priceJobs(r.Context(), jobs))
 }
 
 func (a *App) hCreateJob(w http.ResponseWriter, r *http.Request) {
@@ -341,15 +406,12 @@ func (a *App) hCreateJob(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "%v", err)
 		return
 	}
-	if spec.Check == "" && spec.ReasonNoCheck == "" {
-		spec.ReasonNoCheck = "created from the interface"
-	}
 	j, err := a.CreateJob(spec)
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
-	writeJSON(w, 201, j)
+	writeJSON(w, 201, a.priceJobs(r.Context(), []*Job{j})[0])
 }
 
 func (a *App) hJob(w http.ResponseWriter, r *http.Request) {
@@ -358,7 +420,7 @@ func (a *App) hJob(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such job")
 		return
 	}
-	writeJSON(w, 200, j)
+	writeJSON(w, 200, a.priceJobs(r.Context(), []*Job{j})[0])
 }
 
 func (a *App) hPatchJob(w http.ResponseWriter, r *http.Request) {
@@ -368,11 +430,10 @@ func (a *App) hPatchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Schedule       *string `json:"schedule"`
-		Check          *string `json:"check"`
-		Prompt         *string `json:"prompt"`
-		ExpiresAt      *string `json:"expires_at"`
-		OnConditionMet *string `json:"on_condition_met"`
+		Schedule    *string `json:"schedule"`
+		Check       *string `json:"check"`
+		Prompt      *string `json:"prompt"`
+		AfterActing *string `json:"after_acting"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
@@ -392,16 +453,12 @@ func (a *App) hPatchJob(w http.ResponseWriter, r *http.Request) {
 	if in.Prompt != nil {
 		j.Prompt = *in.Prompt
 	}
-	if in.ExpiresAt != nil {
-		t, err := time.Parse(time.RFC3339, *in.ExpiresAt)
-		if err != nil {
-			fail(w, 400, "%v", err)
+	if in.AfterActing != nil {
+		if *in.AfterActing != afterStop && *in.AfterActing != afterContinue {
+			fail(w, 400, "after_acting must be %q or %q", afterStop, afterContinue)
 			return
 		}
-		j.ExpiresAt = t
-	}
-	if in.OnConditionMet != nil {
-		j.OnConditionMet = *in.OnConditionMet
+		j.AfterActing = *in.AfterActing
 	}
 	if err := a.store.PutJob(j); err != nil {
 		fail(w, 500, "%v", err)
@@ -417,33 +474,6 @@ func (a *App) hDeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
-	w.WriteHeader(204)
-}
-
-func (a *App) hDeadLetters(w http.ResponseWriter, r *http.Request) {
-	d, err := a.store.DeadLetters()
-	if err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	writeJSON(w, 200, d)
-}
-
-func (a *App) hReplay(w http.ResponseWriter, r *http.Request) {
-	j, err := a.ReplayDeadLetter(r.PathValue("id"))
-	if err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	writeJSON(w, 201, j)
-}
-
-func (a *App) hDismiss(w http.ResponseWriter, r *http.Request) {
-	if err := a.store.CloseDeadLetter(r.PathValue("id")); err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	a.hub.Broadcast(wsEvent{Kind: "dead_letters"})
 	w.WriteHeader(204)
 }
 
@@ -574,7 +604,14 @@ func (a *App) hSkill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"name": s.Name, "description": s.Description, "body": s.Body})
 }
 
+// hUpload writes a file into the session's working directory, where its tools
+// run. An upload writes no transcript entry: the file is the record.
 func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if a.store.Session(id) == nil {
+		fail(w, 404, "no such session")
+		return
+	}
 	if r.ContentLength > maxUpload {
 		fail(w, 413, "files larger than 100 MB are refused")
 		return
@@ -583,61 +620,118 @@ func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "%v", err)
 		return
 	}
-	sessionID := r.FormValue("session_id")
-	if a.store.Session(sessionID) == nil {
-		fail(w, 400, "session_id is required")
-		return
-	}
 	file, hdr, err := r.FormFile("file")
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
 	defer file.Close()
-	dir := filepath.Join(a.cfg.Workspace, "uploads", sessionID)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	name := filepath.Base(hdr.Filename)
-	dst := filepath.Join(dir, name)
-	out, err := os.Create(dst)
+	rel, n, err := a.writeWorkspaceFile(id, filepath.Base(hdr.Filename), file)
 	if err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	defer out.Close()
-	n, err := io.Copy(out, io.LimitReader(file, maxUpload))
-	if err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	rel := filepath.Join("uploads", sessionID, name)
-	a.appendEvent(sessionID, Entry{EventKind: "upload",
-		Text: fmt.Sprintf("uploaded %s (%d bytes) to %s", name, n, rel)})
-	writeJSON(w, 201, map[string]any{"path": rel, "bytes": n})
-}
-
-func (a *App) hPushKey(w http.ResponseWriter, r *http.Request) {
-	pub, _ := a.vapidKeys()
-	writeJSON(w, 200, map[string]string{"public_key": pub})
-}
-
-func (a *App) hPushSubscribe(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Endpoint string            `json:"endpoint"`
-		Keys     map[string]string `json:"keys"`
-	}
-	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
-	if err := a.store.PutPushSub(PushSub{Endpoint: in.Endpoint,
-		P256dh: in.Keys["p256dh"], Auth: in.Keys["auth"]}); err != nil {
+	writeJSON(w, 201, map[string]any{"path": rel, "bytes": n})
+}
+
+func (a *App) hSessionFiles(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if a.store.Session(id) == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	files, err := a.sessionFiles(id)
+	if err != nil {
 		fail(w, 500, "%v", err)
 		return
 	}
-	w.WriteHeader(201)
+	writeJSON(w, 200, files)
+}
+
+func (a *App) hSessionFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if a.store.Session(id) == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	full, err := a.resolveInWorkspace(id, r.PathValue("path"))
+	if err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	http.ServeFile(w, r, full)
+}
+
+func (a *App) hDeleteSessionFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if a.store.Session(id) == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	full, err := a.resolveInWorkspace(id, r.PathValue("path"))
+	if err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	if err := os.Remove(full); err != nil {
+		fail(w, 404, "%v", err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+// hExportSession serves everything the session owns as one zip.
+func (a *App) hExportSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	s := a.store.Session(id)
+	if s == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", "session-"+id+".zip"))
+	if err := a.ExportSession(w, id); err != nil {
+		// The archive has already begun; the truncated download is the signal.
+		return
+	}
+}
+
+// hImportSession restores a session from an archive, under the identifier the
+// archive carries.
+func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
+	if r.ContentLength > maxUpload {
+		fail(w, 413, "archives larger than 100 MB are refused")
+		return
+	}
+	var body io.Reader = io.LimitReader(r.Body, maxUpload)
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			fail(w, 400, "%v", err)
+			return
+		}
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			fail(w, 400, "%v", err)
+			return
+		}
+		defer file.Close()
+		body = file
+	}
+	blob, err := io.ReadAll(body)
+	if err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	s, err := a.ImportSession(bytes.NewReader(blob), int64(len(blob)))
+	if err != nil {
+		code := 400
+		if strings.Contains(err.Error(), "already here") {
+			code = 409
+		}
+		fail(w, code, "%v", err)
+		return
+	}
+	writeJSON(w, 201, a.enrich(s))
 }
 
 func (a *App) hModels(w http.ResponseWriter, r *http.Request) {
@@ -646,12 +740,13 @@ func (a *App) hModels(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, "%v", err)
 		return
 	}
-	writeJSON(w, 200, models)
+	writeJSON(w, 200, filterModels(models, r.URL.Query().Get("q")))
 }
 
 func (a *App) hStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
 		"breaker":       a.sched.State(),
+		"sandbox":       a.sandbox,
 		"default_model": a.cfg.DefaultModel,
 		"workspace":     a.cfg.Workspace,
 	}

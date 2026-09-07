@@ -28,6 +28,13 @@
 .msg .who { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 3px; }
 .msg.you .bub { background: var(--code-bg); border-radius: 10px; padding: 8px 11px; }
 .msg .bub { line-height: 1.5; }
+.bub.md p { margin: 0 0 8px; }
+.bub.md p:last-child { margin-bottom: 0; }
+.bub.md code { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px;
+  background: var(--code-bg); border-radius: 4px; padding: 1px 4px; }
+.bub.md table { border-collapse: collapse; font-size: 11.5px; margin: 0 0 8px; }
+.bub.md th, .bub.md td { border: 1px solid var(--line); padding: 3px 8px; text-align: left; }
+.bub.md th { background: var(--code-bg); }
 .ev { font-size: 11px; color: var(--muted); padding: 3px 0 3px 10px; border-left: 2px solid var(--line); margin: 3px 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .ev.grp { border-left-color: var(--accent); }
@@ -54,10 +61,6 @@
 .tabs { display:flex; gap: 3px; padding: 8px 12px 0; border-bottom: 1px solid var(--line); }
 .tabs span { font-size: 11.5px; padding: 5px 10px; border-radius: 7px 7px 0 0; color: var(--muted); }
 .tabs span.on { color: var(--accent); border: 1px solid var(--line); border-bottom-color: var(--card); background: var(--card); margin-bottom: -1px; }
-.notif { border:1px solid var(--line); border-radius: 13px; padding: 9px 12px; background: var(--bg); margin-bottom: 9px; }
-.notif .a { font-size: 10.5px; color: var(--muted); text-transform: uppercase; letter-spacing:.05em; }
-.notif .b { font-weight: 600; font-size: 12.5px; margin: 2px 0; }
-.notif .c { font-size: 11.5px; color: var(--muted); line-height:1.45; }
 </style></head>
 <body>
 <nav class="top"><div class="wrap">
@@ -108,8 +111,10 @@
 
     <div class="msg">
       <span class="attr">via job #12 · deploy watcher</span>
-      <div class="bub">Deploy finished at 20:36, 94 seconds. All checks green.
-      Job deleted as scheduled.</div></div>
+      <div class="bub md"><p><b>Deploy finished</b> at 20:36, 94 seconds. All checks green.</p>
+      <table><thead><tr><th>step</th><th>time</th></tr></thead>
+      <tbody><tr><td>build</td><td>41s</td></tr><tr><td>tests</td><td>38s</td></tr></tbody></table>
+      <p>Rolled back with <code>gh run rerun 812</code> if needed. Job deleted as scheduled.</p></div></div>
   </div>
   <div class="status">
     <span><b>opus-5</b></span>
@@ -147,54 +152,26 @@
 </div>
 
 <div class="phone">
-<div class="cap">Jobs &amp; dead letters</div>
+<div class="cap">Jobs &amp; their run logs</div>
 <div class="screen">
   <div class="sbar"><span>9:41</span><span>agent.tail1a2b.ts.net</span></div>
   <div class="hdr"><span class="ic">‹</span><span class="t">Jobs</span></div>
-  <div class="tabs"><span class="on">Active 3</span><span>Dead letters 2</span></div>
-  <div class="body" style="padding-top:6px">
-    <div class="row"><div class="m"><div class="n">#14 invoice check</div>
-      <div class="s">daily 09:00 · next in 4h · expires 12 Sep</div>
+  <div class="body" style="padding-top:10px">
+    <div class="row"><div class="m"><div class="n">invoice check</div>
+      <div class="s"><span class="tag ok">scheduled</span> daily 09:00 · next in 4h · 41 runs</div>
       <div class="s">in <i>Invoice chasing</i></div>
-      <div class="s"><span class="tag ok">check</span> <span class="tag">no model cost</span></div></div></div>
-    <div class="row"><div class="m"><div class="n">#15 review tone watch</div>
-      <div class="s">every 30m · next in 12m · expires tomorrow</div>
-      <div class="s">in <i>PR #402</i></div>
-      <div class="s"><span class="tag warn">model each tick</span> <span class="tag">~$0.02/tick</span></div></div></div>
-    <hr style="border:0;border-top:1px solid var(--line);margin:14px 0 8px">
-    <div class="cap" style="font-size:11px">Dead letters</div>
-    <div class="row"><div class="m"><div class="n">#11 staging deploy</div>
-      <div class="s">Expired after 24h · never fired · ran 720×</div>
-      <div class="s"><span class="tag">replay</span> <span class="tag">dismiss</span></div></div></div>
-    <div class="row"><div class="m"><div class="n">#09 invoice fetch</div>
-      <div class="s">Failed 3× · 402 insufficient credit</div>
-      <div class="s"><span class="tag bad">breaker tripped</span> <span class="tag">replay</span></div></div></div>
-  </div>
-</div>
-</div>
-
-<div class="phone">
-<div class="cap">Lock screen · interrupting tier</div>
-<div class="screen">
-  <div class="sbar"><span>20:36</span><span></span></div>
-  <div class="body" style="padding-top:22px">
-    <div style="text-align:center;font-size:44px;font-weight:300;letter-spacing:-.02em">20:36</div>
-    <div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:22px">Tuesday, 2 September</div>
-
-    <div class="notif"><div class="a">Agent · now</div>
-      <div class="b">Deploy finished</div>
-      <div class="c">web · 94s · all checks green</div></div>
-
-    <div class="notif"><div class="a">Agent · 14m ago</div>
-      <div class="b">Staging watch gave up</div>
-      <div class="c">Expired after 24h without the deploy completing. Replay?</div></div>
-
-    <div class="notif"><div class="a">Agent · 1h ago</div>
-      <div class="b">Scheduler paused</div>
-      <div class="c">OpenRouter returned 402. 3 jobs held.</div></div>
-
-    <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:16px;line-height:1.5">
-      Badge-tier updates are silent.<br>These three always interrupt.</div>
+      <div class="s"><span class="tag">log</span> <span class="tag">open</span> <span class="tag">delete</span></div></div></div>
+    <div class="row"><div class="m"><div class="n">stretch reminder</div>
+      <div class="s"><span class="tag ok">scheduled</span> every 20m, Mon–Fri · next in 12m · 96 runs</div>
+      <div class="s" style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;line-height:1.7">
+        3 Sep 12:09 &nbsp;<span class="tag">fired</span>&nbsp; Reminder: time to stretch.<br>
+        3 Sep 12:07 &nbsp;<span class="tag bad">failed</span>&nbsp; context deadline exceeded<br>
+        3 Sep 11:40 &nbsp;<span class="tag">fired</span>&nbsp; <span style="color:var(--muted)">1h 30m late</span><br>
+        3 Sep 09:40 &nbsp;<span class="tag">skipped</span>&nbsp; check said no
+      </div></div></div>
+    <div class="row"><div class="m"><div class="n">feed the cat</div>
+      <div class="s"><span class="tag">done</span> one wake · 1 run · 3 Sep 11:08</div>
+      <div class="s">Kept, with its log. Only you delete a job.</div></div></div>
   </div>
 </div>
 </div>
@@ -203,8 +180,9 @@
 
 <div class="note">
 Delivered over Tailscale; the hostname in the status bar is a tailnet name with a real certificate.
-Notification content travels in the push payload, so the lock screen renders correctly even when the
-phone is off the tailnet.
+Nothing arrives at the phone on its own &mdash; there are no notifications. The count beside a
+conversation is how unread work announces itself, and it is only visible once the operator opens the
+app.
 </div>
 
 <footer><a href="webui.html">← Web UI</a> · <a href="api.html">API →</a></footer>

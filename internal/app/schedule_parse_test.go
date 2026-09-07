@@ -1,38 +1,42 @@
 package app
 
-import "testing"
+import (
+	"errors"
+	"testing"
+	"time"
+)
 
-func TestJobKind(t *testing.T) {
+// A schedule answers one question: when is the next wake? A single instant has
+// exactly one, which is the whole of how a reminder ends — no rule deletes it,
+// the schedule simply runs out.
+func TestNextRun(t *testing.T) {
+	from := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
 		name     string
 		schedule string
-		check    string
-		want     string
+		want     time.Time
+		err      bool
+		done     bool
 	}{
-		{"command decides it", "2m", "test -f /tmp/done", "check"},
-		{"reminder at an instant", "2026-09-01T15:05:00+01:00", "", "due"},
-		{"instant with a check is still a check", "2026-09-01T15:05:00+01:00", "true", "check"},
-		{"repeating with no check", "30m", "", "judgement"},
-		{"cron with no check", "0 9 * * *", "", "judgement"},
+		{"interval", "30m", from.Add(30 * time.Minute), false, false},
+		{"cron", "0 9 * * *", time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC), false, false},
+		{"instant ahead", "2026-09-01T18:00:00Z", time.Date(2026, 9, 1, 18, 0, 0, 0, time.UTC), false, false},
+		{"instant passed", "2026-09-01T06:00:00Z", time.Time{}, true, true},
+		{"unrecognised", "tomorrow at nine", time.Time{}, true, false},
+		{"interval too short", "500ms", time.Time{}, true, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := jobKind(&Job{Schedule: c.schedule, Check: c.check}); got != c.want {
-				t.Errorf("jobKind(%q, check %q) = %q, want %q", c.schedule, c.check, got, c.want)
+			got, err := nextRun(c.schedule, from)
+			if c.err != (err != nil) {
+				t.Fatalf("nextRun(%q) err = %v, want err %v", c.schedule, err, c.err)
+			}
+			if c.done != errors.Is(err, error(errOneShotDone)) {
+				t.Fatalf("nextRun(%q) one-shot-done = %v, want %v", c.schedule, err, c.done)
+			}
+			if !c.err && !got.Equal(c.want) {
+				t.Fatalf("nextRun(%q) = %v, want %v", c.schedule, got, c.want)
 			}
 		})
-	}
-}
-
-func TestOneShot(t *testing.T) {
-	for _, s := range []string{"2026-09-01T15:05:00+01:00", " 2026-09-01T15:05:00Z "} {
-		if !oneShot(s) {
-			t.Errorf("oneShot(%q) = false, want true", s)
-		}
-	}
-	for _, s := range []string{"5m", "0 9 * * *", "", "tomorrow"} {
-		if oneShot(s) {
-			t.Errorf("oneShot(%q) = true, want false", s)
-		}
 	}
 }

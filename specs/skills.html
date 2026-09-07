@@ -27,14 +27,14 @@ about when and how to use one.</p>
 
 <h2>Form</h2>
 
-<pre><code>skills/writing-tools.md
+<pre><code>skills/scheduling.md
 
 ---
-name: writing-tools
-description: How to author a new tool for this agent.
+name: scheduling
+description: How to turn a request for later into a job.
 ---
 
-A tool is a directory under tools/ containing…</code></pre>
+A request for later is either a time or a condition…</code></pre>
 
 <h2>Progressive disclosure</h2>
 
@@ -55,22 +55,27 @@ rather than twenty documents' worth.</p>
 </ul>
 </div>
 
-<h2>Self-authoring</h2>
+<h2>Who writes a skill</h2>
 
-<p>The agent writes skills. After completing work that required figuring something out, it records what
-it learned so the next attempt starts from the answer.</p>
+<p><strong>The operator does.</strong> A skill is a Markdown file the person running the agent writes,
+in the skill directory, with whatever editor they already use. The agent reads skills and does not
+write them (<a href="adrs.html#adr-033">ADR-033</a>).</p>
 
-<p>Skills are the safe half of self-improvement: a poor skill is poor prose, whereas a poor tool is an
-executable that fails at three in the morning. Where a lesson can be written as a skill rather than
-built as a tool, it should be.</p>
+<p>The skill directory is not writable by a tool &mdash; it is not in any path the sandbox allows a tool
+to write &mdash; and no route on the API writes one. The specification previously said the agent could
+create, edit, and delete skills, and that the interface could edit them. Neither was true.</p>
+
+<p>What survives is the reason skills existed: a lesson worth keeping is worth writing down, and prose
+is the safe form for it. When the agent works something out that the next attempt should start from, it
+says so, and the operator decides whether it becomes a skill.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The agent can create, edit, and delete skills.</li>
-<li>Every skill is readable and editable in the interface.</li>
+<li>A tool subprocess cannot create, modify, or delete anything in the skill directory, and is refused by the operating system rather than by its own good manners.</li>
+<li>Skills are read from files on disk, not from the database, and a skill added by the operator is available to sessions started after it.</li>
+<li>Every skill is readable in the interface.</li>
 <li>A skill outside a session's set is absent from its index, and reading it by name reports no such skill.</li>
-<li>Skills are stored as files in version control, not in the database.</li>
 </ul>
 </div>
 
@@ -78,8 +83,6 @@ built as a tool, it should be.</p>
 
 <table>
 <tr><th>Skill</th><th>Teaches</th></tr>
-<tr><td><code>writing-tools</code></td><td>The tool directory convention, manifest format, execution contract, and reload. States that tools are built in their own conversation, so the work is not replayed by jobs attached to another.</td></tr>
-<tr><td><code>writing-skills</code></td><td>What belongs in a skill, and when a lesson is a skill rather than a tool.</td></tr>
 <tr><td><code>scheduling</code></td><td>How to turn a condition into a shell command, which is nearly always possible; when it genuinely is not; choosing expiry and interval.</td></tr>
 <tr><td><code>memory-discipline</code></td><td>What is worth remembering, and how to consolidate when memory is full.</td></tr>
 </table>

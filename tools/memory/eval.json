@@ -1,0 +1,35 @@
+{
+  "cases": [
+    {
+      "name": "remembers a durable fact",
+      "prompt": "Remember that I prefer all times in UTC.",
+      "tools": [
+        "memory"
+      ],
+      "expect": {
+        "tool": "memory",
+        "args": {
+          "action": "add"
+        },
+        "args_match": {
+          "text": "(?i)utc"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "lists what it holds",
+      "prompt": "What do you have in memory right now?",
+      "tools": [
+        "memory"
+      ],
+      "expect": {
+        "tool": "memory",
+        "args": {
+          "action": "list"
+        },
+        "clean": true
+      }
+    }
+  ]
+}

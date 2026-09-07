@@ -22,8 +22,9 @@
 <h1>Agent</h1>
 <p class="lede">A single-user autonomous agent that runs on your own hardware, reachable from your phone.</p>
 
-<p>It holds long-lived conversations, schedules work that runs inside those conversations, remembers
-what you tell it, and writes its own tools when the ones it has are not enough.</p>
+<p>It holds long-lived conversations, schedules work that runs inside those conversations, and remembers
+what you tell it. It does not modify itself: tools and skills are yours to write
+(<a href="adrs.html#adr-033">ADR-033</a>).</p>
 
 <h2>Design principle</h2>
 
@@ -64,8 +65,6 @@ flowchart LR
   end
   P -.->|"Tailscale"| G
   L -->|"OpenAI-compatible"| O["OpenRouter"]
-  G -->|"outbound push"| W["Apple / Google<br/>push service"]
-  W -.->|"APNs / FCM"| P
 </div>
 
 <h2>Sections</h2>
@@ -73,14 +72,14 @@ flowchart LR
 <div class="grid">
 <a href="architecture.html"><b>Architecture</b><span>Components, storage, model access, deployment surface.</span></a>
 <a href="sessions.html"><b>Sessions</b><span>Transcripts, entry types, projection, summaries, rotation.</span></a>
-<a href="jobs.html"><b>Jobs</b><span>Scheduling, deterministic checks, dead letters, circuit breaker.</span></a>
+<a href="jobs.html"><b>Jobs</b><span>Scheduling, deterministic checks, run logs, circuit breaker.</span></a>
 <a href="tools.html"><b>Tools</b><span>Manifest convention, execution contract, hot loading, UI plugins.</span></a>
-<a href="skills.html"><b>Skills</b><span>Progressive disclosure, self-authoring.</span></a>
+<a href="skills.html"><b>Skills</b><span>Progressive disclosure, operator-authored.</span></a>
 <a href="memory.html"><b>Memory</b><span>Visible recall, write discipline, session search.</span></a>
-<a href="webui.html"><b>Web UI</b><span>Mobile surface, notifications, per-session controls.</span></a>
+<a href="webui.html"><b>Web UI</b><span>Mobile surface, unread counts, per-session controls.</span></a>
 <a href="mock.html"><b>UI mock</b><span>Rendered mobile interface.</span></a>
 <a href="api.html"><b>API</b><span>OpenAPI 3 reference.</span></a>
-<a href="adrs.html"><b>Decisions</b><span>Ten ADRs covering every tradeoff made.</span></a>
+<a href="adrs.html"><b>Decisions</b><span>Thirty ADRs covering every tradeoff made.</span></a>
 </div>
 
 <h2>Cross-cutting requirements</h2>
@@ -123,6 +122,64 @@ history, or hedges is a defect.</p>
 <li>No login, session cookie, or authorisation check exists in the application.</li>
 <li>Network reachability is the only access control.</li>
 <li>No stored record carries an owner or tenant identifier.</li>
+</ul>
+</div>
+
+<h3>R4 — The core is small</h3>
+<p>The core is the agent loop, the scheduler, the store, the gateway, and the tool registry. Everything
+the model can invoke is a tool on disk. A capability is compiled in only when it cannot work from
+outside the process, and the specification names it and says why.</p>
+
+<p>This is the same argument as <strong>nothing happens that you cannot see</strong>, applied to the
+system itself. A capability on disk can be read, edited, and replaced by the person running it, and read
+by the agent. A capability compiled in can only be read by someone with the source and a toolchain.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every capability the model can invoke is a tool directory on disk, unless this specification names it as core and states why.</li>
+<li>Adding, changing, or removing a capability requires no rebuild and no restart <em>of the agent</em>. A tool is built on its own and dropped in; the process keeps running and picks it up on a reload (<a href="adrs.html#adr-035">ADR-035</a>).</li>
+<li>A tool reaches the system through the same HTTP API the interface uses, never through a private hook.</li>
+<li>No tool holds a power the core withholds from other tools.</li>
+</ul>
+</div>
+
+<h3>R5 — Every criterion is demonstrated end to end</h3>
+<p>Each acceptance criterion in this specification is covered by a test that drives the system through
+a surface something outside it actually uses: the HTTP API, the WebSocket, the web interface in a
+browser, or a tool run as the subprocess it really is. The store is the real store on disk, a tool is
+the real executable, and a job is fired by the real scheduler.</p>
+
+<p>Only what lives outside the container may be substituted: the model provider and the public web.
+Everything inside is exercised as shipped. A test that reaches past the surface to call an internal
+function is a unit test — worth having, and not a substitute. A criterion is discharged by showing the
+behaviour, not by showing that a function that contributes to it returns the right value.</p>
+
+<div class="note">
+<strong>Why the surface and not the seam.</strong> Every defect this specification has cost so far
+lived between components that were each correct: a tool result the interface could not parse, a
+firing signal the scheduler read and the transcript did not record. A test that mocks the neighbour
+cannot see that class of fault, which is the class this system produces.
+</div>
+
+<p>What this cannot reach is the model's own judgement. An end-to-end test substitutes the model
+provider, so it can show that the system handles a tool call correctly and can say nothing about
+whether a model reads the tool's description correctly. That is what
+<a href="tools.html">evals</a> are for, and they are evidence rather than a gate: every tool carries
+them, and the test run enforces that it does.</p>
+
+<p>A criterion that genuinely cannot be observed from outside — purity, or an internal invariant — says
+so where it is written, and names what covers it instead. That exception is written down rather than
+assumed, so an untested criterion is always visible as one.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every acceptance criterion carries an identifier, and every end-to-end test names the identifiers it covers.</li>
+<li>A criterion with no test naming it is reported by the test run, not discovered by reading.</li>
+<li>No end-to-end test replaces a component of the system with a substitute, other than the model provider and the public web.</li>
+<li>Interface criteria are exercised in a real browser against the real gateway.</li>
+<li>A criterion exempted from end-to-end coverage states the reason where it is written.</li>
 </ul>
 </div>
 

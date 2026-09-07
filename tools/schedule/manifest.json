@@ -1,0 +1,47 @@
+{
+  "name": "schedule",
+  "description": "Create, list, edit, or delete jobs attached to a session. A job wakes on a schedule and runs its prompt; an optional check gates whether a wake acts. Every wake is recorded in the job's own log, and every job reports what it will cost \u2014 wakes a day, tokens a day, and money where the model's price is known. Any cadence is allowed; say what a frequent one costs rather than talking the operator out of it. List to answer any question about what is scheduled or what has already run, rather than answering from the conversation.",
+  "db_prefix": "schedule_",
+  "timeout_seconds": 30,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "create",
+          "list",
+          "edit",
+          "delete"
+        ]
+      },
+      "id": {
+        "type": "string",
+        "description": "Job id, for edit and delete. Omit on delete to end the job that is currently running."
+      },
+      "schedule": {
+        "type": "string",
+        "description": "When it wakes. Never prose: \"every 10 minutes\" and \"hourly\" are rejected. Exactly one of three literal forms. A duration, digits and a unit with no spaces (30s, 10m, 2h, 36h), meaning that long from now \u2014 this is both \"in ten minutes\" and \"every ten minutes\", the difference being after_acting, and it needs no clock call. A cron expression of five fields (0 9 * * *, */20 9-16 * * 1-5) for a wall-clock rhythm. An absolute RFC 3339 instant (2026-03-14T09:00:00Z) only for a named point in time \u2014 \"on 14 March\", \"next Tuesday at nine\" \u2014 which is the one case the clock tool is for."
+      },
+      "check": {
+        "type": "string",
+        "description": "Shell command run before the prompt; exit zero means act on this wake, anything else means skip it and wait for the next. Omit to act every time. It is tested repeatedly and must answer at once: never sleep, poll, or wait inside it. A wake with a check costs nothing, so a gated job may wake as often as you like."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "What to ask the agent when the job acts."
+      },
+      "after_acting": {
+        "type": "string",
+        "enum": [
+          "stop",
+          "continue"
+        ],
+        "description": "What becomes of the job once it has acted. \"stop\" ends it there; \"continue\" leaves it scheduled to act again. Say which on every create: it defaults to \"continue\", so a request that is over the moment it happens will otherwise keep waking and repeating itself at the operator. Ask whether the request is finished once it has happened. Finished, so \"stop\": \"remind me at four\", \"tell me when the deploy finishes\", \"let me know when the file appears\", \"follow up if I have not replied by Friday\". Not finished, so \"continue\": \"every morning\", \"whenever the page changes\", \"warn me any time the disk fills\". A check does not change the answer \u2014 a watch that stops still polls until the thing it waits for happens, and the schedule alone says how often it wakes."
+      }
+    },
+    "required": [
+      "action"
+    ]
+  }
+}

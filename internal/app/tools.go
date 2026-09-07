@@ -35,7 +35,6 @@ type ToolCtx struct {
 	App       *App
 	SessionID string
 	JobID     string
-	Fired     *bool
 }
 
 type LoadFailure struct {
@@ -191,7 +190,7 @@ func (r *Registry) applySchema(t *Tool) error {
 }
 
 // SchemasFor returns the tool definitions a session may use, exactly as the
-// model receives them. A session's enabled set is fixed for its life, so the
+// model receives them. A session's enabled set is fixed from its first turn, so the
 // prompt can carry precisely the callable tools and nothing else needs to
 // enforce availability.
 func (r *Registry) SchemasFor(sess *Session) []ToolSchema {
@@ -244,13 +243,31 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	if err != nil {
 		return errResult("tool %q: %v", name, err)
 	}
-	cmd := exec.CommandContext(cctx, bin)
-	cmd.Dir = tc.App.cfg.Workspace
+	// A tool runs in the working directory of the session that called it, so a
+	// relative path in a tool call means that conversation's own files — and,
+	// where the operating system can enforce it, that directory is the only one
+	// it can reach.
+	workspace := tc.App.ensureWorkspace(tc.SessionID)
+	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, nil)
+	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
+	cmd.Dir = workspace
+	if abs, err := filepath.Abs(workspace); err == nil {
+		workspace = abs
+	}
+	// The system temporary directory is not writable, so a tool is given one
+	// inside its own working directory. Created here rather than by the tool,
+	// because an interpreter reaches for it before any tool code runs.
+	tmp := tc.App.sandbox.TempDir(workspace)
+	_ = os.MkdirAll(tmp, 0o755)
 	cmd.Stdin = strings.NewReader(string(args))
 	cmd.Env = append(os.Environ(),
 		"AGENT_DB="+r.dbPath,
 		"AGENT_DB_PREFIX="+t.DBPrefix,
-		"AGENT_SESSION="+tc.SessionID)
+		"AGENT_URL="+tc.App.cfg.BaseURL(),
+		"AGENT_WORKSPACE="+workspace,
+		"AGENT_SESSION="+tc.SessionID,
+		"AGENT_JOB="+tc.JobID,
+		"TMPDIR="+tmp)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()

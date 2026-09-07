@@ -1,0 +1,35 @@
+{
+  "cases": [
+    {
+      "name": "adds a note",
+      "prompt": "Make a note that the office wifi password changed.",
+      "tools": [
+        "notes"
+      ],
+      "expect": {
+        "tool": "notes",
+        "args": {
+          "action": "add"
+        },
+        "args_match": {
+          "text": "(?i)wifi"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "lists notes",
+      "prompt": "What notes have you kept?",
+      "tools": [
+        "notes"
+      ],
+      "expect": {
+        "tool": "notes",
+        "args": {
+          "action": "list"
+        },
+        "clean": true
+      }
+    }
+  ]
+}

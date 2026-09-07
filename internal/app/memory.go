@@ -1,8 +1,6 @@
 package app
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -48,53 +46,4 @@ func renderMemory(items []MemoryItem) string {
 		return "  (nothing)"
 	}
 	return strings.TrimRight(sb.String(), "\n")
-}
-
-func (a *App) memoryTool(ctx context.Context, tc *ToolCtx, args json.RawMessage) (any, error) {
-	var in struct {
-		Action string `json:"action"`
-		ID     string `json:"id"`
-		Text   string `json:"text"`
-	}
-	if err := decode(args, &in); err != nil {
-		return nil, err
-	}
-	items, err := a.store.Memory()
-	if err != nil {
-		return nil, err
-	}
-	switch in.Action {
-	case "list":
-		return fmt.Sprintf("%d of %d characters used\n%s",
-			memoryUsage(items), a.cfg.MemoryCapacity, renderMemory(items)), nil
-	case "add":
-		m, err := a.AddMemory(in.Text, tc.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		a.appendEvent(tc.SessionID, Entry{EventKind: "memory_write", JobID: tc.JobID,
-			Text: "remembered: " + m.Text})
-		return "stored " + m.ID, nil
-	case "edit":
-		for _, m := range items {
-			if m.ID == in.ID {
-				m.Text = in.Text
-				if err := a.store.PutMemory(m); err != nil {
-					return nil, err
-				}
-				a.appendEvent(tc.SessionID, Entry{EventKind: "memory_write", JobID: tc.JobID,
-					Text: "revised memory: " + m.Text})
-				return "updated " + m.ID, nil
-			}
-		}
-		return nil, fmt.Errorf("no memory item %s", in.ID)
-	case "delete":
-		if err := a.store.DeleteMemory(in.ID); err != nil {
-			return nil, err
-		}
-		a.appendEvent(tc.SessionID, Entry{EventKind: "memory_write", JobID: tc.JobID,
-			Text: "forgot item " + in.ID})
-		return "deleted " + in.ID, nil
-	}
-	return nil, fmt.Errorf("unknown action %q", in.Action)
 }

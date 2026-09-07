@@ -1,0 +1,106 @@
+{
+  "cases": [
+    {
+      "name": "relative reminder lands in one call, no retry",
+      "prompt": "Remind me to stretch in ten minutes.",
+      "tools": [
+        "schedule",
+        "clock"
+      ],
+      "expect": {
+        "tool": "schedule",
+        "args": {
+          "action": "create",
+          "after_acting": "stop"
+        },
+        "args_match": {
+          "schedule": "^10m$"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "a rhythm repeats",
+      "prompt": "Give me a briefing every weekday at 8am.",
+      "tools": [
+        "schedule",
+        "clock"
+      ],
+      "expect": {
+        "tool": "schedule",
+        "args": {
+          "action": "create"
+        },
+        "args_match": {
+          "schedule": "^\\S+ \\S+ \\S+ \\S+ \\S+$"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "a condition becomes a check that ends when it fires",
+      "prompt": "Tell me when the file /tmp/deploy-done appears. Check every two minutes.",
+      "tools": [
+        "schedule",
+        "bash"
+      ],
+      "expect": {
+        "tool": "schedule",
+        "args": {
+          "action": "create",
+          "after_acting": "stop"
+        },
+        "args_match": {
+          "check": "/tmp/deploy-done"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "the same watch, with no cadence in the wording",
+      "prompt": "Let me know once the file /tmp/deploy-done shows up.",
+      "tools": [
+        "schedule",
+        "bash"
+      ],
+      "expect": {
+        "tool": "schedule",
+        "args": {
+          "action": "create",
+          "after_acting": "stop"
+        },
+        "args_match": {
+          "check": "/tmp/deploy-done"
+        }
+      }
+    },
+    {
+      "name": "lists without inventing a job",
+      "prompt": "What jobs are scheduled in this conversation?",
+      "tools": [
+        "schedule"
+      ],
+      "expect": {
+        "tool": "schedule",
+        "args": {
+          "action": "list"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "a tight cadence is one job, not a chain of one-shots",
+      "prompt": "Remind me every 10 minutes to stretch.",
+      "expect": {
+        "tool": "schedule",
+        "args": {
+          "action": "create"
+        },
+        "args_match": {
+          "schedule": "^10m$"
+        },
+        "clean": true
+      }
+    }
+  ]
+}

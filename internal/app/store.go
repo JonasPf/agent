@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,20 +26,61 @@ type Store struct {
 const schema = `
 create table if not exists jobs (
   id text primary key, session_id text not null, schedule text not null,
-  check_cmd text, prompt text not null, expires_at text not null,
-  on_condition_met text not null, run_count integer not null default 0,
+  check_cmd text, prompt text not null,
+  after_acting text not null default 'continue',
+  status text not null default 'scheduled', run_count integer not null default 0,
   fail_count integer not null default 0, next_run_at text not null,
   last_status text, created_at text not null);
-create table if not exists dead_letters (
-  id text primary key, job_id text, session_id text, spec text not null,
-  reason text not null, detail text, run_count integer, status text not null,
-  created_at text not null);
+-- Every wake a job has had, so "has this been running?" is answered at the job
+-- rather than by reading the conversation it fires into.
+create table if not exists job_runs (
+  id text primary key, job_id text not null, session_id text,
+  at text not null, due_at text, outcome text not null, message text);
+create index if not exists job_runs_by_job on job_runs(job_id, at);
 create table if not exists memory (
   id text primary key, text text not null, source_session text, created_at text not null);
-create table if not exists push_subscriptions (
-  endpoint text primary key, p256dh text, auth text, created_at text not null);
+-- Web push went with the notification stack (ADR-026); dead letters and job
+-- expiry went with the run log (ADR-028). Dropping the tables is how a removal
+-- reaches a database that already exists.
+drop table if exists push_subscriptions;
+drop table if exists dead_letters;
 create virtual table if not exists entry_fts using fts5(session_id, seq unindexed, body);
 `
+
+// migrate adds what "create table if not exists" cannot. A table that already
+// exists is left exactly as it was, so a column added to the schema never
+// reaches a database anyone is actually using — which is every database except
+// the first one ever opened.
+func migrate(db *sql.DB) error {
+	cols, err := columns(db, "jobs")
+	if err != nil {
+		return err
+	}
+	if !cols["status"] {
+		// A job written before there was a status has been waking all along.
+		if _, err := db.Exec(`alter table jobs add column status text not null default 'scheduled'`); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func columns(db *sql.DB, table string) (map[string]bool, error) {
+	rows, err := db.Query(`select name from pragma_table_info(?)`, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out[name] = true
+	}
+	return out, rows.Err()
+}
 
 func OpenStore(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "sessions"), 0o755); err != nil {
@@ -52,6 +92,9 @@ func OpenStore(dir string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(schema); err != nil {
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
 		return nil, err
 	}
 	s := &Store{dir: dir, db: db, sessions: map[string]*Session{}, entries: map[string][]Entry{}}
@@ -181,7 +224,7 @@ func (s *Store) DeleteSession(id string) error {
 	s.mu.Unlock()
 	_, _ = s.db.Exec(`delete from entry_fts where session_id=?`, id)
 	_, _ = s.db.Exec(`delete from jobs where session_id=?`, id)
-	_, _ = s.db.Exec(`delete from dead_letters where session_id=?`, id)
+	_, _ = s.db.Exec(`delete from job_runs where session_id=?`, id)
 	return os.RemoveAll(s.sessionDir(id))
 }
 
@@ -261,10 +304,10 @@ func (s *Store) Search(q string, limit int) ([]SearchHit, error) {
 
 func (s *Store) PutJob(j *Job) error {
 	_, err := s.db.Exec(`insert or replace into jobs
-	 (id,session_id,schedule,check_cmd,prompt,expires_at,on_condition_met,run_count,fail_count,next_run_at,last_status,created_at)
+	 (id,session_id,schedule,check_cmd,prompt,after_acting,status,run_count,fail_count,next_run_at,last_status,created_at)
 	 values(?,?,?,?,?,?,?,?,?,?,?,?)`,
-		j.ID, j.SessionID, j.Schedule, j.Check, j.Prompt, j.ExpiresAt.Format(time.RFC3339),
-		j.OnConditionMet, j.RunCount, j.FailCount, j.NextRunAt.Format(time.RFC3339), j.LastStatus,
+		j.ID, j.SessionID, j.Schedule, j.Check, j.Prompt,
+		j.AfterActing, j.Status, j.RunCount, j.FailCount, j.NextRunAt.Format(time.RFC3339), j.LastStatus,
 		j.CreatedAt.Format(time.RFC3339))
 	return err
 }
@@ -274,23 +317,32 @@ func scanJobs(rows *sql.Rows) ([]*Job, error) {
 	var out []*Job
 	for rows.Next() {
 		var j Job
-		var check, last sql.NullString
-		var exp, next, created string
-		if err := rows.Scan(&j.ID, &j.SessionID, &j.Schedule, &check, &j.Prompt, &exp,
-			&j.OnConditionMet, &j.RunCount, &j.FailCount, &next, &last, &created); err != nil {
+		var check, last, status sql.NullString
+		var next, created string
+		if err := rows.Scan(&j.ID, &j.SessionID, &j.Schedule, &check, &j.Prompt,
+			&j.AfterActing, &status, &j.RunCount, &j.FailCount, &next, &last, &created); err != nil {
 			return nil, err
 		}
 		j.Check, j.LastStatus = check.String, last.String
-		j.ExpiresAt, _ = time.Parse(time.RFC3339, exp)
+		j.Status = status.String
+		if j.Status == "" {
+			j.Status = jobScheduled
+		}
 		j.NextRunAt, _ = time.Parse(time.RFC3339, next)
 		j.CreatedAt, _ = time.Parse(time.RFC3339, created)
-		j.Kind = jobKind(&j)
 		out = append(out, &j)
 	}
 	return out, rows.Err()
 }
 
-const jobCols = `id,session_id,schedule,check_cmd,prompt,expires_at,on_condition_met,run_count,fail_count,next_run_at,last_status,created_at`
+const jobCols = `id,session_id,schedule,check_cmd,prompt,after_acting,status,run_count,fail_count,next_run_at,last_status,created_at`
+
+func formatOrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
 
 func (s *Store) Jobs() ([]*Job, error) {
 	rows, err := s.db.Query(`select ` + jobCols + ` from jobs order by next_run_at`)
@@ -320,7 +372,12 @@ func (s *Store) SessionJobs(sessionID string) ([]*Job, error) {
 	return scanJobs(rows)
 }
 
+// DeleteJob takes the job's log with it. A log with no job is unreachable
+// from anywhere in the interface, which makes it storage rather than a record.
 func (s *Store) DeleteJob(id string) error {
+	if _, err := s.db.Exec(`delete from job_runs where job_id=?`, id); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`delete from jobs where id=?`, id)
 	return err
 }
@@ -328,65 +385,6 @@ func (s *Store) DeleteJob(id string) error {
 func (s *Store) MoveJobs(from, to string) error {
 	_, err := s.db.Exec(`update jobs set session_id=? where session_id=?`, to, from)
 	return err
-}
-
-// ---- dead letters ----
-
-func (s *Store) PutDeadLetter(d *DeadLetter) error {
-	spec, _ := json.Marshal(d.JobSpec)
-	_, err := s.db.Exec(`insert or replace into dead_letters
-	 (id,job_id,session_id,spec,reason,detail,run_count,status,created_at) values(?,?,?,?,?,?,?,?,?)`,
-		d.ID, d.JobID, d.SessionID, string(spec), d.Reason, d.Detail, d.RunCount, d.Status,
-		d.CreatedAt.Format(time.RFC3339))
-	return err
-}
-
-func (s *Store) DeadLetters() ([]*DeadLetter, error) {
-	rows, err := s.db.Query(`select id,job_id,session_id,spec,reason,detail,run_count,status,created_at
-	 from dead_letters order by created_at desc`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []*DeadLetter
-	for rows.Next() {
-		var d DeadLetter
-		var spec, created string
-		var detail sql.NullString
-		if err := rows.Scan(&d.ID, &d.JobID, &d.SessionID, &spec, &d.Reason, &detail, &d.RunCount,
-			&d.Status, &created); err != nil {
-			return nil, err
-		}
-		d.Detail = detail.String
-		d.CreatedAt, _ = time.Parse(time.RFC3339, created)
-		_ = json.Unmarshal([]byte(spec), &d.JobSpec)
-		out = append(out, &d)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) OpenDeadLetterFor(jobID string) bool {
-	var n int
-	_ = s.db.QueryRow(`select count(*) from dead_letters where job_id=? and status='open'`, jobID).Scan(&n)
-	return n > 0
-}
-
-func (s *Store) CloseDeadLetter(id string) error {
-	_, err := s.db.Exec(`update dead_letters set status='closed' where id=?`, id)
-	return err
-}
-
-func (s *Store) DeadLetter(id string) (*DeadLetter, error) {
-	all, err := s.DeadLetters()
-	if err != nil {
-		return nil, err
-	}
-	for _, d := range all {
-		if d.ID == id {
-			return d, nil
-		}
-	}
-	return nil, fmt.Errorf("dead letter %s not found", id)
 }
 
 // ---- memory ----
@@ -423,39 +421,79 @@ func (s *Store) DeleteMemory(id string) error {
 	return err
 }
 
-// ---- push ----
+// ---- job runs ----
 
-type PushSub struct {
-	Endpoint string `json:"endpoint"`
-	P256dh   string `json:"p256dh"`
-	Auth     string `json:"auth"`
-}
-
-func (s *Store) PutPushSub(p PushSub) error {
-	_, err := s.db.Exec(`insert or replace into push_subscriptions(endpoint,p256dh,auth,created_at) values(?,?,?,?)`,
-		p.Endpoint, p.P256dh, p.Auth, time.Now().Format(time.RFC3339))
+func (s *Store) PutJobRun(r JobRun) error {
+	if r.ID == "" {
+		r.ID = newID()
+	}
+	_, err := s.db.Exec(`insert or replace into job_runs(id,job_id,session_id,at,due_at,outcome,message)
+	 values(?,?,?,?,?,?,?)`,
+		r.ID, r.JobID, r.SessionID, r.At.Format(time.RFC3339), formatOrEmpty(r.DueAt),
+		r.Outcome, r.Message)
 	return err
 }
 
-func (s *Store) PushSubs() ([]PushSub, error) {
-	rows, err := s.db.Query(`select endpoint,p256dh,auth from push_subscriptions`)
+// JobRuns returns a job's wakes, newest first.
+func (s *Store) JobRuns(jobID string) ([]JobRun, error) {
+	rows, err := s.db.Query(`select id,job_id,session_id,at,due_at,outcome,message
+	 from job_runs where job_id=? order by at desc, rowid desc`, jobID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []PushSub
+	out := []JobRun{}
 	for rows.Next() {
-		var p PushSub
-		if err := rows.Scan(&p.Endpoint, &p.P256dh, &p.Auth); err != nil {
+		var r JobRun
+		var sess, due, msg sql.NullString
+		var at string
+		if err := rows.Scan(&r.ID, &r.JobID, &sess, &at, &due, &r.Outcome, &msg); err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		r.SessionID, r.Message = sess.String, msg.String
+		r.At, _ = time.Parse(time.RFC3339, at)
+		if due.String != "" {
+			r.DueAt, _ = time.Parse(time.RFC3339, due.String)
+		}
+		out = append(out, r)
 	}
 	return out, rows.Err()
 }
 
-func (s *Store) DeletePushSub(endpoint string) {
-	_, _ = s.db.Exec(`delete from push_subscriptions where endpoint=?`, endpoint)
+func (s *Store) DeleteJobRuns(jobID string) error {
+	_, err := s.db.Exec(`delete from job_runs where job_id=?`, jobID)
+	return err
 }
 
 func (s *Store) DB() *sql.DB { return s.db }
+
+// ImportSession writes a session that arrived from an archive: its metadata, its
+// transcript, and its place in the search index. Everything derived is rebuilt
+// here, so an imported conversation is indistinguishable from one that was held.
+func (s *Store) ImportSession(sess *Session, entries []Entry) error {
+	if err := os.MkdirAll(s.sessionDir(sess.ID), 0o755); err != nil {
+		return err
+	}
+	var body strings.Builder
+	for _, e := range entries {
+		line, _ := json.Marshal(e)
+		body.Write(line)
+		body.WriteByte('\n')
+	}
+	if err := os.WriteFile(filepath.Join(s.sessionDir(sess.ID), "transcript.jsonl"),
+		[]byte(body.String()), 0o644); err != nil {
+		return err
+	}
+	if err := s.writeMeta(sess); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.sessions[sess.ID] = sess
+	s.entries[sess.ID] = entries
+	s.mu.Unlock()
+	_, _ = s.db.Exec(`delete from entry_fts where session_id=?`, sess.ID)
+	for _, e := range entries {
+		s.index(sess.ID, e)
+	}
+	return nil
+}

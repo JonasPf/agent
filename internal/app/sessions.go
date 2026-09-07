@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -23,8 +24,9 @@ func (a *App) baseConfig(seed *Session) SessionConfig {
 }
 
 // NewSession creates a session under an already resolved configuration and
-// writes its prompt entry, which is the complete system prompt as sent and is
-// fixed for the life of the session.
+// writes its prompt entry at position zero. The configuration is chosen before
+// the session exists and is fixed once it does, so there is no window in which a
+// session is live and its prompt is still open to change.
 func (a *App) NewSession(cfg SessionConfig, continuedFrom string) (*Session, error) {
 	if cfg.Model == "" {
 		cfg.Model = a.cfg.DefaultModel
@@ -41,11 +43,19 @@ func (a *App) NewSession(cfg SessionConfig, continuedFrom string) (*Session, err
 		CreatedAt:       now,
 		LastActiveAt:    now,
 	}
+	// The predecessor's summary is read here, before the prompt entry is
+	// written, because that entry is what every later turn sends: a session
+	// whose prompt was photographed before its summary existed would send one
+	// thing and record another.
+	if pred := a.store.Session(continuedFrom); pred != nil {
+		s.CarriedSummary = pred.Summary
+	}
 	if err := a.store.PutSession(s); err != nil {
 		return nil, err
 	}
+	a.ensureWorkspace(s.ID)
 	sections := a.systemSections(s)
-	a.append(s.ID, Entry{Type: "event", EventKind: "prompt", Sections: sections,
+	a.append(s.ID, Entry{Type: "prompt", Sections: sections,
 		Text: fmt.Sprintf("system prompt · %d tokens", sectionsTotal(sections))})
 	return s, nil
 }
@@ -62,13 +72,22 @@ func (a *App) Rotate(pred *Session, cfg SessionConfig, archive bool, why string)
 	if changed := describeConfigChange(pred.SessionConfig, succ.SessionConfig); changed != "" {
 		why += ", " + changed
 	}
-	carried := carryOver(a.store.Entries(pred.ID), pred.CarryOverTokens)
-	a.append(succ.ID, Entry{Type: "event", EventKind: "carried_over", CarriedFrom: pred.ID,
-		Text: fmt.Sprintf("seeded from %s (%s): summary and %d carried messages", pred.ID, why, len(carried))})
-	if pred.Summary != "" {
-		a.append(succ.ID, Entry{Type: "message", Role: "user", CarriedFrom: pred.ID,
-			Text: "[summary of " + pred.ID + "]\n" + pred.Summary})
+	// A continuation carries the predecessor's files as well as its words: the
+	// successor starts from a copy of the working directory, and neither
+	// session's writes reach the other afterwards.
+	if err := copyTree(a.sessionWorkspace(pred.ID), a.ensureWorkspace(succ.ID)); err != nil {
+		return nil, err
 	}
+	carried := carryOver(a.store.Entries(pred.ID), pred.CarryOverTokens)
+	// The summary travels in the successor's system prompt, not as a message:
+	// it is context about the situation, and the user role means the operator is
+	// speaking. The event below keeps the record in the append-only transcript,
+	// where the projection drops it, so it costs the model nothing.
+	seeded := fmt.Sprintf("seeded from %s (%s): %d carried messages", pred.ID, why, len(carried))
+	if pred.Summary != "" {
+		seeded += "\n[summary of " + pred.ID + "]\n" + pred.Summary
+	}
+	a.append(succ.ID, Entry{Type: "event", EventKind: "carried_over", CarriedFrom: pred.ID, Text: seeded})
 	for _, e := range carried {
 		e.CarriedFrom = pred.ID
 		e.Usage = nil
@@ -200,13 +219,23 @@ func describeSet(set []string) string {
 // The update reads only the previous summary and the entries since it.
 func (a *App) maybeSummarise(ctx context.Context, s *Session) {
 	entries := a.store.Entries(s.ID)
-	var added []Entry
+	var added []ChatMessage
 	grown := 0
 	for _, e := range entries {
-		if e.Seq >= s.SummarySeq && e.Type == "message" {
-			added = append(added, e)
-			grown += estTokens(e.Text)
+		if e.Seq < s.SummarySeq || e.Type != "message" {
+			continue
 		}
+		// Growth is measured on the projected message, not on the entry's text.
+		// A tool-heavy session carries its bulk in tool results, which leave
+		// Text empty; counting text alone let such a session rotate on tokens
+		// summarisation could not see, and hand its successor nothing.
+		m, ok := toMessage(e)
+		if !ok {
+			continue
+		}
+		added = append(added, m)
+		b, _ := json.Marshal(m)
+		grown += estTokens(string(b))
 	}
 	if grown < a.cfg.SummaryEvery || len(added) == 0 {
 		return
@@ -216,8 +245,8 @@ func (a *App) maybeSummarise(ctx context.Context, s *Session) {
 		fmt.Fprintf(&sb, "Previous summary:\n%s\n\n", s.Summary)
 	}
 	sb.WriteString("New messages since:\n")
-	for _, e := range added {
-		fmt.Fprintf(&sb, "%s: %s\n", e.Role, truncate(e.Text, 2000))
+	for _, m := range added {
+		fmt.Fprintf(&sb, "%s: %s\n", m.Role, truncate(messageText(m), 2000))
 	}
 	sb.WriteString("\nWrite the updated summary. Keep it under 250 words. State decisions, open questions, and anything a successor conversation would need. No preamble.")
 
@@ -234,8 +263,8 @@ func (a *App) maybeSummarise(ctx context.Context, s *Session) {
 	s.SummarySeq = len(entries)
 	s.Cost += res.Usage.Cost
 	_ = a.store.PutSession(s)
-	a.appendEvent(s.ID, Entry{EventKind: "summary",
-		Text: fmt.Sprintf("summary updated (%d messages since last)", len(added)), Usage: &res.Usage})
+	// No transcript entry: the summary itself is readable from the session, and
+	// a line saying it changed adds nothing the summary does not already show.
 }
 
 // maybeRotate opens a successor when the session passes its size threshold.
@@ -251,8 +280,6 @@ func (a *App) maybeRotate(s *Session) *Session {
 	if err != nil {
 		return s
 	}
-	a.Notify(Notification{Title: "Conversation rotated",
-		Body: fmt.Sprintf("%q continues in a new session.", s.Title), SessionID: succ.ID, Silent: true})
 	return succ
 }
 

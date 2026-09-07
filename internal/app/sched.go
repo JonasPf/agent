@@ -2,9 +2,9 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	minJudgementInterval = 15 * time.Minute
-	checkTimeout         = 60 * time.Second
-	breakerWindow        = 90 * time.Second
-	breakerProbeEvery    = 5 * time.Minute
-	maxJobFailures       = 3
+	checkTimeout      = 60 * time.Second
+	breakerWindow     = 90 * time.Second
+	breakerProbeEvery = 5 * time.Minute
+	// maxJobFailures caps the backoff between attempts at 2^n minutes rather than
+	// ending the job: nothing deletes a job but the operator.
+	maxJobFailures = 3
 )
 
 type Scheduler struct {
@@ -78,8 +79,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 		if s.isInflight(j.ID) {
 			continue
 		}
-		if now.After(j.ExpiresAt) {
-			s.expire(j)
+		if j.Status == jobDone {
 			continue
 		}
 		if j.NextRunAt.After(now) {
@@ -91,8 +91,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 		// A job whose session is mid-turn defers to the next tick.
 		sess := s.app.LiveSession(j.SessionID)
 		if sess == nil {
-			s.deadLetter(j, "unavailable", "session no longer exists")
-			_ = s.app.store.DeleteJob(j.ID)
+			s.jobFailed(j, fmt.Errorf("the session this job belongs to no longer exists"))
 			continue
 		}
 		if s.app.Busy(sess.ID) {
@@ -115,65 +114,52 @@ func (s *Scheduler) tick(ctx context.Context) {
 
 func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 	a := s.app
+	due := j.NextRunAt
 	j.RunCount++
 
-	switch j.Kind {
-	case "due":
-		// No condition to test. The user asked for a time, the time arrived,
-		// and arriving is the whole of what they asked for.
-		if _, err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID}); err != nil {
-			s.jobFailed(j, err)
-			return
-		}
-		j.LastStatus = "fired"
-		s.succeeded(j)
-		s.reschedule(j, true)
-
-	case "check":
-		met, err := s.runCheck(ctx, j, sess)
+	// One path. A check, if there is one, decides whether this wake acts.
+	if j.Check != "" {
+		met, out, err := s.runCheck(ctx, j, sess)
 		if err != nil {
 			s.jobFailed(j, err)
 			return
 		}
 		if !met {
 			j.LastStatus = "not_fired"
+			s.logRun(j, sess.ID, due, jobSkipped, "check said no"+summarise(out))
 			s.reschedule(j, false)
 			return
 		}
-		j.LastStatus = "fired"
-		if _, err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID}); err != nil {
-			s.jobFailed(j, err)
-			return
-		}
-		s.succeeded(j)
-		s.reschedule(j, true)
-
-	default:
-		// The model decides, and signals by calling notify.
-		fired, err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, Buffered: true})
-		if err != nil {
-			s.jobFailed(j, err)
-			return
-		}
-		s.succeeded(j)
-		if fired {
-			j.LastStatus = "fired"
-		} else {
-			j.LastStatus = "not_fired"
-		}
-		s.reschedule(j, fired)
 	}
+
+	// The wake it was due at, not the moment it got to run.
+	before := len(a.store.Entries(sess.ID))
+	if err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, DueAt: due}); err != nil {
+		s.jobFailed(j, err)
+		return
+	}
+	j.LastStatus = "fired"
+	s.logRun(j, sess.ID, due, jobFired, saidBy(a.store.Entries(sess.ID)[before:]))
+	s.succeeded(j)
+	s.reschedule(j, true)
 }
 
 // runCheck runs the job's check command. It reports whether the condition is
 // met. A non-zero exit is an answer, not a failure; a check that cannot run or
 // will not finish is a failure, so that a check which never decides anything is
 // surfaced rather than looping quietly until the job expires.
-func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, error) {
+func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, string, error) {
 	cctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(cctx, "/bin/sh", "-c", j.Check)
-	cmd.Dir = s.app.cfg.Workspace
+	// A check is a shell command in the session's directory, and is confined the
+	// same way a tool is: it is a shell, so nothing else would confine it.
+	ws := s.app.ensureWorkspace(sess.ID)
+	argv := s.app.sandbox.Wrap("/bin/sh", ws, "", []string{"-c", j.Check})
+	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
+	cmd.Dir = ws
+	tmp := s.app.sandbox.TempDir(ws)
+	_ = os.MkdirAll(tmp, 0o755)
+	cmd.Env = append(os.Environ(), "TMPDIR="+tmp)
 	// Killing the shell does not close pipes a grandchild still holds, and
 	// CombinedOutput waits for every writer. WaitDelay bounds that wait, so the
 	// timeout above bounds the whole call.
@@ -181,11 +167,11 @@ func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, 
 	out, err := cmd.CombinedOutput()
 
 	if cctx.Err() != nil {
-		return false, fmt.Errorf("check did not finish within %s: %s", checkTimeout, truncate(j.Check, 120))
+		return false, "", fmt.Errorf("check did not finish within %s: %s", checkTimeout, truncate(j.Check, 120))
 	}
 	var exit *exec.ExitError
 	if err != nil && !errors.As(err, &exit) {
-		return false, fmt.Errorf("check could not run: %w", err)
+		return false, "", fmt.Errorf("check could not run: %w", err)
 	}
 
 	met := err == nil
@@ -195,7 +181,7 @@ func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, 
 	}
 	s.app.appendEvent(sess.ID, Entry{EventKind: "job_check", JobID: j.ID, Status: status,
 		Text: fmt.Sprintf("check: %s → %s%s", truncate(j.Check, 120), verdict, summarise(string(out)))})
-	return met, nil
+	return met, string(out), nil
 }
 
 func summarise(out string) string {
@@ -206,20 +192,20 @@ func summarise(out string) string {
 	return " · " + truncate(strings.ReplaceAll(out, "\n", " "), 160)
 }
 
-func (s *Scheduler) reschedule(j *Job, fired bool) {
+// reschedule decides whether a job wakes again. A job that acted and is set to
+// stop is done. Otherwise the schedule is asked for the next wake, and a
+// schedule with none left — a single instant, now passed — ends the job too.
+func (s *Scheduler) reschedule(j *Job, acted bool) {
 	a := s.app
-	if fired && j.OnConditionMet == "delete" {
-		_ = a.store.DeleteJob(j.ID)
-		a.hub.Broadcast(wsEvent{Kind: "jobs"})
+	if acted && j.AfterActing == afterStop {
+		s.finish(j)
 		return
 	}
 	next, err := nextRun(j.Schedule, time.Now())
 	if err != nil {
-		if errors.Is(err, error(errOneShotDone)) || !fired {
-			s.deadLetterIfUnfired(j)
-		}
-		_ = a.store.DeleteJob(j.ID)
-		a.hub.Broadcast(wsEvent{Kind: "jobs"})
+		// The schedule has no further wake. The job is over, and stays as the
+		// record of what it did.
+		s.finish(j)
 		return
 	}
 	j.NextRunAt = next
@@ -227,36 +213,35 @@ func (s *Scheduler) reschedule(j *Job, fired bool) {
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
 }
 
-func (s *Scheduler) deadLetterIfUnfired(j *Job) {
-	if j.LastStatus != "fired" {
-		s.deadLetter(j, "expired", "schedule ended without the condition being met")
-	}
-}
-
-func (s *Scheduler) expire(j *Job) {
-	// Expiring without firing has not failed technically, yet the thing the user
-	// asked about never happened. It becomes a dead letter.
-	if j.LastStatus != "fired" {
-		s.deadLetter(j, "expired", "expired without firing")
-	}
-	_ = s.app.store.DeleteJob(j.ID)
+// finish marks a job as having nothing left to do. It is kept rather than
+// deleted: its log is the only record of what it did, and deleting the row
+// would take the answer with it.
+func (s *Scheduler) finish(j *Job) {
+	j.Status = jobDone
+	_ = s.app.store.PutJob(j)
 	s.app.hub.Broadcast(wsEvent{Kind: "jobs"})
 }
 
-func (s *Scheduler) deadLetter(j *Job, reason, detail string) {
-	a := s.app
-	if a.store.OpenDeadLetterFor(j.ID) {
-		return // one open dead letter per job, not one per failure
+// logRun writes one line of the job's own history.
+func (s *Scheduler) logRun(j *Job, sessionID string, due time.Time, outcome, message string) {
+	_ = s.app.store.PutJobRun(JobRun{ID: newID(), JobID: j.ID, SessionID: sessionID,
+		At: time.Now(), DueAt: due, Outcome: outcome, Message: truncate(message, 1000)})
+	s.app.hub.Broadcast(wsEvent{Kind: "jobs"})
+}
+
+// saidBy is what the agent said during a run, which is what the operator wants
+// to see beside the time it ran. The transcript keeps the whole exchange.
+func saidBy(produced []Entry) string {
+	var said []string
+	for _, e := range produced {
+		if e.Type == "message" && e.Role == "assistant" && e.Text != "" {
+			said = append(said, e.Text)
+		}
 	}
-	d := &DeadLetter{ID: newID(), JobID: j.ID, SessionID: j.SessionID, JobSpec: *j,
-		Reason: reason, Detail: detail, RunCount: j.RunCount, Status: "open", CreatedAt: time.Now()}
-	_ = a.store.PutDeadLetter(d)
-	a.appendEvent(j.SessionID, Entry{EventKind: "dead_letter", JobID: j.ID,
-		Text: fmt.Sprintf("job gave up (%s): %s", reason, detail)})
-	a.Notify(Notification{Title: "Job gave up",
-		Body:      fmt.Sprintf("%s — %s", truncate(j.Prompt, 80), detail),
-		SessionID: j.SessionID, JobID: j.ID, Force: true})
-	a.hub.Broadcast(wsEvent{Kind: "dead_letters"})
+	if len(said) == 0 {
+		return "(the agent said nothing)"
+	}
+	return strings.Join(said, "\n")
 }
 
 func (s *Scheduler) succeeded(j *Job) {
@@ -269,8 +254,6 @@ func (s *Scheduler) succeeded(j *Job) {
 	}
 	s.mu.Unlock()
 	if wasOpen {
-		s.app.Notify(Notification{Title: "Scheduler resumed",
-			Body: "A held job succeeded. The schedule is running again.", Force: true})
 		s.app.hub.Broadcast(wsEvent{Kind: "status"})
 	}
 }
@@ -298,25 +281,26 @@ func (s *Scheduler) jobFailed(j *Job, err error) {
 	s.mu.Unlock()
 
 	if trip {
-		a.Notify(Notification{Title: "Scheduler paused",
-			Body: "Jobs are failing: " + truncate(err.Error(), 160), Force: true})
 		a.hub.Broadcast(wsEvent{Kind: "status"})
 	}
 	a.appendEvent(j.SessionID, Entry{EventKind: "job_error", JobID: j.ID,
 		Text: "job run failed: " + truncate(err.Error(), 300)})
 
+	s.logRun(j, j.SessionID, j.NextRunAt, jobFailed, truncate(err.Error(), 1000))
+
 	if open {
-		// Jobs failing while the breaker is open do not become dead letters.
+		// A job failing while the breaker is open waits for the probe rather than
+		// counting the outage against itself.
 		j.NextRunAt = time.Now().Add(breakerProbeEvery)
 		_ = a.store.PutJob(j)
 		return
 	}
+	// A failing job is kept and keeps trying, its failures piling up in its own
+	// log. Deleting it would delete the record explaining why it stopped working,
+	// which is the one thing the operator needs in order to decide.
 	j.FailCount++
-	if j.FailCount >= maxJobFailures {
-		s.deadLetter(j, "error", truncate(err.Error(), 300))
-		_ = a.store.DeleteJob(j.ID)
-		a.hub.Broadcast(wsEvent{Kind: "jobs"})
-		return
+	if j.FailCount > maxJobFailures {
+		j.FailCount = maxJobFailures
 	}
 	backoff := time.Duration(1<<j.FailCount) * time.Minute
 	j.NextRunAt = time.Now().Add(backoff)
@@ -354,13 +338,11 @@ func (s *Scheduler) setLastProbe(t time.Time) {
 // ---- job creation ----
 
 type JobSpec struct {
-	SessionID      string `json:"session_id"`
-	Schedule       string `json:"schedule"`
-	Check          string `json:"check"`
-	Prompt         string `json:"prompt"`
-	ExpiresAt      string `json:"expires_at"`
-	OnConditionMet string `json:"on_condition_met"`
-	ReasonNoCheck  string `json:"reason_no_check"`
+	SessionID   string `json:"session_id"`
+	Schedule    string `json:"schedule"`
+	Check       string `json:"check"`
+	Prompt      string `json:"prompt"`
+	AfterActing string `json:"after_acting"` // stop | continue; empty means continue
 }
 
 func (a *App) CreateJob(spec JobSpec) (*Job, error) {
@@ -374,158 +356,25 @@ func (a *App) CreateJob(spec JobSpec) (*Job, error) {
 	if strings.TrimSpace(spec.Prompt) == "" {
 		return nil, fmt.Errorf("prompt is required")
 	}
-	// A one-shot instant with no check is a reminder: it has no condition to
-	// test, so neither the tick floor nor reason_no_check applies to it.
-	if spec.Check == "" && !oneShot(spec.Schedule) {
-		if d := scheduleInterval(spec.Schedule); d > 0 && d < minJudgementInterval {
-			return nil, fmt.Errorf("a job without a check may not tick more often than every 15 minutes (got %s); express the condition as a check command, or schedule a single RFC 3339 instant if there is no condition", d)
-		}
-		if strings.TrimSpace(spec.ReasonNoCheck) == "" {
-			return nil, fmt.Errorf("a repeating job without a check must state reason_no_check: why no shell command could decide this condition")
-		}
+	after := spec.AfterActing
+	if after == "" {
+		after = afterContinue
+	}
+	if after != afterStop && after != afterContinue {
+		return nil, fmt.Errorf("after_acting must be %q or %q, got %q", afterStop, afterContinue, after)
 	}
 	next, err := nextRun(spec.Schedule, time.Now())
 	if err != nil {
 		return nil, err
 	}
-	expires := time.Now().Add(24 * time.Hour)
-	if spec.ExpiresAt != "" {
-		t, err := time.Parse(time.RFC3339, spec.ExpiresAt)
-		if err != nil {
-			return nil, fmt.Errorf("expires_at: %w", err)
-		}
-		expires = t
-	}
-	onMet := spec.OnConditionMet
-	if onMet != "continue" {
-		onMet = "delete"
-	}
 	j := &Job{ID: newID(), SessionID: sess.ID, Schedule: spec.Schedule, Check: spec.Check,
-		Prompt: spec.Prompt, ExpiresAt: expires, OnConditionMet: onMet,
+		Prompt: spec.Prompt, AfterActing: after, Status: jobScheduled,
 		NextRunAt: next, CreatedAt: time.Now()}
-	j.Kind = jobKind(j)
 	if err := a.store.PutJob(j); err != nil {
 		return nil, err
 	}
-	kind := j.Kind
-	if j.Kind == "judgement" {
-		kind = "judgement, no command could decide it: " + spec.ReasonNoCheck
-	}
-	a.appendEvent(sess.ID, Entry{EventKind: "job_created", JobID: j.ID,
-		Text: fmt.Sprintf("job %s created · %s · %s · expires %s · %s",
-			j.ID, j.Schedule, kind, expires.Format(time.RFC3339), truncate(j.Prompt, 120))})
+	// No transcript entry: the job row is the record, and a job the model
+	// created has already said so in the schedule tool's result.
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
-	return j, nil
-}
-
-func (a *App) scheduleTool(ctx context.Context, tc *ToolCtx, args json.RawMessage) (any, error) {
-	var in struct {
-		JobSpec
-		Action string `json:"action"`
-		ID     string `json:"id"`
-	}
-	if err := decode(args, &in); err != nil {
-		return nil, err
-	}
-	switch in.Action {
-	case "create":
-		spec := in.JobSpec
-		if spec.SessionID == "" {
-			spec.SessionID = tc.SessionID
-		}
-		j, err := a.CreateJob(spec)
-		if err != nil {
-			return nil, err
-		}
-		return fmt.Sprintf("job %s created, next run %s, expires %s",
-			j.ID, j.NextRunAt.Format(time.RFC3339), j.ExpiresAt.Format(time.RFC3339)), nil
-	case "list":
-		jobs, err := a.store.SessionJobs(tc.SessionID)
-		if err != nil {
-			return nil, err
-		}
-		if len(jobs) == 0 {
-			return "no jobs in this session", nil
-		}
-		var sb strings.Builder
-		for _, j := range jobs {
-			check := j.Check
-			if check == "" {
-				check = "(judgement, calls the model every tick)"
-			}
-			fmt.Fprintf(&sb, "%s · %s · check: %s · next %s · expires %s · %s\n",
-				j.ID, j.Schedule, check, j.NextRunAt.Format(time.RFC3339),
-				j.ExpiresAt.Format(time.RFC3339), truncate(j.Prompt, 100))
-		}
-		return sb.String(), nil
-	case "edit":
-		j, err := a.store.Job(in.ID)
-		if err != nil || j == nil {
-			return nil, fmt.Errorf("no job %s", in.ID)
-		}
-		if in.Schedule != "" {
-			next, err := nextRun(in.Schedule, time.Now())
-			if err != nil {
-				return nil, err
-			}
-			j.Schedule, j.NextRunAt = in.Schedule, next
-		}
-		if in.Prompt != "" {
-			j.Prompt = in.Prompt
-		}
-		if in.Check != "" {
-			j.Check = in.Check
-		}
-		if in.ExpiresAt != "" {
-			t, err := time.Parse(time.RFC3339, in.ExpiresAt)
-			if err != nil {
-				return nil, err
-			}
-			j.ExpiresAt = t
-		}
-		if in.OnConditionMet != "" {
-			j.OnConditionMet = in.OnConditionMet
-		}
-		j.Kind = jobKind(j)
-		if err := a.store.PutJob(j); err != nil {
-			return nil, err
-		}
-		a.hub.Broadcast(wsEvent{Kind: "jobs"})
-		return "job " + j.ID + " updated", nil
-	case "delete":
-		if err := a.store.DeleteJob(in.ID); err != nil {
-			return nil, err
-		}
-		a.appendEvent(tc.SessionID, Entry{EventKind: "job_deleted", JobID: in.ID,
-			Text: "job " + in.ID + " deleted"})
-		a.hub.Broadcast(wsEvent{Kind: "jobs"})
-		return "job " + in.ID + " deleted", nil
-	}
-	return nil, fmt.Errorf("unknown action %q", in.Action)
-}
-
-// ReplayDeadLetter recreates the job from its stored specification with a fresh
-// expiry, attached to the live session of the chain.
-func (a *App) ReplayDeadLetter(id string) (*Job, error) {
-	d, err := a.store.DeadLetter(id)
-	if err != nil {
-		return nil, err
-	}
-	live := a.LiveSession(d.SessionID)
-	if live == nil {
-		return nil, fmt.Errorf("session %s no longer exists", d.SessionID)
-	}
-	spec := JobSpec{SessionID: live.ID, Schedule: d.JobSpec.Schedule, Check: d.JobSpec.Check,
-		Prompt: d.JobSpec.Prompt, OnConditionMet: d.JobSpec.OnConditionMet,
-		ExpiresAt:     time.Now().Add(24 * time.Hour).Format(time.RFC3339),
-		ReasonNoCheck: "replayed from dead letter " + d.ID}
-	j, err := a.CreateJob(spec)
-	if err != nil {
-		return nil, err
-	}
-	if err := a.store.CloseDeadLetter(d.ID); err != nil {
-		return nil, err
-	}
-	a.hub.Broadcast(wsEvent{Kind: "dead_letters"})
 	return j, nil
 }

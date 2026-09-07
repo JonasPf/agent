@@ -1,0 +1,34 @@
+{
+  "cases": [
+    {
+      "name": "fetches a named page",
+      "prompt": "Fetch https://example.com and tell me the page's heading.",
+      "tools": ["web_fetch"],
+      "expect": {
+        "tool": "web_fetch",
+        "args_match": {"url": "example\\.com"},
+        "clean": true
+      }
+    },
+    {
+      "name": "reaches for it on a page built by scripts",
+      "prompt": "The prices on https://example.com/items are filled in by JavaScript after the page loads. What does the page say?",
+      "tools": ["web_fetch"],
+      "expect": {
+        "tool": "web_fetch",
+        "args_match": {"url": "example\\.com/items"},
+        "clean": true
+      }
+    },
+    {
+      "name": "fetches a JSON endpoint",
+      "prompt": "Get the JSON at https://api.github.com/repos/golang/go and tell me what fields it has.",
+      "tools": ["web_fetch"],
+      "expect": {
+        "tool": "web_fetch",
+        "args_match": {"url": "api\\.github\\.com/repos/golang/go"},
+        "clean": true
+      }
+    }
+  ]
+}

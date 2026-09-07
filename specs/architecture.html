@@ -28,21 +28,60 @@
 <tr><th>Component</th><th>Responsibility</th></tr>
 <tr><td><b>Gateway</b></td><td>Serves the HTTP API, the web UI, and a WebSocket stream. The only network surface.</td></tr>
 <tr><td><b>Agent loop</b></td><td>Assembles a request from a session, calls the model, dispatches tool calls, appends results, repeats until the model stops calling tools.</td></tr>
-<tr><td><b>Scheduler</b></td><td>Ticks once per second. Fires due jobs into their sessions. Owns dead lettering and the circuit breaker.</td></tr>
+<tr><td><b>Scheduler</b></td><td>Ticks once per second. Fires due jobs into their sessions. Writes each job's run log and owns the circuit breaker.</td></tr>
 <tr><td><b>Tool registry</b></td><td>Scans the tool directory, validates manifests, exposes schemas to the model, executes tools as subprocesses.</td></tr>
 <tr><td><b>Store</b></td><td>SQLite for structured state and full-text search. JSONL files for transcripts.</td></tr>
 </table>
 
 <p>All five run in one process. There is no message broker, no worker pool, and no inter-service protocol.</p>
 
+<h2>What belongs in the core</h2>
+
+<p>The five components above are the core. They are compiled in because each of them owns state that
+outlives a single call: the loop owns the turn, the scheduler owns time, the store owns the
+transcript, the gateway owns the socket, the registry owns what tools exist.</p>
+
+<p>Everything the model can invoke is a tool on disk. A tool that needs the system asks for it over the
+HTTP API, the same one the interface uses. Nothing reaches into the process.</p>
+
+<table>
+<tr><th>Compiled in</th><th>Why it cannot be a tool</th></tr>
+<tr><td><code>reload_tools</code></td><td>It is the registry's own control surface. A tool that decides which tools exist cannot depend on that decision having already been made.</td></tr>
+</table>
+
+<p>That is the whole list. A capability is core only when running it outside the process would not
+work, not when running it inside would be faster or tidier.</p>
+
+<div class="note">
+<strong>The cost is real.</strong> A tool call is a subprocess and a local HTTP round trip rather than a
+function call, and it can now fail from <code>exec</code> or a socket rather than only from bad
+arguments. The failure shape is the same either way — an error result the model can read — so the
+turn degrades identically. What is bought is that every capability can be read and replaced without a
+toolchain, by the operator and by the agent.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every tool the model can call is a directory under the tool directory, except those this table names.</li>
+<li>A tool is given the API base URL, its session, and its job, and needs nothing else to reach the system.</li>
+<li>Removing a tool directory removes the capability, with no code change.</li>
+<li>No core component calls a tool's implementation directly.</li>
+</ul>
+</div>
+
 <h2>Storage</h2>
 
 <p>Transcripts are JSONL files on disk, one per session, appended to and never rewritten. They are the
 source of truth.</p>
 
-<p>SQLite holds everything else: sessions metadata, jobs, dead letters, memory, tool state, push
-subscriptions, and a full-text index over transcript entries. Both the metadata and the index are
+<p>SQLite holds everything else: sessions metadata, jobs and their run logs, memory, tool state,
+and a full-text index over transcript entries. Both the metadata and the index are
 derived from the JSONL files and can be rebuilt from them.</p>
+
+<p>Files are neither. Each session owns a directory under the workspace, which is where its tools run
+and its uploads land; it is copied when the session is continued and removed when the session is
+deleted. A session and its directory together are what an export carries.</p>
 
 <div class="note">
 <strong>Why both.</strong> A transcript is an append-only log and belongs in a file. Everything else is
@@ -57,6 +96,39 @@ a restart, not data.
 <li>SQLite runs in WAL mode.</li>
 <li>No transcript entry is ever modified or deleted once written.</li>
 <li>Tool tables are namespaced by a prefix declared in the tool's manifest.</li>
+<li>Each session's files live in a directory of its own under the workspace, and are deleted with it.</li>
+</ul>
+</div>
+
+<h2>Configuration</h2>
+
+<p>Settings come from the environment. At startup the agent also reads a file of <code>KEY=VALUE</code>
+lines from the working directory and fills in anything the environment does not already define.</p>
+
+<p>The file exists because the alternative is a shell that has to be prepared correctly before every
+start. A setting that lives only in a shell is lost on the next terminal, the next reboot, and the
+next person to run the thing — and the one setting that must always be present is the model API key,
+whose absence turns every scheduled job into a failure hours after the mistake was made.</p>
+
+<div class="note">
+<strong>The environment wins.</strong> A variable already set overrides the file rather than the other
+way round. A file that shadowed an explicit setting would make a one-off override silently ineffective,
+which is worse than having no file at all.
+</div>
+
+<p>The file is optional and a missing one is not an error: every setting has a default, and the agent
+reports what it read rather than what it expected. It holds a credential, so it is excluded from
+version control and the agent says so at startup if other users can read it.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The agent starts correctly configured with no environment prepared beyond the file.</li>
+<li>A variable set in the environment takes precedence over the same variable in the file.</li>
+<li>A missing file is not an error and is not reported as one.</li>
+<li>Startup reports how many settings were read and from where, and never their values.</li>
+<li>Startup warns when the file is readable by users other than its owner.</li>
+<li>No credential is written to a transcript, to the database, or to the log.</li>
 </ul>
 </div>
 
@@ -73,6 +145,33 @@ and can be changed mid-session.</p>
 <tr><td><code>/key</code></td><td>Remaining credit and usage totals shown in the UI.</td></tr>
 <tr><td><code>/chat/completions</code></td><td>Inference, streamed.</td></tr>
 </table>
+
+<h3>Retrying a model call</h3>
+
+<p>A call can fail because the upstream was briefly unreachable or because the account cannot make it
+at all, and only the first is worth trying again. A blip loses a whole wake otherwise: the run fails,
+the reminder never arrives, and the operator finds out by not being reminded.</p>
+
+<p>An inference call is attempted up to three times. A rate limit, a 5xx, a timeout, and a broken
+connection are retried, with the wait doubling from two seconds and a <code>Retry-After</code>
+honoured when the upstream sends one. An exhausted account, a rejected key, a withdrawn model, and a
+malformed request are not: they would fail identically and would delay the breaker that should trip.</p>
+
+<p>Retrying stops the moment the answer begins arriving. The deltas are already on the operator's
+screen and counted against the session, so a second attempt would say the first half twice; a stream
+that breaks mid-answer is reported as a failure instead. The whole call, retries included, is bounded
+at fifteen minutes, so one turn cannot hold a job that wakes every twenty.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A rate limit or a 5xx is retried; the call succeeds if a later attempt does.</li>
+<li>An exhausted account, a rejected key, a withdrawn model, or a malformed request is attempted once.</li>
+<li>A failure after the first token of the answer is not retried, and what was streamed is streamed once.</li>
+<li>Attempts are bounded, and the error reported after the last one carries the failure that caused it.</li>
+<li>A cancelled turn stops without working through its remaining attempts.</li>
+</ul>
+</div>
 
 <h3>Prompt caching</h3>
 
@@ -111,41 +210,83 @@ flowchart TB
   LP --> TS
   TS --> GW["Gateway :8080"]
   GW --> OR["OpenRouter"]
-  GW --> PS["Push service"]
-  PS -.->|"APNs / FCM"| PH
 </div>
 
 <p>The container publishes no ports to the public internet. Tailscale Serve terminates HTTPS with a
-certificate valid for the tailnet hostname, which satisfies the browser's secure-context requirement
-for service workers and notifications.</p>
+certificate valid for the tailnet hostname.</p>
 
-<p>Push notifications reach the phone through Apple's or Google's push service, which the gateway
-contacts outbound. Notification delivery therefore does not depend on the phone being on the tailnet.</p>
+<p>Nothing reaches the phone unless the phone asks. There is no push service and no outbound
+notification path: the operator reads what happened by opening the interface, which means the phone
+must be on the tailnet to learn anything at all.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>The container exposes no port reachable from outside the tailnet.</li>
 <li>The web UI is served over HTTPS with a certificate the browser trusts without exception.</li>
-<li>Notifications are delivered to the phone when it is not connected to the tailnet.</li>
-<li>Opening a notification while off the tailnet fails visibly rather than showing a blank screen.</li>
+<li>The system makes no outbound connection to any push service.</li>
+<li>A phone off the tailnet fails visibly rather than showing a blank screen.</li>
 </ul>
 </div>
 
 <h2>Process boundaries</h2>
 
-<p>The agent, its tools, and the gateway run as one user in one container. Tools the agent writes have
-the same access as the agent itself, including the model API key and the database.</p>
+<p>The agent, its tools, and the gateway run as one user in one container. A tool has the privileges of
+that user, with one boundary the operating system enforces: the session's own working directory.</p>
 
-<p>The working directory is a git repository. Every tool reload commits the tool directory, so a tool
-that breaks the system is reverted rather than reconstructed.</p>
+<p>Every tool subprocess, and every check command, is launched inside a sandbox. There is no
+cross-platform library for this &mdash; everything that claims to be one branches on the platform &mdash;
+so this does too, over the two primitives that need no privileges: Seatbelt
+(<code>sandbox-exec</code>) on macOS and bubblewrap (<code>bwrap</code>) on Linux.</p>
+
+<p><strong>A tool reads and writes its own session's working directory, and nothing else.</strong> Both
+halves are an allow-list, so a path that was never considered is denied rather than permitted
+(<a href="adrs.html#adr-034">ADR-034</a>). Four things are allowed beyond the working directory, and each
+is what lets a tool run at all rather than a convenience:</p>
+
+<table>
+<tr><th>Path</th><th>Access</th><th>Why</th></tr>
+<tr><td>The runtime &mdash; <code>/usr</code>, <code>/System</code>, <code>/Library</code>, <code>/bin</code>, <code>/sbin</code>, <code>/opt</code>, <code>/dev</code>, <code>/private/etc</code>, <code>/private/var/db</code>, and <code>/</code> itself</td><td>read</td><td>The interpreter and everything it loads. Without it no tool starts.</td></tr>
+<tr><td>The tool directory</td><td>read</td><td>A tool loads its own executable and the helper beside it. The agent's own program text, not the operator's data.</td></tr>
+<tr><td>The database file and its <code>-wal</code> and <code>-shm</code> journals</td><td>read, write</td><td>A tool is handed <code>AGENT_DB</code> on purpose and may keep its own tables. Narrowed from the data directory, which holds every session's transcript.</td></tr>
+<tr><td><code>AGENT_READ_PATHS</code></td><td>read</td><td>Named by the operator. A browser installed outside the system roots is the case it exists for.</td></tr>
+</table>
+
+<p>Everything else is denied: the home directory, the repository the agent runs from, another session's
+working directory, the skill directory, and the file holding the model API key &mdash; which needs no
+rule of its own, because it is in no allowed path. The temporary directory is inside the session's own
+working directory too, so a tool's scratch files are as visible and as confined as everything else it
+writes.</p>
+
+<p>The tool directory and the skill directory are readable and never writable. The agent does not
+install tools and does not write skills; the operator does, on the filesystem
+(<a href="adrs.html#adr-033">ADR-033</a>).</p>
+
+<p>Where neither primitive is available the system enforces nothing, and says so: at startup, in
+<code>/status</code>, and on the settings screen. A sandbox that silently does nothing is worse than
+one that is plainly absent, because the first is trusted. There is no setting that disables it: the
+only reason to run unconfined is that the platform offers nothing to confine with, and that case
+already reports itself. <code>AGENT_READ_PATHS</code> is not that setting &mdash; it only adds, and what
+it adds is visible in <code>/status</code>.</p>
+
+<p>What this is not: a tool still holds the agent's other privileges. It is given <code>AGENT_DB</code>
+and reaches the system over <code>AGENT_URL</code>, and that API is unauthenticated &mdash; a tool can
+ask it for another session's transcript or files. The filesystem boundary is real; the API is
+deliberately open, and closing it is a separate decision.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The workspace is a git repository with an initial commit created at first start.</li>
-<li>A successful tool reload produces a commit containing the tool directory's current state.</li>
-<li>Reverting to any commit and restarting yields a working system.</li>
+<li>A tool can read and write its own session's working directory, and can run the interpreters it needs.</li>
+<li>A tool cannot read or write any other path: not another session's directory, not the operator's home directory, not the repository the agent runs from, and not the file holding the API key.</li>
+<li>A tool cannot write the tool directory or the skill directory, and is refused by the operating system rather than by its own good manners.</li>
+<li>A tool may read and write the database file it is handed, and no other file in the data directory.</li>
+<li>A path named in <code>AGENT_READ_PATHS</code> is readable and still not writable, and the paths in force are visible in <code>/status</code>.</li>
+<li>A check command is confined exactly as a tool is.</li>
+<li>A confined tool can drive a headless browser, so the web tools work under the sandbox rather than only outside it.</li>
+<li>When nothing is enforcing, the system says so at startup, in <code>/status</code>, and in the interface.</li>
+<li>Aside from the filesystem boundary, a tool runs with the agent's privileges, including its access to the unauthenticated API.</li>
+<li>Nothing recovers automatically from a tool that damages the system; repair is manual, and the specification says so rather than implying otherwise.</li>
 </ul>
 </div>
 

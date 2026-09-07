@@ -22,16 +22,53 @@
 <h1>Tools</h1>
 <p class="lede">A tool is a directory containing an executable and a manifest. Nothing more.</p>
 
-<p>The agent can write one, and does so when the capability it needs does not exist. Because a tool is
-a file on disk rather than compiled-in code, adding one requires no restart and no rebuild.</p>
+<p>You write one, and the agent loads it. Because a tool is a directory on disk rather than compiled
+into the agent, adding one restarts nothing: the agent keeps running and picks the tool up on a
+reload.</p>
 
 <h2>Layout</h2>
 
 <pre><code>tools/deploys/
   manifest.json     required — identity, parameter schema, database prefix
-  run               required — executable, any language
+  main.go           required — the tool, in Go, with the agent's own discipline
+  main_test.go      required where there is logic to test — written first
+  run               required — the compiled executable, built from this directory
+  eval.json         required — the cases a real model is put through
   schema.sql        optional — tables, applied on load
   ui/panel.js       optional — an interface panel for this tool's data</code></pre>
+
+<h2>Tools are written the way the agent is</h2>
+
+<p>A tool is Go, in this module, developed test-first, and it ships eval cases. The registry executes
+<code>run</code> and does not care what produced it &mdash; the contract below is a subprocess, JSON in
+and JSON out, which any language satisfies. This is a rule about how tools are written here, not a
+limit the code enforces.</p>
+
+<p>The rule exists because the argument for a scripting language died with self-modification. A tool
+used to be something the agent wrote at three in the morning, where an interpreter meant no build step
+between deciding and running. <a href="adrs.html#adr-033">ADR-033</a> ended that: tools are written by
+the operator, at a keyboard, with a toolchain already open. What is left is a program that runs beside
+the scheduler and the database, holds the same privileges, and had none of the discipline applied to
+everything around it &mdash; no compiler, no vet, a separate test runner, and a second language to keep
+correct. The reasoning is in <a href="adrs.html#adr-035">ADR-035</a>.</p>
+
+<p>So a tool is held to what the agent is held to:</p>
+
+<table>
+<tr><th>What</th><th>Means</th></tr>
+<tr><td>Go, in this module</td><td><code>tools/&lt;name&gt;</code> is <code>package main</code>. <code>go build ./...</code>, <code>go vet ./...</code>, and <code>go test ./...</code> reach it without being told.</td></tr>
+<tr><td>Test-first</td><td>Behaviour is captured by a failing test before it is written. Logic worth having is worth separating from the subprocess plumbing so it can be tested directly.</td></tr>
+<tr><td>Evals</td><td><code>eval.json</code>, as before. A test cannot tell whether a description reads correctly to a model; only a model can.</td></tr>
+<tr><td>End to end</td><td>A criterion is discharged by a test that runs the tool as an actual subprocess, through the registry, inside the sandbox.</td></tr>
+<tr><td>Shared helper</td><td><code>internal/tool</code> carries the subprocess contract, the API client, the workspace boundary, and the headless browser. A tool that reimplements one of these is a tool that will disagree with the others.</td></tr>
+</table>
+
+<div class="note">
+<strong>The build is not the agent's.</strong> <code>task build</code> compiles each tool directory to
+its own <code>run</code>. Changing a tool means rebuilding <em>that tool</em> and reloading; it never
+means rebuilding or restarting the agent, which is the property
+<a href="index.html">R4</a> is actually about. The binaries are not in the repository.
+</div>
 
 <h2>Manifest</h2>
 
@@ -56,15 +93,31 @@ a file on disk rather than compiled-in code, adding one requires no restart and 
 <li><code>description</code> is a single sentence.</li>
 <li><code>db_prefix</code> is unique across tools and every table the tool creates begins with it.</li>
 <li><code>parameters</code> is a valid JSON Schema object and is exposed verbatim to the model.</li>
+<li>A tool directory without <code>eval.json</code> is reported by the test run, so a capability cannot be added without evidence that a model can use it.</li>
 <li>A manifest missing a required field prevents that tool from loading and does not affect other tools.</li>
+<li>Every tool directory is a Go package in this module, and <code>go vet ./...</code> and <code>go test ./...</code> cover it without a separate runner.</li>
+<li>Building or changing a tool requires no rebuild and no restart of the agent.</li>
 </ul>
 </div>
 
 <h2>Execution</h2>
 
 <p>A tool call runs the executable as a subprocess. Parameters arrive as JSON on standard input; the
-result is JSON on standard output. Two environment variables are provided: the database path and the
-tool's table prefix.</p>
+result is JSON on standard output. The environment carries what a tool needs to reach the rest of the
+system: the database path, the tool's table prefix, the API base URL, and the session and job the call
+belongs to.</p>
+
+<table>
+<tr><th>Variable</th><th>Holds</th></tr>
+<tr><td><code>AGENT_DB</code></td><td>Path to the SQLite database.</td></tr>
+<tr><td><code>AGENT_DB_PREFIX</code></td><td>The tool's table prefix.</td></tr>
+<tr><td><code>AGENT_URL</code></td><td>Base URL of the HTTP API, the same one the interface uses.</td></tr>
+<tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
+<tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
+<tr><td><code>AGENT_BROWSER</code></td><td>Optional. A Chrome-family executable to drive; the usual install paths are searched when it is unset. It must be inside a readable path &mdash; see <code>AGENT_READ_PATHS</code>.</td></tr>
+<tr><td><code>AGENT_NO_BROWSER</code></td><td>Optional. Set to keep <code>web_fetch</code> on plain HTTP rather than rendering the page.</td></tr>
+<tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
+</table>
 
 <pre><code>stdin   {"action": "status", "service": "web"}
 stdout  {"ok": true, "content": "web: deployed 12m ago, healthy"}
@@ -78,6 +131,7 @@ turn rather than the process.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A tool exceeding its timeout is killed and reported as an error result.</li>
+<li>A tool can reach every capability the interface can, through <code>AGENT_URL</code>, without a private hook into the process.</li>
 <li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
 <li>Standard error is captured and stored with the result, not shown to the model.</li>
 <li>Tool results are recorded as transcript entries.</li>
@@ -86,9 +140,15 @@ turn rather than the process.</p>
 
 <h2>Loading</h2>
 
-<p>Tools load at start and on explicit request. The agent calls a reload after writing one; there is no
-directory watcher, because a tool appearing halfway through being written is worse than one appearing
-a moment later.</p>
+<p>Tools load at start and on explicit request &mdash; the interface's button, <code>POST
+/tools/reload</code>, or the agent's own <code>reload_tools</code> call, which is how a running session
+picks up what the operator has just installed. There is no directory watcher, because a tool appearing
+halfway through being copied into place is worse than one appearing a moment later.</p>
+
+<p>A reload does not reach the session that asked for it. That session's prompt was written at its first
+turn and defines exactly the tools it had then, so a tool written now is a tool the next session has —
+the same way a memory written now is read by the next session rather than this one. The conversation
+carries over by rotating, and the successor is built with the new tool in it.</p>
 
 <p>Loading validates before registering. A tool is registered only if its manifest parses, its schema is
 valid, its executable is executable, its database prefix is unused, and a trial invocation returns
@@ -97,24 +157,96 @@ parseable output.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A reload makes a newly written tool callable within the same session by appending its definition to the transcript, without restarting and without invalidating the cached prefix.</li>
+<li>A reload registers a validated tool without restarting, and it appears in the prompt of every session started after it.</li>
+<li>A newly registered tool is not callable in a session already running, whose prompt was written without it.</li>
+<li>The session that asked for the reload records what was added, as a visible entry the model is not sent.</li>
 <li>A tool failing validation is not registered, and the reason is returned to the caller.</li>
 <li>A failed reload leaves previously loaded tools working.</li>
-<li>A successful reload commits the tool directory to version control.</li>
 <li>Reloading applies any new <code>schema.sql</code> exactly once per tool version.</li>
 </ul>
 </div>
 
-<h2>Self-authoring</h2>
+<h2>Evals</h2>
 
-<p>Writing a tool is an ordinary task the agent performs with its file and shell tools, guided by a
-skill that describes this convention. It is not a special mechanism.</p>
+<p>A tool's <code>description</code> and <code>parameters</code> are the surface a model programmes
+against, and nothing deterministic tests them. A schema the system handles perfectly can still be one
+no model reads correctly — the failure is real, it costs a round trip or a wrong action every time,
+and every test that stubs the model out is blind to it.</p>
+
+<p>So every tool directory carries an <code>eval.json</code>: requests put to a real model with that
+tool available, and what its tool use has to look like.</p>
+
+<pre><code>{
+  "cases": [
+    {
+      "name": "relative reminder lands in one call, no retry",
+      "prompt": "Remind me to stretch in ten minutes.",
+      "tools": ["schedule", "clock"],
+      "expect": {
+        "tool": "schedule",
+        "args": { "action": "create", "after_acting": "stop" },
+        "args_match": { "schedule": "^10m$" },
+        "clean": true
+      }
+    }
+  ]
+}</code></pre>
+
+<p>A case runs in a throwaway session against the whole system: the real store, the real tool as a
+subprocess, and the API served on its own port so the tool reaches the same system it is being tested
+in. Only the work's destination is temporary.</p>
+
+<p><code>clean</code> is the assertion that matters most. It requires that the tool under test never
+returned an error — that the model got the shape right first time rather than learning it from a
+rejection. It is scoped to that tool: a shell probe that exits non-zero is a legitimate answer, and
+counting it would punish the agent for testing a check before scheduling it.</p>
+
+<div class="note">
+<strong>An eval is not a test.</strong> It drives a real model, so it costs money and its result varies
+between runs. It is a command, not part of the test run, and it is read as evidence rather than as a
+gate. What is a test is the requirement that every tool has one, which is why a tool shipped without
+eval cases fails the ordinary test run.
+</div>
+
+<p>The model is configurable and defaults to a free one, because an eval that is expensive to run is an
+eval nobody runs. A failing case is usually a defect in the description rather than in the model, and
+is fixed there.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A request for a capability that does not exist results in a tool being written, loaded, and used in the same conversation.</li>
-<li>A newly created tool appears in the interface, marked as new, with its manifest readable.</li>
+<li>Every tool directory contains <code>eval.json</code> with at least one case, and the test run fails when one does not.</li>
+<li>An eval case runs against the real store, the real tool subprocess, and an API the tool can reach, in a session discarded afterwards.</li>
+<li>Evals never run as part of the test suite, and never require an API key to run the suite.</li>
+<li>The eval model is configurable and defaults to one that is free to run.</li>
+<li>A case can require that the tool under test was never rejected during the turn.</li>
+<li>A case can seed files into its own working directory, so a tool that operates on files is evaluated against files that exist rather than against a prompt that claims they do.</li>
+<li>A provider rate limit is retried rather than reported as a failed case.</li>
+</ul>
+</div>
+
+<h2>Who writes a tool</h2>
+
+<p><strong>The operator does.</strong> A tool is a directory the person running the agent creates on the
+filesystem, with whatever editor they already use. The agent does not write tools, and the
+specification no longer says it does &mdash; the reasoning, including why the sandbox was not opened up
+instead, is in <a href="adrs.html#adr-033">ADR-033</a>.</p>
+
+<p>The boundary is the operating system's, not a convention. The tool directory is readable by a tool
+&mdash; it has to be, or nothing would start &mdash; and writable by none. A tool that tries to create
+<code>tools/&lt;name&gt;/</code> is refused by the kernel, and no route on the API writes one:
+<code>POST /tools/reload</code> registers what is already on disk.</p>
+
+<p>What the agent does instead is say which tool it wants and why, at the point it runs out of
+capability. That is the part of the job that needs the conversation; the hundred lines of Python were
+never the constraint.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A tool subprocess cannot create or modify anything in the tool directory, and is refused by the operating system rather than by its own good manners.</li>
+<li>A request for a capability that does not exist is answered by naming the missing tool, not by attempting to install one.</li>
+<li>A tool the operator installs appears in the interface after a reload, marked as new, with its manifest readable.</li>
 <li>A tool outside a session's set is absent from that session's prompt, so there is nothing to refuse.</li>
 <li>Deleting a tool removes it from the model's schema list and leaves its tables intact.</li>
 </ul>
@@ -136,19 +268,87 @@ tool shows its jobs.</p>
 </ul>
 </div>
 
-<h2>Built-in tools</h2>
+<h2>The supplied tools</h2>
+
+<p>The agent ships with a set of tools in the tool directory. They are ordinary tool directories with
+no privileges of their own: readable, editable, and removable without a rebuild, exactly like one you
+write yourself. Deleting one removes the capability and nothing else.</p>
 
 <table>
 <tr><th>Tool</th><th>Purpose</th></tr>
 <tr><td><code>bash</code>, <code>read</code>, <code>write</code>, <code>edit</code></td><td>Filesystem and shell access within the workspace.</td></tr>
-<tr><td><code>web_search</code>, <code>web_fetch</code></td><td>Retrieve information from the internet.</td></tr>
+<tr><td><code>clock</code></td><td>The current date and time, with an optional offset. An autonomous agent cannot read a clock from a prompt written once at the session's creation, so it asks.</td></tr>
+<tr><td><code>web_search</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. Both render the page in a headless browser, so what they read is what a person would see.</td></tr>
 <tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
 <tr><td><code>memory</code></td><td>Write and revise durable memory.</td></tr>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
 <tr><td><code>skill_read</code></td><td>Load the full text of a skill.</td></tr>
-<tr><td><code>reload_tools</code></td><td>Validate and register tools from disk.</td></tr>
-<tr><td><code>notify</code></td><td>Send an interrupting notification.</td></tr>
 </table>
+
+<h3>Searching the web</h3>
+
+<p>A search results page is assembled by scripts, so fetching its HTML returns a shell with no results
+in it. <code>web_search</code> therefore drives a headless Chrome-family browser, found on the usual
+paths or named by <code>AGENT_BROWSER</code>, and reads the results out of the rendered DOM.</p>
+
+<p>The browser is used as it is delivered. Nothing disguises the request, and an engine that declines
+to serve an automated query is reported as having declined — naming the phrase it used — rather than
+worked around or reported as a query that found nothing. The two are different answers and only one of
+them means the query was wrong.</p>
+
+<div class="note">
+<strong>The dependency sits in the tool.</strong> A browser is a large thing to install for one
+capability. Because the capability is a directory rather than compiled in, the cost falls on whoever
+wants search: delete the directory and the dependency is gone, with no rebuild. This is the shape
+<a href="index.html">R4</a> is for.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A search returns result titles, absolute URLs, and snippets, with click-tracking redirects resolved to the page they point at.</li>
+<li>An engine declining to serve the query is reported as a refusal, distinct from a query with no results.</li>
+<li>No request is disguised and no bot check is answered or evaded.</li>
+<li>With no browser installed the tool fails with an error naming <code>AGENT_BROWSER</code>, and every other tool keeps working.</li>
+</ul>
+</div>
+
+<h3>Fetching a page</h3>
+
+<p>Most of the web arrives empty. The HTML a server sends is a shell, and the text a person reads is
+written into it by scripts once the page is running. Retrieving the bytes therefore answers a
+different question from the one the model asked. <code>web_fetch</code> loads the URL in the same
+headless browser <code>web_search</code> uses — found on the usual paths or named by
+<code>AGENT_BROWSER</code> — lets the scripts run, and reads the settled DOM.</p>
+
+<p>Text is recovered from that DOM rather than from the source, because a rendered DOM has had its
+source whitespace squeezed out: the tags that end a line on screen are the only remaining evidence of
+where one thing ends and the next begins. A body the browser cannot render as a document — JSON,
+plain text — is returned exactly as it was served, since the point of fetching an API is its bytes.</p>
+
+<p>A browser is not required. Where none is installed the tool retrieves the URL over plain HTTP and
+says nothing further; a page that needs its scripts then comes back as the shell it ships as, which is
+the honest result and not an error. Setting <code>AGENT_NO_BROWSER</code> chooses that path
+deliberately. A browser named in <code>AGENT_BROWSER</code> that does not exist is an error rather
+than a silent fall back to HTTP, because a setting that is quietly ignored is worse than one that
+fails.</p>
+
+<p>As in search, the browser is used as it is delivered: nothing disguises the request, and a site
+that declines to serve it is not worked around.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A page whose text is written by its scripts is returned with that text in it, and without the placeholder it replaced.</li>
+<li>A JSON or plain-text body is returned verbatim, not as flattened prose.</li>
+<li>With no browser available the page is still fetched over HTTP, and every other tool keeps working.</li>
+<li>A browser named in <code>AGENT_BROWSER</code> that does not exist fails with an error naming it.</li>
+</ul>
+</div>
+
+<p>One tool is compiled in, for the reason given in
+<a href="architecture.html">Architecture</a>: <code>reload_tools</code>, which is the registry's own
+control surface.</p>
 
 <footer><a href="jobs.html">← Jobs</a> · <a href="skills.html">Skills →</a></footer>
 </div>

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,7 +35,10 @@ type KeyInfo struct {
 
 type OpenRouter struct {
 	key    string
+	base   string // openRouterBase unless a test points it elsewhere
 	client *http.Client
+	// retryBase is the first wait between attempts; a test sets it to zero.
+	retryBase time.Duration
 
 	mu      sync.Mutex
 	models  []ModelInfo
@@ -44,7 +48,94 @@ type OpenRouter struct {
 }
 
 func NewOpenRouter(key string) *OpenRouter {
-	return &OpenRouter{key: key, client: &http.Client{Timeout: 10 * time.Minute}}
+	return &OpenRouter{key: key, base: openRouterBase, retryBase: 2 * time.Second,
+		client: &http.Client{Timeout: 10 * time.Minute}}
+}
+
+const (
+	// A model call fails for two different reasons and only one is worth trying
+	// again: the upstream was briefly unreachable, or the account cannot make the
+	// call at all. Three attempts covers a blip and a rate limit without turning
+	// an outage into a long wait, which the scheduler's own backoff handles.
+	chatAttempts = 3
+	// chatBudget bounds the whole call, retries included, so a job on a twenty
+	// minute cadence cannot be held by one turn for an hour.
+	chatBudget = 15 * time.Minute
+)
+
+// statusError is a non-200 the caller may want to classify. PermanentError is
+// the subset that must never be retried.
+type statusError struct {
+	code       int
+	msg        string
+	retryAfter time.Duration
+}
+
+func (e *statusError) Error() string { return e.msg }
+
+// retryableChat reports whether trying the same request again could succeed.
+// Anything unrecognised is treated as worth one more attempt: a network that
+// broke mid-handshake reports itself in too many ways to enumerate, and the
+// attempt is cheap next to a reminder that never arrives.
+func retryableChat(err error) bool {
+	var perm *PermanentError
+	if errors.As(err, &perm) {
+		return false
+	}
+	var st *statusError
+	if errors.As(err, &st) {
+		return st.code == 408 || st.code == 409 || st.code == 425 ||
+			st.code == 429 || st.code >= 500
+	}
+	return !errors.Is(err, context.Canceled)
+}
+
+// Chat calls the model, retrying a failure that could plausibly go away. It
+// stops retrying the moment the answer starts arriving: the deltas are already
+// on the operator's screen, and a second attempt would say the first half
+// twice.
+func (o *OpenRouter) Chat(ctx context.Context, req ChatRequest, onDelta func(string)) (*ChatResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, chatBudget)
+	defer cancel()
+
+	var last error
+	for attempt := 1; attempt <= chatAttempts; attempt++ {
+		if attempt > 1 {
+			if err := o.waitBeforeRetry(ctx, attempt, last); err != nil {
+				return nil, last
+			}
+		}
+		res, started, err := o.chatOnce(ctx, req, onDelta)
+		if err == nil {
+			return res, nil
+		}
+		last = err
+		if started || ctx.Err() != nil || !retryableChat(err) {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("after %d attempts: %w", chatAttempts, last)
+}
+
+// waitBeforeRetry sleeps between attempts, honouring a Retry-After the upstream
+// asked for and otherwise doubling.
+func (o *OpenRouter) waitBeforeRetry(ctx context.Context, attempt int, last error) error {
+	wait := o.retryBase * time.Duration(1<<(attempt-2))
+	var st *statusError
+	if errors.As(last, &st) && st.retryAfter > 0 {
+		wait = st.retryAfter
+	}
+	if wait <= 0 {
+		return ctx.Err()
+	}
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 func (o *OpenRouter) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
@@ -53,7 +144,7 @@ func (o *OpenRouter) do(ctx context.Context, method, path string, body any) (*ht
 		b, _ := json.Marshal(body)
 		r = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, openRouterBase+path, r)
+	req, err := http.NewRequestWithContext(ctx, method, o.base+path, r)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +200,32 @@ func (o *OpenRouter) Models(ctx context.Context) ([]ModelInfo, error) {
 	o.models, o.fetched = out, time.Now()
 	o.mu.Unlock()
 	return out, nil
+}
+
+// filterModels narrows a catalogue to the models matching a free-text query.
+// The query is split on whitespace and every term must appear, case-folded, in
+// the model's id or display name, so "claude 4.5" finds claude-sonnet-4.5 and
+// "anthropic/" finds a whole provider. An empty query keeps everything, and
+// the catalogue's own order is preserved either way.
+func filterModels(models []ModelInfo, q string) []ModelInfo {
+	terms := strings.Fields(strings.ToLower(q))
+	out := make([]ModelInfo, 0, len(models))
+	for _, m := range models {
+		hay := strings.ToLower(m.ID + " " + m.Name)
+		if matchesAll(hay, terms) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func matchesAll(hay string, terms []string) bool {
+	for _, t := range terms {
+		if !strings.Contains(hay, t) {
+			return false
+		}
+	}
+	return true
 }
 
 func (o *OpenRouter) Key(ctx context.Context) (*KeyInfo, error) {
@@ -171,19 +288,35 @@ type ChatResult struct {
 	Err       error
 }
 
+// retryAfter reads the header of that name, which a rate limiter uses to say
+// when it will answer again. Only the seconds form is honoured; a date form is
+// ignored in favour of the ordinary backoff.
+func retryAfter(h string) time.Duration {
+	if h == "" {
+		return 0
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(h)); err == nil && n >= 0 {
+		return time.Duration(n) * time.Second
+	}
+	return 0
+}
+
 // PermanentError marks a failure that must not be retried.
 type PermanentError struct{ msg string }
 
 func (e *PermanentError) Error() string { return e.msg }
 
 // Chat streams a completion. onDelta receives token text as it arrives.
-func (o *OpenRouter) Chat(ctx context.Context, req ChatRequest, onDelta func(string)) (*ChatResult, error) {
+// chatOnce is one attempt. It reports whether any of the answer reached the
+// caller, because that is what decides whether the attempt can be repeated.
+func (o *OpenRouter) chatOnce(ctx context.Context, req ChatRequest, onDelta func(string)) (*ChatResult, bool, error) {
 	req.Stream = true
 	req.Usage.Include = true
 	start := time.Now()
+	started := false
 	resp, err := o.do(ctx, "POST", "/chat/completions", req)
 	if err != nil {
-		return nil, err
+		return nil, started, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
@@ -191,9 +324,10 @@ func (o *OpenRouter) Chat(ctx context.Context, req ChatRequest, onDelta func(str
 		msg := fmt.Sprintf("openrouter %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 		switch resp.StatusCode {
 		case 401, 402, 403, 404:
-			return nil, &PermanentError{msg}
+			return nil, started, &PermanentError{msg}
 		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, started, &statusError{code: resp.StatusCode, msg: msg,
+			retryAfter: retryAfter(resp.Header.Get("Retry-After"))}
 	}
 
 	res := &ChatResult{}
@@ -241,7 +375,7 @@ func (o *OpenRouter) Chat(ctx context.Context, req ChatRequest, onDelta func(str
 			continue
 		}
 		if chunk.Error != nil {
-			return nil, fmt.Errorf("openrouter: %s", chunk.Error.Message)
+			return nil, started, fmt.Errorf("openrouter: %s", chunk.Error.Message)
 		}
 		if chunk.Usage != nil {
 			res.Usage.PromptTokens = chunk.Usage.PromptTokens
@@ -253,12 +387,15 @@ func (o *OpenRouter) Chat(ctx context.Context, req ChatRequest, onDelta func(str
 		}
 		for _, ch := range chunk.Choices {
 			if ch.Delta.Content != "" {
+				// The answer has begun: from here the attempt cannot be repeated.
+				started = true
 				res.Text += ch.Delta.Content
 				if onDelta != nil {
 					onDelta(ch.Delta.Content)
 				}
 			}
 			for _, tc := range ch.Delta.ToolCalls {
+				started = true
 				c, ok := calls[tc.Index]
 				if !ok {
 					c = &ToolCall{}
@@ -276,7 +413,7 @@ func (o *OpenRouter) Chat(ctx context.Context, req ChatRequest, onDelta func(str
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
+		return nil, started, err
 	}
 	sort.Ints(order)
 	for _, i := range order {
@@ -292,7 +429,7 @@ func (o *OpenRouter) Chat(ctx context.Context, req ChatRequest, onDelta func(str
 	if secs := time.Since(start).Seconds(); secs > 0 {
 		res.Usage.TokensPerSecond = float64(res.Usage.CompletionTokens) / secs
 	}
-	return res, nil
+	return res, started, nil
 }
 
 func contains(s []string, v string) bool {

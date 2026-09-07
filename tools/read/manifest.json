@@ -1,0 +1,24 @@
+{
+  "name": "read",
+  "description": "Read a file from the workspace.",
+  "db_prefix": "read_",
+  "timeout_seconds": 30,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Path, relative to the workspace."
+      },
+      "offset": {
+        "type": "integer"
+      },
+      "limit": {
+        "type": "integer"
+      }
+    },
+    "required": [
+      "path"
+    ]
+  }
+}

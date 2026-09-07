@@ -62,17 +62,68 @@ nav.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
 .msg .who { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 3px; }
 .msg .bub { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
 .msg.you .bub { background: var(--code-bg); border-radius: 10px; padding: 8px 11px; }
+/* Rendered markdown. The agent's turn is prose, a list, or a table, and the
+   spacing here is what keeps those apart without a border around each one. */
+.msg .bub.md { white-space: normal; }
+.bub.md > :first-child { margin-top: 0; }
+.bub.md > :last-child { margin-bottom: 0; }
+.bub.md p { margin: 0 0 9px; }
+.bub.md h1, .bub.md h2, .bub.md h3, .bub.md h4, .bub.md h5, .bub.md h6 {
+  margin: 16px 0 6px; font-size: 15px; font-weight: 600; line-height: 1.35;
+  text-transform: none; letter-spacing: 0; color: var(--fg); }
+.bub.md h1 { font-size: 17px; }
+.bub.md h2 { font-size: 16px; }
+.bub.md ul, .bub.md ol { margin: 0 0 9px; padding-left: 22px; }
+.bub.md li { margin: 2px 0; }
+.bub.md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px;
+  background: var(--code-bg); border-radius: 4px; padding: 1px 4px; word-break: break-word; }
+/* A code block is read, and sometimes copied, as a unit: it keeps its own lines
+   and scrolls sideways rather than wrapping code where the author did not. */
+.bub.md pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 11px; margin: 0 0 9px; overflow-x: auto; max-height: 420px; }
+.bub.md pre code { background: none; padding: 0; font-size: 12px; line-height: 1.5; white-space: pre; }
+.bub.md blockquote { margin: 0 0 9px; padding-left: 10px; border-left: 2px solid var(--line);
+  color: var(--muted); }
+.bub.md hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.bub.md a { color: var(--accent); }
+/* A table is the one block that can outgrow a phone, so it scrolls in place
+   rather than widening the transcript under it. */
+.bub.md table { display: block; overflow-x: auto; border-collapse: collapse;
+  margin: 0 0 9px; font-size: 13.5px; max-width: 100%; }
+.bub.md th, .bub.md td { border: 1px solid var(--line); padding: 5px 9px; text-align: left;
+  vertical-align: top; }
+.bub.md th { background: var(--code-bg); font-weight: 600; }
+/* A wake is the scheduler replaying a job's prompt, not the operator typing.
+   It gets its own mark rather than the bubble that means "you said this". */
+.msg.job .bub { border-left: 2px solid var(--line); padding-left: 9px; color: var(--muted); }
+/* The stamp sits with the speaker, quieter than it, so a scan down the column
+   reads the speakers and the times stay available without being read. */
+.msg .who .at { margin-left: 7px; text-transform: none; letter-spacing: 0;
+  opacity: .65; font-variant-numeric: tabular-nums; }
 .msg.carried { opacity: .8; border-left: 2px dashed var(--line); padding-left: 9px; }
-.ev { font-size: 11.5px; color: var(--muted); padding: 3px 0 3px 10px; border-left: 2px solid var(--line);
-  margin: 4px 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  white-space: pre-wrap; word-break: break-word; }
-.ev.job { border-left-color: var(--accent); }
-.ev.bad { border-left-color: var(--bad); color: var(--bad); }
-.attr { display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 99px;
-  background: var(--code-bg); border: 1px solid var(--line); color: var(--muted); margin-bottom: 4px; }
+/* Events are a log, not a conversation: a clock in the gutter, the kind as a
+   tag, then the detail. No bubble, no speaker, nothing that looks said. */
+.ev { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+  color: var(--muted); padding: 2px 0 2px 8px; margin: 1px 0;
+  border-left: 1px dashed var(--line); }
+.ev + .ev { margin-top: 0; }
+.ev .at { font-variant-numeric: tabular-nums; opacity: .7; }
+.ev .kind { font-size: 9.5px; letter-spacing: .07em; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid var(--line); background: var(--code-bg); white-space: nowrap; }
+.ev .detail { white-space: pre-wrap; word-break: break-word; min-width: 0; }
+.ev.bad { color: var(--bad); border-left-color: var(--bad); border-left-style: solid; }
+.ev.bad .kind { border-color: var(--bad); color: var(--bad); }
+/* A session identifier, wherever one conversation names another. It reads as
+   part of the line it sits in and only announces itself under the pointer. */
+.sid { color: inherit; text-decoration: underline; text-decoration-style: dotted;
+  text-underline-offset: 2px; cursor: pointer; }
+.sid:hover { color: var(--fg); text-decoration-style: solid; }
 .tool { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; background: var(--code-bg);
   border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; margin: 5px 0; color: var(--muted); }
 .tool .t { color: var(--fg); }
+.tool .t .peek { color: var(--muted); font-weight: normal; }
+.tool.err .t .peek { color: inherit; }
 .tool pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; }
 .tool.err { border-color: var(--bad); color: var(--bad); }
 
@@ -101,6 +152,27 @@ form.composer button { color: var(--accent); font-weight: 600; padding: 8px 4px;
 .tag.bad { color: var(--bad); border-color: var(--bad); }
 .tag.warn { color: var(--warn); border-color: var(--warn); }
 .tag.on { color: var(--accent); border-color: var(--accent); }
+.settings { display: grid; grid-template-columns: max-content 1fr; gap: 1px 10px; margin: 5px 0 3px;
+  font-size: 11.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.settings dt { color: var(--muted); }
+.settings dd { margin: 0; word-break: break-word; }
+/* What a job costs, on the row that sets its cadence. Quiet, because it is a
+   fact to notice rather than a warning. */
+.row-item .s.cost { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+/* A job's log. Dense on purpose: it is scanned for a date and an outcome, and
+   read only where one of those catches the eye. */
+.joblog { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+.joblog .run { padding: 5px 0; border-bottom: 1px solid var(--line); }
+.joblog .run:last-child { border-bottom: 0; }
+.joblog .run .h { display: flex; gap: 8px; align-items: baseline;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.joblog .run .at { color: var(--muted); font-variant-numeric: tabular-nums; }
+.joblog .run .kind { font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase;
+  padding: 1px 5px; border-radius: 3px; border: 1px solid var(--line); background: var(--code-bg); }
+.joblog .run .late { color: var(--warn); font-size: 10px; }
+.joblog .run .b { font-size: 12px; margin-top: 3px; white-space: pre-wrap; word-break: break-word; }
+.joblog .run.bad .kind { border-color: var(--bad); color: var(--bad); }
+.joblog .run.bad .b { color: var(--bad); }
 .empty { color: var(--muted); font-size: 13px; padding: 24px 0; text-align: center; }
 h2 { font-size: 14px; margin: 20px 0 6px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .pill { display: inline-block; border: 1px solid var(--line); border-radius: 99px; padding: 4px 11px;
