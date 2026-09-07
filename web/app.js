@@ -56,12 +56,50 @@ function route() {
   const [name, arg] = h.split('/');
   state.view = name;
   state.arg = arg;
+  drawer(false);
+  closeMenu();
   render();
+  renderSidebar();
 }
 window.addEventListener('hashchange', route);
 
+// ---------- shell ----------
+
+// The rail is a column of the grid on a laptop and an overlay on a phone. Only
+// the phone can open and close it, and one class on the body says which it is.
+function drawer(open) { document.body.className = open ? 'drawer' : ''; }
+
+$('menu').onclick = () => drawer(true);
+$('side-close').onclick = () => drawer(false);
+$('scrim').onclick = () => drawer(false);
+$('side-new').onclick = () => location.hash = '#new';
+$('side-search').onclick = () => location.hash = '#search';
+$('side-all').onclick = () => location.hash = '#sessions';
 $('back').onclick = () => history.length > 1 ? history.back() : (location.hash = '#sessions');
-$('panels').onclick = () => location.hash = '#panels';
+
+// A view's own actions are one list rendered twice: along the header where
+// there is room for them, and behind a single button where there is not. CSS
+// decides which of the two is on screen, so neither can disagree with the other.
+const PANELS = [['jobs', 'Jobs'], ['memory', 'Memory'], ['tools', 'Tools'], ['skills', 'Skills'], ['panels', 'More']];
+
+let folded = null;
+function closeMenu() {
+  if (!folded) return;
+  folded.remove();
+  folded = null;
+}
+
+function toggleMenu(wrap, actions) {
+  if (folded) return closeMenu();
+  folded = el('div', 'menu');
+  for (const a of actions) {
+    const b = el('button', a.danger ? 'danger' : '', a.label);
+    b.onclick = () => { closeMenu(); a.fn(); };
+    folded.append(b);
+  }
+  wrap.append(folded);
+}
+document.addEventListener('click', closeMenu);
 
 // ---------- websocket ----------
 
@@ -88,6 +126,9 @@ function handle(e) {
     state.streaming = '';
   } else if (e.kind === 'sessions' || e.kind === 'jobs' || e.kind === 'status') {
     if (['sessions', 'jobs', 'panels'].includes(state.view)) render();
+    // The rail is on screen whatever the view is, so it follows every change to
+    // the list rather than only the one the session list happens to be showing.
+    if (e.kind !== 'jobs') renderSidebar();
     if (e.kind === 'status') loadStatus();
   }
 }
@@ -117,17 +158,95 @@ function toast(n) {
   setTimeout(() => t.remove(), 8000);
 }
 
-// ---------- shell ----------
-
-function setHeader(title, showBack) {
+function setHeader(title, showBack, actions) {
   $('title').textContent = title;
   $('back').hidden = !showBack;
+  const acts = $('head-acts');
+  acts.innerHTML = '';
+  const wrap = $('more-wrap');
+  const list = actions || [];
+  wrap.hidden = !list.length;
+  for (const a of list) {
+    const b = el('button', a.danger ? 'danger' : '', a.label);
+    b.onclick = a.fn;
+    acts.append(b);
+  }
+  $('more').onclick = e => {
+    e.stopPropagation();
+    toggleMenu(wrap, list);
+  };
 }
+
+// ---------- rail ----------
+
+// The rail carries the way to everything: a conversation to switch to, a panel
+// to open, and what the gateway costs. It is redrawn on every route change and
+// whenever the agent says a session or the status moved.
+async function renderSidebar() {
+  const nav = $('side-nav');
+  nav.innerHTML = '';
+  for (const [hash, label] of PANELS) {
+    const b = el('button', state.view === hash ? 'on' : '', label);
+    b.onclick = () => location.hash = '#' + hash;
+    nav.append(b);
+  }
+  renderSideFoot();
+  const list = $('side-list');
+  let sessions = state.sessions;
+  try { sessions = await api('/sessions'); state.sessions = sessions; } catch (e) {}
+  list.innerHTML = '';
+  const ordered = sortSessions((sessions || []).filter(s => s.status === 'active'), 'recent')
+    .concat(sortSessions((sessions || []).filter(s => s.status !== 'active'), 'recent'));
+  if (!ordered.length) { list.append(el('div', 's', 'No conversations yet.')); return; }
+  for (const s of ordered) list.append(sideItem(s));
+}
+
+// A rail row answers one question — which conversation is this — so it carries
+// the title, when it last moved, and what is waiting in it. Everything else
+// about a session lives on its row in the list view.
+function sideItem(s) {
+  const on = state.view === 'session' && state.arg === s.id;
+  const b = el('button', 'side-item' + (on ? ' on' : '') + (s.status === 'active' ? '' : ' arch'));
+  const m = el('div', 'm');
+  m.append(el('div', 'n', s.title || 'Untitled'));
+  const bits = [ago(s.last_active_at)];
+  if (s.job_count) bits.push(s.job_count + ' job' + (s.job_count > 1 ? 's' : ''));
+  if (s.status !== 'active') bits.push('archived');
+  m.append(el('div', 's', bits.join(' · ')));
+  b.append(m);
+  if (s.unread) b.append(el('span', 'badge', String(s.unread)));
+  b.onclick = () => location.hash = '#session/' + s.id;
+  return b;
+}
+
+function renderSideFoot() {
+  const f = $('side-foot');
+  f.innerHTML = '';
+  const line = (label, val) => {
+    const l = el('div', 'l');
+    l.append(document.createTextNode(label));
+    l.append(el('b', null, val));
+    f.append(l);
+  };
+  const st = state.status;
+  const k = st && st.key;
+  if (k) line('credit ', k.remaining != null ? fmtMoney(k.remaining) + ' left' : fmtMoney(k.usage) + ' used');
+  const sb = st && st.sandbox;
+  if (sb) line('sandbox ', sb.mechanism && sb.mechanism !== 'none' ? sb.mechanism : 'not enforced');
+  if (!k && !sb) line('gateway ', st ? 'reachable' : 'unreachable');
+}
+
+// ---------- views ----------
+
+// A transcript is read in a column; a list of jobs, tools, or files is read
+// across the room a laptop actually has.
+const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'files', 'panels', 'memory', 'search', 'toolpanel'];
 
 function render() {
   $('foot').innerHTML = '';
-  $('tabs').hidden = true;
+  closeMenu();
   const v = $('view');
+  v.className = 'wide' + (ROOMY.includes(state.view || 'sessions') ? ' roomy' : '');
   v.innerHTML = '';
   switch (state.view) {
     case 'session': return viewSession(v);
@@ -159,13 +278,13 @@ function sortSessions(list, by) {
 }
 
 async function viewSessions(v) {
-  setHeader('agent', false);
-  const bar = el('div');
-  const nw = el('button', 'act primary', '+ new conversation');
+  setHeader('Conversations', false);
+  const bar = el('div', 'toolbar');
+  const nw = el('button', 'btn primary only-narrow', 'New conversation');
   nw.onclick = () => location.hash = '#new';
-  const search = el('button', 'act', 'search');
+  const search = el('button', 'btn only-narrow', 'Search');
   search.onclick = () => location.hash = '#search';
-  const imp = el('button', 'act', 'import');
+  const imp = el('button', 'btn', 'Import');
   const impFile = el('input'); impFile.type = 'file'; impFile.accept = '.zip'; impFile.hidden = true;
   imp.onclick = () => impFile.click();
   impFile.onchange = async () => {
@@ -178,7 +297,7 @@ async function viewSessions(v) {
     } catch (e) { toast({ title: 'Import failed', body: String(e.message) }); }
     impFile.value = '';
   };
-  const order = el('button', 'act', 'sort: ' + (state.sort === 'size' ? 'size' : 'recent'));
+  const order = el('button', 'btn', 'Sort: ' + (state.sort === 'size' ? 'size' : 'recent'));
   order.title = 'order by last activity or by disk used';
   order.onclick = () => { state.sort = state.sort === 'size' ? 'recent' : 'size'; render(); };
   bar.append(nw, search, imp, order, impFile);
@@ -195,23 +314,28 @@ async function viewSessions(v) {
   };
   section('active', active);
   section('archived', archived);
-  if (!list.length) v.append(el('div', 'empty', 'No conversations yet.'));
+  if (!list.length) v.append(el('div', 'empty', 'No conversations yet. Start one to give the agent something to hold.'));
 }
 
 function sessionRow(s) {
   const row = el('button', 'row-item');
   const m = el('div', 'm');
   m.append(el('div', 'n', s.title || 'Untitled'));
+  // Two lines, because one long grey run of six facts is read as none of them.
+  // What is scanned — when it last moved, what it holds, what it cost — comes
+  // first; what the session is configured as comes second.
   const sub = el('div', 's');
-  sub.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.rotate_at_tokens.toLocaleString()} tok · ${fmtMoney(s.cost)} · ${fmtBytes(s.disk_bytes)} · ${ago(s.last_active_at)}`;
-  m.append(sub);
+  sub.textContent = `${ago(s.last_active_at)} · ${fmtBytes(s.disk_bytes)} · ${fmtMoney(s.cost)}`;
+  const cfg = el('div', 's');
+  cfg.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.rotate_at_tokens.toLocaleString()} tok`;
+  m.append(sub, cfg);
   if (s.job_count) { const t = el('span', 'tag on', s.job_count + ' job' + (s.job_count > 1 ? 's' : '')); m.append(t); }
   if (s.continued_by) m.append(el('span', 'tag', '→ continued'));
   row.append(m);
   if (s.unread) row.append(el('span', 'badge', String(s.unread)));
   // Deleting is why the size is shown, so it is offered on the same row rather
   // than inside the session it would remove.
-  const rm = el('span', 'tag', 'delete');
+  const rm = el('span', 'tag danger', 'delete');
   rm.onclick = async e => {
     e.stopPropagation();
     if (!confirm('Delete "' + (s.title || 'Untitled') + '", its transcript, its files, and its jobs?')) return;
@@ -234,19 +358,17 @@ async function viewSession(v) {
   }
   state.session = res.session;
   state.entries = await api('/sessions/' + state.arg + '/transcript');
-  setHeader(state.session.title || 'Conversation', true);
+  const id = state.session.id;
+  // What you do to a conversation belongs in its header, not on top of its
+  // first message: the transcript starts at the top of the screen.
+  setHeader(state.session.title || 'Conversation', true, [
+    { label: 'Jobs', fn: () => location.hash = '#jobs/' + id },
+    { label: 'Files', fn: () => location.hash = '#files/' + id },
+    { label: 'Summary', fn: showSummary },
+    { label: 'Fork', fn: () => location.hash = '#fork/' + id },
+    { label: 'Controls', fn: () => location.hash = '#settings/' + id },
+  ]);
   await post('/sessions/' + state.arg + '/read', {});
-
-  const controls = el('div');
-  const mk = (label, fn, cls) => { const b = el('button', 'act ' + (cls || ''), label); b.onclick = fn; return b; };
-  controls.append(
-    mk('controls', () => location.hash = '#settings/' + state.session.id),
-    mk('jobs', () => location.hash = '#jobs/' + state.session.id),
-    mk('summary', showSummary),
-    mk('files', () => location.hash = '#files/' + state.session.id),
-    mk('fork', () => location.hash = '#fork/' + state.session.id)
-  );
-  v.append(controls);
 
   const t = el('div'); t.id = 'transcript';
   v.append(t);
@@ -255,10 +377,17 @@ async function viewSession(v) {
   const foot = $('foot');
   const status = el('div', 'status'); status.id = 'statusline';
   const form = el('form', 'composer');
-  const ta = el('textarea'); ta.rows = 1; ta.placeholder = 'Message';
-  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; };
-  ta.onkeydown = e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); form.requestSubmit(); } };
-  const up = el('button', null, '＋'); up.type = 'button';
+  const ta = el('textarea'); ta.rows = 1; ta.placeholder = 'Message the agent';
+  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+  // A keyboard sends on Enter, because that is what a keyboard expects. A touch
+  // screen has no comfortable shift, so there Enter is a newline and the button
+  // is how a message is sent.
+  ta.onkeydown = e => {
+    if (!sendsOnEnter(e, hasKeyboard())) return;
+    e.preventDefault();
+    form.requestSubmit();
+  };
+  const up = el('button', 'attach', '＋'); up.type = 'button'; up.title = 'Attach a file';
   const file = el('input'); file.type = 'file'; file.hidden = true;
   up.onclick = () => file.click();
   file.onchange = async () => {
@@ -269,7 +398,7 @@ async function viewSession(v) {
     catch (e) { toast({ title: 'Upload failed', body: String(e.message) }); }
     file.value = '';
   };
-  const send = el('button', null, 'send'); send.type = 'submit';
+  const send = el('button', 'send', '↑'); send.type = 'submit'; send.title = 'Send'; send.setAttribute && send.setAttribute('aria-label', 'Send');
   form.append(up, file, ta, send);
   form.onsubmit = async e => {
     e.preventDefault();
@@ -278,9 +407,27 @@ async function viewSession(v) {
     ta.value = ''; ta.style.height = 'auto';
     await post('/sessions/' + state.session.id + '/messages', { text });
   };
-  foot.append(status, form);
+  const hint = el('div', 'hint', 'Enter sends · Shift+Enter for a new line');
+  foot.append(status, form, hint);
   renderStatus();
   scrollDown();
+}
+
+// sendsOnEnter decides what Enter means in the composer. On a keyboard it sends,
+// because that is what a keyboard expects, and shift is the newline. A touch
+// screen has no comfortable shift, so there Enter is a newline and the button is
+// the only send. Either way the platform's own combination still sends.
+function sendsOnEnter(e, keyboard) {
+  if (e.key !== 'Enter' || e.isComposing) return false;
+  if (e.metaKey || e.ctrlKey) return true;
+  return !!keyboard && !e.shiftKey && !e.altKey;
+}
+
+// hasKeyboard is asked before Enter is given a meaning. It answers false where
+// the query is unavailable, so an unknown device keeps the safer of the two.
+function hasKeyboard() {
+  try { return !!(window.matchMedia && window.matchMedia('(pointer: fine)').matches); }
+  catch (e) { return false; }
 }
 
 function renderStatus() {
@@ -289,16 +436,18 @@ function renderStatus() {
   if (!line || !s) return;
   line.innerHTML = '';
   const pct = Math.min(100, 100 * s.context_used / s.rotate_at_tokens);
-  const bar = el('span', 'bar'); const fill = el('i'); fill.style.width = pct + '%'; bar.append(fill);
-  const add = (label, val) => { const w = el('span'); w.append(document.createTextNode(label + ' ')); w.append(el('b', null, val)); line.append(w); };
-  add('model', s.model.split('/').pop());
+  // The bar changes colour where rotation stops being far off, because that is
+  // the point at which the number is worth reading.
+  const bar = el('span', 'bar' + (pct >= 80 ? ' hot' : '')); const fill = el('i'); fill.style.width = pct + '%'; bar.append(fill);
+  const add = (label, val) => { const w = el('span'); if (label) w.append(document.createTextNode(label + ' ')); w.append(el('b', null, val)); line.append(w); };
+  add('', s.model.split('/').pop());
   line.append(bar);
   add('', `${s.context_used.toLocaleString()} / ${s.rotate_at_tokens.toLocaleString()} tok`);
   add('cost', fmtMoney(s.cost));
   if (s.cache_hit_rate) add('cached', Math.round(s.cache_hit_rate * 100) + '%');
   const last = [...state.entries].reverse().find(e => e.usage && e.usage.tokens_per_second);
   if (last) add('', last.usage.tokens_per_second.toFixed(1) + ' tok/s');
-  if (state.streaming) line.append(el('span', null, '· generating'));
+  if (state.streaming) line.append(el('span', 'gen', 'generating'));
 }
 
 async function loadStatus() {
@@ -448,9 +597,10 @@ async function showSummary() {
   v.innerHTML = '';
   setHeader('Summary', true);
   $('foot').innerHTML = '';
-  const ta = el('textarea'); ta.style.width = '100%'; ta.style.minHeight = '300px';
+  v.append(el('p', 'note', 'The rolling summary is what a rotation carries forward. Editing it changes what the next session is told.'));
+  const ta = el('textarea'); ta.style.minHeight = '320px';
   ta.className = 'text'; ta.value = s.summary || '(no summary yet — this session has not grown past the threshold)';
-  const save = el('button', 'act primary', 'save');
+  const save = el('button', 'btn primary', 'Save summary');
   save.onclick = async () => { await patch('/sessions/' + s.id, { summary: ta.value }); location.hash = '#session/' + s.id; };
   v.append(ta, save);
 }
@@ -552,12 +702,13 @@ async function viewNew(v) {
   setHeader('New conversation', true);
   const recent = state.sessions[0] || (await api('/sessions').catch(() => []) || [])[0] || {};
   const read = await configEditor(v, recent);
-  const start = el('button', 'act primary', 'start conversation');
+  const start = el('button', 'btn primary', 'Start conversation');
   start.onclick = async () => {
     const s = await post('/sessions', read());
     location.hash = '#session/' + s.id;
   };
-  v.append(el('h2', null, ''), start);
+  const done = el('div', 'finish'); done.append(start);
+  v.append(done);
 }
 
 // ---------- files ----------
@@ -572,7 +723,7 @@ async function viewFiles(v) {
     'and a fork starts from a copy of it.'));
 
   const bar = el('div');
-  const up = el('button', 'act primary', 'upload file');
+  const up = el('button', 'btn primary', 'Upload file');
   const file = el('input'); file.type = 'file'; file.multiple = true; file.hidden = true;
   up.onclick = () => file.click();
   file.onchange = async () => {
@@ -586,7 +737,7 @@ async function viewFiles(v) {
     file.value = '';
     render();
   };
-  const exp = el('button', 'act', 'export session');
+  const exp = el('button', 'btn', 'Export session');
   exp.onclick = () => location.href = '/sessions/' + id + '/export';
   bar.append(up, file, exp);
   v.append(bar);
@@ -624,12 +775,13 @@ async function viewFork(v) {
     'A fork continues this conversation in a new session, carrying its summary and recent turns ' +
     'across. Its configuration is chosen here and fixed once the fork exists.'));
   const read = await configEditor(v, res.session);
-  const go = el('button', 'act primary', 'create fork');
+  const go = el('button', 'btn primary', 'Create fork');
   go.onclick = async () => {
     const succ = await post('/sessions/' + id + '/rotate', Object.assign({ archive: false }, read()));
     location.hash = '#session/' + succ.id;
   };
-  v.append(el('h2', null, ''), go);
+  const done = el('div', 'finish'); done.append(go);
+  v.append(done);
 }
 
 async function viewSettings(v) {
@@ -644,20 +796,21 @@ async function viewSettings(v) {
     `conversation in a new session, carrying the summary and recent turns across.`));
 
   const read = await configEditor(v, s);
-  const go = el('button', 'act primary', 'continue in a new session');
+  const go = el('button', 'btn primary', 'Continue in a new session');
   go.onclick = async () => {
     const succ = await post('/sessions/' + id + '/rotate', Object.assign({ archive: true }, read()));
     location.hash = '#session/' + succ.id;
   };
-  v.append(el('h2', null, ''), go);
+  const done = el('div', 'finish'); done.append(go);
+  v.append(done);
 
   v.append(el('h2', null, 'files'));
-  const files = el('button', 'act', 'files and export');
+  const files = el('button', 'btn', 'Files and export');
   files.onclick = () => location.hash = '#files/' + id;
   v.append(files);
 
   v.append(el('h2', null, 'danger'));
-  const d = el('button', 'act', 'delete conversation');
+  const d = el('button', 'btn danger', 'Delete conversation');
   d.onclick = async () => { if (confirm('Delete this conversation, its transcript, and its jobs?')) { await del('/sessions/' + id); location.hash = '#sessions'; } };
   v.append(d);
 }
@@ -683,26 +836,30 @@ async function viewPanels(v) {
     ['skills', 'Skills', 'What the agent knows how to do'],
     ['search', 'Search', 'Full text across every transcript'],
   ];
+  const grid = el('div', 'cards');
   for (const [hash, name, sub] of items) {
     const row = el('button', 'row-item');
     const m = el('div', 'm');
     m.append(el('div', 'n', name), el('div', 's', sub));
     row.append(m);
     row.onclick = () => location.hash = '#' + hash;
-    v.append(row);
+    grid.append(row);
   }
+  v.append(grid);
   try {
     const data = await api('/tools');
     const withPanel = data.tools.filter(t => t.has_panel);
     if (withPanel.length) v.append(el('h2', null, 'tool panels'));
+    const own = el('div', 'cards');
     for (const t of withPanel) {
       const row = el('button', 'row-item');
       const m = el('div', 'm');
       m.append(el('div', 'n', t.name), el('div', 's', t.description));
       row.append(m);
       row.onclick = () => location.hash = '#toolpanel/' + t.name;
-      v.append(row);
+      own.append(row);
     }
+    if (withPanel.length) v.append(own);
   } catch (e) {}
   v.append(el('h2', null, 'device'), notifyControl());
   // A sandbox that quietly does nothing is worse than none, so this says which.
@@ -724,12 +881,37 @@ async function viewPanels(v) {
 
 async function viewJobs(v) {
   setHeader('Jobs', true);
+  const scope = state.arg ? '&session_id=' + state.arg : '';
   const jobs = await api('/jobs' + (state.arg ? '?session_id=' + state.arg : ''));
-  if (!jobs || !jobs.length) { v.append(el('div', 'empty', 'No jobs scheduled.')); return; }
+  if (!jobs || !jobs.length) {
+    v.append(el('div', 'empty', 'No jobs scheduled. The agent schedules its own from inside a conversation.'));
+    return;
+  }
+  // A finished job is kept for its log, and a session that reminds every ten
+  // minutes leaves one per reminder. Clearing them is offered only while there
+  // are some, and says how many it will take.
+  const finished = jobs.filter(j => j.status === 'done');
+  if (finished.length) {
+    const bar = el('div', 'toolbar');
+    const clear = el('button', 'btn danger', `Delete ${finished.length} finished job${finished.length > 1 ? 's' : ''}`);
+    clear.title = 'Deletes finished jobs and their run logs. Scheduled jobs are untouched.';
+    clear.onclick = async () => {
+      if (!confirm(`Delete ${finished.length} finished job${finished.length > 1 ? 's' : ''} and their run logs? Scheduled jobs are untouched.`)) return;
+      try { await del('/jobs?status=done' + scope); }
+      catch (e) { toast({ title: 'Nothing deleted', body: String(e.message) }); }
+      render();
+    };
+    bar.append(clear);
+    v.append(bar);
+  }
+  const grid = el('div', 'cards');
+  v.append(grid);
   for (const j of jobs) {
     const row = el('div', 'row-item');
     const m = el('div', 'm');
-    m.append(el('div', 'n', j.prompt));
+    const name = el('div', 'n', j.prompt);
+    name.title = j.prompt;
+    m.append(name);
     m.append(el('span', 'tag ' + (j.status === 'done' ? '' : 'on'), j.status || 'scheduled'));
     // The job's own settings, as set. Nothing is derived and no category is
     // inferred — what you see is what the job is.
@@ -748,7 +930,7 @@ async function viewJobs(v) {
     // The log is what makes a job checkable without reading the conversation it
     // fires into, so it opens in place rather than on a screen of its own.
     const log = el('div', 'joblog'); log.hidden = true;
-    const toggle = el('button', 'act', 'log');
+    const toggle = el('button', 'btn', 'Log');
     let loaded = false;
     toggle.onclick = async () => {
       log.hidden = !log.hidden;
@@ -759,14 +941,14 @@ async function viewJobs(v) {
       catch (e) { log.textContent = String(e.message); }
     };
     const acts = el('div');
-    const open = el('button', 'act', 'open');
+    const open = el('button', 'btn', 'Open conversation');
     open.onclick = () => location.hash = '#session/' + j.session_id;
-    const rm = el('button', 'act', 'delete');
+    const rm = el('button', 'btn danger', 'Delete');
     rm.onclick = async () => { await del('/jobs/' + j.id); render(); };
     acts.append(toggle, open, rm);
     m.append(acts, log);
     row.append(m);
-    v.append(row);
+    grid.append(row);
   }
 }
 
@@ -799,13 +981,13 @@ async function viewMemory(v) {
     inp.onchange = async () => { await patch('/memory/' + m.id, { text: inp.value }); };
     wrap.append(inp);
     wrap.append(el('div', 's', `from ${m.source_session ? m.source_session.slice(-6) : 'the interface'} · ${ago(m.created_at)}`));
-    const rm = el('button', 'act', 'delete');
+    const rm = el('button', 'btn danger', 'Delete');
     rm.onclick = async () => { await del('/memory/' + m.id); render(); };
     wrap.append(rm);
     row.append(wrap);
     v.append(row);
   }
-  const add = el('input', 'text'); add.placeholder = 'remember one fact…';
+  const add = el('input', 'text'); add.placeholder = 'Remember one fact…';
   add.onchange = async () => {
     try { await post('/memory', { text: add.value }); render(); }
     catch (e) { toast({ title: 'Memory is full', body: String(e.message) }); }
@@ -816,16 +998,18 @@ async function viewMemory(v) {
 async function viewTools(v) {
   setHeader('Tools', true);
   const data = await api('/tools');
-  const rl = el('button', 'act primary', 'reload from disk');
+  const rl = el('button', 'btn primary', 'Reload from disk');
   rl.onclick = async () => { const r = await post('/tools/reload', {}); toast({ title: 'Reloaded', body: (r.loaded || []).join(', ') }); render(); };
-  v.append(rl);
+  const bar = el('div', 'toolbar'); bar.append(rl);
+  v.append(bar);
+  const grid = el('div', 'cards');
   for (const f of (data.failures || [])) {
     const row = el('div', 'row-item');
     const m = el('div', 'm');
     m.append(el('div', 'n', f.dir), el('div', 's', f.reason));
     m.append(el('span', 'tag bad', 'not loaded'));
     row.append(m);
-    v.append(row);
+    grid.append(row);
   }
   for (const t of data.tools) {
     const row = el('div', 'row-item');
@@ -837,23 +1021,27 @@ async function viewTools(v) {
     if (t.has_panel) m.append(el('span', 'tag on', 'panel'));
     const pre = el('pre', null, JSON.stringify(t.parameters, null, 2));
     pre.hidden = true; pre.style.fontSize = '11px'; pre.style.whiteSpace = 'pre-wrap';
-    const sh = el('button', 'act', 'manifest');
+    const sh = el('button', 'btn', 'Manifest');
     sh.onclick = () => pre.hidden = !pre.hidden;
     m.append(sh, pre);
     row.append(m);
-    v.append(row);
+    grid.append(row);
   }
+  v.append(grid);
 }
 
 async function viewSkills(v) {
   setHeader('Skills', true);
   const data = await api('/skills');
+  const grid = el('div', 'cards');
+  v.append(grid);
   for (const f of (data.failures || [])) {
     const row = el('div', 'row-item');
     const m = el('div', 'm');
     m.append(el('div', 'n', f.dir), el('div', 's', f.reason), el('span', 'tag bad', 'skipped'));
-    row.append(m); v.append(row);
+    row.append(m); grid.append(row);
   }
+  if (!data.skills.length && !(data.failures || []).length) v.append(el('div', 'empty', 'No skills on disk.'));
   for (const s of data.skills) {
     const row = el('button', 'row-item');
     const m = el('div', 'm');
@@ -867,13 +1055,14 @@ async function viewSkills(v) {
       pre.style.whiteSpace = 'pre-wrap'; pre.style.fontSize = '13px';
       v2.append(pre);
     };
-    v.append(row);
+    grid.append(row);
   }
 }
 
 async function viewSearch(v) {
   setHeader('Search', true);
-  const inp = el('input', 'text'); inp.placeholder = 'search every transcript';
+  const inp = el('input', 'text'); inp.type = 'search';
+  inp.placeholder = 'Search every transcript…';
   const out = el('div');
   inp.onchange = async () => {
     out.innerHTML = '';
@@ -882,6 +1071,8 @@ async function viewSearch(v) {
     try { hits = await api('/search?q=' + encodeURIComponent(inp.value)) || []; }
     catch (e) { out.append(el('div', 'empty', String(e.message))); return; }
     if (!hits.length) { out.append(el('div', 'empty', 'No matches.')); return; }
+    const grid = el('div', 'cards');
+    out.append(grid);
     for (const h of hits) {
       const row = el('button', 'row-item');
       const m = el('div', 'm');
@@ -889,7 +1080,7 @@ async function viewSearch(v) {
       m.append(el('div', 's', h.snippet));
       row.append(m);
       row.onclick = () => location.hash = '#session/' + h.session_id;
-      out.append(row);
+      grid.append(row);
     }
   };
   v.append(inp, out);
@@ -923,7 +1114,7 @@ function notifyControl() {
   }
   line('tag warn', 'notifications · off');
   box.append(el('div', 's', 'Not enabled on this device. Until it is, a new message only changes the unread count.'));
-  const b = el('button', 'act primary', 'enable notifications');
+  const b = el('button', 'btn primary', 'Enable notifications');
   b.onclick = async () => {
     try { await Notification.requestPermission(); } catch (e) {}
     render();
@@ -940,11 +1131,10 @@ async function boot() {
   try {
     state.status = await api('/status');
     const b = state.status.breaker;
-    $('breaker').className = b && b.open ? 'breaker' : '';
     $('breaker').textContent = b && b.open ? 'Scheduler paused: ' + b.reason : '';
   } catch (e) {
-    $('breaker').className = 'breaker';
     $('breaker').textContent = 'Cannot reach the gateway. Are you on the tailnet?';
   }
+  renderSideFoot();
 }
 boot();

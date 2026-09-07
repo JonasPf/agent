@@ -20,9 +20,45 @@
 <div class="wrap">
 
 <h1>Web UI</h1>
-<p class="lede">A phone-first interface. The laptop gets the same pages, wider.</p>
+<p class="lede">One interface at every width. The phone keeps the conversation list behind a drawer;
+the laptop pins the same list open beside the same pane.</p>
 
 <p>See the <a href="mock.html">rendered mock</a>.</p>
+
+<h2>Shell</h2>
+
+<p>Every screen is the same three parts: a rail of conversations and panels, a header naming where you
+are and what can be done here, and one pane between them. The width decides the shape of the rail and
+nothing else &mdash; there is no screen that exists at one size and not at another, and no list drawn
+twice. Below 900&nbsp;pixels the rail is a drawer over the pane, opened from the header and closed by
+going anywhere; at or above it the rail is a column of the layout and the pane loses its back button,
+because the rail is the way back.</p>
+
+<p>A view's own actions &mdash; a conversation's jobs, files, summary, fork, controls &mdash; belong to
+the header. They are one list rendered in two shapes: laid along the header where there is room for
+them, folded behind a single button where there is not. Which is on screen is the stylesheet's
+decision, so the two can never offer different things.</p>
+
+<p>A transcript is held to a reading column whatever the screen; a list of jobs, tools, files, or
+skills takes the width the screen actually has, as a grid of cards rather than a strip down the
+middle.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The conversation list is a rail beside the pane where there is room for one, and a drawer behind a single button where there is not &mdash; the same list either way, never two.</li>
+<li>Opening the drawer, dismissing it, and going anywhere from it each leave exactly one thing on screen.</li>
+<li>With the rail pinned open the pane offers no back button and the drawer no handle.</li>
+<li>The rail names every conversation, marks the one being read, carries its unread count, and separates archived conversations from active ones.</li>
+<li>The rail states the credit remaining and whether tools are sandboxed, without opening a screen to ask.</li>
+<li>A view's actions are one list, whether laid along the header or folded behind one button.</li>
+<li>A transcript is held to a reading column; a list of jobs, tools, files, or skills takes the full width available.</li>
+<li>Nothing in the interface is laid out at a fixed page width.</li>
+<li>The interface follows the system's colour scheme, and is legible in both.</li>
+<li>A request for reduced motion is honoured.</li>
+<li>A control that is hidden is not on screen, whatever else the stylesheet says of it.</li>
+</ul>
+</div>
 
 <h2>Installation</h2>
 
@@ -50,6 +86,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <tr><td>Events</td><td>Job checks, rotations, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
 <tr><td>Status line</td><td>Model, context used against the window, tokens per second while streaming, session cost.</td></tr>
+<tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send.</td></tr>
 </table>
 
 <div class="ac">
@@ -76,6 +113,8 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>A turn still streaming renders as markdown while it arrives, including a fenced block whose closing fence has not been sent yet.</li>
 <li>A message the operator typed, and a wake carrying a job's stored prompt, are shown verbatim and are never rendered.</li>
 <li>Markup in model output is shown as text and never becomes markup: a link renders only when it points at the web, an address, or this app, and an image renders as a link rather than a fetch.</li>
+<li>A keyboard sends the composer with Enter and breaks the line with shift-Enter; a touch screen breaks the line with Enter and sends from the button. The platform's own combination sends on either.</li>
+<li>A key that ends a composition &mdash; an accent, a kana, a candidate &mdash; sends nothing.</li>
 </ul>
 </div>
 
@@ -206,6 +245,7 @@ panel appear alongside them.</p>
 <ul>
 <li>Every job, memory item, tool, and skill is viewable and editable without the agent.</li>
 <li>A job's run log is readable from the job, without opening the conversation it fires into.</li>
+<li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
 </ul>
