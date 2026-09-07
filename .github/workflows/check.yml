@@ -51,10 +51,16 @@ jobs:
       - name: Install Task
         run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-      # web_fetch and web_search render pages in a real browser, so the run says
-      # which one it found before the tests need it.
+      # The browser tools drive Chromium's headless shell, not a full browser
+      # bundle — a bundle does not start under the sandbox, which is what the
+      # runner was failing on. Locally the shell comes from a Playwright cache
+      # that is already there; here it has to be fetched, into the same cache
+      # the tools look in.
+      - name: Install the headless browser
+        run: npx --yes playwright install chromium-headless-shell
+
       - name: Report the browser
-        run: which google-chrome google-chrome-stable chromium chromium-browser || echo "no browser found"
+        run: ls ~/.cache/ms-playwright 2>/dev/null || echo "no playwright cache"
 
       - name: task check
         run: task check
