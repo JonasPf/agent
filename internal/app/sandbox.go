@@ -144,11 +144,14 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string 
 				argv = append(argv, "--ro-bind", p, p)
 			}
 		}
+		// The tmpfs comes before the binds beneath it. bwrap applies arguments in
+		// order, so mounting it last would mask a workspace that happens to live
+		// under /tmp — which is where Go puts a temporary directory on Linux.
 		argv = append(argv,
 			"--dev", "/dev", "--proc", "/proc",
+			"--tmpfs", "/tmp",
 			"--ro-bind", tools, tools,
-			"--bind", ws, ws,
-			"--tmpfs", "/tmp")
+			"--bind", ws, ws)
 		for _, f := range []string{s.dbPath, s.dbPath + "-wal", s.dbPath + "-shm"} {
 			if _, err := os.Stat(f); err == nil {
 				argv = append(argv, "--bind", f, f)

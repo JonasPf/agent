@@ -84,6 +84,33 @@ func TestBubblewrapBindsOnlyWhatIsAllowed(t *testing.T) {
 	}
 }
 
+// bwrap applies its arguments in order, and a tmpfs over /tmp will mask anything
+// already mounted beneath it. A workspace under /tmp is ordinary — it is where
+// Go's own temporary directories live on Linux, so it is what the test suite
+// itself uses — and masking it leaves a tool unable to reach the one directory
+// it is allowed to write.
+func TestATmpfsOverTmpDoesNotMaskAWorkspaceBeneathIt(t *testing.T) {
+	s := &Sandbox{Mechanism: "bubblewrap", workspaceRoot: "/tmp/w", dataDir: "/tmp/d",
+		toolsDir: "/t", dbPath: "/tmp/d/agent.db"}
+	argv := s.Wrap("/tools/bash/run", "/tmp/w/S1", "/t", nil)
+
+	tmpfs, bind := -1, -1
+	for i, a := range argv {
+		if a == "--tmpfs" && i+1 < len(argv) && argv[i+1] == "/tmp" {
+			tmpfs = i
+		}
+		if a == "--bind" && i+1 < len(argv) && argv[i+1] == "/tmp/w/S1" {
+			bind = i
+		}
+	}
+	if tmpfs < 0 || bind < 0 {
+		t.Fatalf("argv = %v, want both a tmpfs over /tmp and a bind of the workspace", argv)
+	}
+	if tmpfs > bind {
+		t.Errorf("the tmpfs over /tmp is applied after the workspace bind, which masks it: %v", argv)
+	}
+}
+
 // The Seatbelt profile is an allow-list, and the property that makes it one is
 // that no rule denies: a path nobody thought of is refused by the default, not
 // permitted by an omission from a deny-list.
