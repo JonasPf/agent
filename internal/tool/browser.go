@@ -94,6 +94,15 @@ func PickBrowser(env string, candidates []string, exists func(string) bool) (str
 }
 
 // Browser is PickBrowser over the real environment.
+// lastLines is the tail of a stream, for an error message that has to fit in a
+// tool result: what a program said just before it stopped is the useful part.
+func lastLines(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return "…" + s[len(s)-n:]
+}
+
 func Browser() (string, error) {
 	return PickBrowser(os.Getenv("AGENT_BROWSER"),
 		append(PlaywrightBrowsers(), browsers...), Exists)
@@ -120,10 +129,21 @@ func Render(url string, seconds int) string {
 	if err := os.MkdirAll(profile, 0o755); err != nil {
 		Failf("could not make a browser profile directory: %v", err)
 	}
+	// Two flags that only matter inside the sandbox, which is where this always
+	// runs. A browser puts its shared memory in /dev/shm, and the sandbox gives
+	// a minimal /dev with no shm in it — binding the host's would be a writable
+	// channel between sessions, so the browser is told to keep that memory in
+	// its own directory instead. Chrome's own sandbox is off for the same reason
+	// bubblewrap is on: one confinement, enforced by the agent.
 	cmd := exec.Command(browser, "--headless", "--disable-gpu", "--no-sandbox",
+		"--disable-dev-shm-usage",
 		"--user-data-dir="+profile,
 		fmt.Sprintf("--virtual-time-budget=%d", seconds*1000),
 		"--dump-dom", url)
+	// HOME is the agent's, and the sandbox does not bind it: a browser sent
+	// there is being pointed at a directory that does not exist in its own
+	// namespace. Its profile directory is somewhere it can actually write.
+	cmd.Env = append(os.Environ(), "HOME="+profile)
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	done := make(chan error, 1)
@@ -135,7 +155,10 @@ func Render(url string, seconds int) string {
 	case <-done:
 	case <-time.After(time.Duration(seconds+20) * time.Second):
 		_ = cmd.Process.Kill()
-		Failf("%s did not finish loading within %ds", url, seconds+20)
+		// Whatever the browser said before it hung is the only evidence there
+		// is; a bare timeout leaves nothing to act on.
+		Failf("%s did not finish loading within %ds: %s", url, seconds+20,
+			strings.TrimSpace(lastLines(errb.String(), 400)))
 	}
 	page := out.String()
 	if strings.TrimSpace(page) == "" {
