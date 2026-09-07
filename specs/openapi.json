@@ -460,6 +460,69 @@
             "description": "Rejected: the schedule, the prompt, or after_acting is not valid."
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Delete every finished job, with its run log. The only bulk delete: status must be `done`, so nothing still scheduled can be removed this way.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": true,
+            "description": "The state to delete. Only `done` is accepted.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "done"
+              ]
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "description": "Clear only this session's finished jobs.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many jobs were deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The status was missing or was not `done`; nothing was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/jobs/{id}": {

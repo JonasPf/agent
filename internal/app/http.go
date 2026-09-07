@@ -42,6 +42,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /jobs/{id}/runs", a.hJobRuns)
 	mux.HandleFunc("PATCH /jobs/{id}", a.hPatchJob)
 	mux.HandleFunc("DELETE /jobs/{id}", a.hDeleteJob)
+	mux.HandleFunc("DELETE /jobs", a.hClearJobs)
 
 	mux.HandleFunc("GET /memory", a.hMemory)
 	mux.HandleFunc("POST /memory", a.hAddMemory)
@@ -475,6 +476,27 @@ func (a *App) hDeleteJob(w http.ResponseWriter, r *http.Request) {
 	}
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
 	w.WriteHeader(204)
+}
+
+// hClearJobs deletes finished jobs in one action, so a session that has left a
+// row behind every ten minutes can be read again. The state is named by the
+// caller and only a finished job is ever deleted: a bare DELETE of the
+// collection would otherwise be one keystroke from removing every schedule the
+// agent holds, and it is refused instead.
+func (a *App) hClearJobs(w http.ResponseWriter, r *http.Request) {
+	if status := r.URL.Query().Get("status"); status != jobDone {
+		fail(w, 400, "status must be %q: nothing else is deleted in bulk", jobDone)
+		return
+	}
+	n, err := a.store.DeleteJobsByStatus(jobDone, r.URL.Query().Get("session_id"))
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	if n > 0 {
+		a.hub.Broadcast(wsEvent{Kind: "jobs"})
+	}
+	writeJSON(w, 200, map[string]int{"deleted": n})
 }
 
 func (a *App) hMemory(w http.ResponseWriter, r *http.Request) {

@@ -382,6 +382,29 @@ func (s *Store) DeleteJob(id string) error {
 	return err
 }
 
+// DeleteJobsByStatus removes every job in one state, optionally within one
+// session, and the runs that belong to them. It is the only delete that acts on
+// more than one job at a time, which is why the state is a parameter and not a
+// default: nothing here can reach a job that still has work in it unless the
+// caller names the state it means.
+func (s *Store) DeleteJobsByStatus(status, sessionID string) (int, error) {
+	where := `status=?`
+	args := []any{status}
+	if sessionID != "" {
+		where += ` and session_id=?`
+		args = append(args, sessionID)
+	}
+	if _, err := s.db.Exec(`delete from job_runs where job_id in (select id from jobs where `+where+`)`, args...); err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`delete from jobs where `+where, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 func (s *Store) MoveJobs(from, to string) error {
 	_, err := s.db.Exec(`update jobs set session_id=? where session_id=?`, to, from)
 	return err

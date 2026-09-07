@@ -79,7 +79,7 @@ window.OPENAPI_SPEC = {
         "tags": [
           "sessions"
         ],
-        "summary": "Create a session.",
+        "summary": "Create a session with its configuration.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -91,11 +91,25 @@ window.OPENAPI_SPEC = {
                   },
                   "model": {
                     "type": "string",
-                    "description": "Accepted only before the session first turn."
+                    "description": "Omitted, it is inherited from the seed session, then from the most recently used one, then from the configured default."
                   },
-                  "continued_from": {
+                  "enabled_tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Tool names defined in this session's prompt. Three states: omit it to inherit, send null for every one, send a list for exactly those."
+                  },
+                  "enabled_skills": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Skill names indexed in this session's prompt. Three states: omit it to inherit, send null for every one, send a list for exactly those."
+                  },
+                  "from": {
                     "type": "string",
-                    "description": "Seed the new session with that session's summary. Used for fork and resume; rotation does the same automatically."
+                    "description": "Seed the new session's configuration from that session."
                   }
                 }
               }
@@ -113,7 +127,8 @@ window.OPENAPI_SPEC = {
               }
             }
           }
-        }
+        },
+        "description": "A session's model, tools, and skills are fixed once it exists. They are chosen here, or inherited, and afterwards change only by rotating."
       }
     },
     "/sessions/{id}": {
@@ -148,7 +163,7 @@ window.OPENAPI_SPEC = {
         "tags": [
           "sessions"
         ],
-        "summary": "Update title, status, or the summary; also model, tools, and skills before the first turn.",
+        "summary": "Update title, status, or the rolling summary.",
         "requestBody": {
           "required": true,
           "content": {
@@ -159,29 +174,12 @@ window.OPENAPI_SPEC = {
                   "title": {
                     "type": "string"
                   },
-                  "model": {
-                    "type": "string"
-                  },
                   "status": {
                     "type": "string",
                     "enum": [
                       "active",
                       "archived"
                     ]
-                  },
-                  "enabled_tools": {
-                    "type": "array",
-                    "description": "Accepted only before the session first turn. Null means all.",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "enabled_skills": {
-                    "type": "array",
-                    "description": "Accepted only before the session first turn. Null means all.",
-                    "items": {
-                      "type": "string"
-                    }
                   },
                   "summary": {
                     "type": "string",
@@ -204,7 +202,7 @@ window.OPENAPI_SPEC = {
             }
           },
           "409": {
-            "description": "Refused: the session has taken a turn, so its model, tools, and skills are fixed. Rotate to continue under a new configuration.",
+            "description": "Refused: the body carried model, enabled_tools, or enabled_skills. A session's configuration is fixed for its life; POST /sessions/{id}/rotate to continue the conversation under a new one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -219,7 +217,7 @@ window.OPENAPI_SPEC = {
             }
           }
         },
-        "description": "Model, tools, and skills are one configuration, and it settles at the session's first turn: the prompt entry is written then, from exactly that configuration. Before the first turn this endpoint edits it; afterwards it is refused with 409 and POST /sessions/{id}/rotate continues the conversation in a new session under the new configuration."
+        "description": "This endpoint changes nothing that shapes the system prompt, so it can never invalidate a cached prefix. Model, tools, and skills are not accepted here at all: they are fixed for the life of a session and move only through a rotation."
       },
       "delete": {
         "tags": [
@@ -342,200 +340,6 @@ window.OPENAPI_SPEC = {
         }
       }
     },
-    "/sessions/{id}/files": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "List the files in the session's working directory.",
-        "responses": {
-          "200": {
-            "description": "Files, newest first.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SessionFile"
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "Upload a file into the session's working directory.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Stored.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SessionFile"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "File exceeds 100 MB."
-          }
-        },
-        "description": "Maximum 100 MB per file. The file lands in the session's own working directory, where its tools run, and is deleted with the session. An upload writes no transcript entry."
-      }
-    },
-    "/sessions/{id}/files/{path}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        },
-        {
-          "name": "path",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string"
-          },
-          "description": "Path relative to the session's working directory. A path that would leave it is refused."
-        }
-      ],
-      "get": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "Download one file.",
-        "responses": {
-          "200": {
-            "description": "The file.",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No such file."
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "Delete one file.",
-        "responses": {
-          "204": {
-            "description": "Deleted."
-          },
-          "404": {
-            "description": "No such file."
-          }
-        }
-      }
-    },
-    "/sessions/{id}/export": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "Export the session as a zip.",
-        "responses": {
-          "200": {
-            "description": "An archive holding meta.json, transcript.jsonl, jobs.json, job_runs.json, and the working directory under files/.",
-            "content": {
-              "application/zip": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          }
-        },
-        "description": "Memory is not included: it is durable across every conversation rather than owned by one."
-      }
-    },
-    "/sessions/import": {
-      "post": {
-        "tags": [
-          "sessions"
-        ],
-        "summary": "Restore a session from an archive.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary"
-                  }
-                }
-              }
-            },
-            "application/zip": {
-              "schema": {
-                "type": "string",
-                "format": "binary"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Restored.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Session"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Not a session archive."
-          },
-          "409": {
-            "description": "A session with that identifier is already here."
-          }
-        },
-        "description": "The session keeps the identifier the archive carries, so a restored conversation is the one it was. An identifier already present is a conflict, not a merge."
-      }
-    },
     "/search": {
       "get": {
         "tags": [
@@ -654,6 +458,69 @@ window.OPENAPI_SPEC = {
           },
           "422": {
             "description": "Rejected: the schedule, the prompt, or after_acting is not valid."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Delete every finished job, with its run log. The only bulk delete: status must be `done`, so nothing still scheduled can be removed this way.",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": true,
+            "description": "The state to delete. Only `done` is accepted.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "done"
+              ]
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "description": "Clear only this session's finished jobs.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many jobs were deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "deleted"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The status was missing or was not `done`; nothing was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -979,23 +846,66 @@ window.OPENAPI_SPEC = {
         }
       }
     },
+    "/uploads": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Upload a file into the workspace.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "content_type": {
+                      "type": "string"
+                    },
+                    "bytes": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File exceeds 100 MB."
+          }
+        },
+        "description": "Maximum 100 MB per file. Uploads belong to the workspace and are deleted with the session that referenced them."
+      }
+    },
     "/models": {
       "get": {
         "tags": [
           "system"
         ],
         "summary": "Models that support tool calling, with context window and price. Cached from OpenRouter, refreshed daily.",
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "required": false,
-            "description": "Free-text search. Split on whitespace; every term must appear, case-insensitively, in the model id or name. Omitted or blank returns the whole catalogue. Catalogue order is preserved.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "Models.",
@@ -1078,6 +988,69 @@ window.OPENAPI_SPEC = {
             }
           }
         }
+      }
+    },
+    "/sessions/{id}/rotate": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Continue this conversation in a new session.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "archive": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Archive the predecessor and move its jobs to the successor. False leaves both live, which is a fork."
+                  },
+                  "model": {
+                    "type": "string",
+                    "description": "Omitted, the predecessor's is kept."
+                  },
+                  "enabled_tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Tool names for the successor. Three states: omit it to keep the predecessor's, send null for every one, send a list for exactly those."
+                  },
+                  "enabled_skills": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Skill names for the successor. Three states: omit it to keep the predecessor's, send null for every one, send a list for exactly those."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The successor session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "description": "Rotation, fork, resume, and reconfiguration are one operation. The successor is seeded with the predecessor's summary and the most recent complete turns that fit the carry-over budget, and starts under the configuration given here, defaulting to the predecessor's. Both entries name what changed."
       }
     },
     "/jobs/{id}/runs": {
@@ -1164,22 +1137,6 @@ window.OPENAPI_SPEC = {
       }
     },
     "schemas": {
-      "SessionFile": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string",
-            "description": "Path relative to the session's working directory."
-          },
-          "bytes": {
-            "type": "integer"
-          },
-          "modified_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
       "Session": {
         "type": "object",
         "properties": {
@@ -1221,10 +1178,6 @@ window.OPENAPI_SPEC = {
           },
           "job_count": {
             "type": "integer"
-          },
-          "disk_bytes": {
-            "type": "integer",
-            "description": "What the session occupies on disk: its transcript and metadata plus its working directory."
           },
           "entry_count": {
             "type": "integer"
@@ -1288,8 +1241,7 @@ window.OPENAPI_SPEC = {
             "type": "string",
             "enum": [
               "message",
-              "event",
-              "prompt"
+              "event"
             ]
           },
           "role": {
@@ -1330,18 +1282,22 @@ window.OPENAPI_SPEC = {
               "fired",
               "not_fired"
             ],
-            "description": "Tick outcome. Consecutive job_check entries sharing job_id and status collapse in the projection."
+            "description": "Tick outcome. Consecutive entries sharing job_id and status collapse in the projection. For a check tick this reflects whether the check matched; for a model tick, whether notify was called."
           },
           "event_kind": {
             "type": "string",
             "nullable": true,
-            "description": "Set only when type is event. An event records something no other entry and no other screen records.",
             "enum": [
+              "prompt",
+              "availability_change",
+              "tool_added",
               "job_check",
-              "job_error",
-              "error",
+              "summary",
               "rotation",
-              "carried_over"
+              "carried_over",
+              "memory_write",
+              "model_change",
+              "breaker"
             ]
           },
           "usage": {
@@ -1414,69 +1370,29 @@ window.OPENAPI_SPEC = {
           },
           "schedule": {
             "type": "string",
-            "description": "When the job wakes: an interval (30m), a cron expression (0 9 * * *), or a single RFC 3339 instant. An instant wakes once."
+            "description": "An interval (2m), a cron expression (0 9 * * *), or an RFC 3339 instant."
           },
           "check": {
             "type": "string",
             "nullable": true,
-            "description": "A shell command run before the prompt. Exit status zero means act on this wake; anything else means skip it. Omit to act every time."
+            "description": "A shell command. Exit status zero means the condition is met. Omit for a job whose condition requires judgement, in which case the model runs every tick and signals by calling notify."
           },
           "prompt": {
             "type": "string",
-            "description": "What the agent is asked when the job acts. The whole turn it produces is written to the transcript, attributed to the job."
+            "description": "What the agent is asked when the job runs. "
           },
-          "after_acting": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Defaults to 24 hours after creation."
+          },
+          "on_condition_met": {
             "type": "string",
             "enum": [
-              "stop",
+              "delete",
               "continue"
             ],
-            "default": "continue",
-            "description": "What becomes of the job once it has acted. Named for that moment rather than for the schedule: a field called repeat was read as a question about cadence."
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "scheduled",
-              "done"
-            ],
-            "description": "scheduled until the job has nothing left to do, then done. A done job is kept, with its log."
-          },
-          "estimate": {
-            "type": "object",
-            "description": "What this job will cost. Computed on the way out, never stored: the conversation it prices grows with every turn.",
-            "properties": {
-              "wakes_per_day": {
-                "type": "number",
-                "description": "Zero for a schedule that fires once."
-              },
-              "tokens_per_turn": {
-                "type": "integer",
-                "description": "What one wake that acts re-sends: the system prompt plus the conversation. Prompt side only."
-              },
-              "tokens_per_day": {
-                "type": "integer",
-                "description": "Zero for a gated job and for one that wakes once."
-              },
-              "cost_per_day": {
-                "type": "number"
-              },
-              "cost_per_month": {
-                "type": "number"
-              },
-              "priced": {
-                "type": "boolean",
-                "description": "False when the model's price is unknown. The token figures still hold."
-              },
-              "gated": {
-                "type": "boolean",
-                "description": "A check decides each wake, so wakes cost nothing until it passes."
-              },
-              "note": {
-                "type": "string",
-                "description": "What the estimate is based on."
-              }
-            }
+            "default": "delete"
           }
         }
       },
@@ -1488,25 +1404,29 @@ window.OPENAPI_SPEC = {
           },
           "schedule": {
             "type": "string",
-            "description": "When the job wakes: an interval (30m), a cron expression (0 9 * * *), or a single RFC 3339 instant. An instant wakes once."
+            "description": "An interval (2m), a cron expression (0 9 * * *), or an RFC 3339 instant."
           },
           "check": {
             "type": "string",
             "nullable": true,
-            "description": "A shell command run before the prompt. Exit status zero means act on this wake; anything else means skip it. Omit to act every time."
+            "description": "A shell command. Exit status zero means the condition is met. Omit for a job whose condition requires judgement, in which case the model runs every tick and signals by calling notify."
           },
           "prompt": {
             "type": "string",
-            "description": "What the agent is asked when the job acts. The whole turn it produces is written to the transcript, attributed to the job."
+            "description": "What the agent is asked when the job runs. "
           },
-          "after_acting": {
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Defaults to 24 hours after creation."
+          },
+          "on_condition_met": {
             "type": "string",
             "enum": [
-              "stop",
+              "delete",
               "continue"
             ],
-            "default": "continue",
-            "description": "What becomes of the job once it has acted. Named for that moment rather than for the schedule: a field called repeat was read as a question about cadence."
+            "default": "delete"
           },
           "id": {
             "type": "string"
@@ -1529,50 +1449,6 @@ window.OPENAPI_SPEC = {
           "created_at": {
             "type": "string",
             "format": "date-time"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "scheduled",
-              "done"
-            ],
-            "description": "scheduled until the job has nothing left to do, then done. A done job is kept, with its log."
-          },
-          "estimate": {
-            "type": "object",
-            "description": "What this job will cost. Computed on the way out, never stored: the conversation it prices grows with every turn.",
-            "properties": {
-              "wakes_per_day": {
-                "type": "number",
-                "description": "Zero for a schedule that fires once."
-              },
-              "tokens_per_turn": {
-                "type": "integer",
-                "description": "What one wake that acts re-sends: the system prompt plus the conversation. Prompt side only."
-              },
-              "tokens_per_day": {
-                "type": "integer",
-                "description": "Zero for a gated job and for one that wakes once."
-              },
-              "cost_per_day": {
-                "type": "number"
-              },
-              "cost_per_month": {
-                "type": "number"
-              },
-              "priced": {
-                "type": "boolean",
-                "description": "False when the model's price is unknown. The token figures still hold."
-              },
-              "gated": {
-                "type": "boolean",
-                "description": "A check decides each wake, so wakes cost nothing until it passes."
-              },
-              "note": {
-                "type": "string",
-                "description": "What the estimate is based on."
-              }
-            }
           }
         }
       },
@@ -1686,5 +1562,4 @@ window.OPENAPI_SPEC = {
       }
     }
   }
-}
-;
+};

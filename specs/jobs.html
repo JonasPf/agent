@@ -248,6 +248,25 @@ stateDiagram-v2
 with its log, so "did that reminder actually fire?" is answered where the job is, not by reading the
 conversation it fired into.</p>
 
+<p>Kept long enough, the done ones bury the scheduled ones: a session that reminds every ten minutes
+leaves a row behind every ten minutes. So the operator can clear the finished jobs of a list in one
+action, taking their logs with them. It reaches nothing else. The state to delete is named by the
+caller rather than assumed, and only <code>done</code> is accepted, so nothing &mdash; a mistyped URL
+included &mdash; is one keystroke away from deleting every schedule the agent holds. Clearing is still
+only ever the operator's: the agent has no bulk delete.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every finished job in a list is deleted in one action, and its run log goes with it.</li>
+<li>A job that is still scheduled is never deleted by that action.</li>
+<li>Clearing from one conversation's jobs leaves every other conversation's alone.</li>
+<li>A bulk delete that does not name <code>done</code> as the state it deletes is refused, and deletes nothing.</li>
+<li>Clearing when nothing is finished succeeds and deletes nothing.</li>
+<li>The interface offers the clear only while there are finished jobs, says how many it will delete, and asks before deleting them.</li>
+</ul>
+</div>
+
 <h2>The run log</h2>
 
 <p>Every wake a job has had is recorded on the job: when it was due, when it ran, what came of it, and
