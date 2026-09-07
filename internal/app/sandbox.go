@@ -136,7 +136,11 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string 
 			"-f", s.profilePath}
 		return append(argv, cmd...)
 	case "bubblewrap":
-		argv := []string{"bwrap"}
+		// The tmpfs comes first, before every bind. bwrap applies its arguments in
+		// order, so a tmpfs mounted later masks whatever is already beneath it —
+		// and /tmp is where Linux puts a temporary directory, so a workspace or a
+		// named read path can legitimately live there.
+		argv := []string{"bwrap", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"}
 		// Only the runtime is bound, so the home directory and the repository
 		// the agent runs from are not in the mount namespace at all.
 		for _, p := range append(append([]string{}, linuxReads...), s.ReadPaths...) {
@@ -145,10 +149,8 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string 
 			}
 		}
 		argv = append(argv,
-			"--dev", "/dev", "--proc", "/proc",
 			"--ro-bind", tools, tools,
-			"--bind", ws, ws,
-			"--tmpfs", "/tmp")
+			"--bind", ws, ws)
 		for _, f := range []string{s.dbPath, s.dbPath + "-wal", s.dbPath + "-shm"} {
 			if _, err := os.Stat(f); err == nil {
 				argv = append(argv, "--bind", f, f)
