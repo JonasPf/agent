@@ -77,6 +77,7 @@ means rebuilding or restarting the agent, which is the property
   "description": "Query deployment status and history.",
   "db_prefix": "deploys_",
   "timeout_seconds": 30,
+  "env": ["DEPLOY_TOKEN"],
   "parameters": {
     "type": "object",
     "properties": {
@@ -92,6 +93,7 @@ means rebuilding or restarting the agent, which is the property
 <ul>
 <li><code>description</code> is a single sentence.</li>
 <li><code>db_prefix</code> is unique across tools and every table the tool creates begins with it.</li>
+<li><code>env</code> is optional and names the environment variables this tool receives beyond the ones every tool is promised. It is the only way a variable of the agent's own environment &mdash; a credential included &mdash; reaches a tool.</li>
 <li><code>parameters</code> is a valid JSON Schema object and is exposed verbatim to the model.</li>
 <li>A tool directory without <code>eval.json</code> is reported by the test run, so a capability cannot be added without evidence that a model can use it.</li>
 <li>A manifest missing a required field prevents that tool from loading and does not affect other tools.</li>
@@ -107,6 +109,13 @@ result is JSON on standard output. The environment carries what a tool needs to 
 system: the database path, the tool's table prefix, the API base URL, and the session and job the call
 belongs to.</p>
 
+<p>It carries nothing else. A subprocess used to inherit the agent's whole environment, which handed
+the model API key to every tool including the one that runs shell commands the model wrote. The
+environment is now built from an allow-list &mdash; what any program needs to start, what the table
+below promises, and whatever the manifest's <code>env</code> names
+(<a href="adrs.html#adr-037">ADR-037</a>). A variable nobody named is absent, and a named variable that
+is not set stays absent rather than arriving empty.</p>
+
 <table>
 <tr><th>Variable</th><th>Holds</th></tr>
 <tr><td><code>AGENT_DB</code></td><td>Path to the SQLite database.</td></tr>
@@ -114,8 +123,8 @@ belongs to.</p>
 <tr><td><code>AGENT_URL</code></td><td>Base URL of the HTTP API, the same one the interface uses.</td></tr>
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
-<tr><td><code>AGENT_BROWSER</code></td><td>Optional. A Chrome-family executable to drive; the usual install paths are searched when it is unset. It must be inside a readable path &mdash; see <code>AGENT_READ_PATHS</code>.</td></tr>
-<tr><td><code>AGENT_NO_BROWSER</code></td><td>Optional. Set to keep <code>web_fetch</code> on plain HTTP rather than rendering the page.</td></tr>
+<tr><td><code>AGENT_BROWSER</code></td><td>Optional, and reaches only a tool whose manifest names it &mdash; the browser tools do. A Chrome-family executable to drive; the usual install paths are searched when it is unset. It must be inside a readable path &mdash; see <code>AGENT_READ_PATHS</code>.</td></tr>
+<tr><td><code>AGENT_NO_BROWSER</code></td><td>Optional, declared the same way. Set to keep <code>web_fetch</code> on plain HTTP rather than rendering the page.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
 </table>
 
@@ -134,6 +143,8 @@ turn rather than the process.</p>
 <li>A tool can reach every capability the interface can, through <code>AGENT_URL</code>, without a private hook into the process.</li>
 <li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
 <li>Standard error is captured and stored with the result, not shown to the model.</li>
+<li>A tool subprocess receives only the variables above and the ones its manifest names; the model API key and every other variable of the agent's environment are absent.</li>
+<li>A variable a manifest names is passed only to that tool, and only when it is set.</li>
 <li>Tool results are recorded as transcript entries.</li>
 </ul>
 </div>

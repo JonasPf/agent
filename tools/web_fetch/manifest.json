@@ -2,6 +2,11 @@
   "name": "web_fetch",
   "description": "Fetch a URL in a headless browser and return the page's text. Scripts run first, so a page assembled by JavaScript reads the same as it would to a person. A non-HTML body (JSON, plain text) comes back verbatim.",
   "db_prefix": "web_fetch_",
+  "env": [
+    "AGENT_BROWSER",
+    "AGENT_NO_BROWSER",
+    "PLAYWRIGHT_BROWSERS_PATH"
+  ],
   "timeout_seconds": 60,
   "parameters": {
     "type": "object",

@@ -21,11 +21,16 @@ type Tool struct {
 	DBPrefix    string         `json:"db_prefix"`
 	Timeout     int            `json:"timeout_seconds"`
 	Parameters  map[string]any `json:"parameters"`
-	HasPanel    bool           `json:"has_panel"`
-	LoadedAt    time.Time      `json:"loaded_at"`
-	Builtin     bool           `json:"builtin"`
-	Dir         string         `json:"-"`
-	run         builtinFn      `json:"-"`
+	// Env names the environment variables this tool receives beyond the ones
+	// every tool is promised. It is how a tool that needs a credential asks for
+	// one, and it is the only way any variable of the agent's own environment
+	// reaches a subprocess.
+	Env      []string  `json:"env,omitempty"`
+	HasPanel bool      `json:"has_panel"`
+	LoadedAt time.Time `json:"loaded_at"`
+	Builtin  bool      `json:"builtin"`
+	Dir      string    `json:"-"`
+	run      builtinFn `json:"-"`
 }
 
 type builtinFn func(ctx context.Context, tc *ToolCtx, args json.RawMessage) (any, error)
@@ -260,7 +265,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	tmp := tc.App.sandbox.TempDir(workspace)
 	_ = os.MkdirAll(tmp, 0o755)
 	cmd.Stdin = strings.NewReader(string(args))
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(toolBaseEnv(t.Env),
 		"AGENT_DB="+r.dbPath,
 		"AGENT_DB_PREFIX="+t.DBPrefix,
 		"AGENT_URL="+tc.App.cfg.BaseURL(),
@@ -287,6 +292,29 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	}
 	res.stderr = stderr.String()
 	return res
+}
+
+// toolPassthrough is what a subprocess needs to start at all: where to find its
+// interpreter and its libraries, where its user's home is, how to talk about
+// text, and which certificates to trust. Nothing here is a credential.
+var toolPassthrough = []string{
+	"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+	"SSL_CERT_FILE", "SSL_CERT_DIR", "TERM",
+}
+
+// toolBaseEnv builds the environment a tool is started with. A subprocess used
+// to inherit the agent's whole environment, which handed the model API key to
+// every tool including the one that runs shell commands the model wrote. The
+// list is an allow-list for the same reason the sandbox is one: a variable
+// nobody considered is absent rather than present.
+func toolBaseEnv(extra []string) []string {
+	var out []string
+	for _, name := range append(append([]string{}, toolPassthrough...), extra...) {
+		if v, ok := os.LookupEnv(name); ok {
+			out = append(out, name+"="+v)
+		}
+	}
+	return out
 }
 
 func truncate(s string, n int) string {

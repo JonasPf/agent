@@ -2,6 +2,11 @@
   "name": "web_search",
   "description": "Search the web in a headless browser and return result titles, URLs, and snippets.",
   "db_prefix": "web_search_",
+  "env": [
+    "AGENT_BROWSER",
+    "AGENT_NO_BROWSER",
+    "PLAYWRIGHT_BROWSERS_PATH"
+  ],
   "timeout_seconds": 60,
   "parameters": {
     "type": "object",
