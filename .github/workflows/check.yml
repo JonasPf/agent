@@ -1,0 +1,53 @@
+# What every change has to pass, whoever wrote it. This is the gate the agent's
+# own pull requests go through: it can open one, and this decides whether the
+# branch is fit to merge.
+#
+# It runs `task check` rather than a copy of what that does, so the pipeline and
+# the local command cannot drift apart.
+#
+# No secrets are available here on purpose. A pull request branch can change the
+# code this workflow runs, so anything it could reach, a proposed change could
+# reach. Deploying is a separate workflow, on main only.
+
+name: check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # web/*.test.js runs under node's own test runner; there are no packages.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The tool sandbox on Linux is bubblewrap. Installing it means the tool
+      # subprocess tests run confined here the way they do in production, rather
+      # than exercising the "no sandbox" path and passing for the wrong reason.
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
+
+      - name: Install Task
+        run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
+
+      # web_fetch and web_search render pages in a real browser, so the run says
+      # which one it found before the tests need it.
+      - name: Report the browser
+        run: which google-chrome google-chrome-stable chromium chromium-browser || echo "no browser found"
+
+      - name: task check
+        run: task check

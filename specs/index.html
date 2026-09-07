@@ -23,8 +23,10 @@
 <p class="lede">A single-user autonomous agent that runs on your own hardware, reachable from your phone.</p>
 
 <p>It holds long-lived conversations, schedules work that runs inside those conversations, and remembers
-what you tell it. It does not modify itself: tools and skills are yours to write
-(<a href="adrs.html#adr-033">ADR-033</a>).</p>
+what you tell it. It cannot modify the copy of itself that is running: tools and skills are files on a
+disk it may not write (<a href="adrs.html#adr-033">ADR-033</a>). What it can do is propose a change to
+the next copy &mdash; a branch, a pull request, a pipeline, and a person who merges it
+(<a href="adrs.html#adr-036">ADR-036</a>).</p>
 
 <h2>Design principle</h2>
 
@@ -39,7 +41,7 @@ the visible one wins unless the cost is prohibitive.</p>
 <h2>What it is not</h2>
 
 <ul>
-<li>Not multi-user. One person, one tailnet, no login.</li>
+<li>Not multi-user. One person, no accounts; a tailnet, or one password in front of it (<a href="adrs.html#adr-038">ADR-038</a>).</li>
 <li>Not a hosted service. One container on hardware you control.</li>
 <li>Not a coding agent. It can write code, but its purpose is standing tasks and recall.</li>
 </ul>

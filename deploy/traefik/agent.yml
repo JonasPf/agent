@@ -1,0 +1,53 @@
+# Traefik router for the agent, to be placed at
+# /etc/dokploy/traefik/dynamic/agent.yml on the server. Traefik watches that
+# directory and reloads without a restart.
+#
+# The agent has no login of its own — one person, no accounts (ADR-005) — so the
+# password is here, in front of it. It is a stopgap and it is worth being clear
+# about what it is: one shared secret over TLS, protecting an interface that can
+# run shell commands. The tailnet in specs/architecture.html is still the
+# stronger answer, and this file is what replaces it until then.
+#
+# Generate the hash on the server, and note the doubled $ — Traefik reads $$ as
+# a literal dollar in a YAML file it loaded from disk:
+#
+#   htpasswd -nbB jonas 'the-password' | sed -e 's/\$/$$/g'
+
+http:
+  middlewares:
+    agent-auth:
+      basicAuth:
+        # Replace with the output of the command above.
+        users:
+          - "jonas:$$2y$$05$$REPLACE_ME_WITH_A_REAL_HASH"
+        realm: "agent"
+        removeHeader: true
+
+  routers:
+    agent-router-web:
+      rule: Host(`agent.jonaspfannschmidt.com`)
+      service: agent-service
+      entryPoints:
+        - web
+      middlewares:
+        - redirect-to-https
+
+    agent-router-websecure:
+      rule: Host(`agent.jonaspfannschmidt.com`)
+      service: agent-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - agent-auth
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    agent-service:
+      loadBalancer:
+        # The compose service name, on dokploy-network. Dokploy prefixes it with
+        # the project name, so check `docker ps` and use the name it gave the
+        # container if this does not resolve.
+        servers:
+          - url: http://agent:8080
+        passHostHeader: true

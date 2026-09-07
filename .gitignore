@@ -1,4 +1,5 @@
 data/
+workspace/
 .env
 
 # Snapshots taken by `task db:clear`

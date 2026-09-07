@@ -20,7 +20,7 @@
 <div class="wrap">
 
 <h1>Decisions</h1>
-<p class="lede">Twenty-five choices with real tradeoffs. Each states what was given up.</p>
+<p class="lede">Thirty-five choices with real tradeoffs. Each states what was given up.</p>
 
 <div class="adr" id="adr-001">
 <div class="meta">ADR-001 · accepted</div>
@@ -961,6 +961,97 @@ executables until one build has happened. And a Go tool that links a database dr
 megabytes where a script was two kilobytes &mdash; <code>notes</code> is 12 MB. Neither is paid at
 runtime, and neither touches <a href="index.html">R4</a>: the agent is not rebuilt and not restarted
 when a tool changes, which is the property that mattered.</p>
+</div>
+
+<div class="adr" id="adr-036">
+<div class="meta">ADR-036 · accepted</div>
+<h3>The agent changes itself by opening a pull request</h3>
+<h4>Context</h4>
+<p><a href="#adr-033">ADR-033</a> removed self-modification and ended by saying that choosing it
+deliberately remained open. This is that choice. What made the old arrangement wrong was not that the
+agent wrote code, but where the code landed: a tool wrote <code>tools/&lt;name&gt;/</code> on the running
+machine and the next call ran it, with nothing between deciding and executing.</p>
+<h4>Decision</h4>
+<p>The agent proposes changes to itself the way a person does. It clones this repository into a
+session's working directory &mdash; the one place its tools can write &mdash; edits there, pushes a
+branch, and opens a pull request. A pipeline runs <code>task check</code> on the branch. A person
+reviews and merges. Merging builds an image and redeploys the server, which is how the change reaches
+the agent.</p>
+<p>The sandbox boundary does not move. The tool directory and the skill directory of the running agent
+stay unwritable, and no route writes either. What the agent gained is a route out through review, not
+a route around it.</p>
+<p>Three properties make the review real rather than decorative. The pipeline that verifies a branch
+has no credentials, because a proposed change can rewrite the pipeline. The pipeline that publishes and
+deploys runs on <code>main</code> only, after a merge. And the agent's credential is scoped to one
+repository, with contents and pull-request write and no workflow scope, so the most it can do
+unsupervised is open a pull request nobody has merged.</p>
+<h4>Consequences</h4>
+<p>The agent can now improve every part of itself &mdash; the loop, the interface, its own tools &mdash;
+and it cannot do any of it quickly. The loop is minutes: push, wait for CI, read the result. That is
+the intended speed. A change reaching production always passed the same gate the operator's changes
+pass, and the transcript, the branch, the pull request, and the pipeline run are four independent
+records of what happened, which is <a href="index.html">the visibility principle</a> applied to the
+agent's most consequential capability.</p>
+<p>What is given up is the property ADR-033 bought: that the code running is code the operator wrote.
+It is replaced by a weaker but sufficient one &mdash; the code running is code the operator merged. The
+risk that remains is a reviewer approving a change they did not read, which no mechanism here can
+prevent.</p>
+</div>
+
+<div class="adr" id="adr-037">
+<div class="meta">ADR-037 · accepted</div>
+<h3>A tool receives only the environment its manifest names</h3>
+<h4>Context</h4>
+<p>A tool is a subprocess, and a subprocess inherited the agent's whole environment. That put
+<code>OPENROUTER_API_KEY</code> in front of every tool ever written, including <code>bash</code>, whose
+whole purpose is to run commands the model composed &mdash; commands that can quote text the model read
+from a web page. <a href="#adr-034">ADR-034</a> had hidden the file the key is read from and never
+hid the variable it was read into. Giving the agent a GitHub credential would have added a second
+secret to the same open channel.</p>
+<h4>Decision</h4>
+<p>A tool subprocess is started with an environment built from an allow-list: what any program needs to
+start at all (<code>PATH</code>, <code>HOME</code>, locale, certificates), the variables the tool
+contract promises (<code>AGENT_DB</code>, <code>AGENT_URL</code>, <code>AGENT_WORKSPACE</code>,
+<code>AGENT_SESSION</code>, <code>AGENT_JOB</code>, <code>TMPDIR</code>), and whatever the tool's own
+manifest names in <code>env</code>. Nothing else is passed, and a named variable that is not set is
+absent rather than empty.</p>
+<h4>Consequences</h4>
+<p>Which tool can reach which credential is now a line in a manifest, visible in the interface beside
+the tool it belongs to, rather than an accident of process inheritance. The browser tools declare
+<code>AGENT_BROWSER</code> and the Playwright path, which is how the rule was found to work: they broke
+the moment the allow-list landed, and declaring what they need fixed them.</p>
+<p>The cost is that a tool needing a variable nobody anticipated fails in a way that reads as a bug in
+the tool. The allow-list is the same trade as the sandbox's, for the same reason: a variable nobody
+considered is absent rather than present.</p>
+</div>
+
+<div class="adr" id="adr-038">
+<div class="meta">ADR-038 · accepted</div>
+<h3>Deployed as one image behind a password, with the sandbox off</h3>
+<h4>Context</h4>
+<p>The specification described a container on a tailnet with no login, which is the right shape and was
+not what was available. The server is a 2&nbsp;GB box already running Dokploy, Traefik, and five other
+services, with about 300&nbsp;MB of memory free.</p>
+<h4>Decision</h4>
+<p>The agent runs as a Dokploy Compose application from an image built by CI, never on the box: there is
+not enough memory there to compile Go. It publishes no host port; Traefik routes to it over the
+internal network and a Basic Auth middleware puts one password in front of it, over a Let's Encrypt
+certificate. Transcripts and session working directories are named volumes, so a redeploy replaces the
+process and keeps the conversation.</p>
+<p>Two acceptance criteria of the architecture are suspended rather than quietly dropped. The container
+is reachable from outside a tailnet, protected by a password instead. And the tool sandbox does not
+run: Ubuntu 24.04 blocks unprivileged user namespaces for containers, bubblewrap needs one, and the
+only container configuration that restores it is <code>--privileged</code>, which is a worse trade on a
+box running five other services. Both are recorded in <code>TODO.md</code> with what was measured.</p>
+<h4>Consequences</h4>
+<p>The agent is reachable from any network, which is what makes a phone useful without a VPN, and the
+whole of its access control is one shared secret in front of an interface that runs shell commands. In
+production a tool can read every session's files and the agent's own directory; the interface says
+<em>NOT ENFORCED</em> on the panel that reports it, which is the visibility principle doing the only
+thing it can do about a boundary that is off.</p>
+<p>A headless browser does not fit in the memory available, so <code>web_fetch</code> retrieves pages
+over HTTP and a page assembled by scripts reads as empty. That is a hardware problem, and naming it
+here keeps it from being rediscovered as a bug.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

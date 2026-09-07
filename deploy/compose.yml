@@ -1,0 +1,49 @@
+# The production deployment, as a Dokploy Compose application.
+#
+# Dokploy builds nothing here: the image is built by GitHub Actions on a push to
+# main and pulled by tag. `docker compose pull && docker compose up -d` is the
+# whole update, and that is what the deploy webhook triggers.
+#
+# The service publishes no host port. Traefik reaches it over dokploy-network,
+# and the router that puts it behind a password is deploy/traefik/agent.yml.
+
+services:
+  agent:
+    image: ghcr.io/${GH_OWNER:-jonaspf}/agent:${AGENT_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      # Required. Dokploy holds it; it never enters the repository.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set this in Dokploy}
+      AGENT_MODEL: ${AGENT_MODEL:-anthropic/claude-sonnet-4.5}
+      # This box has ~300 MB of memory free. A headless Chrome does not fit, so
+      # web_fetch retrieves pages over plain HTTP instead of rendering them.
+      AGENT_NO_BROWSER: "1"
+      # What the agent needs to proposes changes to itself. Fine-grained, one
+      # repository, contents + pull requests write, no workflow scope: the most
+      # it can do with this is open a pull request nobody has merged yet.
+      GH_TOKEN: ${GH_TOKEN:-}
+      AGENT_REPO: ${AGENT_REPO:-}
+    volumes:
+      # Transcripts, jobs, memory, and the search index. Losing this loses the
+      # agent's whole history, so it is a named volume and not a bind mount into
+      # a directory a deploy might replace.
+      - agent-data:/app/data
+      # One working directory per session: what its tools see, and where a clone
+      # of this repository lands while the agent is editing it.
+      - agent-workspace:/app/workspace
+    networks:
+      - dokploy-network
+    # A single-user agent on a shared box. Without a limit one runaway tool
+    # takes the machine down with it, and this box has five other services.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  agent-data:
+  agent-workspace:
+
+networks:
+  dokploy-network:
+    external: true

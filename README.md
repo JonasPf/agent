@@ -61,6 +61,8 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
 | `AGENT_NO_BROWSER` | unset | Set to make `web_fetch` retrieve pages over plain HTTP instead of rendering them. |
 | `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
+| `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. |
+| `GH_TOKEN` | — | GitHub credential. Reaches only a tool whose manifest names it; no tool names it yet — see [TODO.md](TODO.md). |
 | `AGENT_ROTATE_TOKENS` | `40000` | Projected size at which a session rotates. |
 | `AGENT_MEMORY_CAPACITY` | `8000` | Characters of durable memory. |
 
@@ -95,7 +97,36 @@ data/sessions/<id>/{meta.json,transcript.jsonl}
 Deleting `data/agent.db` and restarting rebuilds session metadata and the search index from the
 transcripts.
 
+## Deploy
+
+The image is built by CI and pulled by tag; the server never compiles anything.
+
+```
+push to a branch → PR → .github/workflows/check.yml runs `task check`
+merge to main    → .github/workflows/release.yml builds the image, pushes it to
+                   GHCR, and calls Dokploy's deploy webhook
+```
+
+| File | Is |
+| --- | --- |
+| `Dockerfile` | Two stages: build the agent, every tool, and a pinned `gh`, then a Debian runtime with `git`, `gh`, and `bubblewrap` — the userland the tools need, and nothing else. |
+| `deploy/compose.yml` | The Dokploy Compose application. Named volumes for `data` and `workspace`, so a redeploy keeps every conversation. |
+| `deploy/traefik/agent.yml` | The router and the Basic Auth middleware, to be placed in `/etc/dokploy/traefik/dynamic/` on the server. |
+
+The runtime is Debian because tools are subprocesses: `tools/bash` execs `/bin/sh`, and the model
+writes GNU-flavoured shell. `agent -health` is the container's health check, so the image carries no
+network client for a request the agent can make of itself.
+
+Secrets live in Dokploy (`OPENROUTER_API_KEY`, `GH_TOKEN`) and in GitHub Actions
+(`DOKPLOY_DEPLOY_WEBHOOK`); none of them are in this repository.
+
+The agent can propose changes to itself: it clones this repository into a session's working directory,
+edits it there, and opens a pull request that goes through the same pipeline
+([`skills/changing-yourself.md`](skills/changing-yourself.md), [ADR-036](specs/adrs.html#adr-036)). It
+cannot change the copy of itself that is running.
+
 ## What is not built
 
-- Tailscale Serve and the container image: run it behind either yourself.
+- Tailscale Serve: the deployment uses a password in front of a public hostname instead — [ADR-038](specs/adrs.html#adr-038).
+- The tool sandbox does not run on the deployed server, and the interface says so. [TODO.md](TODO.md) has what was measured.
 - Token counts are estimated at four characters per token, not tokenised.

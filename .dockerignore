@@ -1,0 +1,14 @@
+# The build stage compiles from source, so nothing already built, nothing
+# stateful, and above all nothing secret is sent to the daemon. The skills are
+# Markdown and do ship: they are what the agent reads at runtime.
+.env
+.env.*
+!.env.example
+.git
+.github
+.backups
+data
+workspace
+tools/*/run
+specs
+node_modules
