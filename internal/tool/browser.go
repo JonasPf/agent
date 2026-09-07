@@ -137,6 +137,13 @@ func Render(url string, seconds int) string {
 	// bubblewrap is on: one confinement, enforced by the agent.
 	cmd := exec.Command(browser, "--headless", "--disable-gpu", "--no-sandbox",
 		"--disable-dev-shm-usage",
+		// A browser started with a fresh profile wants to fetch components,
+		// check for updates, and sync before it will settle — none of which the
+		// tool asked for. It hung for 35 seconds on "failed to update on-device
+		// model component" until this was turned off. Fetching a URL should make
+		// the requests that URL needs and no others.
+		"--disable-background-networking", "--disable-component-update",
+		"--disable-sync", "--no-first-run", "--no-default-browser-check",
 		"--user-data-dir="+profile,
 		fmt.Sprintf("--virtual-time-budget=%d", seconds*1000),
 		"--dump-dom", url)
