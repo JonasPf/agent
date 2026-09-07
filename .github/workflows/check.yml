@@ -35,11 +35,18 @@ jobs:
         with:
           node-version: '22'
 
-      # The tool sandbox on Linux is bubblewrap. Installing it means the tool
-      # subprocess tests run confined here the way they do in production, rather
-      # than exercising the "no sandbox" path and passing for the wrong reason.
+      # The tool sandbox on Linux is bubblewrap, and the runner is Ubuntu 24.04,
+      # which refuses unprivileged user namespaces — the same restriction that
+      # keeps the sandbox off the deployment host (TODO.md), so the constraint is
+      # Ubuntu's rather than that host's. Lifting it here is what makes the tool
+      # subprocess tests run confined, instead of taking the unsandboxed path and
+      # passing for the wrong reason.
       - name: Install bubblewrap
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / --dev /dev --tmpfs /tmp true
+          echo "bubblewrap works"
 
       - name: Install Task
         run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
