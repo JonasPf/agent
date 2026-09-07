@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -39,7 +40,15 @@ func fetchApp(t *testing.T) *App {
 		t.Setenv("AGENT_BROWSER", b)
 		readPaths = filepath.Dir(b)
 	}
-	dir := t.TempDir()
+	// Not t.TempDir(): it names the directory after the test, and a browser
+	// opens a UNIX socket inside the session's scratch directory, where the
+	// whole path must fit in 104 bytes. The deployed workspace is /app/workspace
+	// and nowhere near it; a test name is.
+	dir, err := os.MkdirTemp("", "wf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
 	st, err := OpenStore(dir)
 	if err != nil {
 		t.Fatal(err)

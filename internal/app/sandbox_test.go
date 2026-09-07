@@ -94,20 +94,22 @@ func TestATmpfsOverTmpDoesNotMaskAWorkspaceBeneathIt(t *testing.T) {
 		toolsDir: "/t", dbPath: "/tmp/d/agent.db"}
 	argv := s.Wrap("/tools/bash/run", "/tmp/w/S1", "/t", nil)
 
-	tmpfs, bind := -1, -1
+	tmpfs, firstBind := -1, -1
 	for i, a := range argv {
 		if a == "--tmpfs" && i+1 < len(argv) && argv[i+1] == "/tmp" {
 			tmpfs = i
 		}
-		if a == "--bind" && i+1 < len(argv) && argv[i+1] == "/tmp/w/S1" {
-			bind = i
+		if (a == "--bind" || a == "--ro-bind") && firstBind < 0 {
+			firstBind = i
 		}
 	}
-	if tmpfs < 0 || bind < 0 {
-		t.Fatalf("argv = %v, want both a tmpfs over /tmp and a bind of the workspace", argv)
+	if tmpfs < 0 || firstBind < 0 {
+		t.Fatalf("argv = %v, want both a tmpfs over /tmp and binds", argv)
 	}
-	if tmpfs > bind {
-		t.Errorf("the tmpfs over /tmp is applied after the workspace bind, which masks it: %v", argv)
+	// Every bind, not only the workspace: a named read path can be under /tmp
+	// too, and masking it leaves a tool unable to read what the operator named.
+	if tmpfs > firstBind {
+		t.Errorf("the tmpfs over /tmp is applied after a bind, which masks it: %v", argv)
 	}
 }
 
