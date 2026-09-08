@@ -33,12 +33,11 @@ services:
       - agent-workspace:/app/workspace
     networks:
       - dokploy-network
-    # A single-user agent on a shared box. Without a limit one runaway tool
-    # takes the machine down with it, and this box has five other services.
-    deploy:
-      resources:
-        limits:
-          memory: 512M
+    # A single-user agent on a shared host. Without a limit one runaway tool
+    # takes the machine down with it, and it is not the only service there.
+    # mem_limit rather than deploy.resources, which is a swarm key that plain
+    # docker compose — which is what Dokploy runs — ignores.
+    mem_limit: 512m
 
 volumes:
   agent-data:
