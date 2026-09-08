@@ -221,7 +221,7 @@ a shared box; Traefik terminates HTTPS with a Let's Encrypt certificate for a pu
 a Basic Auth middleware in front of the agent. The container still publishes no host port &mdash; only
 Traefik reaches it, over the internal network &mdash; but the hostname is public and one password is the
 whole of the access control. The tailnet remains the intended answer; the password is what stands in
-for it, and <code>TODO.md</code> is where that is tracked.</p>
+for it.</p>
 
 <p>The image is built by CI and pulled by tag, never built on the server, which has neither the memory
 nor a toolchain. Transcripts and session working directories are named volumes, so a redeploy replaces

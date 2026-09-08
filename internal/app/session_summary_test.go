@@ -16,7 +16,7 @@ import (
 func TestASessionGrowingOnlyInToolResultsIsSummarised(t *testing.T) {
 	a := newTestApp(t)
 	a.cfg.SummaryEvery = 4000
-	srv, _ := recordingModel(t, "They discussed broadband in Kinvara.")
+	srv, _ := recordingModel(t, "They discussed rewiring the workshop.")
 	a.or = NewOpenRouter("test-key")
 	a.or.base = srv.URL
 
@@ -78,7 +78,7 @@ func TestTheCarriedSummaryReachesTheModelAsSystemContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pred.Summary = "They compared broadband providers for Kinvara."
+	pred.Summary = "They compared quotes for rewiring the workshop."
 	if err := a.store.PutSession(pred); err != nil {
 		t.Fatal(err)
 	}

@@ -126,7 +126,7 @@ test('only failures are marked bad', () => {
 // API accepts for a turn's input. Labelling it "you" told the operator they had
 // typed something they never typed, directly under a chip naming the job.
 test('a job wake is labelled as its job, not as the operator', () => {
-  assert.strictEqual(speaker({ role: 'user', job_id: '1A066D1EFAD70B36916A8' }), 'job (6916A8)');
+  assert.strictEqual(speaker({ role: 'user', job_id: '7F3B9C24E0A18D5C42B71' }), 'job (C42B71)');
 });
 
 test('a short job id is used whole rather than padded', () => {
@@ -237,18 +237,18 @@ test('a job with no estimate says nothing', () => {
 const { splitSessionIds } = require('./transcript.js');
 
 test('a bare session id is split out of surrounding text', () => {
-  const parts = splitSessionIds('seeded from 1A06CC8DA9F4E8F6C2F80 (size): 13 carried messages');
+  const parts = splitSessionIds('seeded from 2C41F09B7DA35E86104B7 (size): 13 carried messages');
   assert.deepStrictEqual(parts, [
     { text: 'seeded from ' },
-    { text: '1A06CC8DA9F4E8F6C2F80', id: '1A06CC8DA9F4E8F6C2F80' },
+    { text: '2C41F09B7DA35E86104B7', id: '2C41F09B7DA35E86104B7' },
     { text: ' (size): 13 carried messages' },
   ]);
 });
 
 test('every id in a line is split out, not only the first', () => {
-  const parts = splitSessionIds('1A06CC8DA9F4E8F6C2F80 → 1A06D33DE3124EF568C1A');
+  const parts = splitSessionIds('2C41F09B7DA35E86104B7 → 8E5D2A70CB1946F3D0A25');
   assert.deepStrictEqual(parts.filter(p => p.id).map(p => p.id),
-    ['1A06CC8DA9F4E8F6C2F80', '1A06D33DE3124EF568C1A']);
+    ['2C41F09B7DA35E86104B7', '8E5D2A70CB1946F3D0A25']);
 });
 
 test('text with no id is one plain part', () => {
@@ -261,8 +261,8 @@ test('a hex word that is not an id length is left alone', () => {
 });
 
 test('an id inside a word is not linked', () => {
-  const parts = splitSessionIds('x1A06CC8DA9F4E8F6C2F80x');
-  assert.deepStrictEqual(parts, [{ text: 'x1A06CC8DA9F4E8F6C2F80x' }]);
+  const parts = splitSessionIds('x2C41F09B7DA35E86104B7x');
+  assert.deepStrictEqual(parts, [{ text: 'x2C41F09B7DA35E86104B7x' }]);
 });
 
 test('empty text splits into nothing', () => {

@@ -5,3 +5,6 @@ workspace/
 # Snapshots taken by `task db:clear`
 .backups/
 tools/*/run
+
+# Operator's notes on this deployment: kept on disk, not published.
+TODO.md

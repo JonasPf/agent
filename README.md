@@ -62,7 +62,7 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_NO_BROWSER` | unset | Set to make `web_fetch` retrieve pages over plain HTTP instead of rendering them. |
 | `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. |
-| `GH_TOKEN` | — | GitHub credential. Reaches only a tool whose manifest names it; no tool names it yet — see [TODO.md](TODO.md). |
+| `GH_TOKEN` | — | GitHub credential. Reaches only a tool whose manifest names it, and no tool names it yet. |
 | `AGENT_ROTATE_TOKENS` | `40000` | Projected size at which a session rotates. |
 | `AGENT_MEMORY_CAPACITY` | `8000` | Characters of durable memory. |
 
@@ -128,5 +128,5 @@ cannot change the copy of itself that is running.
 ## What is not built
 
 - Tailscale Serve: the deployment uses a password in front of a public hostname instead — [ADR-038](specs/adrs.html#adr-038).
-- The tool sandbox does not run on the deployed server, and the interface says so. [TODO.md](TODO.md) has what was measured.
+- The tool sandbox runs where the host permits unprivileged user namespaces. Where it does not, the interface says `NOT ENFORCED` rather than implying a boundary that is not there.
 - Token counts are estimated at four characters per token, not tokenised.

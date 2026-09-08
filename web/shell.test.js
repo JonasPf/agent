@@ -62,7 +62,7 @@ function findAll(n, cls, out) {
 }
 
 const session = over => Object.assign({
-  id: 'S1', title: 'Broadband', model: 'x/y', status: 'active', entry_count: 3,
+  id: 'S1', title: 'Greenhouse sensors', model: 'x/y', status: 'active', entry_count: 3,
   context_used: 10, rotate_at_tokens: 40000, cost: 0, disk_bytes: 0,
   last_active_at: new Date().toISOString(), unread: 0
 }, over);
@@ -137,7 +137,7 @@ test('the rail marks the conversation on screen', async () => {
 
 test('a rail row carries the unread count and opens its conversation', async () => {
   const ctx = load({});
-  const row = ctx.sideItem(session({ id: 'S9', title: 'Cat feeding', unread: 3 }));
+  const row = ctx.sideItem(session({ id: 'S9', title: 'Kiln firing log', unread: 3 }));
   assert.strictEqual(find(row, 'badge').textContent, '3');
   row.onclick();
   assert.strictEqual(ctx.location.hash, '#session/S9');
@@ -193,7 +193,7 @@ test('going somewhere closes the drawer', () => {
 test("a view's actions are in the header and behind the fold, from one list", () => {
   const ctx = load({});
   let opened = '';
-  ctx.setHeader('Broadband', true, [
+  ctx.setHeader('Greenhouse sensors', true, [
     { label: 'Jobs', fn: () => opened = 'jobs' },
     { label: 'Files', fn: () => opened = 'files' },
   ]);

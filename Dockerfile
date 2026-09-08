@@ -53,8 +53,8 @@ RUN set -eu; \
 FROM debian:bookworm-slim
 # git for the clone and the push, bubblewrap for the sandbox — installed whether
 # or not the host currently permits it, so enabling it later is a host change
-# and not an image change (see TODO.md). ca-certificates is what makes every
-# outbound call verifiable, the model gateway included.
+# and not an image change. ca-certificates is what makes every outbound call
+# verifiable, the model gateway included.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates git bubblewrap \
  && rm -rf /var/lib/apt/lists/*

@@ -1030,11 +1030,11 @@ considered is absent rather than present.</p>
 <h3>Deployed as one image behind a password, with the sandbox off</h3>
 <h4>Context</h4>
 <p>The specification described a container on a tailnet with no login, which is the right shape and was
-not what was available. The server is a 2&nbsp;GB box already running Dokploy, Traefik, and five other
-services, with about 300&nbsp;MB of memory free.</p>
+not what was available: a small shared server, already running Dokploy and Traefik, with little memory
+to spare.</p>
 <h4>Decision</h4>
-<p>The agent runs as a Dokploy Compose application from an image built by CI, never on the box: there is
-not enough memory there to compile Go. It publishes no host port; Traefik routes to it over the
+<p>The agent runs as a Dokploy Compose application from an image built by CI, never on the host: there
+is not enough memory there to compile Go. It publishes no host port; Traefik routes to it over the
 internal network and a Basic Auth middleware puts one password in front of it, over a Let's Encrypt
 certificate. Transcripts and session working directories are named volumes, so a redeploy replaces the
 process and keeps the conversation.</p>
@@ -1042,7 +1042,7 @@ process and keeps the conversation.</p>
 is reachable from outside a tailnet, protected by a password instead. And the tool sandbox does not
 run: Ubuntu 24.04 blocks unprivileged user namespaces for containers, bubblewrap needs one, and the
 only container configuration that restores it is <code>--privileged</code>, which is a worse trade on a
-box running five other services. Both are recorded in <code>TODO.md</code> with what was measured.</p>
+host that runs anything else. Both are suspensions to be lifted, not properties of the design.</p>
 <h4>Consequences</h4>
 <p>The agent is reachable from any network, which is what makes a phone useful without a VPN, and the
 whole of its access control is one shared secret in front of an interface that runs shell commands. In

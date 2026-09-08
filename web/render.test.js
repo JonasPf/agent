@@ -164,7 +164,7 @@ function findAll(n, cls, out) {
 // it again on every bubble is thirteen copies of one fact.
 test('a carried message wears no attribution label', () => {
   const ctx = load();
-  const n = ctx.renderEntry(message({ text: 'Earlier turn.', carried_from: '1A06CC8DA9F4E8F6C2F80' }));
+  const n = ctx.renderEntry(message({ text: 'Earlier turn.', carried_from: '2C41F09B7DA35E86104B7' }));
   assert.strictEqual(findAll(n, 'attr').length, 0, 'the carried label is still rendered');
   assert.ok(String(n.className).split(/\s+/).includes('carried'), 'carried styling was lost too');
 });
@@ -175,12 +175,12 @@ test('a session id in an event is a link to that session', () => {
   const ctx = load();
   const n = ctx.renderEntry({
     type: 'event', event_kind: 'carried_over', created_at: new Date().toISOString(),
-    text: 'seeded from 1A06CC8DA9F4E8F6C2F80 (size): 13 carried messages'
+    text: 'seeded from 2C41F09B7DA35E86104B7 (size): 13 carried messages'
   });
   const links = findAll(n, 'sid');
   assert.strictEqual(links.length, 1, 'the identifier was not linked');
-  assert.strictEqual(links[0].href, '#session/1A06CC8DA9F4E8F6C2F80');
-  assert.strictEqual(links[0].textContent, '1A06CC8DA9F4E8F6C2F80');
+  assert.strictEqual(links[0].href, '#session/2C41F09B7DA35E86104B7');
+  assert.strictEqual(links[0].textContent, '2C41F09B7DA35E86104B7');
 });
 
 test('an event with no identifier renders its text unchanged', () => {
@@ -196,7 +196,7 @@ test('an event with no identifier renders its text unchanged', () => {
 });
 
 const session = over => Object.assign({
-  id: '1A06CC8DA9F4E8F6C2F80', title: 'Broadband', model: 'x/y', status: 'active',
+  id: '2C41F09B7DA35E86104B7', title: 'Greenhouse sensors', model: 'x/y', status: 'active',
   entry_count: 3, context_used: 10, rotate_at_tokens: 40000, cost: 0,
   disk_bytes: 0, last_active_at: new Date().toISOString(), unread: 0
 }, over);
@@ -243,18 +243,18 @@ test('a session with no recorded size sorts as empty rather than vanishing', () 
 // row that shows it rather than three screens in.
 test('a session row offers a delete that asks first', async () => {
   const ctx = load();
-  const row = ctx.sessionRow(session({ id: '1A06CC8DA9F4E8F6C2F80', disk_bytes: 2048 }));
+  const row = ctx.sessionRow(session({ id: '2C41F09B7DA35E86104B7', disk_bytes: 2048 }));
   const rm = findAll(row, 'tag').find(t => t.textContent === 'delete');
   assert.ok(rm, 'the row offers no delete');
   ctx._confirm = true;
   await rm.onclick({ stopPropagation() {} });
-  assert.ok(ctx._calls.some(c => c.method === 'DELETE' && c.path === '/sessions/1A06CC8DA9F4E8F6C2F80'),
+  assert.ok(ctx._calls.some(c => c.method === 'DELETE' && c.path === '/sessions/2C41F09B7DA35E86104B7'),
     'the row did not delete the session: ' + JSON.stringify(ctx._calls));
 });
 
 test('a declined confirmation deletes nothing', async () => {
   const ctx = load();
-  const row = ctx.sessionRow(session({ id: '1A06CC8DA9F4E8F6C2F80' }));
+  const row = ctx.sessionRow(session({ id: '2C41F09B7DA35E86104B7' }));
   const rm = findAll(row, 'tag').find(t => t.textContent === 'delete');
   ctx._confirm = false;
   await rm.onclick({ stopPropagation() {} });
