@@ -11,6 +11,9 @@ services:
   agent:
     image: ghcr.io/${GH_OWNER:-jonaspf}/agent:${AGENT_TAG:-latest}
     restart: unless-stopped
+    # A redeploy exists to pick up a new image, and compose will happily reuse a
+    # cached one of the same name. Every deploy pulls.
+    pull_policy: always
     environment:
       # Required. Dokploy holds it; it never enters the repository.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set this in Dokploy}
@@ -33,6 +36,28 @@ services:
       - agent-workspace:/app/workspace
     networks:
       - dokploy-network
+    # Routing belongs with the deployment, not in a file placed on the server by
+    # hand: Traefik watches this network for labels, so the route redeploys with
+    # the app and is versioned with it.
+    #
+    # The hostname and the credential are not in this repository. Both come from
+    # the environment where it is deployed — a bcrypt hash is a password with a
+    # cost factor in front of it, and this repository is public.
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.services.agent.loadbalancer.server.port=8080
+      # http answers only to send the browser to https.
+      - traefik.http.routers.agent-web.rule=Host(`${AGENT_HOST}`)
+      - traefik.http.routers.agent-web.entrypoints=web
+      - traefik.http.routers.agent-web.middlewares=redirect-to-https@file
+      # The agent has no login of its own — one person, no accounts — so the
+      # password lives here, in front of it.
+      - traefik.http.routers.agent.rule=Host(`${AGENT_HOST}`)
+      - traefik.http.routers.agent.entrypoints=websecure
+      - traefik.http.routers.agent.tls.certresolver=letsencrypt
+      - traefik.http.routers.agent.middlewares=agent-auth
+      - traefik.http.middlewares.agent-auth.basicauth.users=${AGENT_BASIC_AUTH}
     # A single-user agent on a shared host. Without a limit one runaway tool
     # takes the machine down with it, and it is not the only service there.
     # mem_limit rather than deploy.resources, which is a swarm key that plain

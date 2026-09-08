@@ -110,8 +110,16 @@ merge to main    → .github/workflows/release.yml builds the image, pushes it t
 | File | Is |
 | --- | --- |
 | `Dockerfile` | Two stages: build the agent, every tool, and a pinned `gh`, then a Debian runtime with `git`, `gh`, and `bubblewrap` — the userland the tools need, and nothing else. |
-| `deploy/compose.yml` | The Dokploy Compose application. Named volumes for `data` and `workspace`, so a redeploy keeps every conversation. |
-| `deploy/traefik/agent.yml` | The router and the Basic Auth middleware, to be placed in `/etc/dokploy/traefik/dynamic/` on the server. |
+| `deploy/compose.yml` | The whole deployment: the image to run, named volumes for `data` and `workspace` so a redeploy keeps every conversation, and the Traefik labels that route to it. |
+
+The deployment needs three variables set where it runs, none of which are in this
+repository:
+
+| Variable | Is |
+| --- | --- |
+| `OPENROUTER_API_KEY` | Required for model calls. |
+| `AGENT_HOST` | The hostname to serve on. |
+| `AGENT_BASIC_AUTH` | `user:bcrypt-hash`, from `htpasswd -nbB <user> '<password>'`. The agent has no login of its own, so this is the whole of the access control. A hash in a public repository is a password with a cost factor in front of it, which is why it is set here rather than committed. |
 
 The runtime is Debian because tools are subprocesses: `tools/bash` execs `/bin/sh`, and the model
 writes GNU-flavoured shell. `agent -health` is the container's health check, so the image carries no
