@@ -64,16 +64,47 @@ func NewSandbox(cfg Config) *Sandbox {
 			s.Mechanism, s.Reason = "none", "/usr/bin/sandbox-exec is not present"
 		}
 	case "linux":
-		if _, err := exec.LookPath("bwrap"); err == nil {
+		bin, err := exec.LookPath("bwrap")
+		if err != nil {
+			s.Mechanism, s.Reason = "none", "bwrap is not installed; add the bubblewrap package to the image"
+			break
+		}
+		// Installed is not the same as usable. A container on a host that
+		// refuses unprivileged user namespaces has bwrap and cannot create one,
+		// and claiming the boundary anyway is the worst of the three outcomes:
+		// the interface shows a confinement that is not there, and every tool
+		// dies on launch instead of running unconfined.
+		if ok, why := probeBubblewrap(bin); ok {
 			s.Mechanism = "bubblewrap"
 		} else {
-			s.Mechanism, s.Reason = "none", "bwrap is not installed; add the bubblewrap package to the image"
+			s.Mechanism, s.Reason = "none", why
 		}
 	default:
 		s.Mechanism, s.Reason = "none", "no sandbox is implemented for "+runtime.GOOS
 	}
 	s.prepare()
 	return s
+}
+
+// probeBubblewrap runs the smallest sandbox there is, to find out whether this
+// kernel will allow one at all. It costs a few milliseconds at startup, once,
+// and it is the difference between a boundary and a claim about one.
+func probeBubblewrap(bin string) (bool, string) {
+	cmd := exec.Command(bin, "--ro-bind", "/", "/", "--dev", "/dev", "--tmpfs", "/tmp", "--", "/bin/true")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, ""
+	}
+	why := strings.TrimSpace(string(out))
+	if why == "" {
+		why = err.Error()
+	}
+	// One line, kept long enough to stay actionable: the kernel's own wording is
+	// what tells the operator this is a host setting and not a missing package.
+	why, _, _ = strings.Cut(why, "\n")
+	// The reason is shown in a status panel and in a log line, so it names the
+	// binary rather than reading as a missing package.
+	return false, "bwrap is installed but cannot create a namespace here: " + truncate(strings.TrimSpace(why), 200)
 }
 
 func (s *Sandbox) Enforcing() bool { return s != nil && s.Mechanism != "" && s.Mechanism != "none" }

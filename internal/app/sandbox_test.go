@@ -538,3 +538,35 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 		t.Errorf("the note did not survive: ok=%v %s%s", back.OK, back.Content, back.Error)
 	}
 }
+
+// A sandbox that is selected but cannot run confines nothing, and says it does.
+// The deployed container had bwrap installed on a host that refuses
+// unprivileged user namespaces: the agent reported "sandbox: bubblewrap", the
+// interface showed a boundary, and every tool subprocess died with "No
+// permissions to create new namespace". Presence of the binary was never the
+// question — whether the kernel will allow a namespace is.
+func TestAMechanismIsOnlyClaimedIfItActuallyRuns(t *testing.T) {
+	ok, reason := probeBubblewrap("/nonexistent/bwrap")
+	if ok {
+		t.Error("a probe of a binary that is not there reported success")
+	}
+	if reason == "" {
+		t.Error("a failed probe must say why; an unexplained refusal is unactionable")
+	}
+}
+
+// The invariant the whole boundary rests on: if the agent says it is confining
+// tools, a tool has to actually run under that confinement. This is what the
+// deployment violated — it claimed bubblewrap and could not launch anything.
+func TestWhatTheSandboxClaimsIsWhatTheToolGets(t *testing.T) {
+	a := newTestApp(t)
+	installEnvTool(t, a, "canary", nil)
+	if !a.sandbox.Enforcing() {
+		t.Skipf("no sandbox on this machine (%s); the claim and the reality agree", a.sandbox.Reason)
+	}
+	// Enforcing, so the tool must run — under confinement, not despite it.
+	seen := toolEnv(t, a, "canary")
+	if !seen["PATH"] {
+		t.Errorf("the sandbox claims %q but no tool can run under it", a.sandbox.Mechanism)
+	}
+}

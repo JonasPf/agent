@@ -239,6 +239,7 @@ must be on the tailnet to learn anything at all.</p>
 <li>The web UI is served over HTTPS with a certificate the browser trusts without exception.</li>
 <li>A redeploy replaces the process and keeps every session, job, memory item, and uploaded file.</li>
 <li>The container reports whether the process inside it is answering, using the agent's own binary rather than a second program carried for the purpose.</li>
+<li>A confinement mechanism is claimed only after it has been shown to run on this machine; one that is installed but refused reports as not enforced, with the refusal as its reason.</li>
 <li>The deployed image is built from a commit on the default branch and is tagged with it, so what is running can be named.</li>
 <li>The system makes no outbound connection to any push service.</li>
 <li>A phone off the tailnet fails visibly rather than showing a blank screen.</li>
