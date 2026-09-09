@@ -119,7 +119,19 @@ repository:
 | --- | --- |
 | `OPENROUTER_API_KEY` | Required for model calls. |
 | `AGENT_HOST` | The hostname to serve on. |
-| `AGENT_BASIC_AUTH` | `user:bcrypt-hash`, from `htpasswd -nbB <user> '<password>'`. The agent has no login of its own, so this is the whole of the access control. A hash in a public repository is a password with a cost factor in front of it, which is why it is set here rather than committed. |
+| `AGENT_BASIC_AUTH` | `user:bcrypt-hash`, **with every `$` doubled**. The agent has no login of its own, so this is the whole of the access control. A hash in a public repository is a password with a cost factor in front of it, which is why it is set here rather than committed. |
+
+Generate that value with the doubling already applied:
+
+```sh
+htpasswd -nbBC 12 <user> '<password>' | sed -e 's/\$/$$/g'
+```
+
+The doubling is not optional and its absence is not obvious. Compose reads `$name`
+inside a substituted value as another variable, so a single-`$` bcrypt hash arrives
+at Traefik truncated at its first field — `jonas:$2y$05` and nothing more. Traefik
+accepts that as a perfectly valid user list which no password will ever match, and
+the failure presents as a password that does not work.
 
 The runtime is Debian because tools are subprocesses: `tools/bash` execs `/bin/sh`, and the model
 writes GNU-flavoured shell. `agent -health` is the container's health check, so the image carries no

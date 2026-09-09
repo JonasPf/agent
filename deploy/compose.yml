@@ -60,7 +60,13 @@ services:
       # Required, not optional: unset, this would interpolate to an empty user
       # list, and whether Traefik then fails the router closed or serves it open
       # is not a question worth having an answer to. Compose refuses to start.
-      - traefik.http.middlewares.agent-auth.basicauth.users=${AGENT_BASIC_AUTH:?user:bcrypt-hash from htpasswd -nbB}
+      #
+      # Every $ in the value must be doubled. A bcrypt hash is full of them, and
+      # compose reads $name in a substituted value as another variable — so a
+      # single-$ hash arrives truncated at its first field, which Traefik accepts
+      # as a valid user list that no password matches. It looks exactly like a
+      # wrong password. See the README.
+      - traefik.http.middlewares.agent-auth.basicauth.users=${AGENT_BASIC_AUTH:?user:bcrypt-hash, every $$ doubled}
     # A single-user agent on a shared host. Without a limit one runaway tool
     # takes the machine down with it, and it is not the only service there.
     # mem_limit rather than deploy.resources, which is a swarm key that plain
