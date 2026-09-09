@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -16,11 +15,11 @@ import (
 //
 // There is no cross-platform library for this. Every tool that claims to be one
 // branches on the platform, so this does too, over the two primitives that need
-// no privileges: Seatbelt on macOS and bubblewrap on Linux. Where neither is
+// no privileges: Seatbelt on macOS and Landlock on Linux. Where neither is
 // available nothing is enforced, and that is said out loud rather than left to
 // be discovered.
 type Sandbox struct {
-	// Mechanism is seatbelt, bubblewrap, or none.
+	// Mechanism is seatbelt, landlock, or none.
 	Mechanism string `json:"mechanism"`
 	// Reason is why nothing is enforced, when nothing is.
 	Reason string `json:"reason,omitempty"`
@@ -44,16 +43,24 @@ var systemReads = []string{
 	"/private/etc", "/private/var/db",
 }
 
-// linuxReads is the same set for bubblewrap, which binds directories rather
-// than matching paths, so the root itself is not among them.
+// linuxReads is the same set for Landlock, which grants access beneath a
+// directory rather than matching a path, so the root itself is not among them:
+// granting the root would grant everything under it.
 var linuxReads = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt"}
+
+// linuxDevices is what a program opens before any of its own code runs. They are
+// named one by one rather than granting /dev, because a grant on the directory
+// is a grant on every device in it.
+var linuxDevices = []string{
+	"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty",
+}
 
 func NewSandbox(cfg Config) *Sandbox {
 	s := &Sandbox{
 		workspaceRoot: absOr(cfg.Workspace),
 		dataDir:       absOr(cfg.DataDir),
 		toolsDir:      absOr(cfg.ToolsDir),
-		dbPath:        absOr(filepath.Join(cfg.DataDir, "agent.db")),
+		dbPath:        absOr(DBPath(cfg.DataDir)),
 		ReadPaths:     readPaths(cfg.ReadPaths),
 	}
 	switch runtime.GOOS {
@@ -64,18 +71,11 @@ func NewSandbox(cfg Config) *Sandbox {
 			s.Mechanism, s.Reason = "none", "/usr/bin/sandbox-exec is not present"
 		}
 	case "linux":
-		bin, err := exec.LookPath("bwrap")
-		if err != nil {
-			s.Mechanism, s.Reason = "none", "bwrap is not installed; add the bubblewrap package to the image"
-			break
-		}
-		// Installed is not the same as usable. A container on a host that
-		// refuses unprivileged user namespaces has bwrap and cannot create one,
-		// and claiming the boundary anyway is the worst of the three outcomes:
-		// the interface shows a confinement that is not there, and every tool
-		// dies on launch instead of running unconfined.
-		if ok, why := probeBubblewrap(bin); ok {
-			s.Mechanism = "bubblewrap"
+		// Landlock rather than bubblewrap: it asks the kernel directly and needs
+		// no namespace, so it works in an unprivileged container on a host that
+		// refuses unprivileged user namespaces — which is where this runs.
+		if ok, why := landlockAvailable(); ok {
+			s.Mechanism = "landlock"
 		} else {
 			s.Mechanism, s.Reason = "none", why
 		}
@@ -84,27 +84,6 @@ func NewSandbox(cfg Config) *Sandbox {
 	}
 	s.prepare()
 	return s
-}
-
-// probeBubblewrap runs the smallest sandbox there is, to find out whether this
-// kernel will allow one at all. It costs a few milliseconds at startup, once,
-// and it is the difference between a boundary and a claim about one.
-func probeBubblewrap(bin string) (bool, string) {
-	cmd := exec.Command(bin, "--ro-bind", "/", "/", "--dev", "/dev", "--tmpfs", "/tmp", "--", "/bin/true")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return true, ""
-	}
-	why := strings.TrimSpace(string(out))
-	if why == "" {
-		why = err.Error()
-	}
-	// One line, kept long enough to stay actionable: the kernel's own wording is
-	// what tells the operator this is a host setting and not a missing package.
-	why, _, _ = strings.Cut(why, "\n")
-	// The reason is shown in a status panel and in a log line, so it names the
-	// binary rather than reading as a missing package.
-	return false, "bwrap is installed but cannot create a namespace here: " + truncate(strings.TrimSpace(why), 200)
 }
 
 func (s *Sandbox) Enforcing() bool { return s != nil && s.Mechanism != "" && s.Mechanism != "none" }
@@ -166,29 +145,33 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string 
 			"-D", "DBSHM=" + s.dbPath + "-shm",
 			"-f", s.profilePath}
 		return append(argv, cmd...)
-	case "bubblewrap":
-		// The tmpfs comes first, before every bind. bwrap applies its arguments in
-		// order, so a tmpfs mounted later masks whatever is already beneath it —
-		// and /tmp is where Linux puts a temporary directory, so a workspace or a
-		// named read path can legitimately live there.
-		argv := []string{"bwrap", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"}
-		// Only the runtime is bound, so the home directory and the repository
-		// the agent runs from are not in the mount namespace at all.
-		for _, p := range append(append([]string{}, linuxReads...), s.ReadPaths...) {
-			if _, err := os.Stat(p); err == nil {
-				argv = append(argv, "--ro-bind", p, p)
-			}
+	case "landlock":
+		// The agent is its own wrapper: this re-runs the agent, which restricts
+		// itself to the policy and then becomes the tool. Only the working
+		// directory is writable; the runtime and the tool directory are
+		// readable; nothing else is granted anything, so nothing else is
+		// reachable — the home directory, another session's files, and every
+		// transcript included.
+		p := policy{
+			// The working directory, and the directory the database lives in so
+			// SQLite can create the journals it writes beside it.
+			Write: []string{ws, filepath.Dir(s.dbPath)},
+			Read:  append(append([]string{tools}, linuxReads...), s.ReadPaths...),
+			// The device files a program opens before any of its own code runs.
+			// bubblewrap gave a fresh /dev and this grants the same handful by
+			// name: without /dev/null a shell cannot redirect, and every tool
+			// fails on launch rather than on anything it was asked to do.
+			Files: linuxDevices,
+			Chdir: ws,
 		}
-		argv = append(argv,
-			"--ro-bind", tools, tools,
-			"--bind", ws, ws)
-		for _, f := range []string{s.dbPath, s.dbPath + "-wal", s.dbPath + "-shm"} {
-			if _, err := os.Stat(f); err == nil {
-				argv = append(argv, "--bind", f, f)
-			}
+		exe, err := os.Executable()
+		if err != nil {
+			// Without the wrapper there is no confinement, and a tool that runs
+			// unconfined because the wrapper could not be found is the failure
+			// this whole file exists to prevent.
+			return []string{"/nonexistent/confinement-unavailable"}
 		}
-		argv = append(argv, "--die-with-parent", "--chdir", ws, "--")
-		return append(argv, cmd...)
+		return append([]string{exe, "-confine", p.encode(), "--"}, cmd...)
 	}
 	return cmd
 }

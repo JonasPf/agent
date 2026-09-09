@@ -157,7 +157,7 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	dbPath, err := filepath.Abs(filepath.Join(cfg.DataDir, "agent.db"))
+	dbPath, err := filepath.Abs(DBPath(cfg.DataDir))
 	if err != nil {
 		return err
 	}

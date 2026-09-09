@@ -20,7 +20,7 @@
 <div class="wrap">
 
 <h1>Decisions</h1>
-<p class="lede">Thirty-five choices with real tradeoffs. Each states what was given up.</p>
+<p class="lede">Thirty-six choices with real tradeoffs. Each states what was given up.</p>
 
 <div class="adr" id="adr-001">
 <div class="meta">ADR-001 · accepted</div>
@@ -1066,6 +1066,48 @@ thing it can do about a boundary that is off.</p>
 <p>A headless browser does not fit in the memory available, so <code>web_fetch</code> retrieves pages
 over HTTP and a page assembled by scripts reads as empty. That is a hardware problem, and naming it
 here keeps it from being rediscovered as a bug.</p>
+</div>
+
+<div class="adr" id="adr-039">
+<div class="meta">ADR-039 · accepted</div>
+<h3>Landlock, not bubblewrap, is the Linux sandbox</h3>
+<h4>Context</h4>
+<p><a href="#adr-030">ADR-030</a> chose bubblewrap because it needs no privileges. That was true of the
+command and not of the kernel: bubblewrap builds a mount namespace, and a mount namespace needs an
+unprivileged user namespace, which Ubuntu 24.04 refuses to a container. Measured on the deployment
+host, every configuration was refused except <code>--privileged</code>, which is a worse trade on a
+machine running anything else. So the deployed agent ran with no sandbox at all, and
+<a href="#adr-036">ADR-036</a> depends on there being one: without it a tool can write the tool
+directory of the running agent, and the pull request stops being the only way in.</p>
+<h4>Decision</h4>
+<p>On Linux the sandbox is Landlock. It is a kernel facility an unprivileged process asks for by
+syscall: no namespace, no capability, nothing installed, and it works inside an unprivileged container
+on a host that refuses user namespaces. macOS keeps Seatbelt, which already worked.</p>
+<p>Landlock restricts the thread that asks and is inherited across <code>execve</code>, so something
+must ask between the fork and the exec, and Go offers no hook there. The agent is therefore its own
+wrapper: <code>agent -confine &lt;policy&gt; -- &lt;tool&gt;</code>. That second run applies the policy
+to itself and becomes the tool &mdash; the same shape as <code>sandbox-exec</code> and
+<code>bwrap</code>, a command in front of a command, with no second binary to ship. The three syscalls
+are written out rather than taken as a dependency, in a project with two.</p>
+<p>The database moves with this decision. SQLite creates its write-ahead log beside the database when
+it first needs one, which is permission to create a file in that directory &mdash; and that directory
+held every transcript. Landlock grants a tree or it does not: a zero-access rule to carve a hole is
+refused by the kernel, which was measured rather than assumed. So the database now lives in a
+directory of its own, holding nothing but the database and its journals, and that directory is what a
+tool is granted.</p>
+<h4>Consequences</h4>
+<p>The boundary now holds where the agent actually runs, which is the only place it ever mattered. It
+also holds on a stock CI runner with no <code>sysctl</code> and no package, so the suite that proves
+it is no longer run against a doctored machine.</p>
+<p>Two things are given up. Landlock denies paths rather than hiding them: a tool learns that other
+sessions exist &mdash; <code>stat</code> is not a right Landlock governs &mdash; and cannot read a byte
+of them, where bubblewrap left them out of the mount namespace entirely. And the floor is now Linux
+5.13; older kernels report no sandbox, with the reason, rather than silently having none.</p>
+<p>Two failures found by building it, both invisible to a laptop. A shell cannot start without
+<code>/dev/null</code>, so the handful of device files a program opens before its own code runs are
+granted by name rather than by granting <code>/dev</code>. And a rule descriptor must be opened with
+<code>O_PATH</code>: <code>/dev/tty</code> cannot be opened when there is no controlling terminal, and
+a rule about a path should not depend on being able to talk to what is behind it.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

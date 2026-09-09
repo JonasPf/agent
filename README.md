@@ -109,7 +109,7 @@ merge to main    → .github/workflows/release.yml builds the image, pushes it t
 
 | File | Is |
 | --- | --- |
-| `Dockerfile` | Two stages: build the agent, every tool, and a pinned `gh`, then a Debian runtime with `git`, `gh`, and `bubblewrap` — the userland the tools need, and nothing else. |
+| `Dockerfile` | Two stages: build the agent, every tool, and a pinned `gh`, then a Debian runtime with `git` and `gh` — the userland the tools need, and nothing else. The sandbox needs no package: Landlock is the kernel's. |
 | `deploy/compose.yml` | The whole deployment: the image to run, named volumes for `data` and `workspace` so a redeploy keeps every conversation, and the Traefik labels that route to it. |
 
 The deployment needs three variables set where it runs, none of which are in this

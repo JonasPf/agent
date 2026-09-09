@@ -290,7 +290,13 @@ that user, with one boundary the operating system enforces: the session's own wo
 <p>Every tool subprocess, and every check command, is launched inside a sandbox. There is no
 cross-platform library for this &mdash; everything that claims to be one branches on the platform &mdash;
 so this does too, over the two primitives that need no privileges: Seatbelt
-(<code>sandbox-exec</code>) on macOS and bubblewrap (<code>bwrap</code>) on Linux.</p>
+(<code>sandbox-exec</code>) on macOS and Landlock on Linux.</p>
+
+<p>Landlock is a kernel facility an unprivileged process asks for directly: no namespace, no
+capability, and nothing installed. That is what makes it work where bubblewrap did not &mdash; inside
+an unprivileged container, on a host that refuses unprivileged user namespaces
+(<a href="adrs.html#adr-039">ADR-039</a>). On Linux the agent is therefore its own wrapper: it re-runs
+itself in front of every tool, and that second run restricts itself and becomes the tool.</p>
 
 <p><strong>A tool reads and writes its own session's working directory, and nothing else.</strong> Both
 halves are an allow-list, so a path that was never considered is denied rather than permitted

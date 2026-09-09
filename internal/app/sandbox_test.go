@@ -26,8 +26,8 @@ func TestTheSandboxNamesWhatIsEnforcing(t *testing.T) {
 			t.Errorf("mechanism = %q, want seatbelt or none on darwin", s.Mechanism)
 		}
 	case "linux":
-		if s.Mechanism != "bubblewrap" && s.Mechanism != "none" {
-			t.Errorf("mechanism = %q, want bubblewrap or none on linux", s.Mechanism)
+		if s.Mechanism != "landlock" && s.Mechanism != "none" {
+			t.Errorf("mechanism = %q, want landlock or none on linux", s.Mechanism)
 		}
 	}
 	// Whatever it decided, it has to be able to say why: a sandbox that quietly
@@ -40,9 +40,9 @@ func TestTheSandboxNamesWhatIsEnforcing(t *testing.T) {
 // The wrapped command is what actually runs, so its shape is worth pinning:
 // the tool binary and its arguments survive, and the confinement is in front.
 func TestWrappingKeepsTheCommandIntact(t *testing.T) {
-	for _, mech := range []string{"seatbelt", "bubblewrap", "none"} {
+	for _, mech := range []string{"seatbelt", "landlock", "none"} {
 		t.Run(mech, func(t *testing.T) {
-			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d", toolsDir: "/t", dbPath: "/d/agent.db"}
+			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d", toolsDir: "/t", dbPath: "/d/db/agent.db"}
 			argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", []string{"-x"})
 			if argv[len(argv)-1] != "-x" {
 				t.Errorf("argv = %v, want it to end with the tool's own argument", argv)
@@ -60,56 +60,53 @@ func TestWrappingKeepsTheCommandIntact(t *testing.T) {
 	}
 }
 
-// bubblewrap binds only the runtime and the session's own directory, so a path
-// nobody named is not in the mount namespace at all — the home directory and the
-// repository the agent runs from included.
-func TestBubblewrapBindsOnlyWhatIsAllowed(t *testing.T) {
-	s := &Sandbox{Mechanism: "bubblewrap", workspaceRoot: "/w", dataDir: "/d",
-		toolsDir: "/t", dbPath: "/d/agent.db"}
-	argv := strings.Join(s.Wrap("/tools/bash/run", "/w/S1", "/t", nil), " ")
-	if strings.Contains(argv, "--ro-bind / /") {
-		t.Error("the whole filesystem is bound, which is the rule this replaces")
-	}
-	if !strings.Contains(argv, "--bind /w/S1 /w/S1") {
-		t.Errorf("argv = %q, want this session's directory writable", argv)
-	}
-	if strings.Contains(argv, "--bind /w /w") || strings.Contains(argv, "--bind /d /d") {
-		t.Errorf("argv = %q, want neither the workspace root nor the data directory writable", argv)
-	}
-	if !strings.Contains(argv, "--ro-bind /t /t") {
-		t.Errorf("argv = %q, want the tool directory readable and not writable", argv)
-	}
-	if !strings.Contains(argv, "--die-with-parent") {
-		t.Errorf("argv = %q, want the child to die with the agent", argv)
-	}
-}
+// The Landlock policy is what the wrapper carries, so what it grants is worth
+// pinning: the session's own directory and nothing above it, the runtime and the
+// tool directory readable, and the database by name. A path nobody granted is
+// denied, which is what makes this an allow-list.
+func TestTheLandlockPolicyGrantsOnlyWhatIsAllowed(t *testing.T) {
+	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d",
+		toolsDir: "/t", dbPath: "/d/db/agent.db", ReadPaths: []string{"/opt/browsers"}}
+	argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", []string{"-c", "true"})
 
-// bwrap applies its arguments in order, and a tmpfs over /tmp will mask anything
-// already mounted beneath it. A workspace under /tmp is ordinary — it is where
-// Go's own temporary directories live on Linux, so it is what the test suite
-// itself uses — and masking it leaves a tool unable to reach the one directory
-// it is allowed to write.
-func TestATmpfsOverTmpDoesNotMaskAWorkspaceBeneathIt(t *testing.T) {
-	s := &Sandbox{Mechanism: "bubblewrap", workspaceRoot: "/tmp/w", dataDir: "/tmp/d",
-		toolsDir: "/t", dbPath: "/tmp/d/agent.db"}
-	argv := s.Wrap("/tools/bash/run", "/tmp/w/S1", "/t", nil)
+	if len(argv) < 4 || argv[1] != "-confine" || argv[3] != "--" {
+		t.Fatalf("argv = %v, want the agent's own wrapper in front", argv)
+	}
+	if argv[len(argv)-1] != "true" || argv[len(argv)-3] != "/tools/bash/run" {
+		t.Errorf("argv = %v, want the command and its arguments intact at the end", argv)
+	}
 
-	tmpfs, firstBind := -1, -1
-	for i, a := range argv {
-		if a == "--tmpfs" && i+1 < len(argv) && argv[i+1] == "/tmp" {
-			tmpfs = i
-		}
-		if (a == "--bind" || a == "--ro-bind") && firstBind < 0 {
-			firstBind = i
+	var p policy
+	if err := json.Unmarshal([]byte(argv[2]), &p); err != nil {
+		t.Fatalf("policy is not readable: %v", err)
+	}
+	// Two writable trees and no more: this session's own directory, and the
+	// directory holding the database a tool is handed on purpose. Not the data
+	// directory above it, which holds every transcript.
+	if len(p.Write) != 2 || p.Write[0] != "/w/S1" || p.Write[1] != "/d/db" {
+		t.Errorf("writable = %v, want this session's directory and the database's own", p.Write)
+	}
+	for _, denied := range []string{"/w", "/d", "/"} {
+		for _, granted := range append(append([]string{}, p.Write...), p.Read...) {
+			if granted == denied {
+				t.Errorf("%q is granted; the workspace root, the data directory and the root are not", denied)
+			}
 		}
 	}
-	if tmpfs < 0 || firstBind < 0 {
-		t.Fatalf("argv = %v, want both a tmpfs over /tmp and binds", argv)
+	readable := strings.Join(p.Read, " ")
+	if !strings.Contains(readable, "/t") {
+		t.Errorf("read = %v, want the tool directory readable", p.Read)
 	}
-	// Every bind, not only the workspace: a named read path can be under /tmp
-	// too, and masking it leaves a tool unable to read what the operator named.
-	if tmpfs > firstBind {
-		t.Errorf("the tmpfs over /tmp is applied after a bind, which masks it: %v", argv)
+	if !strings.Contains(readable, "/opt/browsers") {
+		t.Errorf("read = %v, want the operator's named path readable", p.Read)
+	}
+	if p.Chdir != "/w/S1" {
+		t.Errorf("chdir = %q, want the session's directory", p.Chdir)
+	}
+	// A program opens these before any of its own code runs, and granting them
+	// one by one is what keeps the grant off the rest of /dev.
+	if len(p.Files) == 0 || !strings.Contains(strings.Join(p.Files, " "), "/dev/null") {
+		t.Errorf("files = %v, want the device files a program needs to start", p.Files)
 	}
 }
 
@@ -168,7 +165,7 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 		DefaultModel: "test/model", EnvFile: envFile}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, filepath.Join(dir, "agent.db"), st.DB()),
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
 	a.registerBuiltins()
@@ -453,7 +450,7 @@ func confinedApp(t *testing.T, toolsDir, skillsDir, readPaths string) (*App, str
 		ToolsDir: toolsDir, SkillsDir: skillsDir, DefaultModel: "test/model",
 		EnvFile: envFile, ReadPaths: readPaths}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, filepath.Join(dir, "agent.db"), st.DB()),
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
 	a.registerBuiltins()
@@ -514,7 +511,7 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 		ToolsDir: "../../tools", DefaultModel: "test/model"}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, filepath.Join(dir, "agent.db"), st.DB()),
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
 	a.registerBuiltins()
@@ -540,18 +537,18 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 }
 
 // A sandbox that is selected but cannot run confines nothing, and says it does.
-// The deployed container had bwrap installed on a host that refuses
+// The deployed container had bubblewrap installed on a host that refuses
 // unprivileged user namespaces: the agent reported "sandbox: bubblewrap", the
-// interface showed a boundary, and every tool subprocess died with "No
-// permissions to create new namespace". Presence of the binary was never the
-// question — whether the kernel will allow a namespace is.
+// interface showed a boundary, and every tool subprocess died on launch.
+// Whether the mechanism is present was never the question — whether the kernel
+// will run it is.
 func TestAMechanismIsOnlyClaimedIfItActuallyRuns(t *testing.T) {
-	ok, reason := probeBubblewrap("/nonexistent/bwrap")
-	if ok {
-		t.Error("a probe of a binary that is not there reported success")
+	ok, reason := landlockAvailable()
+	if !ok && reason == "" {
+		t.Error("a refusal must say why; an unexplained one is unactionable")
 	}
-	if reason == "" {
-		t.Error("a failed probe must say why; an unexplained refusal is unactionable")
+	if ok && runtime.GOOS != "linux" {
+		t.Errorf("Landlock reported available on %s", runtime.GOOS)
 	}
 }
 

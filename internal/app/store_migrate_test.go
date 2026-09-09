@@ -2,7 +2,9 @@ package app
 
 import (
 	"database/sql"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,5 +64,74 @@ func TestAnExistingDatabaseGainsTheNewJobColumns(t *testing.T) {
 	}
 	if runs, err := st.JobRuns("J1"); err != nil || len(runs) != 1 {
 		t.Fatalf("got %d runs (%v), want 1", len(runs), err)
+	}
+}
+
+// The database sits in a directory of its own, and the reason is the sandbox.
+// SQLite creates its write-ahead log and shared-memory file beside the database
+// when it first needs them, which needs permission to create a file in that
+// directory — and the directory it used to sit in is the one holding every
+// transcript. Landlock grants a tree or it does not; it has no way to grant a
+// directory while denying what is already in it.
+func TestTheDatabaseMovesOutOfTheTranscriptDirectory(t *testing.T) {
+	dir := t.TempDir()
+	legacy := filepath.Join(dir, "agent.db")
+
+	// A store from before the move: the file where it used to be, with a row in
+	// it that has to survive.
+	old, err := sql.Open("sqlite", legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Exec(`create table notes_items (id integer primary key, text text)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := old.Exec(`insert into notes_items (text) values ('kept')`); err != nil {
+		t.Fatal(err)
+	}
+	old.Close()
+
+	st, err := OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.DB().Close()
+
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Error("the database is still in the transcript directory")
+	}
+	if _, err := os.Stat(DBPath(dir)); err != nil {
+		t.Fatalf("the database is not where it should be: %v", err)
+	}
+	var text string
+	if err := st.DB().QueryRow(`select text from notes_items`).Scan(&text); err != nil {
+		t.Fatalf("the move lost the contents: %v", err)
+	}
+	if text != "kept" {
+		t.Errorf("text = %q, want %q", text, "kept")
+	}
+}
+
+// A tool is handed the database on purpose, so what it is handed must be the
+// directory holding it and nothing above that.
+func TestTheDatabaseDirectoryHoldsOnlyTheDatabase(t *testing.T) {
+	dir := t.TempDir()
+	st, err := OpenStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.DB().Close()
+
+	if filepath.Dir(DBPath(dir)) == filepath.Clean(dir) {
+		t.Fatal("the database is in the data directory itself, which holds every transcript")
+	}
+	entries, err := os.ReadDir(filepath.Dir(DBPath(dir)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "agent.db") {
+			t.Errorf("%s is in the database directory; only the database and its journals belong there", e.Name())
+		}
 	}
 }
