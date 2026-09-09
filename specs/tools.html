@@ -78,6 +78,7 @@ means rebuilding or restarting the agent, which is the property
   "db_prefix": "deploys_",
   "timeout_seconds": 30,
   "env": ["DEPLOY_TOKEN"],
+  "reads": ["/proc"],
   "parameters": {
     "type": "object",
     "properties": {
@@ -94,6 +95,7 @@ means rebuilding or restarting the agent, which is the property
 <li><code>description</code> is a single sentence.</li>
 <li><code>db_prefix</code> is unique across tools and every table the tool creates begins with it.</li>
 <li><code>env</code> is optional and names the environment variables this tool receives beyond the ones every tool is promised. It is the only way a variable of the agent's own environment &mdash; a credential included &mdash; reaches a tool.</li>
+<li><code>reads</code> is optional and names the paths this tool may read beyond the runtime every tool gets. A tool that asks for nothing reads the runtime, its own directory, and its session's working directory. Granting the union of what any tool might need would give every tool the widest boundary any of them asks for.</li>
 <li><code>parameters</code> is a valid JSON Schema object and is exposed verbatim to the model.</li>
 <li>A tool directory without <code>eval.json</code> is reported by the test run, so a capability cannot be added without evidence that a model can use it.</li>
 <li>A manifest missing a required field prevents that tool from loading and does not affect other tools.</li>

@@ -7,6 +7,11 @@
     "AGENT_NO_BROWSER",
     "PLAYWRIGHT_BROWSERS_PATH"
   ],
+  "reads": [
+    "/proc",
+    "/sys",
+    "/var"
+  ],
   "timeout_seconds": 60,
   "parameters": {
     "type": "object",

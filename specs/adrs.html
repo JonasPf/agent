@@ -1103,12 +1103,21 @@ it is no longer run against a doctored machine.</p>
 sessions exist &mdash; <code>stat</code> is not a right Landlock governs &mdash; and cannot read a byte
 of them, where bubblewrap left them out of the mount namespace entirely. And the floor is now Linux
 5.13; older kernels report no sandbox, with the reason, rather than silently having none.</p>
-<p>One grant is weaker than the rest. <code>/proc</code> is readable, because a program reads its own
-maps and limits before it does anything else, and Landlock cannot grant a tree while denying part of
-it. That exposes <code>/proc/&lt;pid&gt;/environ</code> of every process this user owns &mdash; the
-agent among them &mdash; so a tool can read the model key there whatever
-<a href="#adr-037">ADR-037</a> keeps out of its own environment. bubblewrap mounted a procfs and gave
-the same thing, so nothing regressed; it is recorded rather than implied.</p>
+<p><code>/proc</code> is not in the runtime every tool gets, and the reason is worth stating. A read
+grant on it is also a leak: <code>/proc/&lt;pid&gt;/environ</code> of any process this user owns is
+readable through it, the agent's included, so it would hand every tool the model key that
+<a href="#adr-037">ADR-037</a> keeps out of its environment. Landlock cannot grant a tree while denying
+part of it, so the answer is not a narrower grant but a narrower grantee: a tool declares the paths it
+needs in its manifest, the way it declares its environment, and only the two browser tools ask for
+<code>/proc</code> &mdash; a browser reads its own maps before it renders anything. The suite proved
+nothing else needs it by passing without it.</p>
+<p>For those two, the prize is removed as well: the agent makes itself undumpable at startup
+(<code>prctl(PR_SET_DUMPABLE, 0)</code>), which puts its <code>/proc</code> entries out of reach of
+every other process this user owns. One syscall, and the cost is a core dump nobody wanted. Measured
+in the container: a sibling process reads <code>OPENROUTER_API_KEY</code> out of
+<code>/proc/&lt;pid&gt;/environ</code> before it, and is refused after.</p>
+<p>bubblewrap mounted a procfs for every tool and had no way to say which tool needed one, so this is
+tighter than the mechanism it replaces rather than a concession made to it.</p>
 <p>Two failures found by building it, both invisible to a laptop. A shell cannot start without
 <code>/dev/null</code>, so the handful of device files a program opens before its own code runs are
 granted by name rather than by granting <code>/dev</code>. And a rule descriptor must be opened with

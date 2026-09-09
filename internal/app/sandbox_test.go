@@ -43,7 +43,7 @@ func TestWrappingKeepsTheCommandIntact(t *testing.T) {
 	for _, mech := range []string{"seatbelt", "landlock", "none"} {
 		t.Run(mech, func(t *testing.T) {
 			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d", toolsDir: "/t", dbPath: "/d/db/agent.db"}
-			argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", []string{"-x"})
+			argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", nil, []string{"-x"})
 			if argv[len(argv)-1] != "-x" {
 				t.Errorf("argv = %v, want it to end with the tool's own argument", argv)
 			}
@@ -67,7 +67,7 @@ func TestWrappingKeepsTheCommandIntact(t *testing.T) {
 func TestTheLandlockPolicyGrantsOnlyWhatIsAllowed(t *testing.T) {
 	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d",
 		toolsDir: "/t", dbPath: "/d/db/agent.db", ReadPaths: []string{"/opt/browsers"}}
-	argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", []string{"-c", "true"})
+	argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", nil, []string{"-c", "true"})
 
 	if len(argv) < 4 || argv[1] != "-confine" || argv[3] != "--" {
 		t.Fatalf("argv = %v, want the agent's own wrapper in front", argv)
@@ -565,5 +565,68 @@ func TestWhatTheSandboxClaimsIsWhatTheToolGets(t *testing.T) {
 	seen := toolEnv(t, a, "canary")
 	if !seen["PATH"] {
 		t.Errorf("the sandbox claims %q but no tool can run under it", a.sandbox.Mechanism)
+	}
+}
+
+// /proc is the one tree where a read grant is also a leak: it exposes the
+// environment of every process this user owns, the agent's included. A browser
+// needs it and nothing else does, so it is not in the runtime every tool gets —
+// a tool that needs it asks, and the answer is written in its manifest.
+func TestOnlyAToolThatAsksForAPathCanReadIt(t *testing.T) {
+	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d",
+		toolsDir: "/t", dbPath: "/d/db/agent.db"}
+
+	plain := landlockPolicy(t, s.Wrap("/tools/edit/run", "/w/S1", "/t", nil, nil))
+	for _, path := range plain.Read {
+		if path == "/proc" {
+			t.Error("a tool that asked for nothing was granted /proc, and with it every process's environment")
+		}
+	}
+
+	asked := landlockPolicy(t, s.Wrap("/tools/web_fetch/run", "/w/S1", "/t", []string{"/proc", "/sys"}, nil))
+	if !strings.Contains(strings.Join(asked.Read, " "), "/proc") {
+		t.Errorf("read = %v, want the path the tool asked for", asked.Read)
+	}
+}
+
+// landlockPolicy reads back the policy the wrapper carries.
+func landlockPolicy(t *testing.T, argv []string) policy {
+	t.Helper()
+	var p policy
+	if len(argv) < 3 {
+		t.Fatalf("argv = %v, want a wrapper carrying a policy", argv)
+	}
+	if err := json.Unmarshal([]byte(argv[2]), &p); err != nil {
+		t.Fatalf("policy is not readable: %v", err)
+	}
+	return p
+}
+
+// The manifest is the tool's whole declaration, so what it says about the paths
+// it needs has to survive being read back.
+func TestTheManifestReportsThePathsAToolAsksFor(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(dir, DBPath(dir), nil)
+	toolDir := filepath.Join(dir, "browser")
+	if err := os.MkdirAll(toolDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"name":"browser","description":"Render a page.","db_prefix":"browser_",
+	  "reads":["/proc"],"parameters":{"type":"object","properties":{}}}`
+	if err := os.WriteFile(filepath.Join(toolDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolDir, "run"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, failures := r.Load(nil); len(failures) > 0 {
+		t.Fatalf("tool did not load: %+v", failures)
+	}
+	got := r.Get("browser")
+	if got == nil {
+		t.Fatal("the tool did not load")
+	}
+	if len(got.Reads) != 1 || got.Reads[0] != "/proc" {
+		t.Errorf("reads = %v, want [/proc]", got.Reads)
 	}
 }

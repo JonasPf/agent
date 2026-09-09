@@ -46,17 +46,13 @@ var systemReads = []string{
 // linuxReads is the same set for Landlock, which grants access beneath a
 // directory rather than matching a path, so the root itself is not among them:
 // granting the root would grant everything under it.
-// /proc is in it because a program reads its own maps, limits, and file
-// descriptors before it does anything else — a browser will not start without
-// them. This is the one grant that gives more than it should: /proc/<pid>/environ
-// of another process owned by this user is readable through it, and the agent is
-// such a process, so a tool can read the agent's environment there whatever
-// ADR-037 keeps out of its own. bubblewrap mounted a procfs and gave exactly the
-// same thing, so the boundary is no weaker than the one it replaces — but it is
-// not as strong as the rest of this list, and TODO.md says so.
-var linuxReads = []string{
-	"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/proc", "/sys", "/var",
-}
+//
+// It does not include /proc. A browser needs it and nothing else does — the
+// suite proved that by passing without it — and /proc is the one tree where a
+// read grant is also a leak: /proc/<pid>/environ of any process this user owns
+// is readable through it, the agent's included. A tool that needs it says so in
+// its manifest, and only the two browser tools do.
+var linuxReads = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt"}
 
 // linuxDevices is what a program opens before any of its own code runs. They are
 // named one by one rather than granting /dev, because a grant on the directory
@@ -133,7 +129,8 @@ func (s *Sandbox) prepare() {
 // than a field because the registry's directory is what is actually in use, and
 // a sandbox pointed at the configured one would refuse a tool loaded from
 // anywhere else.
-func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string {
+// reads are the paths this tool asked for beyond the runtime, from its manifest.
+func (s *Sandbox) Wrap(bin, workspace, toolRoot string, reads []string, args []string) []string {
 	cmd := append([]string{bin}, args...)
 	if !s.Enforcing() {
 		return cmd
@@ -166,7 +163,7 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string 
 			// The working directory, and the directory the database lives in so
 			// SQLite can create the journals it writes beside it.
 			Write: []string{ws, filepath.Dir(s.dbPath)},
-			Read:  append(append([]string{tools}, linuxReads...), s.ReadPaths...),
+			Read:  append(append(append([]string{tools}, linuxReads...), s.ReadPaths...), reads...),
 			// The device files a program opens before any of its own code runs.
 			// bubblewrap gave a fresh /dev and this grants the same handful by
 			// name: without /dev/null a shell cannot redirect, and every tool
