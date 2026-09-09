@@ -140,10 +140,28 @@ network client for a request the agent can make of itself.
 Secrets live in Dokploy (`OPENROUTER_API_KEY`, `GH_TOKEN`) and in GitHub Actions
 (`DOKPLOY_DEPLOY_WEBHOOK`); none of them are in this repository.
 
-The agent can propose changes to itself: it clones this repository into a session's working directory,
-edits it there, and opens a pull request that goes through the same pipeline
-([`skills/changing-yourself.md`](skills/changing-yourself.md), [ADR-036](specs/adrs.html#adr-036)). It
-cannot change the copy of itself that is running.
+## Changing the agent
+
+The agent proposes changes to itself: it clones this repository into a session's working directory,
+edits it there, and opens a pull request that goes through the pipeline above. It cannot change the
+copy of itself that is running, and it cannot merge.
+
+There is no code for this. The whole of it is:
+
+| What | Is |
+| --- | --- |
+| [`skills/changing-yourself.md`](skills/changing-yourself.md) | The procedure, as prose. ~3 KB |
+| `git` and `gh` in the image | The two programs it needs. The shell, the file tools and the network are there for every other task |
+| `GH_TOKEN`, `AGENT_REPO` | A credential and an address, reaching only a tool whose manifest names them |
+
+No tool, no API route, no branch in the loop — nothing in any package knows this capability exists,
+and a test fails if that changes. Deleting the skill and the two packages deletes the capability.
+
+**Nothing in the agent enforces the procedure.** A skill is advice to a model that already has a
+shell. The controls are all outside: the credential's scope, branch protection, a pull-request
+pipeline with no secrets, and the sandbox that keeps a tool out of the running agent's directories.
+Where the sandbox does not run, the pipeline is not the only way in.
+See [ADR-036](specs/adrs.html#adr-036) and [Changing the agent](specs/architecture.html).
 
 ## What is not built
 
