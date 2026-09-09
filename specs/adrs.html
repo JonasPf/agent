@@ -1103,6 +1103,12 @@ it is no longer run against a doctored machine.</p>
 sessions exist &mdash; <code>stat</code> is not a right Landlock governs &mdash; and cannot read a byte
 of them, where bubblewrap left them out of the mount namespace entirely. And the floor is now Linux
 5.13; older kernels report no sandbox, with the reason, rather than silently having none.</p>
+<p>One grant is weaker than the rest. <code>/proc</code> is readable, because a program reads its own
+maps and limits before it does anything else, and Landlock cannot grant a tree while denying part of
+it. That exposes <code>/proc/&lt;pid&gt;/environ</code> of every process this user owns &mdash; the
+agent among them &mdash; so a tool can read the model key there whatever
+<a href="#adr-037">ADR-037</a> keeps out of its own environment. bubblewrap mounted a procfs and gave
+the same thing, so nothing regressed; it is recorded rather than implied.</p>
 <p>Two failures found by building it, both invisible to a laptop. A shell cannot start without
 <code>/dev/null</code>, so the handful of device files a program opens before its own code runs are
 granted by name rather than by granting <code>/dev</code>. And a rule descriptor must be opened with
