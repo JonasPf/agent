@@ -972,7 +972,9 @@ deliberately remained open. This is that choice. What made the old arrangement w
 agent wrote code, but where the code landed: a tool wrote <code>tools/&lt;name&gt;/</code> on the running
 machine and the next call ran it, with nothing between deciding and executing.</p>
 <h4>Decision</h4>
-<p>The agent proposes changes to itself the way a person does. It clones this repository into a
+<p>The agent proposes changes to itself the way a person does, and no further: proposing is the whole
+of what it can do. That is <a href="index.html">no surprises</a> applied to the agent's own code &mdash;
+what it is changes only when a person approves the change. It clones this repository into a
 session's working directory &mdash; the one place its tools can write &mdash; edits there, pushes a
 branch, and opens a pull request. A pipeline runs <code>task check</code> on the branch. A person
 reviews and merges. Merging builds an image and redeploys the server, which is how the change reaches
