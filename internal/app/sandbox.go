@@ -54,7 +54,9 @@ var systemReads = []string{
 // ADR-037 keeps out of its own. bubblewrap mounted a procfs and gave exactly the
 // same thing, so the boundary is no weaker than the one it replaces — but it is
 // not as strong as the rest of this list, and TODO.md says so.
-var linuxReads = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/proc"}
+var linuxReads = []string{
+	"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/proc", "/sys", "/var",
+}
 
 // linuxDevices is what a program opens before any of its own code runs. They are
 // named one by one rather than granting /dev, because a grant on the directory
