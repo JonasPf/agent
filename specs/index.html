@@ -30,13 +30,23 @@ the next copy &mdash; a branch, a pull request, a pipeline, and a person who mer
 
 <h2>Design principle</h2>
 
+<p><strong>No surprises.</strong> In two halves: what the agent does, and what the agent is.</p>
+
 <p><strong>Nothing happens that you cannot see.</strong> Every scheduled action is a row you can read.
 Every memory the agent carries is visible at the top of the conversation. Every check it performs
 leaves a line in the transcript. There is no background process whose effects appear without
 explanation.</p>
 
-<p>This principle decides the arguments. Where a hidden mechanism would be cheaper or more capable,
-the visible one wins unless the cost is prohibitive.</p>
+<p><strong>Nothing about the agent changes that you did not approve.</strong> It can propose a change
+to itself &mdash; a branch, a pull request, a pipeline that verifies it &mdash; and it cannot do more
+than propose. A person reads it and merges, and only a merge reaches the running agent
+(<a href="adrs.html#adr-036">ADR-036</a>). It cannot write the tool or skill directory of the copy that
+is running, cannot merge its own work, and cannot deploy. The agent you are talking to tomorrow is the
+one you approved today.</p>
+
+<p>This principle decides the arguments. Where a hidden mechanism would be cheaper or more capable, the
+visible one wins unless the cost is prohibitive. Where the agent could improve itself faster by going
+round the review, it waits.</p>
 
 <h2>What it is not</h2>
 

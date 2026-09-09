@@ -972,7 +972,9 @@ deliberately remained open. This is that choice. What made the old arrangement w
 agent wrote code, but where the code landed: a tool wrote <code>tools/&lt;name&gt;/</code> on the running
 machine and the next call ran it, with nothing between deciding and executing.</p>
 <h4>Decision</h4>
-<p>The agent proposes changes to itself the way a person does. It clones this repository into a
+<p>The agent proposes changes to itself the way a person does, and no further: proposing is the whole
+of what it can do. That is <a href="index.html">no surprises</a> applied to the agent's own code &mdash;
+what it is changes only when a person approves the change. It clones this repository into a
 session's working directory &mdash; the one place its tools can write &mdash; edits there, pushes a
 branch, and opens a pull request. A pipeline runs <code>task check</code> on the branch. A person
 reviews and merges. Merging builds an image and redeploys the server, which is how the change reaches
@@ -996,6 +998,18 @@ agent's most consequential capability.</p>
 It is replaced by a weaker but sufficient one &mdash; the code running is code the operator merged. The
 risk that remains is a reviewer approving a change they did not read, which no mechanism here can
 prevent.</p>
+<p>One property of the result is worth naming, because it was not designed and is worth keeping. There
+is no code for this. The capability is a three-kilobyte skill, <code>git</code> and <code>gh</code> in
+the image, and a credential delivered to whichever tool names it: no tool, no route, no branch in the
+loop, nothing in any package that knows the agent can change itself. It is composition, and the same
+parts would let the agent work on any other repository. Deleting the skill and the two programs
+deletes the capability and nothing else &mdash; which is the cheapest possible answer to
+&ldquo;what if this turns out to be a bad idea&rdquo;.</p>
+<p>The corollary is that nothing in the agent enforces any of it. A skill is advice to a model that
+already has a shell. Every control that makes this safe is outside the process: the credential's
+scope, the branch protection, a pull-request pipeline holding no secrets, and the sandbox that keeps a
+tool out of the running agent's own directories. Where the sandbox does not run, the pipeline is no
+longer the only way in &mdash; see <a href="architecture.html">Changing the agent</a>.</p>
 </div>
 
 <div class="adr" id="adr-037">

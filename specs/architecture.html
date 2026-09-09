@@ -246,6 +246,42 @@ must be on the tailnet to learn anything at all.</p>
 </ul>
 </div>
 
+<h2>Changing the agent</h2>
+
+<p>The agent proposes changes to itself (<a href="adrs.html#adr-036">ADR-036</a>), which is the second
+half of <a href="index.html">no surprises</a>: the agent you are talking to tomorrow is the one you
+approved today. It is worth being exact about what that consists of, because it is not a feature and
+there is no code for it.</p>
+
+<table>
+<tr><th>What</th><th>Is</th></tr>
+<tr><td><code>skills/changing-yourself.md</code></td><td>The procedure, as prose: clone into this session's working directory, branch, edit, push, open a pull request, read what the pipeline says. About three kilobytes.</td></tr>
+<tr><td><code>git</code> and <code>gh</code> in the image</td><td>The two programs that procedure needs. Everything else it uses &mdash; the shell, the file tools, the network &mdash; is there for every other task too.</td></tr>
+<tr><td><code>GH_TOKEN</code>, <code>AGENT_REPO</code></td><td>A credential and an address, delivered to a tool that names them in its manifest (<a href="adrs.html#adr-037">ADR-037</a>).</td></tr>
+</table>
+
+<p>That is the whole of it. No package in the agent knows this capability exists: no tool, no route on
+the API, no branch in the loop. It is composition &mdash; a shell, a network, and a document &mdash;
+and the same three parts would let the agent work on any other repository just as well.</p>
+
+<p><strong>Nothing in the agent enforces the procedure.</strong> A skill is advice to a model that
+already has a shell; it shapes what the agent does and constrains nothing. Every control that makes
+this safe sits outside the process: the scope of the credential, the branch protection that refuses a
+merge without a green pipeline, the pipeline that holds no secrets on a pull request, and the sandbox
+that keeps a tool out of the agent's own directories. An agent that ignores its skill entirely still
+cannot merge; an agent on a host where the sandbox does not run can write the tool directory of the
+copy that is running, and the pipeline stops being the only way in.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>No source file in the agent, its tools, or its commands refers to the credential or the repository the agent proposes changes to. The capability is a skill, two programs, and the tool environment; a code path for it is a defect.</li>
+<li>Removing the skill and the two programs removes the capability, and nothing else changes.</li>
+<li>The agent cannot write the tool directory or the skill directory of the running process, so a change reaches the running agent only by being merged and deployed.</li>
+<li>What constrains the agent is stated where the capability is described: the credential's scope, the branch protection, a pipeline without secrets, and the sandbox.</li>
+</ul>
+</div>
+
 <h2>Process boundaries</h2>
 
 <p>The agent, its tools, and the gateway run as one user in one container. A tool has the privileges of
