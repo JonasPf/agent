@@ -630,3 +630,23 @@ func TestTheManifestReportsThePathsAToolAsksFor(t *testing.T) {
 		t.Errorf("reads = %v, want [/proc]", got.Reads)
 	}
 }
+
+// Where nothing is enforcing, the line that says so has to be a warning. A
+// container on a kernel without Landlock, or a platform with no mechanism at
+// all, is a working agent with a boundary missing — and every other line at
+// startup reports something that works.
+func TestAnUnenforcedSandboxSaysSoAsAWarning(t *testing.T) {
+	off := &Sandbox{Mechanism: "none", Reason: "this kernel has no Landlock"}
+	line := off.Describe()
+	if !strings.Contains(line, "WARNING") {
+		t.Errorf("Describe() = %q, want it marked as a warning", line)
+	}
+	if !strings.Contains(line, "this kernel has no Landlock") {
+		t.Errorf("Describe() = %q, want it to carry the reason", line)
+	}
+
+	on := &Sandbox{Mechanism: "landlock"}
+	if strings.Contains(on.Describe(), "WARNING") {
+		t.Errorf("Describe() = %q, want no warning when a boundary is in force", on.Describe())
+	}
+}

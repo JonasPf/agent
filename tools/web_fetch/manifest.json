@@ -4,7 +4,6 @@
   "db_prefix": "web_fetch_",
   "env": [
     "AGENT_BROWSER",
-    "AGENT_NO_BROWSER",
     "PLAYWRIGHT_BROWSERS_PATH"
   ],
   "reads": [

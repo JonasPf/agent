@@ -103,7 +103,11 @@ func (s *Sandbox) Describe() string {
 		}
 		return line
 	}
-	return "sandbox: NOT ENFORCED (" + s.Reason + ") — a tool can read and write anything this user can"
+	// Marked as a warning because it is one: every other line at startup reports
+	// what is working. This reports that a boundary the rest of the system is
+	// written around is absent, and it has to read as different from the rest.
+	return "WARNING: sandbox NOT ENFORCED (" + s.Reason + ") — a tool can read and write anything this user can, " +
+		"including every session's files and this process's own directory"
 }
 
 // prepare writes whatever the mechanism needs on disk. It runs as part of

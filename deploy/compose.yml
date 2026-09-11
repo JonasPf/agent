@@ -18,9 +18,6 @@ services:
       # Required. Dokploy holds it; it never enters the repository.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?set this in Dokploy}
       AGENT_MODEL: ${AGENT_MODEL:-anthropic/claude-sonnet-4.5}
-      # This box has ~300 MB of memory free. A headless Chrome does not fit, so
-      # web_fetch retrieves pages over plain HTTP instead of rendering them.
-      AGENT_NO_BROWSER: "1"
       # What the agent needs to proposes changes to itself. Fine-grained, one
       # repository, contents + pull requests write, no workflow scope: the most
       # it can do with this is open a pull request nobody has merged yet.

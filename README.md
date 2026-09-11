@@ -59,7 +59,6 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_TOOLS` / `AGENT_SKILLS` | `tools` / `skills` | Scanned at start and on reload. |
 | `AGENT_BROWSER` | auto | Chrome-family executable for `web_search` and `web_fetch`. Usual install paths and Playwright's cache are searched when unset. Must sit inside a readable path — see `AGENT_READ_PATHS`. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
-| `AGENT_NO_BROWSER` | unset | Set to make `web_fetch` retrieve pages over plain HTTP instead of rendering them. |
 | `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. |
 | `GH_TOKEN` | — | GitHub credential. Reaches only a tool whose manifest names it, and no tool names it yet. |

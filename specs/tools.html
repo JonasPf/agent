@@ -126,7 +126,6 @@ is not set stays absent rather than arriving empty.</p>
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
 <tr><td><code>AGENT_BROWSER</code></td><td>Optional, and reaches only a tool whose manifest names it &mdash; the browser tools do. A Chrome-family executable to drive; the usual install paths are searched when it is unset. It must be inside a readable path &mdash; see <code>AGENT_READ_PATHS</code>.</td></tr>
-<tr><td><code>AGENT_NO_BROWSER</code></td><td>Optional, declared the same way. Set to keep <code>web_fetch</code> on plain HTTP rather than rendering the page.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
 </table>
 
@@ -341,8 +340,9 @@ plain text — is returned exactly as it was served, since the point of fetching
 
 <p>A browser is not required. Where none is installed the tool retrieves the URL over plain HTTP and
 says nothing further; a page that needs its scripts then comes back as the shell it ships as, which is
-the honest result and not an error. Setting <code>AGENT_NO_BROWSER</code> chooses that path
-deliberately. A browser named in <code>AGENT_BROWSER</code> that does not exist is an error rather
+the honest result and not an error. There is no setting for this: what is installed decides, so there
+is one path and not a second way of saying the same thing. A browser named in
+<code>AGENT_BROWSER</code> that does not exist is an error rather
 than a silent fall back to HTTP, because a setting that is quietly ignored is worse than one that
 fails.</p>
 
