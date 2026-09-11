@@ -12,6 +12,11 @@ task run
 ```
 
 Open http://localhost:8080. Add it to the home screen for a full-screen app with its own icon.
+
+`task run` builds and runs from source, which is the fastest loop and confines nothing off Linux: the
+sandbox is Landlock, a kernel facility, and a laptop has no equivalent worth keeping a second policy
+for. The agent says so at startup. `task dev` runs the same code in the container it ships in, where a
+tool is confined exactly as it is in production.
 Enable notifications on the settings screen to get a banner when the agent says something you
 are not reading; it works while the browser is open, and there is no push.
 
@@ -22,7 +27,8 @@ nothing here is required.
 
 | | |
 | --- | --- |
-| `task run` | Serve the agent |
+| `task run` | Serve the agent from source. Off Linux nothing confines a tool, and it says so |
+| `task dev` | Serve the agent in its container, the way production runs it, with tools confined |
 | `task check` | Lint, build, and every test suite — run this before committing |
 | `task test` | Tests only (`test:go`, `test:web` individually) |
 | `task eval -- schedule` | Put one tool's `eval.json` cases to a real model; omit the name for all |
@@ -59,7 +65,6 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_TOOLS` / `AGENT_SKILLS` | `tools` / `skills` | Scanned at start and on reload. |
 | `AGENT_BROWSER` | auto | Chrome-family executable for `web_search` and `web_fetch`. Usual install paths and Playwright's cache are searched when unset. Must sit inside a readable path — see `AGENT_READ_PATHS`. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
-| `AGENT_NO_BROWSER` | unset | Set to make `web_fetch` retrieve pages over plain HTTP instead of rendering them. |
 | `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. |
 | `GH_TOKEN` | — | GitHub credential. Reaches only a tool whose manifest names it, and no tool names it yet. |
@@ -109,7 +114,7 @@ merge to main    → .github/workflows/release.yml builds the image, pushes it t
 
 | File | Is |
 | --- | --- |
-| `Dockerfile` | Two stages: build the agent, every tool, and a pinned `gh`, then a Debian runtime with `git`, `gh`, and `bubblewrap` — the userland the tools need, and nothing else. |
+| `Dockerfile` | Two stages: build the agent, every tool, and a pinned `gh`, then a Debian runtime with `git` and `gh` — the userland the tools need, and nothing else. The sandbox needs no package: Landlock is the kernel's. |
 | `deploy/compose.yml` | The whole deployment: the image to run, named volumes for `data` and `workspace` so a redeploy keeps every conversation, and the Traefik labels that route to it. |
 
 The deployment needs three variables set where it runs, none of which are in this

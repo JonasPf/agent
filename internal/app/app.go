@@ -157,9 +157,14 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	dbPath, err := filepath.Abs(filepath.Join(cfg.DataDir, "agent.db"))
+	dbPath, err := filepath.Abs(DBPath(cfg.DataDir))
 	if err != nil {
 		return err
+	}
+	// Before any tool can run: the agent's own environment holds the model key,
+	// and a tool granted /proc could otherwise read it out of /proc/<pid>/environ.
+	if err := hideProcess(); err != nil {
+		log.Printf("warning: could not hide this process's environment from other processes: %v", err)
 	}
 	sandbox := NewSandbox(cfg)
 	a := &App{

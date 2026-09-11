@@ -363,7 +363,7 @@ func RunEvals(only []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	dbPath := filepath.Join(cfg.DataDir, "agent.db")
+	dbPath := DBPath(cfg.DataDir)
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
