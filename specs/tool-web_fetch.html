@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>web_fetch — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>web_fetch</code></h1>
+<p class="lede">Fetch a URL and return the page's text.</p>
+
+<h2>What it does</h2>
+<p>Loads the URL and returns what a person would read. Where a headless browser is installed, the page
+is rendered: scripts run and the DOM settles first, so a page assembled on the client reads the same as
+it would in a window. A body that is not HTML — JSON, plain text — comes back verbatim rather than
+being stripped of markup it does not have.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>url</code></td><td>The address to fetch. Required.</td></tr>
+</table>
+
+<h2>What is installed decides the path</h2>
+<p>One code path, chosen by whether a browser is present. With one, the page is rendered. Without one,
+the bytes are fetched over HTTP and a page that needs its scripts comes back as the shell it ships —
+thin, and honestly so.</p>
+
+<p>This is not a fallback bolted on. The deployment the agent actually runs in has too little memory
+for a browser (<a href="adrs.html#adr-038">ADR-038</a>), so the unrendered path is the one in
+production. Returning a thin page is the right answer there; failing because a browser is absent would
+make the tool useless on the hardware it runs on.</p>
+
+<div class="note">
+<strong>Nothing here disguises the request.</strong> The browser is used as it comes. There is no spoofed agent string, no cookie jar, no retry through another route, and a site that declines to serve the agent is reported as declining. A tool that worked around refusals would be a tool whose behaviour the operator could not predict from what it says.
+</div>
+
+<h2>Limits</h2>
+<p>The response body is read up to two megabytes, and the text returned is capped at forty thousand
+characters. A page longer than that is cut, and the cut is reported.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>An HTML page returns its readable text, without markup.</li>
+<li>A page whose content is assembled by scripts returns that content where a browser is available.</li>
+<li>A non-HTML body is returned verbatim.</li>
+<li>Where no browser is available the tool still fetches, and says the page was not rendered.</li>
+<li>Text beyond the cap is truncated and the result says it was truncated.</li>
+<li>A response body beyond the byte limit is read no further.</li>
+<li>A refused or failed request reports the status and does not retry by another route.</li>
+<li>An empty URL is refused.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-skill_read.html">← skill_read</a> · <a href="tool-web_search.html">web_search →</a></footer>
+</div>
+</body></html>

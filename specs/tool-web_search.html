@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>web_search — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>web_search</code></h1>
+<p class="lede">Search the web and return titles, URLs, and snippets.</p>
+
+<h2>What it does</h2>
+<p>Puts the query to a search engine in a headless browser and reads the results out of the rendered
+page.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>query</code></td><td>The search terms. Required.</td></tr>
+<tr><td><code>limit</code></td><td>Maximum results. Optional; ten by default.</td></tr>
+</table>
+
+<h2>Why a browser and not a request</h2>
+<p>A results page is assembled by scripts. Fetching its HTML returns a shell with no results in it, so
+unlike <a href="tool-web_fetch.html"><code>web_fetch</code></a> there is no useful unrendered path here:
+without a browser this tool cannot do its job, and says so rather than returning an empty list that
+reads like a query with no matches.</p>
+
+<h2>Three outcomes, told apart</h2>
+<table>
+<tr><th>Outcome</th><th>Answer</th></tr>
+<tr><td>Results found</td><td>Title, URL, and snippet for each, up to the limit.</td></tr>
+<tr><td>The engine served a page with no results</td><td>Says there were no results for the query.</td></tr>
+<tr><td>The engine declined — a rate limit, a challenge, a block</td><td>Fails, names the refusal, and suggests fetching a specific page instead.</td></tr>
+</table>
+
+<p>The middle and the last look identical in the parsed output — both yield nothing — and conflating
+them is the failure that matters. "No results" invites the agent to conclude the thing does not exist;
+a refusal means it did not get to look. The rendered text is inspected for the signature of a refusal
+precisely so the two can be told apart.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A query with results returns a title, a URL, and a snippet for each.</li>
+<li>The number of results respects the limit, and defaults to ten.</li>
+<li>A query with no matches says so, naming the query.</li>
+<li>A refusal by the search engine fails, names what happened, and is never reported as an absence of results.</li>
+<li>An empty query is refused.</li>
+<li>Where no browser is available the tool fails and says why, rather than returning an empty result set.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-web_fetch.html">← web_fetch</a> · <a href="tool-write.html">write →</a></footer>
+</div>
+</body></html>

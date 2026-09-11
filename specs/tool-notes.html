@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>notes — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>notes</code></h1>
+<p class="lede">Short freeform notes that outlive a conversation.</p>
+
+<h2>What it does</h2>
+<p>Keeps a list of short texts, added one at a time and listed newest first. Notes are not memory: they
+are never loaded into a prompt, and they influence nothing unless asked for.</p>
+
+<table>
+<tr><th>Action</th><th>Does</th></tr>
+<tr><td><code>add</code></td><td>Appends one note. Requires <code>text</code>.</td></tr>
+<tr><td><code>list</code></td><td>Returns recent notes, newest first.</td></tr>
+</table>
+
+<h2>What it is for</h2>
+<p>It is the demonstration that a tool may own storage. It declares a <code>db_prefix</code>, creates
+its tables from a <code>schema.sql</code> applied at load, and ships a panel that reads them back
+through the API — the full shape of a tool with state, in the smallest thing that needs one.</p>
+
+<div class="note">
+<strong>Notes are not memory, and the distinction is load-bearing.</strong> <a href="tool-memory.html"><code>memory</code></a> is capped, curated, and in every prompt; a note is uncapped, unreviewed, and in none. So a note costs nothing until it is read, and never changes an answer the agent gives without being asked. Anything that should shape behaviour belongs in memory.
+</div>
+
+<p>A note records which session wrote it, and listing is not filtered by session: notes outlive the
+conversation that wrote them, which is the whole reason they are not simply written to a file in the
+session's working directory.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li><code>add</code> appends a note and confirms it was stored.</li>
+<li><code>add</code> with empty text is refused.</li>
+<li><code>list</code> returns notes newest first.</li>
+<li><code>list</code> on an empty store says it is empty rather than returning nothing.</li>
+<li>A note records the session that wrote it.</li>
+<li>Listing is not scoped to a session; a note written in one conversation is listed in another.</li>
+<li>Notes never appear in any system prompt.</li>
+<li>The tool's tables all begin with its declared prefix.</li>
+<li>The interface panel reads the tool's own tables through the API rather than the database directly.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-memory.html">← memory</a> · <a href="tool-read.html">read →</a></footer>
+</div>
+</body></html>

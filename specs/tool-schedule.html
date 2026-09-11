@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>schedule — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>schedule</code></h1>
+<p class="lede">Create, list, edit, and delete the jobs that make future work visible.</p>
+
+<h2>What it does</h2>
+<p>The write side of <a href="jobs.html">Jobs</a>. A job wakes on a schedule and runs a prompt inside
+the session it belongs to; an optional check decides whether a wake acts.</p>
+
+<table>
+<tr><th>Action</th><th>Does</th></tr>
+<tr><td><code>create</code></td><td>Creates a job on this session unless another is named. Returns when it next wakes and what it will cost.</td></tr>
+<tr><td><code>list</code></td><td>Every job, with its schedule, its next wake, and its recent runs.</td></tr>
+<tr><td><code>edit</code></td><td>Changes the fields given and leaves the rest. Requires <code>id</code>.</td></tr>
+<tr><td><code>delete</code></td><td>Removes a job. Defaults to the job the current wake belongs to, so a job can end itself.</td></tr>
+</table>
+
+<h2>Time or condition — the decision the description forces</h2>
+<p>The hardest thing about this tool is not its parameters. It is that two different requests reach it
+looking alike, and the wrong reading produces a job that either never fires or burns money on every
+tick.</p>
+
+<table>
+<tr><th>The request names</th><th>Becomes</th><th>Because</th></tr>
+<tr><td>A time — "at nine", "in five minutes"</td><td>A schedule resolving to one instant, and no check.</td><td>It comes due once and fires. A check that waits for a time to arrive is tested repeatedly, must answer the moment it runs, and will be killed for sleeping.</td></tr>
+<tr><td>A condition — "when the build passes"</td><td>A repeating schedule with a check command.</td><td>A check costs nothing until it fires. A repeating job without one calls the model on every single tick.</td></tr>
+</table>
+
+<h2>Cost is reported, not withheld</h2>
+<p>Creating a job returns what it will cost: wakes a day, tokens a day, and money where the model's
+price is known. A gated job reports what the wake that does fire will cost, since its ticks are a shell
+command and cost nothing.</p>
+
+<div class="note">
+<strong>Any cadence is allowed.</strong> The tool states what a frequent schedule costs; it does not refuse one, argue against one, or silently round it down. A floor was tried and removed (<a href="adrs.html#adr-029">ADR-029</a>). Transparency is the mechanism, not permission.
+</div>
+
+<p>Listing answers questions about what is scheduled and what has already run. The job's own log holds
+every wake it has had, which is where "has this been running?" is answered — not from the conversation,
+which may have compacted since.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li><code>create</code> attaches the job to the current session when none is named.</li>
+<li><code>create</code> returns the job's identifier, its next wake, and its cost estimate.</li>
+<li>A schedule resolving to a single instant creates a job that fires once.</li>
+<li>A job created with a check reports the cost of a wake that acts, not a cost per tick.</li>
+<li><code>edit</code> changes only the fields given.</li>
+<li><code>delete</code> without an identifier, inside a wake, deletes the job that woke.</li>
+<li><code>delete</code> without an identifier and outside a wake is refused.</li>
+<li><code>list</code> reports each job's schedule, next wake, and recent runs.</li>
+<li>No cadence is refused; the estimate is returned for every one.</li>
+<li>Eval cases distinguish a request naming a time from one naming a condition.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-read.html">← read</a> · <a href="tool-session_search.html">session_search →</a></footer>
+</div>
+</body></html>
