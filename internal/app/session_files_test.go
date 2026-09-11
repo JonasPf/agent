@@ -126,7 +126,7 @@ func TestForkCopiesTheWorkingDirectory(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	a.routes().ServeHTTP(w, httptest.NewRequest("POST", "/sessions/"+pred.ID+"/rotate",
+	a.routes().ServeHTTP(w, httptest.NewRequest("POST", "/sessions/"+pred.ID+"/fork",
 		strings.NewReader(`{"archive":false}`)))
 	if w.Code != 201 {
 		t.Fatalf("fork status = %d: %s", w.Code, w.Body.String())

@@ -26,13 +26,13 @@ type Config struct {
 	// ReadPaths are directories the operator adds to what a tool may read,
 	// beyond the runtime. A browser installed outside the system roots is the
 	// case it exists for. It only adds; nothing here removes a boundary.
-	ReadPaths       string
-	DefaultModel    string
-	RotateAtTokens  int
-	CarryOverTokens int
-	SummaryEvery    int
-	MemoryCapacity  int
-	APIKey          string
+	ReadPaths          string
+	DefaultModel       string
+	CompactAtTokens    int
+	KeepVerbatimTokens int
+	SummaryEvery       int
+	MemoryCapacity     int
+	APIKey             string
 }
 
 // BaseURL is the address a tool uses to reach the API. Tools run beside the
@@ -111,20 +111,20 @@ func LoadConfig() Config {
 	envFile := envOr("AGENT_ENV", ".env")
 	loadEnvFile(envFile)
 	return Config{
-		EnvFile:         envFile,
-		Addr:            envOr("AGENT_ADDR", ":8080"),
-		DataDir:         envOr("AGENT_DATA", "data"),
-		Workspace:       envOr("AGENT_WORKSPACE", "workspace"),
-		ToolsDir:        envOr("AGENT_TOOLS", "tools"),
-		ReadPaths:       os.Getenv("AGENT_READ_PATHS"),
-		SkillsDir:       envOr("AGENT_SKILLS", "skills"),
-		WebDir:          envOr("AGENT_WEB", "web"),
-		DefaultModel:    envOr("AGENT_MODEL", "anthropic/claude-sonnet-4.5"),
-		RotateAtTokens:  envInt("AGENT_ROTATE_TOKENS", 40000),
-		CarryOverTokens: envInt("AGENT_CARRY_TOKENS", 5000),
-		SummaryEvery:    envInt("AGENT_SUMMARY_EVERY", 4000),
-		MemoryCapacity:  envInt("AGENT_MEMORY_CAPACITY", 8000),
-		APIKey:          os.Getenv("OPENROUTER_API_KEY"),
+		EnvFile:            envFile,
+		Addr:               envOr("AGENT_ADDR", ":8080"),
+		DataDir:            envOr("AGENT_DATA", "data"),
+		Workspace:          envOr("AGENT_WORKSPACE", "workspace"),
+		ToolsDir:           envOr("AGENT_TOOLS", "tools"),
+		ReadPaths:          os.Getenv("AGENT_READ_PATHS"),
+		SkillsDir:          envOr("AGENT_SKILLS", "skills"),
+		WebDir:             envOr("AGENT_WEB", "web"),
+		DefaultModel:       envOr("AGENT_MODEL", "anthropic/claude-sonnet-4.5"),
+		CompactAtTokens:    envInt("AGENT_COMPACT_TOKENS", defaultCompactAtTokens),
+		KeepVerbatimTokens: envInt("AGENT_KEEP_TOKENS", defaultKeepVerbatimTokens),
+		SummaryEvery:       envInt("AGENT_SUMMARY_EVERY", 4000),
+		MemoryCapacity:     envInt("AGENT_MEMORY_CAPACITY", 8000),
+		APIKey:             os.Getenv("OPENROUTER_API_KEY"),
 	}
 }
 

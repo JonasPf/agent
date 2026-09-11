@@ -26,7 +26,9 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("DELETE /sessions/{id}", a.hDeleteSession)
 	mux.HandleFunc("GET /sessions/{id}/transcript", a.hTranscript)
 	mux.HandleFunc("POST /sessions/{id}/messages", a.hSendMessage)
-	mux.HandleFunc("POST /sessions/{id}/rotate", a.hRotate)
+	mux.HandleFunc("POST /sessions/{id}/fork", a.hFork)
+	mux.HandleFunc("POST /sessions/{id}/compact", a.hCompact)
+	mux.HandleFunc("PUT /sessions/{id}/compaction", a.hEditCompaction)
 	mux.HandleFunc("POST /sessions/{id}/read", a.hMarkRead)
 	mux.HandleFunc("GET /sessions/{id}/files", a.hSessionFiles)
 	mux.HandleFunc("POST /sessions/{id}/files", a.hUpload)
@@ -183,13 +185,9 @@ func (a *App) hSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	out := a.enrich(s)
-	// A link to an archived session resolves to the live session of its chain.
-	if live := a.LiveSession(s.ID); live != nil && live.ID != s.ID {
-		writeJSON(w, 200, map[string]any{"session": out, "redirected_to": live.ID})
-		return
-	}
-	writeJSON(w, 200, map[string]any{"session": out})
+	// No redirection: a session is never superseded, so an identifier always
+	// addresses the conversation it named.
+	writeJSON(w, 200, map[string]any{"session": a.enrich(s)})
 }
 
 func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
@@ -217,14 +215,11 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		// A configuration is chosen before the session exists and fixed once it
 		// does. There is one answer here, not two.
 		fail(w, 409, "a session's model, tools, and skills are fixed for its life; "+
-			"POST /sessions/%s/rotate to continue this conversation under a new configuration", s.ID)
+			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
 		return
 	}
 	if in.Status != nil {
 		s.Status = *in.Status
-	}
-	if in.Summary != nil {
-		s.Summary = *in.Summary
 	}
 	_ = a.store.PutSession(s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
@@ -275,30 +270,73 @@ func (a *App) hSendMessage(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(202)
 }
 
-// hRotate continues a conversation in a new session. Any configuration field
-// left out keeps the predecessor's, so a plain rotation and a reconfiguration
-// are the same request.
-func (a *App) hRotate(w http.ResponseWriter, r *http.Request) {
+// hFork copies a conversation into a new session. Any configuration field left
+// out keeps the origin's, so branching a conversation and changing its
+// configuration are the same request.
+func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
+	s := a.store.Session(r.PathValue("id"))
+	if s == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	var in configRequest
+	_ = readJSON(r, &in)
+	fork, err := a.Fork(s, in.applyTo(s.SessionConfig))
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 201, a.enrich(fork))
+}
+
+// hCompact folds a session now rather than at its threshold. It is how a memory
+// written a moment ago is made to take effect without waiting.
+func (a *App) hCompact(w http.ResponseWriter, r *http.Request) {
+	s := a.store.Session(r.PathValue("id"))
+	if s == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	if err := a.Compact(r.Context(), s); err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, a.enrich(s))
+}
+
+// hEditCompaction corrects a summary that left something out. The transcript is
+// append-only, so an edit is not a rewrite: it appends a new compaction covering
+// the same range, which supersedes the old one because only the newest projects.
+// What the summariser originally wrote stays on disk beside the correction.
+func (a *App) hEditCompaction(w http.ResponseWriter, r *http.Request) {
 	s := a.store.Session(r.PathValue("id"))
 	if s == nil {
 		fail(w, 404, "no such session")
 		return
 	}
 	var in struct {
-		configRequest
-		Archive bool `json:"archive"`
+		Text string `json:"text"`
 	}
-	_ = readJSON(r, &in)
-	why := "fork"
-	if in.Archive {
-		why = "rotation"
-	}
-	succ, err := a.Rotate(s, in.applyTo(s.SessionConfig), in.Archive, why)
-	if err != nil {
-		fail(w, 500, "%v", err)
+	if err := readJSON(r, &in); err != nil || strings.TrimSpace(in.Text) == "" {
+		fail(w, 400, "text is required")
 		return
 	}
-	writeJSON(w, 201, a.enrich(succ))
+	entries := a.store.Entries(s.ID)
+	i := newestCompaction(entries)
+	if i < 0 {
+		fail(w, 409, "this session has not compacted, so there is no summary to edit")
+		return
+	}
+	prev := entries[i]
+	a.append(s.ID, Entry{
+		Type:          "compaction",
+		CoversThrough: prev.CoversThrough,
+		Text:          strings.TrimSpace(in.Text),
+		FoldedTurns:   prev.FoldedTurns,
+		TokensBefore:  prev.TokensBefore,
+		TokensAfter:   prev.TokensAfter,
+	})
+	writeJSON(w, 200, a.enrich(s))
 }
 
 func (a *App) hMarkRead(w http.ResponseWriter, r *http.Request) {
@@ -323,7 +361,10 @@ func (a *App) hSearch(w http.ResponseWriter, r *http.Request) {
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
 		limit = n
 	}
-	hits, err := a.store.Search(q, limit)
+	// Scope defaults to nothing here; the caller says what it wants. The tool is
+	// where the default-to-this-session rule lives, because it is the tool the
+	// model programmes against.
+	hits, err := a.store.Search(q, r.URL.Query().Get("session"), limit)
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
@@ -368,7 +409,7 @@ func (a *App) priceJob(j *Job, prices map[string]float64) *Job {
 	copied := *j
 	tokens := 0
 	price := 0.0
-	if s := a.LiveSession(j.SessionID); s != nil {
+	if s := a.store.Session(j.SessionID); s != nil {
 		// What a wake actually sends is the system prompt plus the conversation.
 		// Counting only the conversation would put a new session's cost at zero,
 		// when its every turn already carries a few thousand tokens of prompt.

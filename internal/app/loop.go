@@ -29,6 +29,9 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 
 	msgs := []ChatMessage{a.systemChatMessage(s, promptEntry.Sections)}
 	msgs = append(msgs, Project(a.store.Entries(s.ID))...)
+	if needsExplicitCacheMarker(s.Model) {
+		msgs = withCacheMarker(msgs, a.cacheTTL(s))
+	}
 
 	user := Entry{Type: "message", Role: "user", Text: opts.UserText, JobID: opts.JobID,
 		DueAt: opts.DueAt}
@@ -94,23 +97,43 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 		}
 	}
 
-	a.maybeSummarise(ctx, s)
-	a.maybeRotate(s)
+	a.maybeCompact(ctx, s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return nil
 }
 
-// systemChatMessage renders the fixed system prompt, adding a cache breakpoint
-// only when another call is expected before the cache expires.
+// systemChatMessage renders the prompt in force. It carries no cache marker:
+// a marker names a prefix, so one at the end of the message list already covers
+// the system prompt and everything after it.
 func (a *App) systemChatMessage(s *Session, sections []Section) ChatMessage {
-	text := systemMessage(sections)
-	ttl := a.cacheTTL(s)
-	if ttl == "" || !needsExplicitCacheMarker(s.Model) {
-		return ChatMessage{Role: "system", Content: text}
+	return ChatMessage{Role: "system", Content: systemMessage(sections)}
+}
+
+// withCacheMarker puts one marker on the last message. A marker names a prefix —
+// everything from the start of the request up to and including it — and a
+// conversation only ever grows at the bottom, so each call reads the prefix the
+// previous call wrote and writes one slightly longer. Only what was added since
+// the last call is paid for in full.
+//
+// An empty ttl means the caller decided no further call is expected before the
+// cache would expire, and a write nobody reads is the one way this loses money.
+func withCacheMarker(msgs []ChatMessage, ttl string) []ChatMessage {
+	if ttl == "" || len(msgs) == 0 {
+		return msgs
 	}
-	part := map[string]any{"type": "text", "text": text,
-		"cache_control": map[string]any{"type": "ephemeral", "ttl": ttl}}
-	return ChatMessage{Role: "system", Content: []any{part}}
+	out := make([]ChatMessage, len(msgs))
+	copy(out, msgs)
+	last := &out[len(out)-1]
+	text, ok := last.Content.(string)
+	if !ok {
+		// Nothing to attach a marker to without changing what is sent. A message
+		// carrying only tool calls is one of these, and skipping it costs a cache
+		// write rather than correctness.
+		return msgs
+	}
+	last.Content = []any{map[string]any{"type": "text", "text": text,
+		"cache_control": map[string]any{"type": "ephemeral", "ttl": ttl}}}
+	return out
 }
 
 // needsExplicitCacheMarker is false for providers that cache automatically.
@@ -152,7 +175,7 @@ func (a *App) lastUserTurn(sessionID string) time.Time {
 
 // SendUserMessage queues a user turn behind anything already running.
 func (a *App) SendUserMessage(sessionID, text string) error {
-	s := a.LiveSession(sessionID)
+	s := a.store.Session(sessionID)
 	if s == nil {
 		return fmt.Errorf("no session %s", sessionID)
 	}

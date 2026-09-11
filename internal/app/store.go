@@ -322,10 +322,17 @@ type SearchHit struct {
 	Snippet   string `json:"snippet"`
 }
 
-func (s *Store) Search(q string, limit int) ([]SearchHit, error) {
-	rows, err := s.db.Query(
-		`select session_id, seq, snippet(entry_fts, 2, '[', ']', '…', 12) from entry_fts where entry_fts match ? limit ?`,
-		q, limit)
+// Search queries the full-text index. A sessionID scopes it to one conversation,
+// which is what lets a session reach back below its own compactions; empty
+// searches every session.
+func (s *Store) Search(q, sessionID string, limit int) ([]SearchHit, error) {
+	query := `select session_id, seq, snippet(entry_fts, 2, '[', ']', '…', 12) from entry_fts where entry_fts match ? limit ?`
+	args := []any{q, limit}
+	if sessionID != "" {
+		query = `select session_id, seq, snippet(entry_fts, 2, '[', ']', '…', 12) from entry_fts where entry_fts match ? and session_id = ? limit ?`
+		args = []any{q, sessionID, limit}
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

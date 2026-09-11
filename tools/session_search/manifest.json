@@ -1,6 +1,6 @@
 {
   "name": "session_search",
-  "description": "Full-text search across every transcript, including archived sessions.",
+  "description": "Full-text search over transcripts. Defaults to this conversation, which is how you reach back for detail that compaction has folded away \u2014 anything said earlier here is still findable even when you can no longer see it. Pass session:\"all\" to search every conversation, or a session id to search that one.",
   "db_prefix": "session_search_",
   "timeout_seconds": 30,
   "parameters": {
@@ -12,6 +12,10 @@
       },
       "limit": {
         "type": "integer"
+      },
+      "session": {
+        "type": "string",
+        "description": "Where to look. Omit for this conversation; \"all\" for every conversation; or a session id."
       }
     },
     "required": [
