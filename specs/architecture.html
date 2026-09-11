@@ -287,10 +287,11 @@ copy that is running, and the pipeline stops being the only way in.</p>
 <p>The agent, its tools, and the gateway run as one user in one container. A tool has the privileges of
 that user, with one boundary the operating system enforces: the session's own working directory.</p>
 
-<p>Every tool subprocess, and every check command, is launched inside a sandbox. There is no
-cross-platform library for this &mdash; everything that claims to be one branches on the platform &mdash;
-so this does too, over the two primitives that need no privileges: Seatbelt
-(<code>sandbox-exec</code>) on macOS and Landlock on Linux.</p>
+<p>Every tool subprocess, and every check command, is launched inside a sandbox. There is one
+mechanism and it is Landlock: the agent is a Linux program, and a second mechanism for a second
+platform is two policies that have to be kept in step and do not stay in step. Where Landlock is not
+available &mdash; a laptop, an older kernel &mdash; nothing is enforced, the startup line is a warning
+rather than a status, and the way to run a confined agent there is the container it ships in.
 
 <p>Landlock is a kernel facility an unprivileged process asks for directly: no namespace, no
 capability, and nothing installed. That is what makes it work where bubblewrap did not &mdash; inside

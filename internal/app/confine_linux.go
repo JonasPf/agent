@@ -148,8 +148,8 @@ func addRule(rulesetFD int, path string, access uint64) error {
 
 // applyPolicy restricts this thread, and therefore the program it is about to
 // become. A path that is not granted is denied: there is no rule that permits
-// the rest, which is what makes this an allow-list in the same sense the
-// Seatbelt profile is one.
+// the rest, which is what makes this an allow-list rather than a set of
+// exceptions to a permission.
 func applyPolicy(p policy) error {
 	// The restriction belongs to the thread that asks for it, and execve must
 	// happen on that same thread.

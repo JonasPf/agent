@@ -12,6 +12,11 @@ task run
 ```
 
 Open http://localhost:8080. Add it to the home screen for a full-screen app with its own icon.
+
+`task run` builds and runs from source, which is the fastest loop and confines nothing off Linux: the
+sandbox is Landlock, a kernel facility, and a laptop has no equivalent worth keeping a second policy
+for. The agent says so at startup. `task dev` runs the same code in the container it ships in, where a
+tool is confined exactly as it is in production.
 Enable notifications on the settings screen to get a banner when the agent says something you
 are not reading; it works while the browser is open, and there is no push.
 
@@ -22,7 +27,8 @@ nothing here is required.
 
 | | |
 | --- | --- |
-| `task run` | Serve the agent |
+| `task run` | Serve the agent from source. Off Linux nothing confines a tool, and it says so |
+| `task dev` | Serve the agent in its container, the way production runs it, with tools confined |
 | `task check` | Lint, build, and every test suite — run this before committing |
 | `task test` | Tests only (`test:go`, `test:web` individually) |
 | `task eval -- schedule` | Put one tool's `eval.json` cases to a real model; omit the name for all |

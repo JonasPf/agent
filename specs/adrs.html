@@ -1080,9 +1080,19 @@ machine running anything else. So the deployed agent ran with no sandbox at all,
 <a href="#adr-036">ADR-036</a> depends on there being one: without it a tool can write the tool
 directory of the running agent, and the pull request stops being the only way in.</p>
 <h4>Decision</h4>
-<p>On Linux the sandbox is Landlock. It is a kernel facility an unprivileged process asks for by
-syscall: no namespace, no capability, nothing installed, and it works inside an unprivileged container
-on a host that refuses user namespaces. macOS keeps Seatbelt, which already worked.</p>
+<p>The sandbox is Landlock, and it is the only one. It is a kernel facility an unprivileged process
+asks for by syscall: no namespace, no capability, nothing installed, and it works inside an
+unprivileged container on a host that refuses user namespaces.</p>
+<p>Seatbelt goes with bubblewrap, though it worked. Two mechanisms are two policies, and two policies
+do not stay in step: within a day of a tool being able to declare the paths it needs, the macOS profile
+was silently ignoring that declaration while Landlock honoured it. The agent is a Linux program. A
+laptop runs the tests and the interface; a laptop that wants a confined tool runs the container, which
+is <code>task dev</code>, built from the same Dockerfile CI publishes.</p>
+<p>What that costs is stated rather than hidden. On a laptop <code>task run</code> confines nothing:
+the startup line is a warning, the interface says NOT ENFORCED, and every test that asserts
+confinement skips with a message naming why instead of passing against a boundary that is not there.
+A green suite on macOS therefore proves less than a green suite in CI, which is true and was not true
+before &mdash; and is why the suite says which.</p>
 <p>Landlock restricts the thread that asks and is inherited across <code>execve</code>, so something
 must ask between the fork and the exec, and Go offers no hook there. The agent is therefore its own
 wrapper: <code>agent -confine &lt;policy&gt; -- &lt;tool&gt;</code>. That second run applies the policy

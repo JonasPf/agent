@@ -20,15 +20,8 @@ import (
 // tool's good manners.
 func TestTheSandboxNamesWhatIsEnforcing(t *testing.T) {
 	s := NewSandbox(Config{Workspace: "/w", DataDir: "/d", EnvFile: "/e/.env"})
-	switch runtime.GOOS {
-	case "darwin":
-		if s.Mechanism != "seatbelt" && s.Mechanism != "none" {
-			t.Errorf("mechanism = %q, want seatbelt or none on darwin", s.Mechanism)
-		}
-	case "linux":
-		if s.Mechanism != "landlock" && s.Mechanism != "none" {
-			t.Errorf("mechanism = %q, want landlock or none on linux", s.Mechanism)
-		}
+	if s.Mechanism != "landlock" && s.Mechanism != "none" {
+		t.Errorf("mechanism = %q, want landlock or none — there is no second mechanism", s.Mechanism)
 	}
 	// Whatever it decided, it has to be able to say why: a sandbox that quietly
 	// does nothing is worse than none at all.
@@ -40,7 +33,7 @@ func TestTheSandboxNamesWhatIsEnforcing(t *testing.T) {
 // The wrapped command is what actually runs, so its shape is worth pinning:
 // the tool binary and its arguments survive, and the confinement is in front.
 func TestWrappingKeepsTheCommandIntact(t *testing.T) {
-	for _, mech := range []string{"seatbelt", "landlock", "none"} {
+	for _, mech := range []string{"landlock", "none"} {
 		t.Run(mech, func(t *testing.T) {
 			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d", toolsDir: "/t", dbPath: "/d/db/agent.db"}
 			argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", nil, []string{"-x"})
@@ -110,46 +103,22 @@ func TestTheLandlockPolicyGrantsOnlyWhatIsAllowed(t *testing.T) {
 	}
 }
 
-// The Seatbelt profile is an allow-list, and the property that makes it one is
-// that no rule denies: a path nobody thought of is refused by the default, not
-// permitted by an omission from a deny-list.
-func TestTheSeatbeltProfileOnlyAllows(t *testing.T) {
-	p := seatbeltProfile([]string{"/opt/browsers"})
-	if !strings.HasPrefix(p, "(version 1)\n(deny default)") {
-		t.Fatalf("the profile must deny by default:\n%s", p)
-	}
-	for _, line := range strings.Split(p, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "(deny ") &&
-			strings.TrimSpace(line) != "(deny default)" {
-			t.Errorf("the profile denies a specific path, so it is a deny-list again: %q", line)
-		}
-	}
-	if !strings.Contains(p, `(allow file-read* file-write* (subpath (param "WS")))`) {
-		t.Error("the session's own directory must be readable and writable")
-	}
-	if !strings.Contains(p, `(subpath "/opt/browsers")`) {
-		t.Error("a path the operator named must reach the profile")
-	}
-	// The root directory is needed to resolve any path, and as a subpath it
-	// would allow the whole filesystem — which is exactly the old behaviour.
-	if strings.Contains(p, `(subpath "/")`) {
-		t.Error("the root is allowed as a subpath, which permits everything")
-	}
-	if !strings.Contains(p, `(literal "/")`) {
-		t.Error("the root must be readable as a literal, or no path resolves")
-	}
-	// A rule for the database alone leaves SQLite unable to open its journals.
-	for _, param := range []string{"DB", "DBWAL", "DBSHM"} {
-		if !strings.Contains(p, `(param "`+param+`")`) {
-			t.Errorf("the profile does not name %s, so a tool cannot use its own tables", param)
-		}
-	}
-}
-
 // The whole point, driven through the real registry with the real bash tool:
 // a shell in one session's directory must not reach another's. This is the test
 // that would have caught the hole — bash read a sibling's file and the
 // operator's API key, while read, write, and edit refused the same path.
+// confinementOrSkip refuses to let a test about the boundary pass on a machine
+// that has no boundary. The agent is a Linux program; a laptop can run the suite
+// but cannot confine a tool, and a test that quietly succeeded there would be
+// reporting on nothing. CI and the container run these for real.
+func confinementOrSkip(t *testing.T, s *Sandbox) {
+	t.Helper()
+	if !s.Enforcing() {
+		t.Skipf("NOT RUN: nothing confines a tool here (%s). This test is proved on Linux — "+
+			"in CI, and in the container with `task dev`.", s.Reason)
+	}
+}
+
 func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	dir := t.TempDir()
 	st, err := OpenStore(dir)
@@ -199,14 +168,13 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	own := run("echo mine > own.txt && cat own.txt")
 
 	if !a.sandbox.Enforcing() {
-		// No enforcement is a legitimate state on a machine without the
-		// primitive — but it must be the state the system reports, not a
-		// surprise. The reach is then expected, and says so.
+		// Nothing enforcing is a legitimate state, and it must be the state the
+		// system reports rather than a surprise — so that much is checked
+		// everywhere. What cannot be checked here is the reach itself.
 		if !strings.Contains(a.sandbox.Describe(), "NOT ENFORCED") {
 			t.Fatalf("nothing is enforcing but the system does not say so: %q", a.sandbox.Describe())
 		}
-		t.Logf("no sandbox on this machine (%s); the reach below is expected", a.sandbox.Reason)
-		return
+		confinementOrSkip(t, a.sandbox)
 	}
 
 	if sibling.OK {
@@ -272,6 +240,7 @@ func TestAToolCannotModifyTheAgent(t *testing.T) {
 	copyToolTree(t, "../../skills", skillsDir)
 
 	a, _ := confinedApp(t, toolsDir, skillsDir, "")
+	confinementOrSkip(t, a.sandbox)
 	run := shellIn(t, a)
 
 	// A tool's executable is a compiled binary, so "did it change" is asked of
@@ -352,6 +321,7 @@ func TestAToolReadsNothingOutsideItsOwnDirectory(t *testing.T) {
 	// Nothing is named in AGENT_READ_PATHS: the allow-list is the runtime,
 	// the tool directory, and this session — and that is all.
 	a, envFile := confinedApp(t, toolsDir, "", "")
+	confinementOrSkip(t, a.sandbox)
 	run := shellIn(t, a)
 
 	elsewhere := run("cat " + secret)
@@ -407,6 +377,7 @@ func TestANamedReadPathIsReadableAndNotWritable(t *testing.T) {
 	}
 
 	a, _ := confinedApp(t, toolsDir, "", named)
+	confinementOrSkip(t, a.sandbox)
 	run := shellIn(t, a)
 	read := run("cat " + filepath.Join(named, "browser.txt"))
 	write := run("echo no > " + filepath.Join(named, "written.txt"))

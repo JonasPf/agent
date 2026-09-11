@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -13,13 +12,14 @@ import (
 // told — did not. One session's tools could read another's files and the
 // operator's API key. The boundary is now the operating system's.
 //
-// There is no cross-platform library for this. Every tool that claims to be one
-// branches on the platform, so this does too, over the two primitives that need
-// no privileges: Seatbelt on macOS and Landlock on Linux. Where neither is
-// available nothing is enforced, and that is said out loud rather than left to
-// be discovered.
+// The mechanism is Landlock, and there is only one. A second mechanism for a
+// second platform means two policies to keep in step, and they do not stay in
+// step: the macOS profile this replaces silently ignored the paths a tool
+// declared in its manifest, which the Linux one honoured. The agent is a Linux
+// program; where Landlock is not available nothing is enforced, and that is said
+// out loud rather than left to be discovered.
 type Sandbox struct {
-	// Mechanism is seatbelt, landlock, or none.
+	// Mechanism is landlock or none.
 	Mechanism string `json:"mechanism"`
 	// Reason is why nothing is enforced, when nothing is.
 	Reason string `json:"reason,omitempty"`
@@ -31,16 +31,6 @@ type Sandbox struct {
 	dataDir       string
 	toolsDir      string
 	dbPath        string
-	profilePath   string
-}
-
-// systemReads is the runtime: the interpreter, its libraries, and what they
-// load. It is the smallest set in which a tool starts at all, arrived at by
-// running every supplied tool under the profile. The root directory is in it
-// because Seatbelt cannot resolve any path without reading it.
-var systemReads = []string{
-	"/", "/usr", "/System", "/Library", "/bin", "/sbin", "/opt", "/dev",
-	"/private/etc", "/private/var/db",
 }
 
 // linuxReads is the same set for Landlock, which grants access beneath a
@@ -69,26 +59,13 @@ func NewSandbox(cfg Config) *Sandbox {
 		dbPath:        absOr(DBPath(cfg.DataDir)),
 		ReadPaths:     readPaths(cfg.ReadPaths),
 	}
-	switch runtime.GOOS {
-	case "darwin":
-		if _, err := os.Stat("/usr/bin/sandbox-exec"); err == nil {
-			s.Mechanism = "seatbelt"
-		} else {
-			s.Mechanism, s.Reason = "none", "/usr/bin/sandbox-exec is not present"
-		}
-	case "linux":
-		// Landlock rather than bubblewrap: it asks the kernel directly and needs
-		// no namespace, so it works in an unprivileged container on a host that
-		// refuses unprivileged user namespaces — which is where this runs.
-		if ok, why := landlockAvailable(); ok {
-			s.Mechanism = "landlock"
-		} else {
-			s.Mechanism, s.Reason = "none", why
-		}
-	default:
-		s.Mechanism, s.Reason = "none", "no sandbox is implemented for "+runtime.GOOS
+	// No branch on the platform: the probe answers on every one of them, and
+	// says why when the answer is no.
+	if ok, why := landlockAvailable(); ok {
+		s.Mechanism = "landlock"
+	} else {
+		s.Mechanism, s.Reason = "none", why
 	}
-	s.prepare()
 	return s
 }
 
@@ -110,22 +87,6 @@ func (s *Sandbox) Describe() string {
 		"including every session's files and this process's own directory"
 }
 
-// prepare writes whatever the mechanism needs on disk. It runs as part of
-// construction rather than as a second call, because a sandbox that was built
-// but not prepared confines nothing and looks exactly like one that does. A
-// failure downgrades to no enforcement, which is reported.
-func (s *Sandbox) prepare() {
-	if s.Mechanism != "seatbelt" {
-		return
-	}
-	path := filepath.Join(s.dataDir, "sandbox.sb")
-	if err := os.WriteFile(path, []byte(seatbeltProfile(s.ReadPaths)), 0o600); err != nil {
-		s.Mechanism, s.Reason = "none", "could not write the Seatbelt profile: "+err.Error()
-		return
-	}
-	s.profilePath = path
-}
-
 // Wrap returns the argv that runs bin, confined to workspace. toolRoot is the
 // tool directory in force — a tool must be able to read its own executable and
 // the helper beside it — and may be empty for a command that lives in the
@@ -145,17 +106,6 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, reads []string, args []s
 		tools = absOr(toolRoot)
 	}
 	switch s.Mechanism {
-	case "seatbelt":
-		argv := []string{"/usr/bin/sandbox-exec",
-			"-D", "WS=" + ws,
-			"-D", "TOOLS=" + tools,
-			// SQLite creates the journals beside the database, and a rule for
-			// the database alone leaves a tool unable to open its own tables.
-			"-D", "DB=" + s.dbPath,
-			"-D", "DBWAL=" + s.dbPath + "-wal",
-			"-D", "DBSHM=" + s.dbPath + "-shm",
-			"-f", s.profilePath}
-		return append(argv, cmd...)
 	case "landlock":
 		// The agent is its own wrapper: this re-runs the agent, which restricts
 		// itself to the policy and then becomes the tool. Only the working
@@ -217,53 +167,9 @@ func readPaths(raw string) []string {
 	return out
 }
 
-// seatbeltProfile is the macOS policy. It is an allow-list: everything is
-// denied, and what a tool needs in order to run is named. Nothing is written as
-// a deny, so a path nobody thought of is refused rather than permitted.
-func seatbeltProfile(extraReads []string) string {
-	quoted := func(paths []string) string {
-		var b strings.Builder
-		for _, p := range paths {
-			b.WriteString("\n       (subpath \"" + p + "\")")
-		}
-		return b.String()
-	}
-	// The root directory is a literal, not a subpath: a subpath of "/" would
-	// allow the whole filesystem, which is the rule this replaces.
-	system := `(allow file-read* (literal "/")` + quoted(systemReads[1:]) + `)`
-	extra := ""
-	if len(extraReads) > 0 {
-		extra = "(allow file-read*" + quoted(extraReads) + ")\n"
-	}
-	return strings.Join([]string{
-		`(version 1)`,
-		`(deny default)`,
-		`(allow process-exec process-fork signal sysctl-read mach-lookup`,
-		`       network-outbound network-inbound system-socket ipc-posix-shm)`,
-		// A browser is several processes that find each other through the
-		// bootstrap server and talk to the graphics stack. Without these it dies
-		// on its first instruction. Neither opens a path.
-		`(allow iokit-open mach-register)`,
-		// Metadata of what is walked through, so a path inside an allowed
-		// subpath can be resolved. It says a path exists, never what is in it.
-		`(allow file-read-metadata)`,
-		system,
-		extra + `(allow file-read* (subpath (param "TOOLS")))`,
-		`(allow file-read* file-write* (literal (param "DB")) (literal (param "DBWAL"))`,
-		`                              (literal (param "DBSHM")))`,
-		`(allow file-write-data (literal "/dev/null") (literal "/dev/stdout")`,
-		`                       (literal "/dev/stderr") (literal "/dev/dtracehelper"))`,
-		// The one writable place. It is last only for readability; every rule
-		// here allows, so order does not decide the outcome.
-		`(allow file-read* file-write* (subpath (param "WS")))`,
-		``,
-	}, "\n")
-}
-
-// absOr resolves a path the way the sandbox will see it. Both mechanisms match
-// on the real path, and on macOS /var and /tmp are symlinks into /private — so
-// a profile written with the unresolved path silently matches nothing, which
-// looks exactly like a sandbox that is working.
+// absOr resolves a path the way the kernel will see it. A rule is matched
+// against the real path, so a policy written with an unresolved one silently
+// matches nothing — which looks exactly like a sandbox that is working.
 func absOr(p string) string {
 	if p == "" {
 		return ""

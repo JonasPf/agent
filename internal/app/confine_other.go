@@ -4,13 +4,14 @@ package app
 
 import "errors"
 
-// Off Linux the wrapper is never used: macOS confines with Seatbelt, which puts
-// a profile in front of the command instead of restricting the process that
-// runs it. These exist so the package builds and so the failure, if the wrapper
-// were ever reached here, is an error rather than a command running unconfined.
+// The agent is a Linux program: Landlock is the only confinement it has, and
+// there is no second mechanism for a second platform. These exist so the package
+// still builds elsewhere — a laptop runs the tests and the interface — and so
+// that a wrapper reached here fails rather than running a tool unconfined.
 
 func landlockAvailable() (bool, string) {
-	return false, "Landlock is a Linux facility"
+	return false, "Landlock is a Linux facility and this is not Linux; " +
+		"run the agent in its container (task dev) for a confined tool"
 }
 
 func applyPolicy(policy) error {
