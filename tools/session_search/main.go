@@ -1,5 +1,7 @@
-// session_search is full-text search across every transcript, so a conversation
-// that rotated away is still reachable by what was said in it.
+// session_search is full-text search over transcripts. It is what makes
+// compaction a compression rather than a loss: what a fold takes out of the
+// context it leaves in the index, so the agent can reach back for detail it can
+// no longer see.
 package main
 
 import (
@@ -12,8 +14,9 @@ import (
 )
 
 type args struct {
-	Query string `json:"query"`
-	Limit int    `json:"limit"`
+	Query   string `json:"query"`
+	Session string `json:"session"`
+	Limit   int    `json:"limit"`
 }
 
 type hit struct {
@@ -34,11 +37,28 @@ func main() {
 	if limit <= 0 {
 		limit = 20
 	}
+	// The default scope is this session. Searching one's own history is ordinary
+	// and expected; reading another conversation is a thing the operator should be
+	// able to see being decided, so widening is something the model has to ask
+	// for — and asking appears in the transcript as the call it is.
+	scope := strings.TrimSpace(a.Session)
+	if scope == "" {
+		scope = tool.Session
+	}
+	if scope == "all" {
+		scope = ""
+	}
+	params := url.Values{"q": {q}, "limit": {strconv.Itoa(limit)}}
+	if scope != "" {
+		params.Set("session", scope)
+	}
 	var hits []hit
-	tool.API("GET", "/search", nil,
-		url.Values{"q": {q}, "limit": {strconv.Itoa(limit)}}, &hits)
+	tool.API("GET", "/search", nil, params, &hits)
 	if len(hits) == 0 {
-		tool.OK("no matches")
+		if scope != "" {
+			tool.OKf("no matches in this session for %q. Pass session:\"all\" to search every conversation.", q)
+		}
+		tool.OKf("no matches for %q in any session", q)
 	}
 	lines := make([]string, 0, len(hits))
 	for _, h := range hits {

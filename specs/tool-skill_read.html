@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>skill_read — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>skill_read</code></h1>
+<p class="lede">Load the full text of a skill.</p>
+
+<h2>What it does</h2>
+<p>Returns a skill's body by name. This is the other half of the arrangement described in
+<a href="skills.html">Skills</a>: the prompt carries every skill's name and one-line description, and
+nothing more. The bodies are what this tool reaches.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>name</code></td><td>The skill's name, as it appears in the prompt's index. Required.</td></tr>
+</table>
+<div class="note">
+<strong>Why the index is in the prompt and the bodies are not.</strong> A skill body is long. Putting every one in the prompt would spend the session's cheapest, most cacheable tokens on instructions that most conversations never need. Putting none of it there would leave the agent unable to know what exists. The index is the smallest thing that makes the rest reachable, and reading one is a visible call rather than an invisible inclusion.
+</div>
+
+<p>The persona instructs the agent to read a skill before doing work it covers, so the failure mode
+this guards against is not an unreadable skill but an unread one.</p>
+
+<p>A name that is not a skill fails and says so. It does not return an empty body, which the model
+would read as a skill with no instructions in it and proceed on.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A known name returns the skill's body in full, exactly as stored.</li>
+<li>An unknown name fails and quotes the name given.</li>
+<li>A skill that exists with an empty body fails rather than returning nothing.</li>
+<li>An empty name is refused.</li>
+<li>A name is matched as it appears in the prompt's index.</li>
+<li>Only skills indexed in this session's prompt are readable from it.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-session_search.html">← session_search</a> · <a href="tool-web_fetch.html">web_fetch →</a></footer>
+</div>
+</body></html>

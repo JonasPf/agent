@@ -27,15 +27,59 @@ type wireFunction struct {
 	Arguments string `json:"arguments"`
 }
 
+// NewestPrompt returns the prompt entry in force: the last one written. A
+// session has one at creation and gains another at every compaction, which is
+// the only moment its prompt is allowed to change.
+func NewestPrompt(entries []Entry) *Entry {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Type == "prompt" {
+			e := entries[i]
+			return &e
+		}
+	}
+	return nil
+}
+
+// newestCompaction returns the index of the compaction in force, or -1. Only the
+// newest is sent: compactions are cumulative, each superseding the last, so a
+// conversation never accumulates a pile of summaries.
+func newestCompaction(entries []Entry) int {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Type == "compaction" {
+			return i
+		}
+	}
+	return -1
+}
+
 // Project converts a stored transcript into the message list for a model call.
 //
-//  1. Entries of type event and the prompt entry are dropped.
-//  2. The trailing run of job ticks sharing job_id and status collapses into one
+//  1. The newest prompt entry is the system message; earlier ones are dropped.
+//     (The caller renders it; Project drops every prompt entry from the body.)
+//  2. Only the newest compaction is sent, as an assistant message.
+//  3. Every entry at or before that compaction's CoversThrough is dropped.
+//  4. Entries of type event are dropped, except a failure.
+//  5. The trailing run of job ticks sharing job_id and status collapses into one
 //     line carrying the repetition count and the elapsed span.
-//  3. Everything else passes through unchanged.
+//  6. A wake is marked as one.
+//  7. Everything else passes through unchanged.
 //
 // Project is pure: same input, same output.
 func Project(entries []Entry) []ChatMessage {
+	// Rules 2 and 3. Slicing before anything else means the collapse below sees
+	// only what is actually being sent, and a compaction can never land inside a
+	// run of ticks it was meant to cover.
+	if c := newestCompaction(entries); c >= 0 {
+		covers := entries[c].CoversThrough
+		kept := make([]Entry, 0, len(entries)-c)
+		kept = append(kept, entries[c])
+		for _, e := range entries[c+1:] {
+			if e.Seq > covers {
+				kept = append(kept, e)
+			}
+		}
+		entries = kept
+	}
 	// Find the trailing run of job ticks.
 	end := len(entries)
 	start := end
@@ -71,6 +115,13 @@ func Project(entries []Entry) []ChatMessage {
 			continue
 		}
 		if e.Type == "prompt" {
+			continue
+		}
+		// A compaction is the agent's own account of its own conversation,
+		// written by its own model. The user role would put words in the
+		// operator's mouth, and the system message is the frozen prompt.
+		if e.Type == "compaction" {
+			out = append(out, ChatMessage{Role: "assistant", Content: e.Text})
 			continue
 		}
 		if m, ok := toMessage(e); ok {

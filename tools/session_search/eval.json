@@ -1,13 +1,30 @@
 {
   "cases": [
     {
-      "name": "searches past conversations",
-      "prompt": "Search our past conversations for anything about deployments.",
+      "name": "reaches back into this conversation for folded detail",
+      "prompt": "Earlier in this conversation we settled on a database. What was it? I can't see that part any more.",
       "tools": [
         "session_search"
       ],
       "expect": {
         "tool": "session_search",
+        "args_match": {
+          "query": "(?i)databas"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "widening to every conversation is asked for explicitly",
+      "prompt": "Search all my other conversations for anything about deployments.",
+      "tools": [
+        "session_search"
+      ],
+      "expect": {
+        "tool": "session_search",
+        "args": {
+          "session": "all"
+        },
         "args_match": {
           "query": "(?i)deploy"
         },

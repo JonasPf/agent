@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>edit — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>edit</code></h1>
+<p class="lede">Replace an exact string in a file in the session's working directory.</p>
+
+<h2>What it does</h2>
+<p>Finds an exact substring and replaces it. The match is literal: no patterns, no whitespace
+normalisation, no fuzzy matching.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>path</code></td><td>Relative to the session's working directory. Required.</td></tr>
+<tr><td><code>old</code></td><td>The exact string to find. Required, and may not be empty.</td></tr>
+<tr><td><code>new</code></td><td>What to put in its place. Required; may be empty, which deletes.</td></tr>
+<tr><td><code>replace_all</code></td><td>Replace every occurrence rather than refusing an ambiguous one. Optional.</td></tr>
+</table>
+
+<h2>Ambiguity is refused, not resolved</h2>
+<p>A string occurring more than once is an error unless <code>replace_all</code> was asked for. The
+failure says how many times it occurred and what to do about it.</p>
+
+<p>This is the whole point of the tool. Replacing the first of several matches is the edit that appears
+to succeed and does the wrong thing — and it does it to the occurrence the caller was least likely to
+mean, since the one being aimed at is rarely the first. Refusing costs one round trip; guessing costs a
+corrupted file nobody looks at again.</p>
+
+<table>
+<tr><th>Case</th><th>Result</th></tr>
+<tr><td><code>old</code> occurs once</td><td>Replaced.</td></tr>
+<tr><td><code>old</code> occurs more than once, no <code>replace_all</code></td><td>Refused, stating the count and naming both remedies: more context, or <code>replace_all</code>.</td></tr>
+<tr><td><code>old</code> occurs more than once, with <code>replace_all</code></td><td>Every occurrence replaced; the count is reported.</td></tr>
+<tr><td><code>old</code> not found</td><td>Refused, naming the file.</td></tr>
+<tr><td><code>old</code> is empty</td><td>Refused. An empty match is every position in the file.</td></tr>
+</table>
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A unique match is replaced and the file is otherwise byte-identical.</li>
+<li>A string occurring more than once is refused unless <code>replace_all</code> is given, and the refusal states how many times it occurred.</li>
+<li><code>replace_all</code> replaces every occurrence and reports how many.</li>
+<li>An <code>old</code> that does not occur is refused and names the file.</li>
+<li>An empty <code>old</code> is refused.</li>
+<li>An empty <code>new</code> deletes the matched text.</li>
+<li>The result reports how many replacements were made.</li>
+<li>A missing file fails and names the path.</li>
+<li>A path that would resolve outside the session's working directory is refused.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-clock.html">← clock</a> · <a href="tool-memory.html">memory →</a></footer>
+</div>
+</body></html>

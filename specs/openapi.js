@@ -157,13 +157,13 @@ window.OPENAPI_SPEC = {
             "$ref": "#/components/responses/NotFound"
           }
         },
-        "description": "An archived session is returned as it was. Follow continued_by to reach the live session of its chain."
+        "description": "A session is never superseded, so an identifier always addresses the conversation it named."
       },
       "patch": {
         "tags": [
           "sessions"
         ],
-        "summary": "Update title, status, or the rolling summary.",
+        "summary": "Update title or status.",
         "requestBody": {
           "required": true,
           "content": {
@@ -180,10 +180,6 @@ window.OPENAPI_SPEC = {
                       "active",
                       "archived"
                     ]
-                  },
-                  "summary": {
-                    "type": "string",
-                    "description": "Edit the rolling summary."
                   }
                 }
               }
@@ -202,7 +198,7 @@ window.OPENAPI_SPEC = {
             }
           },
           "409": {
-            "description": "Refused: the body carried model, enabled_tools, or enabled_skills. A session's configuration is fixed for its life; POST /sessions/{id}/rotate to continue the conversation under a new one.",
+            "description": "Refused: the body carried model, enabled_tools, or enabled_skills. A session's configuration is fixed for its life; POST /sessions/{id}/fork to copy the conversation into a new session under a new one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -990,7 +986,7 @@ window.OPENAPI_SPEC = {
         }
       }
     },
-    "/sessions/{id}/rotate": {
+    "/sessions/{id}/fork": {
       "parameters": [
         {
           "$ref": "#/components/parameters/Id"
@@ -1215,18 +1211,18 @@ window.OPENAPI_SPEC = {
             "nullable": true,
             "description": "The session this one was seeded from, by rotation, fork, or resume."
           },
-          "rotate_at_tokens": {
+          "compact_at_tokens": {
             "type": "integer",
-            "description": "Projected size at which this session rotates into a successor. Chosen for cost, not for the model's context limit."
+            "description": "Projected size at which this session compacts in place. Chosen for cost, not for the model's context limit."
           },
           "carry_over_tokens": {
             "type": "integer",
             "description": "Token budget for complete recent turns copied into a successor alongside the summary. Default 5000."
           },
-          "continued_by": {
+          "forked_from": {
             "type": "string",
             "nullable": true,
-            "description": "The session that succeeded this one. Following continued_by to its end gives the live session of this chain."
+            "description": "The session this one was copied from, if any. A fork does not supersede its origin, so there is no forward pointer."
           }
         }
       },

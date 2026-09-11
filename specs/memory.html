@@ -22,14 +22,25 @@
 <h1>Memory</h1>
 <p class="lede">What the agent carries between conversations, visible at the top of every one.</p>
 
-<p>Context is what is on screen now. Memory is what survives when the conversation ends. They are
-different things and are stored differently.</p>
+<p>Context is what is on screen now. Memory is what survives it. They are different things and are
+stored differently.</p>
+
+<h2>One store</h2>
+
+<p>There is a single memory, shared by every session. Nothing scopes a read: a session does not have a
+memory of its own, and there is no way to ask for only the items one conversation wrote. The
+<code>source_session</code> field records where an item came from so it can be traced back, and is
+never used to filter what is loaded.</p>
+
+<p>This is the one thing in the system that crosses a session boundary on its own. Transcripts are
+separate, working directories are separate, and <a href="sessions.html">search</a> defaults to the
+current session. Memory is the deliberate exception, and it is paid for by being visible: every item in
+force is listed in the prompt entry, in the conversation it is acting on.</p>
 
 <h2>Visible recall</h2>
 
-<p>Memory is loaded automatically into the system prompt at the start of every session. It is not hidden
-there: the system prompt is itself the first entry of the transcript, and memory is one of its
-sections — the only editable one.</p>
+<p>Memory is loaded automatically into the system prompt. It is not hidden there: the system prompt is
+itself an entry of the transcript, and memory is one of its sections — the only editable one.</p>
 
 <pre><code>┌─ prompt · 4,180 tokens                          ─┐
 │  persona             310 tokens         expand   │
@@ -51,32 +62,59 @@ its influence on an answer can always be traced.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every session's prompt entry contains a memory section listing every item in force.</li>
-<li>The entry is editable; edits take effect on the next turn.</li>
+<li>Every prompt entry contains a memory section listing every item in force when it was written.</li>
 <li>Deleting an item from the section deletes it from storage.</li>
 <li>A session with no memory shows an empty memory section rather than omitting it.</li>
-<li>Memory forms part of the cacheable prefix and does not change during a session.</li>
+<li>Memory forms part of the cacheable prefix and does not change between compactions.</li>
 </ul>
 </div>
 
 <h2>Writing</h2>
 
-<p>The agent writes memory through a tool call, which appears in the transcript where it happened and
-takes effect immediately. The written item joins the memory section of the next session's prompt.</p>
+<p>The agent writes memory through a tool call, which appears in the transcript where it happened. The
+item is stored immediately and is in force from that moment for every session created afterwards.</p>
+
+<p>It reaches a conversation that is already running at that conversation's next compaction, which
+writes a fresh prompt entry carrying memory as it then stands. That is true of the session that wrote
+the item and equally true of every other session running at the time: the store is one store, and a
+compaction reads it as it is. Until then a conversation runs on the prompt it already has — the session
+that wrote the item knows it because it just wrote it, and the transcript says so.</p>
+
+<div class="note">
+<strong>So a memory does reach other live conversations.</strong> Not immediately, and not invisibly:
+it lands at a compaction, which writes a prompt entry naming every item in force and says in the
+transcript that memory was refreshed. This is the intended reach — an agent that learned something in
+one conversation should not go on being wrong about it in another — and it is the reason memory is
+capped, consolidated by hand, and rendered item by item rather than summarised.</p>
+</div>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A memory write is a visible transcript entry naming what was stored.</li>
-<li>A written item is available to the current turn and every subsequent one.</li>
-<li>A write appends to the end of the transcript and does not modify the prompt entry in place.</li>
+<li>Memory is a single store; no read is scoped to a session, and <code>source_session</code> never filters what is loaded.</li>
+<li>A written item is in force for every session created after it.</li>
+<li>A write appends to the end of the transcript and modifies no existing entry.</li>
+<li>A written item appears in the memory section of the next prompt entry <em>any</em> session receives, not only the session that wrote it.</li>
+<li>A compaction writes a prompt entry carrying memory as it stands at that moment.</li>
+<li>A compaction can be requested, which is how a memory is made to take effect without waiting for the threshold.</li>
 </ul>
 </div>
 
 <div class="note">
-<strong>Why appending rather than re-injecting.</strong> Rewriting the memory section mid-session would
-change the system prompt and invalidate the cached prefix for the whole conversation. Appending leaves
-it intact.
+<strong>Why it waits for a compaction.</strong> Rewriting the memory section at an arbitrary moment
+would change the system prompt and throw away the cached prefix for the whole conversation. A
+compaction is throwing that prefix away regardless, so it is the one moment where the prompt can change
+for nothing. It is also announced: the transcript shows the new prompt entry where it was written, and
+the compaction that occasioned it says memory was refreshed. Memory never moves underneath a
+conversation unseen.
+</div>
+
+<div class="note">
+<strong>Why memory refreshes and tools do not.</strong> Memory is text the model reads; a tool is a
+definition it programmes against. Changing the callable set mid-conversation is what
+<a href="adrs.html#adr-019">ADR-019</a> removed, and a compaction does not bring it back — a new tool
+still needs a new session, reached by forking. Only the memory section of the prompt is rewritten.
 </div>
 
 <h2>Storage</h2>

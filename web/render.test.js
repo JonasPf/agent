@@ -197,7 +197,7 @@ test('an event with no identifier renders its text unchanged', () => {
 
 const session = over => Object.assign({
   id: '2C41F09B7DA35E86104B7', title: 'Greenhouse sensors', model: 'x/y', status: 'active',
-  entry_count: 3, context_used: 10, rotate_at_tokens: 40000, cost: 0,
+  entry_count: 3, context_used: 10, compact_at_tokens: 40000, cost: 0,
   disk_bytes: 0, last_active_at: new Date().toISOString(), unread: 0
 }, over);
 

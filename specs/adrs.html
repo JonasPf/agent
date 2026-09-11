@@ -20,7 +20,7 @@
 <div class="wrap">
 
 <h1>Decisions</h1>
-<p class="lede">Thirty-five choices with real tradeoffs. Each states what was given up.</p>
+<p class="lede">Thirty-six choices with real tradeoffs. Each states what was given up.</p>
 
 <div class="adr" id="adr-001">
 <div class="meta">ADR-001 · accepted</div>
@@ -289,8 +289,8 @@ prompt defines and what the session can do — and the gap had to be explained e
 <a href="#adr-016">ADR-016</a> takes the requirement away instead of paying for it.</p>
 </div>
 
-<div class="adr" id="adr-015">
-<div class="meta">ADR-015 · accepted</div>
+<div class="adr superseded" id="adr-015">
+<div class="meta">ADR-015 · superseded by <a href="#adr-040">ADR-040</a></div>
 <h3>Summarise continuously and rotate, rather than compact</h3>
 <h4>Context</h4>
 <p>The usual answer to a full context window is compaction: at the limit, summarise the older messages
@@ -324,7 +324,7 @@ the point where every call has become expensive. The threshold is a cost decisio
 </div>
 
 <div class="adr" id="adr-016">
-<div class="meta">ADR-016 · accepted, amended by <a href="#adr-019">ADR-019</a></div>
+<div class="meta">ADR-016 · accepted, amended by <a href="#adr-019">ADR-019</a> and <a href="#adr-040">ADR-040</a></div>
 <h3>A session's configuration is fixed; rotation is how it changes</h3>
 <h4>Context</h4>
 <p><a href="#adr-014">ADR-014</a> made tools and skills switchable mid-session by always defining every
@@ -795,8 +795,8 @@ message reads. It is deliberately incomplete rather than partly correct: an unsu
 stays visible as its source, which is the state the interface was in before this decision.</p>
 </div>
 
-<div class="adr" id="adr-032">
-<div class="meta">ADR-032 · accepted</div>
+<div class="adr superseded" id="adr-032">
+<div class="meta">ADR-032 · superseded by <a href="#adr-040">ADR-040</a></div>
 <h3>The carried summary is system context, not a user message</h3>
 <h4>Context</h4>
 <p>Rotation seeded a successor by writing its predecessor's summary into the transcript as a message
@@ -1066,6 +1066,211 @@ thing it can do about a boundary that is off.</p>
 <p>A headless browser does not fit in the memory available, so <code>web_fetch</code> retrieves pages
 over HTTP and a page assembled by scripts reads as empty. That is a hardware problem, and naming it
 here keeps it from being rediscovered as a bug.</p>
+</div>
+
+<div class="adr" id="adr-039">
+<div class="meta">ADR-039 · accepted</div>
+<h3>Landlock, not bubblewrap, is the Linux sandbox</h3>
+<h4>Context</h4>
+<p><a href="#adr-030">ADR-030</a> chose bubblewrap because it needs no privileges. That was true of the
+command and not of the kernel: bubblewrap builds a mount namespace, and a mount namespace needs an
+unprivileged user namespace, which Ubuntu 24.04 refuses to a container. Measured on the deployment
+host, every configuration was refused except <code>--privileged</code>, which is a worse trade on a
+machine running anything else. So the deployed agent ran with no sandbox at all, and
+<a href="#adr-036">ADR-036</a> depends on there being one: without it a tool can write the tool
+directory of the running agent, and the pull request stops being the only way in.</p>
+<h4>Decision</h4>
+<p>The sandbox is Landlock, and it is the only one. It is a kernel facility an unprivileged process
+asks for by syscall: no namespace, no capability, nothing installed, and it works inside an
+unprivileged container on a host that refuses user namespaces.</p>
+<p>Seatbelt goes with bubblewrap, though it worked. Two mechanisms are two policies, and two policies
+do not stay in step: within a day of a tool being able to declare the paths it needs, the macOS profile
+was silently ignoring that declaration while Landlock honoured it. The agent is a Linux program. A
+laptop runs the tests and the interface; a laptop that wants a confined tool runs the container, which
+is <code>task dev</code>, built from the same Dockerfile CI publishes.</p>
+<p>What that costs is stated rather than hidden. On a laptop <code>task run</code> confines nothing:
+the startup line is a warning, the interface says NOT ENFORCED, and every test that asserts
+confinement skips with a message naming why instead of passing against a boundary that is not there.
+A green suite on macOS therefore proves less than a green suite in CI, which is true and was not true
+before &mdash; and is why the suite says which.</p>
+<p>Landlock restricts the thread that asks and is inherited across <code>execve</code>, so something
+must ask between the fork and the exec, and Go offers no hook there. The agent is therefore its own
+wrapper: <code>agent -confine &lt;policy&gt; -- &lt;tool&gt;</code>. That second run applies the policy
+to itself and becomes the tool &mdash; the same shape as <code>sandbox-exec</code> and
+<code>bwrap</code>, a command in front of a command, with no second binary to ship. The three syscalls
+are written out rather than taken as a dependency, in a project with two.</p>
+<p>The database moves with this decision. SQLite creates its write-ahead log beside the database when
+it first needs one, which is permission to create a file in that directory &mdash; and that directory
+held every transcript. Landlock grants a tree or it does not: a zero-access rule to carve a hole is
+refused by the kernel, which was measured rather than assumed. So the database now lives in a
+directory of its own, holding nothing but the database and its journals, and that directory is what a
+tool is granted.</p>
+<h4>Consequences</h4>
+<p>The boundary now holds where the agent actually runs, which is the only place it ever mattered. It
+also holds on a stock CI runner with no <code>sysctl</code> and no package, so the suite that proves
+it is no longer run against a doctored machine.</p>
+<p>Two things are given up. Landlock denies paths rather than hiding them: a tool learns that other
+sessions exist &mdash; <code>stat</code> is not a right Landlock governs &mdash; and cannot read a byte
+of them, where bubblewrap left them out of the mount namespace entirely. And the floor is now Linux
+5.13; older kernels report no sandbox, with the reason, rather than silently having none.</p>
+<p><code>/proc</code> is not in the runtime every tool gets, and the reason is worth stating. A read
+grant on it is also a leak: <code>/proc/&lt;pid&gt;/environ</code> of any process this user owns is
+readable through it, the agent's included, so it would hand every tool the model key that
+<a href="#adr-037">ADR-037</a> keeps out of its environment. Landlock cannot grant a tree while denying
+part of it, so the answer is not a narrower grant but a narrower grantee: a tool declares the paths it
+needs in its manifest, the way it declares its environment, and only the two browser tools ask for
+<code>/proc</code> &mdash; a browser reads its own maps before it renders anything. The suite proved
+nothing else needs it by passing without it.</p>
+<p>For those two, the prize is removed as well: the agent makes itself undumpable at startup
+(<code>prctl(PR_SET_DUMPABLE, 0)</code>), which puts its <code>/proc</code> entries out of reach of
+every other process this user owns. One syscall, and the cost is a core dump nobody wanted. Measured
+in the container: a sibling process reads <code>OPENROUTER_API_KEY</code> out of
+<code>/proc/&lt;pid&gt;/environ</code> before it, and is refused after.</p>
+<p>bubblewrap mounted a procfs for every tool and had no way to say which tool needed one, so this is
+tighter than the mechanism it replaces rather than a concession made to it.</p>
+<p>Two failures found by building it, both invisible to a laptop. A shell cannot start without
+<code>/dev/null</code>, so the handful of device files a program opens before its own code runs are
+granted by name rather than by granting <code>/dev</code>. And a rule descriptor must be opened with
+<code>O_PATH</code>: <code>/dev/tty</code> cannot be opened when there is no controlling terminal, and
+a rule about a path should not depend on being able to talk to what is behind it.</p>
+</div>
+
+<div class="adr" id="adr-040">
+<div class="meta">ADR-040 · accepted</div>
+<h3>Compact in place; a session has no successor</h3>
+<h4>Context</h4>
+<p><a href="#adr-015">ADR-015</a> chose the opposite: summarise continuously and rotate into a fresh
+session rather than compact. Its argument was that compaction rewrites the cached prefix at the worst
+moment, pays for a large summarisation under pressure, and leaves a conversation half transcript and
+half summary.</p>
+<p>Two of those three did not survive contact. The cached prefix is keyed on a prompt that names its own
+session, so a successor never inherits its predecessor's cache — rotation invalidated the one block that
+was actually cached, and compaction, which appends below the system prompt, does not. And the
+continuous summary was a speculative tax: an update every four thousand tokens, ten of them over a
+session's life, producing one artefact that was used once and only if the session ever rotated.</p>
+<p>The third objection was real and is answered by where compaction is put rather than by avoiding it.</p>
+<p>Rotation also cost more than it was priced at. A conversation became a chain, so an identifier
+addressed a thing that stopped being current; jobs had to migrate; links had to follow
+<code>continued_by</code> forward and report the redirection; and three distinct user intentions —
+rotate, fork, resume — were served by one operation whose name matched none of them. "Fork" in
+particular promised a copy and delivered a summary.</p>
+<h4>Decision</h4>
+<p>A session compacts in place and never ends. At <code>compact_at_tokens</code>, the turns before the
+last <code>keep_verbatim_tokens</code> are replaced <em>in what is sent</em> by a written summary of
+them. The session keeps its identifier, its jobs, its files, and its history.</p>
+<p>Compaction is a projection rule, not a rewrite. The transcript gains two appended entries — a
+refreshed prompt and a compaction — and the projection stops sending what they stand for. Nothing is
+edited and nothing is removed, so the half-transcript-half-summary objection applies to what is
+<em>sent</em>, which was always a projection, and not to what is stored, which stays whole. The
+covered entries remain in the full-text index, so detail leaves the context without leaving the system.
+That is what makes this a compression rather than a loss, and it is why the scoped search in the same
+change is not an optional companion to it.</p>
+<p>The compaction reaches the model as an <code>assistant</code> message. <a href="#adr-032">ADR-032</a>
+established that a summary must not wear the <code>user</code> role, and its answer — the system prompt
+— is not available to a summary that changes. The assistant role is also simply true: the text is the
+agent's own account of its own conversation, written by its own model.</p>
+<p>The rolling summary is deleted, with <code>carried_summary</code>, <code>continued_by</code>, the
+carry-over budget, chain-following, archived-link redirection, and job migration. What remains is two
+operations that mean what they are called: <strong>compact</strong>, which is automatic and can be
+asked for, and <strong>fork</strong>, which copies a conversation whole into a new session under a new
+configuration. The third thing rotation was used for — a clean slate under a new configuration — is
+<em>compact, then fork</em>, so it needs no verb of its own.</p>
+<h4>Consequences</h4>
+<p>A session identifier addresses the same conversation forever, which is the property the design
+claims everywhere else and rotation was the one exception to. Jobs stop moving. Links stop redirecting.
+<a href="#adr-016">ADR-016</a> stands unchanged in substance — configuration is still fixed, and
+changing it is still a new session — but the operation is now named forking.</p>
+<p>The cost is real and is not hidden: one summarisation call at the threshold, in a turn the operator
+is waiting on, where the rolling summary had spread that cost out in advance. One pause beats ten
+speculative calls for a single-user agent, and the call is bounded by the threshold rather than by the
+conversation's length, because each compaction reads the previous compaction's text rather than the
+entries it covered.</p>
+<p>The danger that replaces it is generation loss. Material compacted ten times has passed through ten
+model calls, and a summary rewritten each time degrades like a photocopy of a photocopy. The summariser
+is therefore asked to <em>edit</em> — copy existing lines through unchanged unless superseded — so
+degradation is confined to the lines actually touched. A test asserts a fact from an early compaction
+survives ten later ones verbatim, because this is the failure that would otherwise be discovered slowly
+and in production.</p>
+<p>Two failure modes are answered rather than assumed away. A compaction that fails leaves the
+conversation running, over threshold and visibly so, and tries again after the next turn. A summary not
+smaller than what it covers is rejected, so a summariser that restates cannot grow the conversation.</p>
+</div>
+
+<div class="adr" id="adr-041">
+<div class="meta">ADR-041 · accepted</div>
+<h3>Memory refreshes at a compaction, and only there</h3>
+<h4>Context</h4>
+<p>Memory reached a conversation by being read into its prompt when the session was created, and a
+memory written mid-conversation landed in the <em>next</em> session's prompt. That worked because
+sessions ended: rotation was, without ever being described as such, the mechanism by which memory
+refreshed.</p>
+<p><a href="#adr-040">ADR-040</a> removes the ending. A session that never ends would read the memory it
+had at creation and no other, forever — an agent writing items it can never itself read.</p>
+<p>The prompt could not simply be rewritten when memory changed. It is the head of the cached prefix, so
+rewriting it at an arbitrary moment discards the cache for the whole conversation, and it would break
+the guarantee that nothing shaping behaviour moves underneath a conversation unseen.</p>
+<h4>Decision</h4>
+<p>A compaction writes a fresh prompt entry, carrying memory as it then stands, immediately before it
+writes the compaction entry. The projection sends the newest prompt entry as the system message and
+drops the earlier ones. A compaction can be asked for, which is how a memory just written is made to
+take effect now rather than in thirty thousand tokens.</p>
+<p>This is the only moment a session's prompt changes, and it is chosen because it is the only moment
+where the change is free: the compaction is discarding the cached prefix regardless.</p>
+<p>Only the memory section is rewritten. Tools and skills stay fixed for a session's life, reached by
+forking — changing the callable set mid-conversation is what <a href="#adr-019">ADR-019</a> removed, and
+this does not bring it back. Memory is text the model reads; a tool is a definition it programmes
+against.</p>
+<h4>Consequences</h4>
+<p>The invariant weakens from "the prompt is identical on a session's first turn and its last" to "the
+prompt changes only at a compaction" — narrower, still absolute, and now actually true, where the
+memory specification had carried two criteria that could not both hold.</p>
+<p>Because prompt entries are appended rather than edited, every prompt a session was ever sent stays
+readable in the position it was sent from, and position zero keeps its meaning: the prompt the
+conversation opened with. What it loses is being the only one.</p>
+<p>The refresh is announced: the new prompt entry appears in the transcript, and the compaction that
+occasioned it says memory was refreshed and how many items changed.</p>
+<p>One consequence is worth stating plainly, because the mechanism reads narrower than it is. Memory is
+one store shared by every session, so a compaction picks up whatever is in it — including items another
+conversation wrote since this one's last compaction. Rotation did the same thing at a different moment:
+a successor read memory at creation, and successors were being created constantly. The reach is
+unchanged; only the moment moved. It is nevertheless the single channel by which one conversation
+affects another without being asked, which is why it is capped, listed item by item in the prompt, and
+editable there.</p>
+</div>
+
+<div class="adr" id="adr-042">
+<div class="meta">ADR-042 · accepted</div>
+<h3>One cache marker, at the end of the message list</h3>
+<h4>Context</h4>
+<p>A marker was placed on the system prompt alone, gated on whether another call was expected before it
+expired. The gate is right and is kept. The placement covered about four thousand tokens of a call that
+reaches forty thousand — between a tenth and a third of what is sent, with the conversation itself,
+which is the bulk and is re-sent in full on every call of an agent loop, paid for at full price
+every time.</p>
+<p>A second marker on the system prompt was considered, as a fallback for when a longer prefix misses.
+It earns its place only if the two are given different lifetimes, since otherwise they expire together
+and the fallback is a fallback against nothing. That is a real gain and a second thing to reason about,
+and this is a prototype.</p>
+<h4>Decision</h4>
+<p>One marker, at the end of the message list, rewritten on every call. Each call reads the prefix the
+previous call wrote and writes one slightly longer; a conversation only grows at the bottom, so the
+prefix above always matches. The existing idle gate is reused unchanged: no marker when no further call
+is expected, and none for a provider that caches without one.</p>
+<p>Cold resumptions are accepted as a cost. When the lifetime has passed, the whole prefix is rewritten
+rather than partly recovered.</p>
+<h4>Consequences</h4>
+<p>The calls that dominate spend are the several a single user message produces in an agent loop,
+seconds apart. Those become reads at a tenth of price on everything but what the last call added. The
+break-even is under two reads, so the only way this loses is a cache nobody reads — which is precisely
+what the idle gate exists to prevent.</p>
+<p>A compaction now costs one cache miss, where under the old placement it cost none. This is bounded,
+happens once per thirty thousand tokens of growth, and is the same moment the prompt is allowed to
+change, for the same reason.</p>
+<p>Caching is made visible rather than inferred, because it changes what a conversation costs: the
+session header carries the live cache size and counts down to its expiry, each assistant message reports
+what its own call actually hit as measured by the provider, and a compaction says it reset the cache. A
+lifetime is not shown per message — a cache is one prefix with one expiry, so that would print the same
+number beside every message.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

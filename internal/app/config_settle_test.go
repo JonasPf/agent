@@ -24,7 +24,7 @@ func newTestApp(t *testing.T) *App {
 		sandbox: NewSandbox(cfg),
 		cfg:     cfg,
 		store:   st,
-		tools:   NewRegistry(filepath.Join(dir, "tools"), filepath.Join(dir, "agent.db"), st.DB()),
+		tools:   NewRegistry(filepath.Join(dir, "tools"), DBPath(dir), st.DB()),
 		skills:  NewSkills(filepath.Join(dir, "skills")),
 		hub:     NewHub(),
 		queues:  map[string]chan func(){},
@@ -80,7 +80,7 @@ func TestConfigCannotBeChangedOnAnExistingSession(t *testing.T) {
 		if w.Code != http.StatusConflict {
 			t.Fatalf("PATCH %s: want 409, got %d: %s", body, w.Code, w.Body.String())
 		}
-		if !strings.Contains(w.Body.String(), "rotate") {
+		if !strings.Contains(w.Body.String(), "fork") {
 			t.Errorf("PATCH %s: the refusal must name rotation as the way: %s", body, w.Body.String())
 		}
 	}
@@ -92,7 +92,10 @@ func TestConfigCannotBeChangedOnAnExistingSession(t *testing.T) {
 
 // Running turns must not add a second prompt: the prompt a session is sent on
 // its last turn is the prompt it was sent on its first.
-func TestSessionHasExactlyOnePromptEntry(t *testing.T) {
+// The prompt changes only at a compaction. Between compactions it is frozen, so
+// a session that has not compacted has exactly one — and every turn it takes
+// sends that same one.
+func TestSessionHasExactlyOnePromptEntryUntilItCompacts(t *testing.T) {
 	a, _ := modelBackedApp(t, "first", "second")
 	s, err := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	if err != nil {
@@ -120,14 +123,14 @@ func TestSessionHasExactlyOnePromptEntry(t *testing.T) {
 }
 
 // A fork is created under a configuration chosen on the screen that creates it,
-// so rotate carries the caller's configuration rather than inheriting silently.
-func TestRotateCreatesTheSuccessorUnderTheGivenConfig(t *testing.T) {
+// so fork carries the caller's configuration rather than inheriting silently.
+func TestForkCreatesTheNewSessionUnderTheGivenConfig(t *testing.T) {
 	a := newTestApp(t)
 	pred, err := a.NewSession(SessionConfig{Model: "old/model", EnabledTools: []string{"read"}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	succ, err := a.Rotate(pred, SessionConfig{Model: "new/model", EnabledTools: []string{"bash"}}, false, "fork")
+	succ, err := a.Fork(pred, SessionConfig{Model: "new/model", EnabledTools: []string{"bash"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,14 +29,15 @@ private one of its own, so a session is always something a person started and ca
 
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
-<tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste.</td></tr>
+<tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste. It addresses the same conversation for as long as the conversation exists.</td></tr>
 <tr><td><code>title</code></td><td>Generated from the first user message. Editable.</td></tr>
 <tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life.</td></tr>
-<tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>.</td></tr>
-<tr><td><code>continued_from</code></td><td>The session this one was seeded from, if any.</td></tr>
-<tr><td><code>continued_by</code></td><td>The session that succeeded this one, if any.</td></tr>
+<tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>. Archiving is something a person does when they are finished; nothing archives a session automatically.</td></tr>
+<tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
 <tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
 <tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
+<tr><td><code>compact_at_tokens</code></td><td>The projected size at which the conversation compacts. Default forty thousand.</td></tr>
+<tr><td><code>keep_verbatim_tokens</code></td><td>How much of the tail a compaction leaves untouched. Default ten thousand.</td></tr>
 </table>
 
 <div class="ac">
@@ -47,6 +48,7 @@ private one of its own, so a session is always something a person started and ca
 <li>A session's model, tools, and skills cannot be changed once the session exists.</li>
 <li>The configuration of one session does not affect any other.</li>
 <li>The system prompt as sent is retrievable for any session that has taken a turn.</li>
+<li>A session identifier addresses the same conversation for that conversation's whole life.</li>
 </ul>
 </div>
 
@@ -72,14 +74,26 @@ shows exactly what it was told, including every tool definition it can see.</p>
 <p>The entry is a record of what was sent, so it is not sent again and costs nothing. Sections are
 collapsed by default, because tool definitions are long and are usually not what you came to read.</p>
 
-<h3>The prompt does not change</h3>
+<h3>The prompt changes only at a compaction</h3>
 
-<p>Position zero is not a snapshot that later drifts. It is the prompt, for the whole life of the
-session. Nothing that shapes behaviour can move underneath a conversation, because everything that
-shapes it is chosen before the conversation starts.</p>
+<p>Between compactions the prompt is frozen. Nothing that shapes behaviour moves underneath a
+conversation mid-flight, because everything that shapes it is chosen before the conversation starts and
+every later change waits for a moment that is announced.</p>
 
-<p>Writing a memory is the one thing that changes what a <em>later</em> session is told, and it takes
-effect there rather than here: the entry records it, and the next session's prompt carries it.</p>
+<p>That moment is a compaction, and it is the only one. A compaction rewrites the head of the
+message list and therefore discards the cached prefix already — so re-photographing the prompt at the
+same instant costs nothing that was not already being spent. At any other moment it would cost a full
+cache write.</p>
+
+<p>A compaction appends a new prompt entry rather than editing the old one. The transcript is
+append-only, so every prompt a session has ever been sent stays readable in the position it was sent
+from. The rule for what is <em>current</em> is simply the newest one.</p>
+
+<div class="note">
+<strong>Memory is why this exists.</strong> Memory written during a conversation has to reach that
+conversation eventually, or the agent writes things it can never read. A compaction is where it lands.
+See <a href="memory.html">Memory</a>.
+</div>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -88,25 +102,27 @@ effect there rather than here: the entry records it, and the next session's prom
 <li>Tool definitions are shown in full, exactly as the model receives them.</li>
 <li>Each section shows its token count, and the entry shows the total.</li>
 <li>The memory section is editable in place; no other section is.</li>
-<li>The prompt entry is not sent to the model.</li>
+<li>A prompt entry is not sent to the model as a message; the newest one is sent as the system message.</li>
 <li>A session that has not taken a turn has no prompt entry, and its configuration is still editable.</li>
-<li>The prompt a session is sent is identical on its first turn and its last.</li>
+<li>A session that has never compacted has exactly one prompt entry.</li>
+<li>The prompt a session is sent is identical on every turn between two compactions.</li>
+<li>A prompt entry written by a compaction records which entry superseded which.</li>
 </ul>
 </div>
 
 <h2>Configuration</h2>
 
 <p>A session's model, its tools, and its skills are one thing: the configuration. It is chosen before
-the conversation starts and fixed from the session's first turn.</p>
+the conversation starts and fixed for the session's entire life.</p>
 
 <p>So the prompt carries exactly what the session can use. The tool definitions in position zero are the
 tools that are callable; the skills index lists the skills that can be read. There is no second,
 smaller set hiding behind a larger one.</p>
 
 <div class="note">
-<strong>Changing it is continuing.</strong> To run on a different model, or with a different set of
-tools, you rotate: the conversation continues in a new session under the new configuration, carrying its
-summary and recent turns across. There is no other way to change it, and no need for one.
+<strong>Changing it is forking.</strong> To run on a different model, or with a different set of
+tools, you fork: the conversation is copied into a new session under the new configuration, and the
+original stays where it is. There is no other way to change it, and no need for one.
 </div>
 
 <h3>Why fixed</h3>
@@ -118,10 +134,9 @@ with a permanent gap between what the prompt says and what is true: every defini
 them refusals waiting to happen, an appended entry to explain the difference, and a dispatch check to
 enforce it.</p>
 
-<p>Rotation removes the dilemma rather than picking a side. A change of configuration is a change of
+<p>Forking removes the dilemma rather than picking a side. A change of configuration is a change of
 prompt, a change of prompt is a new session, and a new session is a thing the system already does well:
-the summary and the recent turns come across, the jobs come across, and the cached prefix of the old
-session was never invalidated because it was never touched.</p>
+the whole conversation comes across, the files come across, and nothing about the original is touched.</p>
 
 <p>What that removes, concretely: the enabled set no longer diverges from the prompt, no entry has to
 announce a change mid-conversation, no call has to be refused for being disabled, a skill outside the
@@ -129,12 +144,12 @@ session's set is simply not a skill it has, and a job that runs days later runs 
 configuration it was created under.</p>
 
 <div class="note">
-<strong>What is still mutable.</strong> Title, status, and the rolling summary. None of them
-appear in the prompt, so none of them can invalidate it. Model, tools, and skills never do.
+<strong>What is still mutable.</strong> Title and status. Neither appears in the prompt. Model, tools,
+and skills never change at all.
 </div>
 
 <p>A new session inherits the configuration of the most recently used one, and a fork inherits its
-predecessor's, so the common case is a screen you confirm without changing anything. Both are the same
+origin's, so the common case is a screen you confirm without changing anything. Both are the same
 screen, reached the same way, and both are answered before the session exists.</p>
 
 <div class="ac">
@@ -142,10 +157,10 @@ screen, reached the same way, and both are answered before the session exists.</
 <ul>
 <li>The prompt defines exactly the session's enabled tools, and indexes exactly its enabled skills.</li>
 <li>A session's configuration is chosen before it is created and cannot be changed afterwards.</li>
-<li>A request to change a session's model, tools, or skills is refused, and names rotation as the way.</li>
+<li>A request to change a session's model, tools, or skills is refused, and names forking as the way.</li>
 <li>Every session has a prompt entry from the moment it exists.</li>
-<li>Rotating accepts a configuration; anything not given is inherited from the predecessor.</li>
-<li>A rotation that changes the configuration names what changed, in both sessions' transcripts.</li>
+<li>Forking accepts a configuration; anything not given is inherited from the origin.</li>
+<li>A fork that changes the configuration names what changed, in both sessions' transcripts.</li>
 <li>A new session inherits the configuration of the most recently used session.</li>
 <li>Nothing that can be changed mid-session appears in the system prompt.</li>
 </ul>
@@ -153,15 +168,20 @@ screen, reached the same way, and both are answered before the session exists.</
 
 <h2>Transcript entries</h2>
 
-<p>A transcript holds two kinds of entry. The distinction is what makes a conversation both complete
+<p>A transcript holds four kinds of entry. The distinction is what makes a conversation both complete
 and affordable.</p>
 
 <table>
 <tr><th>Type</th><th>Written by</th><th>Shown to user</th><th>Sent to model</th></tr>
 <tr><td><code>message</code></td><td>user, assistant, tool result</td><td>yes</td><td>yes</td></tr>
-<tr><td><code>event</code></td><td>system: job checks, rotations, failures</td><td>yes</td><td>no</td></tr>
-<tr><td><code>prompt</code></td><td>system, at creation: the prompt as sent</td><td>yes</td><td>no</td></tr>
+<tr><td><code>event</code></td><td>system: job checks, forks, failures</td><td>yes</td><td>no</td></tr>
+<tr><td><code>prompt</code></td><td>system, at creation and at each compaction</td><td>yes</td><td>as the system message, newest only</td></tr>
+<tr><td><code>compaction</code></td><td>system, at the size threshold</td><td>yes</td><td>yes, in place of what it covers</td></tr>
 </table>
+
+<p>A compaction is its own type rather than an event because an event is never sent to the model and a
+compaction always is. It is not a message either: no one said it, and it stands for entries rather than
+adding to them.</p>
 
 <h3>What an event is for</h3>
 
@@ -174,15 +194,16 @@ justification, and it is the test every event has to pass.</p>
 <tr><th>Event</th><th>Records</th></tr>
 <tr><td><code>job_check</code></td><td>A check ran and what it decided. Nothing else records a tick that did not fire.</td></tr>
 <tr><td><code>job_error</code></td><td>A job failed. Failing is not something the model says.</td></tr>
-<tr><td><code>error</code></td><td>A turn failed.</td></tr>
-<tr><td><code>rotation</code></td><td>The conversation continued in a new session.</td></tr>
-<tr><td><code>carried_over</code></td><td>Which turns arrived from a predecessor.</td></tr>
+<tr><td><code>error</code></td><td>A turn failed, or a compaction failed and the conversation continued uncompacted.</td></tr>
+<tr><td><code>fork</code></td><td>This conversation was copied into a new session. Written in the origin, which is otherwise unchanged and would show no trace.</td></tr>
+<tr><td><code>forked_from</code></td><td>This session began as a copy of another, at a named point in it.</td></tr>
 </table>
 
 <p>Nothing else is an event. An action whose result already appears in the transcript — a tool call
 answering for itself — is not written twice, and one whose result is a row on another screen is recorded
-by that row. Creating a job, adding a tool, updating the summary, and uploading a file are all of these,
-so none of them writes an entry.</p>
+by that row. Creating a job, adding a tool, and uploading a file are all of these, so none of them
+writes an entry. Compacting writes entries, but they are not events: a prompt and a compaction, both of
+which the model is sent.</p>
 
 <div class="note">
 <strong>Cheapness is not a reason.</strong> An event costs no tokens, which is an argument for keeping
@@ -194,9 +215,9 @@ screen. A transcript is read by a person; its budget is attention, not tokens.
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A check job that never fires still leaves one entry per tick.</li>
-<li>Creating a job, registering a tool, updating a summary, and uploading a file write no transcript entry.</li>
+<li>Creating a job, registering a tool, and uploading a file write no transcript entry.</li>
 <li>Every event kind that exists records something no other entry and no other screen records.</li>
-<li>The prompt is its own entry type, not an event.</li>
+<li>The prompt and the compaction are their own entry types, not events.</li>
 <li>A wake is attributed to its job, named in the speaker itself. The operator is never shown as the author of a turn they did not type.</li>
 <li>The job attribution appears once, on the wake, and not on the replies it produced.</li>
 <li>Every message carries the time it was written, with the date shown once it is not today's.</li>
@@ -213,19 +234,32 @@ flowchart LR
   T["Transcript<br/>(JSONL, complete)"] --> P{{"Projection"}}
   P --> M["Messages<br/>(sent to model)"]
   P -.->|"drop"| E["events"]
+  P -.->|"fold"| F["entries a compaction covers<br/>→ its summary, once"]
   P -.->|"collapse"| C["repeated job ticks<br/>→ one line + count"]
   P -.->|"mark"| W["job wake<br/>→ names its job, operator absent"]
 </div>
 
-<p>The projection applies five rules and nothing else:</p>
+<p>The projection applies seven rules and nothing else:</p>
 
 <ol>
+<li>The newest <code>prompt</code> entry becomes the system message. Every earlier one is dropped.</li>
+<li>Only the newest <code>compaction</code> entry is sent, as an <code>assistant</code> message, in the position it was written. Every earlier one is dropped.</li>
+<li>Every entry at or before that compaction's <code>covers_through</code> is dropped, whatever its type.</li>
 <li>Entries of type <code>event</code> are dropped.</li>
 <li>Consecutive <code>job_check</code> events sharing a <code>job_id</code> and a <code>status</code> collapse into a single line carrying the repetition count and the elapsed span. Only a wake with a check produces these; a wake that acts produces messages, which are never collapsed.</li>
 <li>A user entry carrying a <code>job_id</code> is a wake, and is marked as one: it names the job, says how late it ran when that is more than a minute, and states that the operator is not present. A user entry without one is what the operator typed, and is left alone.</li>
-<li>A failed run projects as one line saying the turn above produced no reply, and carrying the failure. Every other event is dropped.</li>
-<li>Everything else passes through unchanged.</li>
+<li>A failed run projects as one line saying the turn above produced no reply, and carrying the failure. Everything else passes through unchanged.</li>
 </ol>
+
+<p>Rules 1 to 3 are what make a compaction a projection rule rather than a rewrite. Nothing is edited
+and nothing is removed: the transcript grows by two entries, and the projection stops sending what they
+stand for.</p>
+
+<p>A compaction is projected as an <code>assistant</code> message because the alternatives are worse. The
+user role means the operator is speaking, and the operator did not say it. The system message is the
+frozen prompt, and putting a changing summary there would break the one block that must not change
+between compactions. An assistant message is also simply true: the summary is the agent's own account of
+its own conversation, written by its own model.</p>
 
 <p>The turn's own user message goes through the projection too, rather than being assembled
 separately. Two ways of putting a user turn on the wire is two rules to keep in step, and when they
@@ -243,6 +277,10 @@ change" supports a conclusion that "checked once" does not.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Projection is a pure function of a transcript; running it twice on the same input gives the same output.</li>
+<li>The system message sent is the newest prompt entry; earlier prompt entries appear nowhere in the request.</li>
+<li>A transcript with a compaction projects to that compaction's text followed by the entries after it, and nothing before it.</li>
+<li>A transcript with two compactions sends only the newer one.</li>
+<li>A compaction reaches the model as an assistant message, not as a user or system message.</li>
 <li>A user entry carrying a job id reaches the model marked as a wake, naming the job and saying the operator is not present.</li>
 <li>A wake that ran more than a minute after it was due says how late it is and when it was due; a punctual one says nothing about the clock.</li>
 <li>A user entry with no job id reaches the model exactly as it was typed.</li>
@@ -250,129 +288,273 @@ change" supports a conclusion that "checked once" does not.</p>
 <li>A wake whose run failed is followed in the request by a line saying it produced no reply, so an unanswered instruction is never mistaken for a repeated one.</li>
 <li>Five consecutive ticks with identical status project to one line stating five occurrences and the time span.</li>
 <li>Only the trailing run of ticks is collapsed; a run followed by a later user message is never re-collapsed.</li>
-<li>Collapsing never removes an entry from the stored transcript.</li>
+<li>Neither collapsing nor compaction removes an entry from the stored transcript.</li>
 </ul>
 </div>
 
-<div class="note">
-<strong>Why only the trailing run.</strong> Caching keys on a stable prefix. Rewriting the middle of a
-conversation invalidates everything after it. Collapsing only the tail shortens the part that is
-cheapest to resend and leaves the cached prefix untouched.
-</div>
+<h2>Compaction</h2>
 
-<h2>Rolling summary</h2>
+<p>When a conversation passes a size threshold it compacts in place. The oldest turns are replaced, in
+what is sent, by a written summary of them. The recent turns are left exactly as they are. The session
+keeps its identifier, its jobs, its files, and its history.</p>
 
-<p>Every session maintains a summary of itself, updated as it grows rather than assembled under pressure
-when the context fills.</p>
-
-<p>The update is incremental: the summariser sees the previous summary and the messages added since,
-never the whole conversation. That is what keeps it cheap — the cost of an update depends on how much
-was added, not on how long the conversation has become.</p>
-
-<p>It runs on the session's model, like everything else. One model is used throughout the system.</p>
-
-<p>The summary is not part of its own session's prompt. Putting it there would rewrite the prefix on
-every update and invalidate the cache — the thing the whole design protects. It lives beside the
-session and is used only to seed another one.</p>
-
-<p>Growth is measured on the messages as the model would receive them, not on their text. A session
-that spends its context on tool results — fetched pages, command output — carries almost
-nothing in the text of its own turns, and measuring text alone would let it rotate on tokens the
-summariser never counted, handing its successor an empty summary.</p>
-
-<div class="ac">
-<h4>Acceptance criteria</h4>
-<ul>
-<li>The summary updates after roughly every four thousand tokens of growth.</li>
-<li>An update reads only the previous summary and the messages since it, not the full transcript.</li>
-<li>Summaries run on the session's model; no part of the system selects a model of its own.</li>
-<li>The summary is visible and editable in the interface.</li>
-<li>Updating the summary does not alter the session's prompt or invalidate its cached prefix.</li>
-<li>A session that has never grown past the threshold has no summary and needs none.</li>
-<li>Growth counts the projected messages, so a session growing only in tool results is still summarised.</li>
-</ul>
-</div>
-
-<h2>Rotation</h2>
-
-<p>When a conversation passes a size threshold, it does not compact. It rotates: a new session opens,
-seeded with the summary, and the old one is archived intact.</p>
+<pre><code>BEFORE — 40,000 tokens              AFTER — 14,000 tokens
+┌─────────────────────────┐         ┌─────────────────────────┐
+│ system prompt    4,000  │         │ system prompt    4,000  │
+├─────────────────────────┤         ├─────────────────────────┤
+│ turn 1                  │         │ SUMMARY of turns 1-36   │
+│ turn 2                  │         │ "Designed the session   │
+│ turn 3                  │         │  model. Config fixed;   │   ~600
+│   ...            36,000 │   ──▶   │  fork copies all; use   │
+│ turn 35                 │         │  assistant role..."     │
+│ turn 36                 │         ├─────────────────────────┤
+│ turn 37                 │         │ turn 37                 │
+│ turn 38                 │         │ turn 38          ~9,500 │
+│ turn 39                 │         │ turn 39                 │
+│ turn 40                 │         │ turn 40                 │
+└─────────────────────────┘         └─────────────────────────┘</code></pre>
 
 <p>The threshold is chosen for cost, not for the model's context limit. Those limits now reach a million
 tokens, far past the point where every call becomes expensive: input is charged per token, so a session
 that has grown to eighty thousand tokens costs four times one at twenty thousand, on every single call
-and whether or not it is cached. The default threshold is forty thousand projected tokens.</p>
+and whether or not it is cached.</p>
 
-<p>The summary alone is not enough to continue with. It says what the conversation is about, but the
-last few exchanges are exactly what compresses worst and matters most — three options the agent just
-offered, a question waiting to be answered, the file it was working on.</p>
+<p>The recent turns survive verbatim because they are exactly what compresses worst and matters most —
+three options the agent just offered, a question waiting to be answered, the file it was working on.</p>
 
-<p>The predecessor's summary reaches the successor in its system prompt, as a <code>carried_summary</code>
-section. It is not a message: the user role means the operator is speaking, and the summary is not
-something they said. It is frozen when the successor is created — read before the prompt entry is
-written, and never rewritten afterwards — so it sits inside the cached prefix rather than breaking
-it, and the prompt the transcript records is the prompt that is sent. The successor's own rolling
-summary starts empty and is a separate field; the two never overwrite each other. The text is also
-written into the <code>carried_over</code> event, which the projection drops, so the append-only
-transcript records what the successor started from at no cost in tokens.</p>
+<h3>Two thresholds</h3>
 
-<p>So a successor opens with the summary in its prompt and then as many of the most recent turns as fit
-in a token budget, oldest of those first. The budget is a size, not a message count, because messages range from
-a line to a whole file. Turns are copied whole: never half of an exchange, and never an assistant
-message separated from the tool results it produced.</p>
+<table>
+<tr><th>Setting</th><th>Default</th><th>Controls</th></tr>
+<tr><td><code>compact_at_tokens</code></td><td>40,000</td><td>What a call costs at its most expensive.</td></tr>
+<tr><td><code>keep_verbatim_tokens</code></td><td>10,000</td><td>How much of the conversation is never lossy.</td></tr>
+</table>
 
-<p>The successor therefore starts at a known size — around six thousand tokens by default, against a
-rotation threshold of forty thousand — so it has room to grow before rotating again.</p>
+<p>They are independent, and together they are the whole trade between cost and retention. Each
+compaction frees the difference between them, so the conversation grows by about thirty thousand tokens
+between one compaction and the next. Setting the tail close to the threshold would compact constantly
+for very little gain; the default keeps the tail at about a quarter.</p>
 
-<h3>Identity across a rotation</h3>
+<p>Both are per-session, fixed when the session is created. A setting changed in configuration does not
+move underneath a conversation that is already running.</p>
 
-<p>A successor gets a new identifier. Reusing the predecessor's would mean an identifier that silently
-starts addressing different content, which is the one thing the design does not do anywhere else.</p>
+<h3>Where the split goes</h3>
 
-<p>It would not avoid the problem either. The predecessor still exists and is still readable, so it needs
-an identifier of its own — and if the archive is the one that gets renamed, then every reference that
-pointed at it now resolves to something else. Something has to be renamed; it should be the thing
-nobody has a link to yet.</p>
+<p>Count backwards from the end, adding whole turns, until the next one would not fit in
+<code>keep_verbatim_tokens</code>. Everything before that point is compacted.</p>
 
-<p>References are kept working by following the chain forward instead:</p>
+<pre><code>   turn 40   2,000  ┐
+   turn 39   3,000  │  running total 9,500  →  KEEP
+   turn 38   1,500  │
+   turn 37   3,000  ┘
+─────────────────────  split
+   turn 36   2,500     would make 12,000 > 10,000  →  COMPACT
+   turn 35     ...
+   turn 1      ...</code></pre>
 
-<ul>
-<li>Jobs move to the successor when their session rotates.</li>
-<li>Opening an archived session from a link follows <code>continued_by</code> to the live session, and says that it did.</li>
-</ul>
+<p>A turn is a user message and everything that followed it up to the next one. It is compacted whole or
+not at all: never half an exchange, and never an assistant message separated from the tool results it
+produced. The budget is a size rather than a message count, because messages range from a line to a
+whole file.</p>
 
-<p>This is the same operation as forking a session or resuming an old one. All three create a session
-whose <code>continued_from</code> names its predecessor, seeded with that predecessor's summary and
-recent turns. Rotation is automatic; the other two are asked for.</p>
+<p>Growth is measured on the messages as the model would receive them, not on their text. A session
+that spends its context on tool results — fetched pages, command output — carries almost nothing in the
+text of its own turns, and measuring text alone would let it grow indefinitely without ever compacting.</p>
+
+<h3>How the summary is written</h3>
+
+<p>One model call, made between turns, on the session's own model. One model is used throughout the
+system. The call carries no tools, and it is not a turn in the conversation: the transcript records its
+result, never its asking.</p>
+
+<p>The summariser is sent the previous compaction's text and the entries since it — never the raw
+entries the previous compaction already covered. So the cost of a compaction depends on how much was
+added since the last one, not on how long the conversation has become, and the two hundredth compaction
+costs what the second did.</p>
+
+<p>It is asked to produce four headings, omitting any that would be empty:</p>
+
+<pre><code>## Decisions   what was settled, and the one-line why
+## Open        questions unanswered, work in flight
+## Facts       paths, names, numbers, shapes discovered
+## Rejected    what was tried and did not work, so it is not retried</code></pre>
+
+<p>"Decisions" carries the reason and not only the conclusion, because a conclusion without its reason is
+re-litigated the next time it is inconvenient. "Rejected" exists because an agent that forgets what
+failed repeats it.</p>
 
 <div class="note">
-<strong>Why rotate rather than compact.</strong> Compaction rewrites the prefix at the worst possible
-moment, pays for a large summarisation turn under pressure, and leaves a conversation that is half
-transcript and half summary. Rotation costs nothing at the moment it happens, because the summary
-already exists, and the successor starts with a clean prefix that caches from its first turn.
+<strong>The summariser edits; it does not re-summarise.</strong> Existing lines are copied through
+unchanged unless something later supersedes them. This is the defence against generation loss: material
+compacted ten times has been through ten model calls, and a summary that is rewritten each time degrades
+like a photocopy of a photocopy. A summary that is <em>edited</em> each time only degrades in the lines
+that were actually touched.
 </div>
 
-<p>Exact history is not lost: the predecessor's transcript stays on disk and remains searchable, so
-something said before a rotation is still retrievable by search.</p>
+<h3>Nothing is deleted</h3>
+
+<pre><code>      ON DISK (append-only)              SENT TO MODEL (projection)
+      ─────────────────────              ──────────────────────────
+      prompt entry (superseded)
+      turn 1        ┐
+      turn 2        │  covered
+      ...           │
+      turn 36       ┘
+  ▶   PROMPT entry (refreshed)  ·······▶  system message
+  ▶   COMPACTION entry          ·······▶  the summary
+      turn 37                   ·······▶  turn 37
+      turn 38                   ·······▶  turn 38
+      turn 39                   ·······▶  turn 39
+      turn 40                   ·······▶  turn 40</code></pre>
+
+<p>A compaction only appends. The covered entries stay on disk, stay in the full-text index, and stay
+retrievable by <code>session_search</code> — including by the session that compacted them. Detail leaves
+the context; it does not leave the system. That is what makes compaction safe rather than lossy: the
+agent can go back and look, deliberately, when it needs to.</p>
+
+<h3>Memory is refreshed here</h3>
+
+<p>A compaction writes a new prompt entry before it writes the compaction, carrying memory as it stands
+now. This is the only moment a session's prompt changes.</p>
+
+<p>It has to happen somewhere. A session has no end, so memory written during a conversation would
+otherwise never reach it, and the agent would write items it could never read. A compaction is the right
+place because it is the only moment where the prompt can change for free: the cached prefix is being
+discarded regardless.</p>
+
+<p>A compaction can also be asked for, which is how a memory written a moment ago is made to take effect
+now rather than in thirty thousand tokens.</p>
+
+<h3>When it fails</h3>
+
+<table>
+<tr><th>Case</th><th>What happens</th></tr>
+<tr><td>The model call fails</td><td>No compaction. An <code>error</code> event records it. The conversation continues, over threshold, and tries again after the next turn.</td></tr>
+<tr><td>The summary is not smaller than what it covers</td><td>Rejected, nothing is appended. A summariser that restates rather than summarises must not be allowed to grow the conversation.</td></tr>
+<tr><td>The summary leaves something out</td><td>The compaction entry is editable. An edit changes what the next turn sends.</td></tr>
+</table>
+
+<p>A conversation that cannot compact keeps working. It gets more expensive, visibly — the size is on
+screen — and it does not stop, lose anything, or fail a turn.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Passing the size threshold opens a successor session seeded with the summary and archives the predecessor.</li>
-<li>The carried summary reaches the successor's model in the system prompt, not as a user message.</li>
-<li>The carried summary is fixed for the successor's life and recorded in its <code>carried_over</code> event.</li>
-<li>The successor also carries the most recent complete turns that fit a token budget, defaulting to five thousand.</li>
-<li>A turn is carried whole or not at all, including any tool results it produced.</li>
-<li>Carried turns are marked as coming from the predecessor and link back to their place in it.</li>
-<li>A successor has an identifier of its own; no identifier ever comes to address different content.</li>
-<li>Following <code>continued_by</code> from any session in a chain reaches the live one.</li>
-<li>A link to an archived session resolves to the live session and reports the redirection.</li>
-<li>The threshold is configurable, defaults to forty thousand projected tokens, and is always below the model's context limit.</li>
-<li>Rotation happens only between turns, never during one.</li>
-<li>The successor records its predecessor, and the interface links both ways.</li>
-<li>Jobs attached to the predecessor move to the successor.</li>
-<li>Forking and resuming use the same mechanism and are available from the interface.</li>
-<li>Search finds content in archived predecessors.</li>
+<li>Passing the size threshold compacts the session in place; no new session is created and the identifier does not change.</li>
+<li>A compaction appends a refreshed prompt entry and a compaction entry, and modifies no existing entry.</li>
+<li>The entries a compaction covers remain on disk and remain findable by search, including from the session that compacted them.</li>
+<li>The tail left verbatim fits <code>keep_verbatim_tokens</code>, and a turn is covered whole or not at all, including its tool results.</li>
+<li>A second compaction reads the first compaction's text and the entries since, never the entries the first one covered.</li>
+<li>The summary is written by the session's own model, in one call, with no tools.</li>
+<li>A fact recorded in an early compaction is still present verbatim after ten further compactions.</li>
+<li>A summary not smaller than what it covers is rejected and nothing is appended.</li>
+<li>A failed compaction writes an <code>error</code> event, leaves the transcript otherwise untouched, and the next turn still runs.</li>
+<li>The compaction text is editable, and an edit changes what the next turn sends.</li>
+<li>The prompt entry a compaction writes carries memory as it stands at that moment.</li>
+<li>Compaction can be requested, and takes effect immediately rather than at the threshold.</li>
+<li>Compaction happens only between turns, never during one.</li>
+<li>Both thresholds are configurable, are fixed per session at creation, and default to forty thousand and ten thousand projected tokens.</li>
+<li>Growth counts the projected messages, so a session growing only in tool results still compacts.</li>
+</ul>
+</div>
+
+<h2>Caching</h2>
+
+<p>A cache marker names a prefix, not a block: everything from the start of the request up to and
+including the marked position. The match must be exact from the first byte.</p>
+
+<p>One marker is placed, at the end of the message list, and rewritten on every call. Each call reads
+the prefix the previous call wrote and writes one slightly longer. A conversation only ever grows at the
+bottom, so the prefix above is always a valid match.</p>
+
+<pre><code>  [system prompt]   4,000  ██
+  [compaction]        600  ██
+  [turn 37]         2,400  ██   cached: read at a tenth of price
+  [turn 38]         3,100  ██
+  [turn 39]         4,000  ██ ◀── marker, moves down every call
+  [turn 40 · new]   1,000  ░░   full price</code></pre>
+
+<p>A cache write costs more than an ordinary call and a cache read costs far less, so a block read twice
+has already paid for itself. Everything above the marker is read at a tenth of its price; only what was
+added since the last call is paid for in full.</p>
+
+<p>Only providers that require an explicit marker are given one. The rest cache the longest matching
+prefix themselves, and a marker would add nothing.</p>
+
+<h3>The idle gate</h3>
+
+<p>The one way to lose money is to write a cache that nobody reads, so a marker is placed only when
+another call is expected before it expires: a short lifetime when the operator was talking recently, a
+long one when a job that makes a model call is due, and no marker at all otherwise. An agent sitting
+idle overnight writes nothing and pays no premium for it.</p>
+
+<h3>A compaction resets it</h3>
+
+<p>A compaction rewrites the head of the message list, so the next call matches no prefix and writes a
+fresh one. One miss, then it rebuilds. This is bounded and rare by design — once per thirty thousand
+tokens of growth — and it is the same moment at which the prompt is allowed to change, for the same
+reason: nothing is lost that was not already being discarded.</p>
+
+<h3>It is visible</h3>
+
+<p>Caching changes what a conversation costs, so it is shown rather than inferred. Three things, each of
+which moves when something real moves:</p>
+
+<ul>
+<li>The session header carries the size of the live cache and the time until it expires, counting down.</li>
+<li>Each assistant message carries what the call that produced it actually hit, measured and not estimated.</li>
+<li>A compaction says that it reset the cache, so the one moment the cache dies is legible where it happened.</li>
+</ul>
+
+<p>A lifetime is not shown per message. A cache is one prefix with one expiry, so a per-message
+countdown would print the same number beside every message and tell the reader nothing.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A request carries at most one cache marker, at the end of the message list.</li>
+<li>No marker is written when no further call is expected before it would expire.</li>
+<li>No marker is written for a provider that caches without one.</li>
+<li>The first call after a compaction reports no cache hit; the call after that reports one.</li>
+<li>The interface shows the live cache size and a countdown to its expiry, and shows it as expired when it is.</li>
+<li>Each assistant message reports the cached proportion of the call that produced it, from what the provider reported.</li>
+<li>A compaction states in the transcript that it reset the cache.</li>
+</ul>
+</div>
+
+<h2>Forking</h2>
+
+<p>A fork copies a conversation into a new session. Everything comes across: the whole transcript,
+compactions and all, and a copy of the working directory. The original is untouched, stays active,
+and keeps its jobs.</p>
+
+<p>It is the only way to change a configuration, and it is also how a conversation is branched — two
+directions explored from the same point, both readable, neither disturbing the other.</p>
+
+<p>The fork gets a new identifier, and records the origin in <code>forked_from</code>. No identifier
+ever comes to address different content. The origin is not archived, not redirected, and not modified
+beyond one <code>fork</code> event saying where the copy went.</p>
+
+<div class="note">
+<strong>Compact, then fork.</strong> A fork carries everything, which is right when the point is to keep
+what was said. When the point is a clean slate under a new configuration, compact first and then fork:
+the copy carries the summary and the recent tail instead of the full history. Two operations compose
+into the third, so there is no third operation.
+</div>
+
+<p>Jobs do not move. A job belongs to the conversation it was created in, which still exists and is
+still running. A fork that should carry the schedule creates it again, deliberately, in the fork.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A fork copies every transcript entry of its origin, in order, including compaction and prompt entries.</li>
+<li>A fork starts from a copy of its origin's working directory; writes after that are independent.</li>
+<li>The origin stays active, keeps its jobs, and is modified only by one <code>fork</code> event.</li>
+<li>The fork records its origin, and the interface links both ways.</li>
+<li>A fork accepts a configuration; anything not given is inherited from the origin.</li>
+<li>Jobs are not copied and not moved.</li>
+<li>Forking is available from the interface.</li>
 </ul>
 </div>
 
@@ -397,16 +579,18 @@ that session, and a job never interleaves with a turn in progress.</p>
 tool call means a file in it. Nothing is shared: two conversations writing <code>notes.txt</code> write
 two files.</p>
 
-<p>A continuation carries files as well as words. Rotation, fork, and resume all start the successor
-from a copy of the predecessor's directory, so a conversation continues with the files it was working
-on, and neither session's later writes reach the other.</p>
+<p>A fork carries files as well as words: it starts from a copy of the origin's directory, so the copy
+continues with the files the conversation was working on, and neither session's later writes reach the
+other. A compaction touches the directory not at all — the session is the same session, and its files
+are where it left them.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A session's tools run in that session's directory, and no other session's tools can read it.</li>
 <li>A file uploaded to a session is written there, and its tools see it immediately.</li>
-<li>A continuation starts from a copy of its predecessor's directory; writes after that are independent.</li>
+<li>A fork starts from a copy of its origin's directory; writes after that are independent.</li>
+<li>A compaction leaves the working directory unchanged.</li>
 <li>The files a session holds are listed, downloaded, and deleted through the API.</li>
 <li>A path that would leave the session's directory is refused.</li>
 <li>Deleting a session deletes its directory.</li>
@@ -444,13 +628,31 @@ An export is a session and nothing wider.
 
 <h2>Search</h2>
 
-<p>A <code>session_search</code> tool queries a full-text index over all transcript entries across all
-sessions, so the agent can retrieve something said in a conversation that is no longer open.</p>
+<p>A <code>session_search</code> tool queries a full-text index over every transcript entry ever
+written. It has two jobs, and the second is the one compaction depends on.</p>
+
+<p><strong>Reaching back into this conversation.</strong> A compaction takes detail out of the context
+but not out of the index. What the agent can no longer see it can still look up, so a conversation that
+has compacted ten times has its whole history a deliberate call away. This is what makes compaction a
+compression rather than a loss.</p>
+
+<p><strong>Reaching into another conversation.</strong> Sessions are otherwise sealed from one another:
+nothing from one appears in another by default, and the only thing that crosses on its own is
+<a href="memory.html">memory</a>, which is visible in the prompt where it lands.</p>
+
+<div class="note">
+<strong>The default scope is this session.</strong> Searching one's own history is ordinary and expected;
+reading another conversation is a thing the operator should be able to see being decided. So the scope
+is a parameter, it defaults to the current session, and widening it is an act that appears in the
+transcript as one.
+</div>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Search returns matches from sessions other than the current one.</li>
+<li>Search defaults to the current session and returns matches from it alone.</li>
+<li>Search widened past the current session returns matches from others, and the widening is visible in the transcript.</li>
+<li>An entry a compaction covers is still returned by a search of its own session.</li>
 <li>Each result identifies its session and position so the user can open it.</li>
 <li>Event entries are searchable.</li>
 <li>The index is rebuildable from transcripts alone.</li>

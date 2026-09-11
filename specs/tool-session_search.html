@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>session_search — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>session_search</code></h1>
+<p class="lede">Full-text search across transcripts.</p>
+
+<h2>What it does</h2>
+<p>Queries a full-text index over every transcript entry ever written, and returns the session, the
+position, and a snippet for each match.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>query</code></td><td>The search terms. Required.</td></tr>
+<tr><td><code>session</code></td><td>Where to look. Defaults to the current session. A session identifier searches that one; <code>all</code> searches every session.</td></tr>
+<tr><td><code>limit</code></td><td>Maximum matches. Optional; twenty by default.</td></tr>
+</table>
+
+<h2>It is what makes compaction safe</h2>
+<p>A <a href="sessions.html">compaction</a> takes detail out of the context but not out of the index.
+What the agent can no longer see, it can still look up — so a conversation that has compacted ten times
+still has its whole history one deliberate call away.</p>
+
+<p>That is the difference between compression and loss, and it is why this tool is not optional
+alongside compaction. An entry a compaction covers is still returned by a search of its own session.</p>
+
+<div class="note">
+<strong>The default scope is this session.</strong> Searching one's own history is ordinary. Reading another conversation is a thing the operator should be able to watch being decided, so it is a scope the agent has to ask for, and asking appears in the transcript as the tool call it is. Memory is the only thing that crosses a session boundary without being asked, and it is visible in the prompt where it lands.
+</div>
+
+<h2>Results</h2>
+<p>Each hit names its session and its position within it, so the operator can open the conversation at
+the line that matched. A query matching nothing says so rather than returning an empty body, which
+would read like a call that failed to run.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A search with no scope given searches the current session and no other.</li>
+<li>A search scoped to <code>all</code> returns matches from other sessions.</li>
+<li>A search naming a session identifier searches that session.</li>
+<li>An entry covered by a compaction is still returned by a search of its own session.</li>
+<li>Each result identifies its session and position.</li>
+<li>A query matching nothing reports that, distinguishably from a failure.</li>
+<li>An empty query is refused.</li>
+<li>Event entries are searchable.</li>
+<li>Eval cases cover both an unscoped search and a deliberate widening.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-schedule.html">← schedule</a> · <a href="tool-skill_read.html">skill_read →</a></footer>
+</div>
+</body></html>

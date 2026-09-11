@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>read — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>read</code></h1>
+<p class="lede">Read a file from the session's working directory.</p>
+
+<h2>What it does</h2>
+<p>Returns the file's text, optionally a window of its lines. Paths are resolved inside the session's
+working directory and refused if they would leave it (<a href="sessions.html">Sessions</a>).</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>path</code></td><td>Relative to the session's working directory. Required.</td></tr>
+<tr><td><code>offset</code></td><td>Lines to skip. Optional.</td></tr>
+<tr><td><code>limit</code></td><td>Lines to return. Optional; absent means to the end.</td></tr>
+</table>
+
+<h2>Reading past the end is not an error</h2>
+<p>An offset beyond the last line returns nothing and succeeds. How long a file is is a fact about the
+file, and a caller paging through one learns it by reaching the end — not by being handed a failure
+that reads like a broken path.</p>
+
+<p>A missing file <em>is</em> an error, and the two cases must not be confused: nothing to read at line
+four hundred is not the same as nothing to read at all.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A file's full text is returned when no window is given.</li>
+<li>An offset skips that many lines; a limit returns at most that many.</li>
+<li>An offset past the end returns an empty result and succeeds.</li>
+<li>A limit larger than what remains returns what remains.</li>
+<li>A missing file fails and names the path.</li>
+<li>A path that would resolve outside the session's working directory is refused.</li>
+<li>An empty file is returned as empty and does not fail.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-notes.html">← notes</a> · <a href="tool-schedule.html">schedule →</a></footer>
+</div>
+</body></html>
