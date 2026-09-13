@@ -986,6 +986,40 @@ window.OPENAPI_SPEC = {
         }
       }
     },
+    "/version": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "The build that is running, and what changed.",
+        "responses": {
+          "200": {
+            "description": "Version and changelog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string",
+                      "description": "The commit the image was built from, or \"dev\" for a binary built without a stamp."
+                    },
+                    "built_at": {
+                      "type": "string",
+                      "description": "When that build was made. Empty when nothing was stamped."
+                    },
+                    "changelog": {
+                      "type": "string",
+                      "description": "CHANGELOG.md as markdown, newest first. Empty when the file is not there."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/sessions/{id}/fork": {
       "parameters": [
         {

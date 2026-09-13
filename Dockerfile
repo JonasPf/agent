@@ -19,7 +19,15 @@ RUN go mod download
 
 COPY . .
 ENV CGO_ENABLED=0
-RUN go build -trimpath -o /out/agent ./cmd/agent
+# The version the interface reports. The image carries no repository, so the
+# commit being released and the time it was built are stamped into the binary
+# here; CI passes the commit it is releasing, which is also the tag a rollback
+# names. An unstamped build says "dev" rather than inventing a number.
+ARG VERSION=dev
+ARG BUILT_AT=
+RUN go build -trimpath \
+      -ldflags "-X agent/internal/app.Version=${VERSION} -X agent/internal/app.BuiltAt=${BUILT_AT}" \
+      -o /out/agent ./cmd/agent
 # Every tool directory becomes /out/tools/<name>/{manifest.json,run}, which is
 # the layout the registry scans. A directory without a manifest is not a tool.
 # Everything in a tool's directory ships except its source and its eval cases:
@@ -74,10 +82,14 @@ COPY --from=build /out/gh /usr/local/bin/gh
 COPY --from=build /out/tools /app/tools
 COPY web /app/web
 COPY skills /app/skills
+# What changed, as written by whoever changed it. It is read from disk at the
+# version screen, because there is no repository here to derive it from.
+COPY CHANGELOG.md /app/CHANGELOG.md
 RUN mkdir -p /app/data /app/workspace && chown -R agent:agent /app
 
 USER agent
 ENV AGENT_ADDR=:8080 \
+    AGENT_CHANGELOG=/app/CHANGELOG.md \
     AGENT_DATA=/app/data \
     AGENT_WORKSPACE=/app/workspace \
     AGENT_TOOLS=/app/tools \
