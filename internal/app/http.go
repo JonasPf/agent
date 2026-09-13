@@ -61,6 +61,7 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("GET /models", a.hModels)
 	mux.HandleFunc("GET /status", a.hStatus)
+	mux.HandleFunc("GET /version", a.hVersion)
 	mux.HandleFunc("/ws", a.handleWS)
 
 	mux.Handle("/", revalidated(http.FileServer(http.Dir(a.cfg.WebDir))))

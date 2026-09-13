@@ -23,6 +23,9 @@ type Config struct {
 	SkillsDir string
 	WebDir    string
 	EnvFile   string
+	// ChangelogPath is the file the version screen reads. It ships with the
+	// app rather than being derived: the container has no repository.
+	ChangelogPath string
 	// ReadPaths are directories the operator adds to what a tool may read,
 	// beyond the runtime. A browser installed outside the system roots is the
 	// case it exists for. It only adds; nothing here removes a boundary.
@@ -118,6 +121,7 @@ func LoadConfig() Config {
 		ToolsDir:           envOr("AGENT_TOOLS", "tools"),
 		ReadPaths:          os.Getenv("AGENT_READ_PATHS"),
 		SkillsDir:          envOr("AGENT_SKILLS", "skills"),
+		ChangelogPath:      envOr("AGENT_CHANGELOG", "CHANGELOG.md"),
 		WebDir:             envOr("AGENT_WEB", "web"),
 		DefaultModel:       envOr("AGENT_MODEL", "anthropic/claude-sonnet-4.5"),
 		CompactAtTokens:    envInt("AGENT_COMPACT_TOKENS", defaultCompactAtTokens),

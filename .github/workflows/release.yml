@@ -37,6 +37,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The build stamp the running agent reports. The commit is what the image
+      # is tagged with, so the version on screen is the one a rollback names.
+      - name: Stamp the build
+        id: stamp
+        run: |
+          echo "version=$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       # A container tag must be lowercase and a GitHub account name need not be,
       # so the owner is folded rather than interpolated.
       - name: Name the image
@@ -50,6 +58,11 @@ jobs:
         with:
           context: .
           push: true
+          # The version the running agent reports is the commit it was built
+          # from, which is also the tag a rollback names.
+          build-args: |
+            VERSION=${{ steps.stamp.outputs.version }}
+            BUILT_AT=${{ steps.stamp.outputs.built_at }}
           tags: |
             ${{ steps.image.outputs.repo }}:${{ github.sha }}
             ${{ steps.image.outputs.repo }}:latest
