@@ -82,11 +82,55 @@ func columns(db *sql.DB, table string) (map[string]bool, error) {
 	return out, rows.Err()
 }
 
+// DBPath is where the database lives: a directory of its own inside the data
+// directory, holding nothing but the database and the journals SQLite writes
+// beside it.
+//
+// It is not in the data directory itself, and the reason is the sandbox. A tool
+// is handed this database on purpose, and SQLite creates its write-ahead log and
+// shared-memory file when it first needs them — which means permission to create
+// a file in the directory holding it. The data directory holds every transcript,
+// and Landlock grants a tree or it does not: there is no way to grant a
+// directory while denying what is already inside it.
+func DBPath(dataDir string) string {
+	return filepath.Join(dataDir, "db", "agent.db")
+}
+
+// moveLegacyDatabase brings a database from before that split into place. It
+// runs before the database is opened, so nothing is holding it, and it moves the
+// journals with it: a write-ahead log separated from its database is worse than
+// no log at all.
+func moveLegacyDatabase(dataDir string) error {
+	legacy := filepath.Join(dataDir, "agent.db")
+	if _, err := os.Stat(legacy); err != nil {
+		return nil
+	}
+	if _, err := os.Stat(DBPath(dataDir)); err == nil {
+		return nil // both exist: the newer one wins, and the old one is left to be looked at
+	}
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		from, to := legacy+suffix, DBPath(dataDir)+suffix
+		if _, err := os.Stat(from); err != nil {
+			continue
+		}
+		if err := os.Rename(from, to); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func OpenStore(dir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dir, "sessions"), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", filepath.Join(dir, "agent.db")+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	if err := os.MkdirAll(filepath.Dir(DBPath(dir)), 0o755); err != nil {
+		return nil, err
+	}
+	if err := moveLegacyDatabase(dir); err != nil {
+		return nil, err
+	}
+	db, err := sql.Open("sqlite", DBPath(dir)+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}

@@ -20,7 +20,7 @@
 <div class="wrap">
 
 <h1>Decisions</h1>
-<p class="lede">Thirty-five choices with real tradeoffs. Each states what was given up.</p>
+<p class="lede">Thirty-six choices with real tradeoffs. Each states what was given up.</p>
 
 <div class="adr" id="adr-001">
 <div class="meta">ADR-001 · accepted</div>
@@ -1066,6 +1066,73 @@ thing it can do about a boundary that is off.</p>
 <p>A headless browser does not fit in the memory available, so <code>web_fetch</code> retrieves pages
 over HTTP and a page assembled by scripts reads as empty. That is a hardware problem, and naming it
 here keeps it from being rediscovered as a bug.</p>
+</div>
+
+<div class="adr" id="adr-039">
+<div class="meta">ADR-039 · accepted</div>
+<h3>Landlock, not bubblewrap, is the Linux sandbox</h3>
+<h4>Context</h4>
+<p><a href="#adr-030">ADR-030</a> chose bubblewrap because it needs no privileges. That was true of the
+command and not of the kernel: bubblewrap builds a mount namespace, and a mount namespace needs an
+unprivileged user namespace, which Ubuntu 24.04 refuses to a container. Measured on the deployment
+host, every configuration was refused except <code>--privileged</code>, which is a worse trade on a
+machine running anything else. So the deployed agent ran with no sandbox at all, and
+<a href="#adr-036">ADR-036</a> depends on there being one: without it a tool can write the tool
+directory of the running agent, and the pull request stops being the only way in.</p>
+<h4>Decision</h4>
+<p>The sandbox is Landlock, and it is the only one. It is a kernel facility an unprivileged process
+asks for by syscall: no namespace, no capability, nothing installed, and it works inside an
+unprivileged container on a host that refuses user namespaces.</p>
+<p>Seatbelt goes with bubblewrap, though it worked. Two mechanisms are two policies, and two policies
+do not stay in step: within a day of a tool being able to declare the paths it needs, the macOS profile
+was silently ignoring that declaration while Landlock honoured it. The agent is a Linux program. A
+laptop runs the tests and the interface; a laptop that wants a confined tool runs the container, which
+is <code>task dev</code>, built from the same Dockerfile CI publishes.</p>
+<p>What that costs is stated rather than hidden. On a laptop <code>task run</code> confines nothing:
+the startup line is a warning, the interface says NOT ENFORCED, and every test that asserts
+confinement skips with a message naming why instead of passing against a boundary that is not there.
+A green suite on macOS therefore proves less than a green suite in CI, which is true and was not true
+before &mdash; and is why the suite says which.</p>
+<p>Landlock restricts the thread that asks and is inherited across <code>execve</code>, so something
+must ask between the fork and the exec, and Go offers no hook there. The agent is therefore its own
+wrapper: <code>agent -confine &lt;policy&gt; -- &lt;tool&gt;</code>. That second run applies the policy
+to itself and becomes the tool &mdash; the same shape as <code>sandbox-exec</code> and
+<code>bwrap</code>, a command in front of a command, with no second binary to ship. The three syscalls
+are written out rather than taken as a dependency, in a project with two.</p>
+<p>The database moves with this decision. SQLite creates its write-ahead log beside the database when
+it first needs one, which is permission to create a file in that directory &mdash; and that directory
+held every transcript. Landlock grants a tree or it does not: a zero-access rule to carve a hole is
+refused by the kernel, which was measured rather than assumed. So the database now lives in a
+directory of its own, holding nothing but the database and its journals, and that directory is what a
+tool is granted.</p>
+<h4>Consequences</h4>
+<p>The boundary now holds where the agent actually runs, which is the only place it ever mattered. It
+also holds on a stock CI runner with no <code>sysctl</code> and no package, so the suite that proves
+it is no longer run against a doctored machine.</p>
+<p>Two things are given up. Landlock denies paths rather than hiding them: a tool learns that other
+sessions exist &mdash; <code>stat</code> is not a right Landlock governs &mdash; and cannot read a byte
+of them, where bubblewrap left them out of the mount namespace entirely. And the floor is now Linux
+5.13; older kernels report no sandbox, with the reason, rather than silently having none.</p>
+<p><code>/proc</code> is not in the runtime every tool gets, and the reason is worth stating. A read
+grant on it is also a leak: <code>/proc/&lt;pid&gt;/environ</code> of any process this user owns is
+readable through it, the agent's included, so it would hand every tool the model key that
+<a href="#adr-037">ADR-037</a> keeps out of its environment. Landlock cannot grant a tree while denying
+part of it, so the answer is not a narrower grant but a narrower grantee: a tool declares the paths it
+needs in its manifest, the way it declares its environment, and only the two browser tools ask for
+<code>/proc</code> &mdash; a browser reads its own maps before it renders anything. The suite proved
+nothing else needs it by passing without it.</p>
+<p>For those two, the prize is removed as well: the agent makes itself undumpable at startup
+(<code>prctl(PR_SET_DUMPABLE, 0)</code>), which puts its <code>/proc</code> entries out of reach of
+every other process this user owns. One syscall, and the cost is a core dump nobody wanted. Measured
+in the container: a sibling process reads <code>OPENROUTER_API_KEY</code> out of
+<code>/proc/&lt;pid&gt;/environ</code> before it, and is refused after.</p>
+<p>bubblewrap mounted a procfs for every tool and had no way to say which tool needed one, so this is
+tighter than the mechanism it replaces rather than a concession made to it.</p>
+<p>Two failures found by building it, both invisible to a laptop. A shell cannot start without
+<code>/dev/null</code>, so the handful of device files a program opens before its own code runs are
+granted by name rather than by granting <code>/dev</code>. And a rule descriptor must be opened with
+<code>O_PATH</code>: <code>/dev/tty</code> cannot be opened when there is no controlling terminal, and
+a rule about a path should not depend on being able to talk to what is behind it.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

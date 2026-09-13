@@ -36,10 +36,28 @@ tasks:
         echo "tools built"
 
   run:
-    desc: Run the agent, serving http://localhost{{.ADDR}}
+    desc: Run the agent from source, serving http://localhost{{.ADDR}} (unconfined off Linux)
     deps: [build]
     cmds:
       - go run ./cmd/agent
+
+  dev:
+    desc: Run the agent in its container, the way it runs in production — tools confined
+    cmds:
+      # The sandbox is Landlock, which is the kernel's: a tool is confined where
+      # the agent runs on Linux, and nowhere else. On a laptop that means the
+      # container, built from the same Dockerfile that CI publishes.
+      #
+      # data/ and workspace/ are mounted, so a conversation started here survives
+      # the container and is the same one `task run` sees.
+      - docker build -t agent:dev .
+      - |
+        docker run --rm -it \
+          -p {{.ADDR}}:8080 \
+          -v "$PWD/data:/app/data" \
+          -v "$PWD/workspace:/app/workspace" \
+          --env-file .env \
+          agent:dev
 
   fmt:
     desc: Format the Go sources in place

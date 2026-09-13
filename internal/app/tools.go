@@ -25,7 +25,12 @@ type Tool struct {
 	// every tool is promised. It is how a tool that needs a credential asks for
 	// one, and it is the only way any variable of the agent's own environment
 	// reaches a subprocess.
-	Env      []string  `json:"env,omitempty"`
+	Env []string `json:"env,omitempty"`
+	// Reads names the paths this tool may read beyond the runtime every tool
+	// gets. A browser reads /proc and /sys before it renders anything; a tool
+	// that edits a file does not, and granting the union of what any tool might
+	// need would hand every tool the widest boundary any of them asks for.
+	Reads    []string  `json:"reads,omitempty"`
 	HasPanel bool      `json:"has_panel"`
 	LoadedAt time.Time `json:"loaded_at"`
 	Builtin  bool      `json:"builtin"`
@@ -253,7 +258,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// where the operating system can enforce it, that directory is the only one
 	// it can reach.
 	workspace := tc.App.ensureWorkspace(tc.SessionID)
-	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, nil)
+	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, t.Reads, nil)
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace
 	if abs, err := filepath.Abs(workspace); err == nil {

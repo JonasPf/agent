@@ -20,15 +20,8 @@ import (
 // tool's good manners.
 func TestTheSandboxNamesWhatIsEnforcing(t *testing.T) {
 	s := NewSandbox(Config{Workspace: "/w", DataDir: "/d", EnvFile: "/e/.env"})
-	switch runtime.GOOS {
-	case "darwin":
-		if s.Mechanism != "seatbelt" && s.Mechanism != "none" {
-			t.Errorf("mechanism = %q, want seatbelt or none on darwin", s.Mechanism)
-		}
-	case "linux":
-		if s.Mechanism != "bubblewrap" && s.Mechanism != "none" {
-			t.Errorf("mechanism = %q, want bubblewrap or none on linux", s.Mechanism)
-		}
+	if s.Mechanism != "landlock" && s.Mechanism != "none" {
+		t.Errorf("mechanism = %q, want landlock or none — there is no second mechanism", s.Mechanism)
 	}
 	// Whatever it decided, it has to be able to say why: a sandbox that quietly
 	// does nothing is worse than none at all.
@@ -40,10 +33,10 @@ func TestTheSandboxNamesWhatIsEnforcing(t *testing.T) {
 // The wrapped command is what actually runs, so its shape is worth pinning:
 // the tool binary and its arguments survive, and the confinement is in front.
 func TestWrappingKeepsTheCommandIntact(t *testing.T) {
-	for _, mech := range []string{"seatbelt", "bubblewrap", "none"} {
+	for _, mech := range []string{"landlock", "none"} {
 		t.Run(mech, func(t *testing.T) {
-			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d", toolsDir: "/t", dbPath: "/d/agent.db"}
-			argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", []string{"-x"})
+			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d", toolsDir: "/t", dbPath: "/d/db/agent.db"}
+			argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", nil, []string{"-x"})
 			if argv[len(argv)-1] != "-x" {
 				t.Errorf("argv = %v, want it to end with the tool's own argument", argv)
 			}
@@ -60,92 +53,53 @@ func TestWrappingKeepsTheCommandIntact(t *testing.T) {
 	}
 }
 
-// bubblewrap binds only the runtime and the session's own directory, so a path
-// nobody named is not in the mount namespace at all — the home directory and the
-// repository the agent runs from included.
-func TestBubblewrapBindsOnlyWhatIsAllowed(t *testing.T) {
-	s := &Sandbox{Mechanism: "bubblewrap", workspaceRoot: "/w", dataDir: "/d",
-		toolsDir: "/t", dbPath: "/d/agent.db"}
-	argv := strings.Join(s.Wrap("/tools/bash/run", "/w/S1", "/t", nil), " ")
-	if strings.Contains(argv, "--ro-bind / /") {
-		t.Error("the whole filesystem is bound, which is the rule this replaces")
-	}
-	if !strings.Contains(argv, "--bind /w/S1 /w/S1") {
-		t.Errorf("argv = %q, want this session's directory writable", argv)
-	}
-	if strings.Contains(argv, "--bind /w /w") || strings.Contains(argv, "--bind /d /d") {
-		t.Errorf("argv = %q, want neither the workspace root nor the data directory writable", argv)
-	}
-	if !strings.Contains(argv, "--ro-bind /t /t") {
-		t.Errorf("argv = %q, want the tool directory readable and not writable", argv)
-	}
-	if !strings.Contains(argv, "--die-with-parent") {
-		t.Errorf("argv = %q, want the child to die with the agent", argv)
-	}
-}
+// The Landlock policy is what the wrapper carries, so what it grants is worth
+// pinning: the session's own directory and nothing above it, the runtime and the
+// tool directory readable, and the database by name. A path nobody granted is
+// denied, which is what makes this an allow-list.
+func TestTheLandlockPolicyGrantsOnlyWhatIsAllowed(t *testing.T) {
+	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d",
+		toolsDir: "/t", dbPath: "/d/db/agent.db", ReadPaths: []string{"/opt/browsers"}}
+	argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", nil, []string{"-c", "true"})
 
-// bwrap applies its arguments in order, and a tmpfs over /tmp will mask anything
-// already mounted beneath it. A workspace under /tmp is ordinary — it is where
-// Go's own temporary directories live on Linux, so it is what the test suite
-// itself uses — and masking it leaves a tool unable to reach the one directory
-// it is allowed to write.
-func TestATmpfsOverTmpDoesNotMaskAWorkspaceBeneathIt(t *testing.T) {
-	s := &Sandbox{Mechanism: "bubblewrap", workspaceRoot: "/tmp/w", dataDir: "/tmp/d",
-		toolsDir: "/t", dbPath: "/tmp/d/agent.db"}
-	argv := s.Wrap("/tools/bash/run", "/tmp/w/S1", "/t", nil)
+	if len(argv) < 4 || argv[1] != "-confine" || argv[3] != "--" {
+		t.Fatalf("argv = %v, want the agent's own wrapper in front", argv)
+	}
+	if argv[len(argv)-1] != "true" || argv[len(argv)-3] != "/tools/bash/run" {
+		t.Errorf("argv = %v, want the command and its arguments intact at the end", argv)
+	}
 
-	tmpfs, firstBind := -1, -1
-	for i, a := range argv {
-		if a == "--tmpfs" && i+1 < len(argv) && argv[i+1] == "/tmp" {
-			tmpfs = i
-		}
-		if (a == "--bind" || a == "--ro-bind") && firstBind < 0 {
-			firstBind = i
-		}
+	var p policy
+	if err := json.Unmarshal([]byte(argv[2]), &p); err != nil {
+		t.Fatalf("policy is not readable: %v", err)
 	}
-	if tmpfs < 0 || firstBind < 0 {
-		t.Fatalf("argv = %v, want both a tmpfs over /tmp and binds", argv)
+	// Two writable trees and no more: this session's own directory, and the
+	// directory holding the database a tool is handed on purpose. Not the data
+	// directory above it, which holds every transcript.
+	if len(p.Write) != 2 || p.Write[0] != "/w/S1" || p.Write[1] != "/d/db" {
+		t.Errorf("writable = %v, want this session's directory and the database's own", p.Write)
 	}
-	// Every bind, not only the workspace: a named read path can be under /tmp
-	// too, and masking it leaves a tool unable to read what the operator named.
-	if tmpfs > firstBind {
-		t.Errorf("the tmpfs over /tmp is applied after a bind, which masks it: %v", argv)
-	}
-}
-
-// The Seatbelt profile is an allow-list, and the property that makes it one is
-// that no rule denies: a path nobody thought of is refused by the default, not
-// permitted by an omission from a deny-list.
-func TestTheSeatbeltProfileOnlyAllows(t *testing.T) {
-	p := seatbeltProfile([]string{"/opt/browsers"})
-	if !strings.HasPrefix(p, "(version 1)\n(deny default)") {
-		t.Fatalf("the profile must deny by default:\n%s", p)
-	}
-	for _, line := range strings.Split(p, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "(deny ") &&
-			strings.TrimSpace(line) != "(deny default)" {
-			t.Errorf("the profile denies a specific path, so it is a deny-list again: %q", line)
+	for _, denied := range []string{"/w", "/d", "/"} {
+		for _, granted := range append(append([]string{}, p.Write...), p.Read...) {
+			if granted == denied {
+				t.Errorf("%q is granted; the workspace root, the data directory and the root are not", denied)
+			}
 		}
 	}
-	if !strings.Contains(p, `(allow file-read* file-write* (subpath (param "WS")))`) {
-		t.Error("the session's own directory must be readable and writable")
+	readable := strings.Join(p.Read, " ")
+	if !strings.Contains(readable, "/t") {
+		t.Errorf("read = %v, want the tool directory readable", p.Read)
 	}
-	if !strings.Contains(p, `(subpath "/opt/browsers")`) {
-		t.Error("a path the operator named must reach the profile")
+	if !strings.Contains(readable, "/opt/browsers") {
+		t.Errorf("read = %v, want the operator's named path readable", p.Read)
 	}
-	// The root directory is needed to resolve any path, and as a subpath it
-	// would allow the whole filesystem — which is exactly the old behaviour.
-	if strings.Contains(p, `(subpath "/")`) {
-		t.Error("the root is allowed as a subpath, which permits everything")
+	if p.Chdir != "/w/S1" {
+		t.Errorf("chdir = %q, want the session's directory", p.Chdir)
 	}
-	if !strings.Contains(p, `(literal "/")`) {
-		t.Error("the root must be readable as a literal, or no path resolves")
-	}
-	// A rule for the database alone leaves SQLite unable to open its journals.
-	for _, param := range []string{"DB", "DBWAL", "DBSHM"} {
-		if !strings.Contains(p, `(param "`+param+`")`) {
-			t.Errorf("the profile does not name %s, so a tool cannot use its own tables", param)
-		}
+	// A program opens these before any of its own code runs, and granting them
+	// one by one is what keeps the grant off the rest of /dev.
+	if len(p.Files) == 0 || !strings.Contains(strings.Join(p.Files, " "), "/dev/null") {
+		t.Errorf("files = %v, want the device files a program needs to start", p.Files)
 	}
 }
 
@@ -153,6 +107,18 @@ func TestTheSeatbeltProfileOnlyAllows(t *testing.T) {
 // a shell in one session's directory must not reach another's. This is the test
 // that would have caught the hole — bash read a sibling's file and the
 // operator's API key, while read, write, and edit refused the same path.
+// confinementOrSkip refuses to let a test about the boundary pass on a machine
+// that has no boundary. The agent is a Linux program; a laptop can run the suite
+// but cannot confine a tool, and a test that quietly succeeded there would be
+// reporting on nothing. CI and the container run these for real.
+func confinementOrSkip(t *testing.T, s *Sandbox) {
+	t.Helper()
+	if !s.Enforcing() {
+		t.Skipf("NOT RUN: nothing confines a tool here (%s). This test is proved on Linux — "+
+			"in CI, and in the container with `task dev`.", s.Reason)
+	}
+}
+
 func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	dir := t.TempDir()
 	st, err := OpenStore(dir)
@@ -168,7 +134,7 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 		DefaultModel: "test/model", EnvFile: envFile}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, filepath.Join(dir, "agent.db"), st.DB()),
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
 	a.registerBuiltins()
@@ -202,14 +168,13 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	own := run("echo mine > own.txt && cat own.txt")
 
 	if !a.sandbox.Enforcing() {
-		// No enforcement is a legitimate state on a machine without the
-		// primitive — but it must be the state the system reports, not a
-		// surprise. The reach is then expected, and says so.
+		// Nothing enforcing is a legitimate state, and it must be the state the
+		// system reports rather than a surprise — so that much is checked
+		// everywhere. What cannot be checked here is the reach itself.
 		if !strings.Contains(a.sandbox.Describe(), "NOT ENFORCED") {
 			t.Fatalf("nothing is enforcing but the system does not say so: %q", a.sandbox.Describe())
 		}
-		t.Logf("no sandbox on this machine (%s); the reach below is expected", a.sandbox.Reason)
-		return
+		confinementOrSkip(t, a.sandbox)
 	}
 
 	if sibling.OK {
@@ -275,6 +240,7 @@ func TestAToolCannotModifyTheAgent(t *testing.T) {
 	copyToolTree(t, "../../skills", skillsDir)
 
 	a, _ := confinedApp(t, toolsDir, skillsDir, "")
+	confinementOrSkip(t, a.sandbox)
 	run := shellIn(t, a)
 
 	// A tool's executable is a compiled binary, so "did it change" is asked of
@@ -355,6 +321,7 @@ func TestAToolReadsNothingOutsideItsOwnDirectory(t *testing.T) {
 	// Nothing is named in AGENT_READ_PATHS: the allow-list is the runtime,
 	// the tool directory, and this session — and that is all.
 	a, envFile := confinedApp(t, toolsDir, "", "")
+	confinementOrSkip(t, a.sandbox)
 	run := shellIn(t, a)
 
 	elsewhere := run("cat " + secret)
@@ -410,6 +377,7 @@ func TestANamedReadPathIsReadableAndNotWritable(t *testing.T) {
 	}
 
 	a, _ := confinedApp(t, toolsDir, "", named)
+	confinementOrSkip(t, a.sandbox)
 	run := shellIn(t, a)
 	read := run("cat " + filepath.Join(named, "browser.txt"))
 	write := run("echo no > " + filepath.Join(named, "written.txt"))
@@ -453,7 +421,7 @@ func confinedApp(t *testing.T, toolsDir, skillsDir, readPaths string) (*App, str
 		ToolsDir: toolsDir, SkillsDir: skillsDir, DefaultModel: "test/model",
 		EnvFile: envFile, ReadPaths: readPaths}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, filepath.Join(dir, "agent.db"), st.DB()),
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
 	a.registerBuiltins()
@@ -514,7 +482,7 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 		ToolsDir: "../../tools", DefaultModel: "test/model"}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, filepath.Join(dir, "agent.db"), st.DB()),
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
 	a.registerBuiltins()
@@ -540,18 +508,18 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 }
 
 // A sandbox that is selected but cannot run confines nothing, and says it does.
-// The deployed container had bwrap installed on a host that refuses
+// The deployed container had bubblewrap installed on a host that refuses
 // unprivileged user namespaces: the agent reported "sandbox: bubblewrap", the
-// interface showed a boundary, and every tool subprocess died with "No
-// permissions to create new namespace". Presence of the binary was never the
-// question — whether the kernel will allow a namespace is.
+// interface showed a boundary, and every tool subprocess died on launch.
+// Whether the mechanism is present was never the question — whether the kernel
+// will run it is.
 func TestAMechanismIsOnlyClaimedIfItActuallyRuns(t *testing.T) {
-	ok, reason := probeBubblewrap("/nonexistent/bwrap")
-	if ok {
-		t.Error("a probe of a binary that is not there reported success")
+	ok, reason := landlockAvailable()
+	if !ok && reason == "" {
+		t.Error("a refusal must say why; an unexplained one is unactionable")
 	}
-	if reason == "" {
-		t.Error("a failed probe must say why; an unexplained refusal is unactionable")
+	if ok && runtime.GOOS != "linux" {
+		t.Errorf("Landlock reported available on %s", runtime.GOOS)
 	}
 }
 
@@ -568,5 +536,88 @@ func TestWhatTheSandboxClaimsIsWhatTheToolGets(t *testing.T) {
 	seen := toolEnv(t, a, "canary")
 	if !seen["PATH"] {
 		t.Errorf("the sandbox claims %q but no tool can run under it", a.sandbox.Mechanism)
+	}
+}
+
+// /proc is the one tree where a read grant is also a leak: it exposes the
+// environment of every process this user owns, the agent's included. A browser
+// needs it and nothing else does, so it is not in the runtime every tool gets —
+// a tool that needs it asks, and the answer is written in its manifest.
+func TestOnlyAToolThatAsksForAPathCanReadIt(t *testing.T) {
+	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d",
+		toolsDir: "/t", dbPath: "/d/db/agent.db"}
+
+	plain := landlockPolicy(t, s.Wrap("/tools/edit/run", "/w/S1", "/t", nil, nil))
+	for _, path := range plain.Read {
+		if path == "/proc" {
+			t.Error("a tool that asked for nothing was granted /proc, and with it every process's environment")
+		}
+	}
+
+	asked := landlockPolicy(t, s.Wrap("/tools/web_fetch/run", "/w/S1", "/t", []string{"/proc", "/sys"}, nil))
+	if !strings.Contains(strings.Join(asked.Read, " "), "/proc") {
+		t.Errorf("read = %v, want the path the tool asked for", asked.Read)
+	}
+}
+
+// landlockPolicy reads back the policy the wrapper carries.
+func landlockPolicy(t *testing.T, argv []string) policy {
+	t.Helper()
+	var p policy
+	if len(argv) < 3 {
+		t.Fatalf("argv = %v, want a wrapper carrying a policy", argv)
+	}
+	if err := json.Unmarshal([]byte(argv[2]), &p); err != nil {
+		t.Fatalf("policy is not readable: %v", err)
+	}
+	return p
+}
+
+// The manifest is the tool's whole declaration, so what it says about the paths
+// it needs has to survive being read back.
+func TestTheManifestReportsThePathsAToolAsksFor(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRegistry(dir, DBPath(dir), nil)
+	toolDir := filepath.Join(dir, "browser")
+	if err := os.MkdirAll(toolDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `{"name":"browser","description":"Render a page.","db_prefix":"browser_",
+	  "reads":["/proc"],"parameters":{"type":"object","properties":{}}}`
+	if err := os.WriteFile(filepath.Join(toolDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(toolDir, "run"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, failures := r.Load(nil); len(failures) > 0 {
+		t.Fatalf("tool did not load: %+v", failures)
+	}
+	got := r.Get("browser")
+	if got == nil {
+		t.Fatal("the tool did not load")
+	}
+	if len(got.Reads) != 1 || got.Reads[0] != "/proc" {
+		t.Errorf("reads = %v, want [/proc]", got.Reads)
+	}
+}
+
+// Where nothing is enforcing, the line that says so has to be a warning. A
+// container on a kernel without Landlock, or a platform with no mechanism at
+// all, is a working agent with a boundary missing — and every other line at
+// startup reports something that works.
+func TestAnUnenforcedSandboxSaysSoAsAWarning(t *testing.T) {
+	off := &Sandbox{Mechanism: "none", Reason: "this kernel has no Landlock"}
+	line := off.Describe()
+	if !strings.Contains(line, "WARNING") {
+		t.Errorf("Describe() = %q, want it marked as a warning", line)
+	}
+	if !strings.Contains(line, "this kernel has no Landlock") {
+		t.Errorf("Describe() = %q, want it to carry the reason", line)
+	}
+
+	on := &Sandbox{Mechanism: "landlock"}
+	if strings.Contains(on.Describe(), "WARNING") {
+		t.Errorf("Describe() = %q, want no warning when a boundary is in force", on.Describe())
 	}
 }

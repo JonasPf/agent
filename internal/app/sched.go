@@ -154,7 +154,10 @@ func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, 
 	// A check is a shell command in the session's directory, and is confined the
 	// same way a tool is: it is a shell, so nothing else would confine it.
 	ws := s.app.ensureWorkspace(sess.ID)
-	argv := s.app.sandbox.Wrap("/bin/sh", ws, "", []string{"-c", j.Check})
+	// A check is a shell command the operator wrote, and it gets the runtime and
+	// this session's directory: the same boundary as a tool that asked for
+	// nothing beyond it.
+	argv := s.app.sandbox.Wrap("/bin/sh", ws, "", nil, []string{"-c", j.Check})
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
 	cmd.Dir = ws
 	tmp := s.app.sandbox.TempDir(ws)

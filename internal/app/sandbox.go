@@ -3,9 +3,7 @@ package app
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -14,13 +12,14 @@ import (
 // told — did not. One session's tools could read another's files and the
 // operator's API key. The boundary is now the operating system's.
 //
-// There is no cross-platform library for this. Every tool that claims to be one
-// branches on the platform, so this does too, over the two primitives that need
-// no privileges: Seatbelt on macOS and bubblewrap on Linux. Where neither is
-// available nothing is enforced, and that is said out loud rather than left to
-// be discovered.
+// The mechanism is Landlock, and there is only one. A second mechanism for a
+// second platform means two policies to keep in step, and they do not stay in
+// step: the macOS profile this replaces silently ignored the paths a tool
+// declared in its manifest, which the Linux one honoured. The agent is a Linux
+// program; where Landlock is not available nothing is enforced, and that is said
+// out loud rather than left to be discovered.
 type Sandbox struct {
-	// Mechanism is seatbelt, bubblewrap, or none.
+	// Mechanism is landlock or none.
 	Mechanism string `json:"mechanism"`
 	// Reason is why nothing is enforced, when nothing is.
 	Reason string `json:"reason,omitempty"`
@@ -32,79 +31,42 @@ type Sandbox struct {
 	dataDir       string
 	toolsDir      string
 	dbPath        string
-	profilePath   string
 }
 
-// systemReads is the runtime: the interpreter, its libraries, and what they
-// load. It is the smallest set in which a tool starts at all, arrived at by
-// running every supplied tool under the profile. The root directory is in it
-// because Seatbelt cannot resolve any path without reading it.
-var systemReads = []string{
-	"/", "/usr", "/System", "/Library", "/bin", "/sbin", "/opt", "/dev",
-	"/private/etc", "/private/var/db",
-}
-
-// linuxReads is the same set for bubblewrap, which binds directories rather
-// than matching paths, so the root itself is not among them.
+// linuxReads is the same set for Landlock, which grants access beneath a
+// directory rather than matching a path, so the root itself is not among them:
+// granting the root would grant everything under it.
+//
+// It does not include /proc. A browser needs it and nothing else does — the
+// suite proved that by passing without it — and /proc is the one tree where a
+// read grant is also a leak: /proc/<pid>/environ of any process this user owns
+// is readable through it, the agent's included. A tool that needs it says so in
+// its manifest, and only the two browser tools do.
 var linuxReads = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt"}
+
+// linuxDevices is what a program opens before any of its own code runs. They are
+// named one by one rather than granting /dev, because a grant on the directory
+// is a grant on every device in it.
+var linuxDevices = []string{
+	"/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty",
+}
 
 func NewSandbox(cfg Config) *Sandbox {
 	s := &Sandbox{
 		workspaceRoot: absOr(cfg.Workspace),
 		dataDir:       absOr(cfg.DataDir),
 		toolsDir:      absOr(cfg.ToolsDir),
-		dbPath:        absOr(filepath.Join(cfg.DataDir, "agent.db")),
+		dbPath:        absOr(DBPath(cfg.DataDir)),
 		ReadPaths:     readPaths(cfg.ReadPaths),
 	}
-	switch runtime.GOOS {
-	case "darwin":
-		if _, err := os.Stat("/usr/bin/sandbox-exec"); err == nil {
-			s.Mechanism = "seatbelt"
-		} else {
-			s.Mechanism, s.Reason = "none", "/usr/bin/sandbox-exec is not present"
-		}
-	case "linux":
-		bin, err := exec.LookPath("bwrap")
-		if err != nil {
-			s.Mechanism, s.Reason = "none", "bwrap is not installed; add the bubblewrap package to the image"
-			break
-		}
-		// Installed is not the same as usable. A container on a host that
-		// refuses unprivileged user namespaces has bwrap and cannot create one,
-		// and claiming the boundary anyway is the worst of the three outcomes:
-		// the interface shows a confinement that is not there, and every tool
-		// dies on launch instead of running unconfined.
-		if ok, why := probeBubblewrap(bin); ok {
-			s.Mechanism = "bubblewrap"
-		} else {
-			s.Mechanism, s.Reason = "none", why
-		}
-	default:
-		s.Mechanism, s.Reason = "none", "no sandbox is implemented for "+runtime.GOOS
+	// No branch on the platform: the probe answers on every one of them, and
+	// says why when the answer is no.
+	if ok, why := landlockAvailable(); ok {
+		s.Mechanism = "landlock"
+	} else {
+		s.Mechanism, s.Reason = "none", why
 	}
-	s.prepare()
 	return s
-}
-
-// probeBubblewrap runs the smallest sandbox there is, to find out whether this
-// kernel will allow one at all. It costs a few milliseconds at startup, once,
-// and it is the difference between a boundary and a claim about one.
-func probeBubblewrap(bin string) (bool, string) {
-	cmd := exec.Command(bin, "--ro-bind", "/", "/", "--dev", "/dev", "--tmpfs", "/tmp", "--", "/bin/true")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		return true, ""
-	}
-	why := strings.TrimSpace(string(out))
-	if why == "" {
-		why = err.Error()
-	}
-	// One line, kept long enough to stay actionable: the kernel's own wording is
-	// what tells the operator this is a host setting and not a missing package.
-	why, _, _ = strings.Cut(why, "\n")
-	// The reason is shown in a status panel and in a log line, so it names the
-	// binary rather than reading as a missing package.
-	return false, "bwrap is installed but cannot create a namespace here: " + truncate(strings.TrimSpace(why), 200)
 }
 
 func (s *Sandbox) Enforcing() bool { return s != nil && s.Mechanism != "" && s.Mechanism != "none" }
@@ -118,23 +80,11 @@ func (s *Sandbox) Describe() string {
 		}
 		return line
 	}
-	return "sandbox: NOT ENFORCED (" + s.Reason + ") — a tool can read and write anything this user can"
-}
-
-// prepare writes whatever the mechanism needs on disk. It runs as part of
-// construction rather than as a second call, because a sandbox that was built
-// but not prepared confines nothing and looks exactly like one that does. A
-// failure downgrades to no enforcement, which is reported.
-func (s *Sandbox) prepare() {
-	if s.Mechanism != "seatbelt" {
-		return
-	}
-	path := filepath.Join(s.dataDir, "sandbox.sb")
-	if err := os.WriteFile(path, []byte(seatbeltProfile(s.ReadPaths)), 0o600); err != nil {
-		s.Mechanism, s.Reason = "none", "could not write the Seatbelt profile: "+err.Error()
-		return
-	}
-	s.profilePath = path
+	// Marked as a warning because it is one: every other line at startup reports
+	// what is working. This reports that a boundary the rest of the system is
+	// written around is absent, and it has to read as different from the rest.
+	return "WARNING: sandbox NOT ENFORCED (" + s.Reason + ") — a tool can read and write anything this user can, " +
+		"including every session's files and this process's own directory"
 }
 
 // Wrap returns the argv that runs bin, confined to workspace. toolRoot is the
@@ -144,7 +94,8 @@ func (s *Sandbox) prepare() {
 // than a field because the registry's directory is what is actually in use, and
 // a sandbox pointed at the configured one would refuse a tool loaded from
 // anywhere else.
-func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string {
+// reads are the paths this tool asked for beyond the runtime, from its manifest.
+func (s *Sandbox) Wrap(bin, workspace, toolRoot string, reads []string, args []string) []string {
 	cmd := append([]string{bin}, args...)
 	if !s.Enforcing() {
 		return cmd
@@ -155,40 +106,33 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, args []string) []string 
 		tools = absOr(toolRoot)
 	}
 	switch s.Mechanism {
-	case "seatbelt":
-		argv := []string{"/usr/bin/sandbox-exec",
-			"-D", "WS=" + ws,
-			"-D", "TOOLS=" + tools,
-			// SQLite creates the journals beside the database, and a rule for
-			// the database alone leaves a tool unable to open its own tables.
-			"-D", "DB=" + s.dbPath,
-			"-D", "DBWAL=" + s.dbPath + "-wal",
-			"-D", "DBSHM=" + s.dbPath + "-shm",
-			"-f", s.profilePath}
-		return append(argv, cmd...)
-	case "bubblewrap":
-		// The tmpfs comes first, before every bind. bwrap applies its arguments in
-		// order, so a tmpfs mounted later masks whatever is already beneath it —
-		// and /tmp is where Linux puts a temporary directory, so a workspace or a
-		// named read path can legitimately live there.
-		argv := []string{"bwrap", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp"}
-		// Only the runtime is bound, so the home directory and the repository
-		// the agent runs from are not in the mount namespace at all.
-		for _, p := range append(append([]string{}, linuxReads...), s.ReadPaths...) {
-			if _, err := os.Stat(p); err == nil {
-				argv = append(argv, "--ro-bind", p, p)
-			}
+	case "landlock":
+		// The agent is its own wrapper: this re-runs the agent, which restricts
+		// itself to the policy and then becomes the tool. Only the working
+		// directory is writable; the runtime and the tool directory are
+		// readable; nothing else is granted anything, so nothing else is
+		// reachable — the home directory, another session's files, and every
+		// transcript included.
+		p := policy{
+			// The working directory, and the directory the database lives in so
+			// SQLite can create the journals it writes beside it.
+			Write: []string{ws, filepath.Dir(s.dbPath)},
+			Read:  append(append(append([]string{tools}, linuxReads...), s.ReadPaths...), reads...),
+			// The device files a program opens before any of its own code runs.
+			// bubblewrap gave a fresh /dev and this grants the same handful by
+			// name: without /dev/null a shell cannot redirect, and every tool
+			// fails on launch rather than on anything it was asked to do.
+			Files: linuxDevices,
+			Chdir: ws,
 		}
-		argv = append(argv,
-			"--ro-bind", tools, tools,
-			"--bind", ws, ws)
-		for _, f := range []string{s.dbPath, s.dbPath + "-wal", s.dbPath + "-shm"} {
-			if _, err := os.Stat(f); err == nil {
-				argv = append(argv, "--bind", f, f)
-			}
+		exe, err := os.Executable()
+		if err != nil {
+			// Without the wrapper there is no confinement, and a tool that runs
+			// unconfined because the wrapper could not be found is the failure
+			// this whole file exists to prevent.
+			return []string{"/nonexistent/confinement-unavailable"}
 		}
-		argv = append(argv, "--die-with-parent", "--chdir", ws, "--")
-		return append(argv, cmd...)
+		return append([]string{exe, "-confine", p.encode(), "--"}, cmd...)
 	}
 	return cmd
 }
@@ -223,53 +167,9 @@ func readPaths(raw string) []string {
 	return out
 }
 
-// seatbeltProfile is the macOS policy. It is an allow-list: everything is
-// denied, and what a tool needs in order to run is named. Nothing is written as
-// a deny, so a path nobody thought of is refused rather than permitted.
-func seatbeltProfile(extraReads []string) string {
-	quoted := func(paths []string) string {
-		var b strings.Builder
-		for _, p := range paths {
-			b.WriteString("\n       (subpath \"" + p + "\")")
-		}
-		return b.String()
-	}
-	// The root directory is a literal, not a subpath: a subpath of "/" would
-	// allow the whole filesystem, which is the rule this replaces.
-	system := `(allow file-read* (literal "/")` + quoted(systemReads[1:]) + `)`
-	extra := ""
-	if len(extraReads) > 0 {
-		extra = "(allow file-read*" + quoted(extraReads) + ")\n"
-	}
-	return strings.Join([]string{
-		`(version 1)`,
-		`(deny default)`,
-		`(allow process-exec process-fork signal sysctl-read mach-lookup`,
-		`       network-outbound network-inbound system-socket ipc-posix-shm)`,
-		// A browser is several processes that find each other through the
-		// bootstrap server and talk to the graphics stack. Without these it dies
-		// on its first instruction. Neither opens a path.
-		`(allow iokit-open mach-register)`,
-		// Metadata of what is walked through, so a path inside an allowed
-		// subpath can be resolved. It says a path exists, never what is in it.
-		`(allow file-read-metadata)`,
-		system,
-		extra + `(allow file-read* (subpath (param "TOOLS")))`,
-		`(allow file-read* file-write* (literal (param "DB")) (literal (param "DBWAL"))`,
-		`                              (literal (param "DBSHM")))`,
-		`(allow file-write-data (literal "/dev/null") (literal "/dev/stdout")`,
-		`                       (literal "/dev/stderr") (literal "/dev/dtracehelper"))`,
-		// The one writable place. It is last only for readability; every rule
-		// here allows, so order does not decide the outcome.
-		`(allow file-read* file-write* (subpath (param "WS")))`,
-		``,
-	}, "\n")
-}
-
-// absOr resolves a path the way the sandbox will see it. Both mechanisms match
-// on the real path, and on macOS /var and /tmp are symlinks into /private — so
-// a profile written with the unresolved path silently matches nothing, which
-// looks exactly like a sandbox that is working.
+// absOr resolves a path the way the kernel will see it. A rule is matched
+// against the real path, so a policy written with an unresolved one silently
+// matches nothing — which looks exactly like a sandbox that is working.
 func absOr(p string) string {
 	if p == "" {
 		return ""

@@ -56,7 +56,7 @@ func fetchApp(t *testing.T) *App {
 	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"),
 		ToolsDir: "../../tools", DefaultModel: "test/model", ReadPaths: readPaths}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, filepath.Join(dir, "agent.db"), st.DB()),
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
 	a.registerBuiltins()

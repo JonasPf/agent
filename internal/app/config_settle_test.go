@@ -24,7 +24,7 @@ func newTestApp(t *testing.T) *App {
 		sandbox: NewSandbox(cfg),
 		cfg:     cfg,
 		store:   st,
-		tools:   NewRegistry(filepath.Join(dir, "tools"), filepath.Join(dir, "agent.db"), st.DB()),
+		tools:   NewRegistry(filepath.Join(dir, "tools"), DBPath(dir), st.DB()),
 		skills:  NewSkills(filepath.Join(dir, "skills")),
 		hub:     NewHub(),
 		queues:  map[string]chan func(){},

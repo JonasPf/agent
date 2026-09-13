@@ -7,8 +7,9 @@
 # does, and fetches the one binary that is not built here. The second carries
 # them, the interface, the skills, and the userland the tools need — a shell,
 # because tools/bash execs /bin/sh; git and gh, because the agent proposes
-# changes to itself by opening a pull request; bubblewrap, because that is the
-# sandbox. Nothing else: no package manager state, no network client.
+# changes to itself by opening a pull request. The sandbox needs nothing here:
+# Landlock is the kernel's, and the agent asks for it itself. Nothing else: no
+# package manager state, no network client.
 
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
@@ -21,14 +22,18 @@ ENV CGO_ENABLED=0
 RUN go build -trimpath -o /out/agent ./cmd/agent
 # Every tool directory becomes /out/tools/<name>/{manifest.json,run}, which is
 # the layout the registry scans. A directory without a manifest is not a tool.
+# Everything in a tool's directory ships except its source and its eval cases:
+# a tool may carry a schema, a panel, or a file nobody has thought of yet, and
+# naming them one by one is how notes reached production without the schema that
+# creates its table.
 RUN set -eu; \
     for d in tools/*/; do \
       [ -f "$d/manifest.json" ] || continue; \
       name=$(basename "$d"); \
       mkdir -p "/out/tools/$name"; \
+      cp -R "$d". "/out/tools/$name/"; \
+      rm -f "/out/tools/$name"/*.go "/out/tools/$name/eval.json"; \
       go build -trimpath -o "/out/tools/$name/run" "./$d"; \
-      cp "$d/manifest.json" "/out/tools/$name/manifest.json"; \
-      [ -f "$d/panel.js" ] && cp "$d/panel.js" "/out/tools/$name/panel.js" || true; \
     done
 
 # gh comes from its own release rather than an apt repository, so the runtime
@@ -51,12 +56,12 @@ RUN set -eu; \
     tar -xzf "$tarball" --strip-components=2 -C /out "gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh"
 
 FROM debian:bookworm-slim
-# git for the clone and the push, bubblewrap for the sandbox — installed whether
-# or not the host currently permits it, so enabling it later is a host change
-# and not an image change. ca-certificates is what makes every outbound call
-# verifiable, the model gateway included.
+# git for the clone and the push. ca-certificates is what makes every outbound
+# call verifiable, the model gateway included. The sandbox adds nothing to this
+# list — Landlock is a kernel facility the agent asks for directly, which is why
+# it works in an unprivileged container where bubblewrap did not.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git bubblewrap \
+ && apt-get install -y --no-install-recommends ca-certificates git \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent runs as one user, and it is not root. The data and workspace
