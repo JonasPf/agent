@@ -60,16 +60,18 @@ func TestProjectionIsPure(t *testing.T) {
 	}
 }
 
-func TestCarryOverTakesWholeTurns(t *testing.T) {
+// The split falls on a turn boundary, so an assistant message is never left
+// behind by the user message that prompted it.
+func TestSplitPointTakesWholeTurns(t *testing.T) {
 	entries := []Entry{
-		{Type: "message", Role: "user", Text: "first"},
-		{Type: "message", Role: "assistant", Text: "answer one"},
-		{Type: "message", Role: "user", Text: "second"},
-		{Type: "message", Role: "assistant", Text: "answer two"},
+		{Seq: 1, Type: "message", Role: "user", Text: "first"},
+		{Seq: 2, Type: "message", Role: "assistant", Text: "answer one"},
+		{Seq: 3, Type: "message", Role: "user", Text: "second"},
+		{Seq: 4, Type: "message", Role: "assistant", Text: "answer two"},
 	}
-	got := carryOver(entries, 6)
-	if len(got) != 2 || got[0].Text != "second" {
-		t.Fatalf("want the last whole turn, got %+v", got)
+	got := splitPoint(entries, 6)
+	if got != 2 {
+		t.Fatalf("splitPoint = %d; want 2, the boundary before the last whole turn", got)
 	}
 }
 
@@ -145,7 +147,7 @@ func TestAFailedRunIsVisibleToTheModel(t *testing.T) {
 // billed for on every turn.
 func TestOrdinaryEventsAreStillDropped(t *testing.T) {
 	msgs := Project([]Entry{
-		{Type: "event", EventKind: "carried_over", Text: "carried over"},
+		{Type: "event", EventKind: "forked_from", Text: "copied from another session"},
 		{Type: "event", EventKind: "dead_letter", Text: "job gave up"},
 		{Type: "message", Role: "user", Text: "hello"},
 	})

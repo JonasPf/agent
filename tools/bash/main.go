@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -17,6 +18,16 @@ type args struct {
 }
 
 const maxOutput = 20000
+
+// Clip caps a body and reports how much it dropped. An unannounced truncation
+// is worse than a short answer: the model reasons from what it was handed as
+// though that were all there was, and nothing in the result says otherwise.
+func Clip(body string, max int) (string, int) {
+	if len(body) <= max {
+		return body, 0
+	}
+	return body[:max], len(body) - max
+}
 
 func main() {
 	var a args
@@ -36,9 +47,10 @@ func main() {
 	if ctx.Err() == context.DeadlineExceeded {
 		tool.Failf("timed out after %ds", timeout)
 	}
-	body := string(out)
-	if len(body) > maxOutput {
-		body = body[:maxOutput]
+	body, dropped := Clip(string(out), maxOutput)
+	if dropped > 0 {
+		body += fmt.Sprintf("\n\n[output truncated: %d of %d characters shown, %d dropped]",
+			maxOutput, maxOutput+dropped, dropped)
 	}
 	if err != nil {
 		tool.Failf("%v\n%s", err, body)

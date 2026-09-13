@@ -37,6 +37,45 @@ reload.</p>
   schema.sql        optional — tables, applied on load
   ui/panel.js       optional — an interface panel for this tool's data</code></pre>
 
+<h2>The tools that ship</h2>
+
+<p>Each has a page of its own: what it does, what it refuses, how it fails, and the criteria that hold
+it to that. A manifest states a tool's interface and is the only statement of it — the pages below do
+not repeat the parameter schema, because two descriptions of one interface is one of them going stale.
+What a page carries is everything a manifest cannot: the behaviour, the boundary, and the reasoning.</p>
+
+<table>
+<tr><th>Tool</th><th>For</th></tr>
+<tr><td><a href="tool-bash.html"><code>bash</code></a></td><td>Run a shell command in the session's working directory.</td></tr>
+<tr><td><a href="tool-clock.html"><code>clock</code></a></td><td>The current date and time, in UTC and in the operator's zone.</td></tr>
+<tr><td><a href="tool-edit.html"><code>edit</code></a></td><td>Replace an exact string in a workspace file.</td></tr>
+<tr><td><a href="tool-memory.html"><code>memory</code></a></td><td>Write, revise, or remove what the agent carries between conversations.</td></tr>
+<tr><td><a href="tool-notes.html"><code>notes</code></a></td><td>Short freeform notes that outlive a conversation.</td></tr>
+<tr><td><a href="tool-read.html"><code>read</code></a></td><td>Read a file from the session's working directory.</td></tr>
+<tr><td><a href="tool-schedule.html"><code>schedule</code></a></td><td>Create, list, edit, and delete the jobs that make future work visible.</td></tr>
+<tr><td><a href="tool-session_search.html"><code>session_search</code></a></td><td>Full-text search across transcripts.</td></tr>
+<tr><td><a href="tool-skill_read.html"><code>skill_read</code></a></td><td>Load the full text of a skill.</td></tr>
+<tr><td><a href="tool-web_fetch.html"><code>web_fetch</code></a></td><td>Fetch a URL and return the page's text.</td></tr>
+<tr><td><a href="tool-web_search.html"><code>web_search</code></a></td><td>Search the web and return titles, URLs, and snippets.</td></tr>
+<tr><td><a href="tool-write.html"><code>write</code></a></td><td>Create or replace a file in the session's working directory.</td></tr>
+</table>
+
+<div class="note">
+<strong>A tool without a page is not finished.</strong> The manifest tells the model what the tool
+takes; the page tells the operator what it does and the test suite what to hold it to. A capability
+whose failure modes are written down nowhere is one whose behaviour is discovered in production.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every directory under <code>tools/</code> has a specification page, and every page names a tool that exists.</li>
+<li>A page states what the tool refuses and how it fails, not only what it does.</li>
+<li>A page carries acceptance criteria, and each is discharged by a test that runs the tool as a subprocess.</li>
+<li>No page restates the manifest's parameter schema; the manifest is the single statement of the interface.</li>
+</ul>
+</div>
+
 <h2>Tools are written the way the agent is</h2>
 
 <p>A tool is Go, in this module, developed test-first, and it ships eval cases. The registry executes
@@ -157,10 +196,14 @@ turn rather than the process.</p>
 picks up what the operator has just installed. There is no directory watcher, because a tool appearing
 halfway through being copied into place is worse than one appearing a moment later.</p>
 
-<p>A reload does not reach the session that asked for it. That session's prompt was written at its first
-turn and defines exactly the tools it had then, so a tool written now is a tool the next session has —
-the same way a memory written now is read by the next session rather than this one. The conversation
-carries over by rotating, and the successor is built with the new tool in it.</p>
+<p>A reload does not reach the session that asked for it. That session's prompt defines exactly the
+tools it had, and a session's tools are fixed for its life. A tool installed now is a tool a
+<em>new</em> session has. An existing conversation reaches it by forking, which copies the conversation
+into a session built with the new tool in it.</p>
+
+<p>This is unlike memory, which a compaction refreshes into the running conversation. Memory is text
+the model reads; a tool is a definition the model programmes against, and changing the callable set
+mid-conversation is the thing <a href="adrs.html#adr-019">ADR-019</a> removed.</p>
 
 <p>Loading validates before registering. A tool is registered only if its manifest parses, its schema is
 valid, its executable is executable, its database prefix is unused, and a trial invocation returns

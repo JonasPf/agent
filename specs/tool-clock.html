@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>clock — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>clock</code></h1>
+<p class="lede">The current date and time, in UTC and in the operator's zone.</p>
+
+<h2>Why it exists</h2>
+<p>The system prompt is written once and then frozen until a compaction
+(<a href="sessions.html">Sessions</a>). A time written into it would be the time the session was
+created, and would go on being wrong for as long as the conversation lasted. An agent that schedules
+work cannot read the clock from its own prompt, so it asks.</p>
+
+<h2>What it returns</h2>
+<pre><code>utc:      2026-09-11T14:32:05Z
+local:    2026-09-11T16:32:05+0200 (CEST)
+weekday:  Friday 11 September 2026
+unix:     1789058825</code></pre>
+
+<p>Four forms because four different questions are asked of a clock: an instant that cannot be
+misread, the operator's own wall clock, the day of the week — which no timestamp answers without
+arithmetic — and a number to compute with.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>offset</code></td><td>A signed duration from now, such as <code>90m</code>, <code>2h30m</code>, <code>-1h</code>, <code>3d</code>. Optional; absent means now.</td></tr>
+</table>
+<div class="note">
+<strong>Days and weeks are part of the grammar.</strong> Go's own duration parser stops at hours, and a job is far more often days away than nanoseconds. <code>s</code>, <code>m</code>, <code>h</code>, <code>d</code>, and <code>w</code> are all accepted, and a malformed offset is refused with an example rather than silently read as zero.
+</div>
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The answer carries the instant in UTC, the same instant in the local zone with its name, the weekday, and the Unix seconds.</li>
+<li>An absent offset answers for now.</li>
+<li>An offset shifts every one of the four forms by the same amount.</li>
+<li>A negative offset answers in the past.</li>
+<li>Units of seconds, minutes, hours, days, and weeks are accepted, and compound forms such as <code>1h30m</code> parse.</li>
+<li>A malformed offset fails, quotes what was given, and shows the form expected.</li>
+<li>A malformed offset is never read as zero, so a bad parse cannot silently answer for now.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-bash.html">← bash</a> · <a href="tool-edit.html">edit →</a></footer>
+</div>
+</body></html>

@@ -508,3 +508,31 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* A compaction stands where the folded turns were. It names itself, says what
+   it cost, and says the consequence — that the agent cannot see above it — which
+   is the thing the reader actually needs to know. */
+.compaction {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent, #888);
+  border-radius: 6px;
+  padding: .75rem .9rem;
+  margin: 1.25rem 0;
+  background: var(--panel, rgba(128,128,128,.06));
+}
+.compaction > .t {
+  font-weight: 600;
+  letter-spacing: .02em;
+  margin-bottom: .35rem;
+}
+.compaction > .note { margin: 0 0 .6rem; opacity: .75; font-size: .9em; }
+.compaction .row { display: flex; gap: .5rem; margin-top: .7rem; }
+
+/* A revealed fold is dimmed behind a gutter rule, so it can never be read as
+   something the agent can still see. */
+.folded {
+  opacity: .45;
+  border-left: 2px solid var(--line);
+  padding-left: .6rem;
+  margin-left: .2rem;
+}

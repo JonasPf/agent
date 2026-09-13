@@ -12,6 +12,7 @@ const api = async (path, opts) => {
 };
 const post = (p, b) => api(p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) });
 const patch = (p, b) => api(p, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+const put = (p, b) => api(p, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const del = p => api(p, { method: 'DELETE' });
 
 // Wherever one session names another, the identifier is the only route between
@@ -327,10 +328,10 @@ function sessionRow(s) {
   const sub = el('div', 's');
   sub.textContent = `${ago(s.last_active_at)} · ${fmtBytes(s.disk_bytes)} · ${fmtMoney(s.cost)}`;
   const cfg = el('div', 's');
-  cfg.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.rotate_at_tokens.toLocaleString()} tok`;
+  cfg.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.compact_at_tokens.toLocaleString()} tok`;
   m.append(sub, cfg);
   if (s.job_count) { const t = el('span', 'tag on', s.job_count + ' job' + (s.job_count > 1 ? 's' : '')); m.append(t); }
-  if (s.continued_by) m.append(el('span', 'tag', '→ continued'));
+  if (s.forked_from) m.append(el('span', 'tag', 'fork'));
   row.append(m);
   if (s.unread) row.append(el('span', 'badge', String(s.unread)));
   // Deleting is why the size is shown, so it is offered on the same row rather
@@ -364,7 +365,7 @@ async function viewSession(v) {
   setHeader(state.session.title || 'Conversation', true, [
     { label: 'Jobs', fn: () => location.hash = '#jobs/' + id },
     { label: 'Files', fn: () => location.hash = '#files/' + id },
-    { label: 'Summary', fn: showSummary },
+    { label: 'Compact', fn: () => compactNow(id) },
     { label: 'Fork', fn: () => location.hash = '#fork/' + id },
     { label: 'Controls', fn: () => location.hash = '#settings/' + id },
   ]);
@@ -435,14 +436,14 @@ function renderStatus() {
   const line = $('statusline');
   if (!line || !s) return;
   line.innerHTML = '';
-  const pct = Math.min(100, 100 * s.context_used / s.rotate_at_tokens);
+  const pct = Math.min(100, 100 * s.context_used / s.compact_at_tokens);
   // The bar changes colour where rotation stops being far off, because that is
   // the point at which the number is worth reading.
   const bar = el('span', 'bar' + (pct >= 80 ? ' hot' : '')); const fill = el('i'); fill.style.width = pct + '%'; bar.append(fill);
   const add = (label, val) => { const w = el('span'); if (label) w.append(document.createTextNode(label + ' ')); w.append(el('b', null, val)); line.append(w); };
   add('', s.model.split('/').pop());
   line.append(bar);
-  add('', `${s.context_used.toLocaleString()} / ${s.rotate_at_tokens.toLocaleString()} tok`);
+  add('', `${s.context_used.toLocaleString()} / ${s.compact_at_tokens.toLocaleString()} tok`);
   add('cost', fmtMoney(s.cost));
   if (s.cache_hit_rate) add('cached', Math.round(s.cache_hit_rate * 100) + '%');
   const last = [...state.entries].reverse().find(e => e.usage && e.usage.tokens_per_second);
@@ -467,7 +468,16 @@ function renderTranscript() {
   if (!t) return;
   const atBottom = $('main').scrollHeight - $('main').scrollTop - $('main').clientHeight < 120;
   t.innerHTML = '';
-  for (const e of state.entries) t.append(renderEntry(e));
+  const covers = coveredThrough(state.entries);
+  for (const e of state.entries) {
+    const isFolded = covers > 0 && e.seq <= covers;
+    if (isFolded && !state.revealCompacted) continue;
+    const node = renderEntry(e);
+    // Revealed, a folded entry is dimmed behind a gutter rule so it can never be
+    // mistaken for something the agent can still see.
+    if (isFolded) node.classList.add('folded');
+    t.append(node);
+  }
   if (state.streaming) t.append(streamNode());
   if (atBottom) scrollDown();
   renderStatus();
@@ -500,7 +510,50 @@ function bubble(e) {
   return b;
 }
 
+// The transcript shows what the model sees. Entries a compaction covers are not
+// rendered by default: showing messages the agent can no longer read is exactly
+// the surprise the design forbids — you would read turn 12 and assume it knows.
+// They are still there, one click away, and still on disk.
+function coveredThrough(entries) {
+  let covers = 0;
+  for (const e of entries) if (e.type === 'compaction') covers = e.covers_through || 0;
+  return covers;
+}
+
+function compactionEntry(e) {
+  const n = el('div', 'compaction');
+  const before = (e.tokens_before || 0).toLocaleString();
+  const after = (e.tokens_after || 0).toLocaleString();
+  n.append(el('div', 't',
+    `⊙ COMPACTED · ${e.folded_turns || 0} turns · ${before} → ${after} tokens · cache reset`));
+  n.append(el('div', 'note', 'The agent no longer sees the messages above this point. This is what it sees instead:'));
+
+  const body = el('div', 'bub md'); body.innerHTML = renderMarkdown(e.text || '');
+  n.append(body);
+
+  const bar = el('div', 'row');
+  const edit = el('button', 'btn', 'Edit');
+  edit.onclick = () => {
+    const ta = el('textarea'); ta.className = 'text'; ta.style.minHeight = '260px'; ta.value = e.text || '';
+    const save = el('button', 'btn primary', 'Save');
+    save.onclick = async () => {
+      // An edit appends a superseding compaction rather than rewriting one: the
+      // transcript is append-only, and what the summariser wrote stays beside it.
+      await put('/sessions/' + state.session.id + '/compaction', { text: ta.value });
+      location.hash = '#session/' + state.session.id;
+    };
+    body.replaceWith(ta); bar.replaceWith(save);
+  };
+  const reveal = el('button', 'btn', `Show ${e.folded_turns || 0} hidden turns`);
+  reveal.onclick = () => { state.revealCompacted = !state.revealCompacted; renderTranscript(); };
+  if (state.revealCompacted) reveal.textContent = 'Hide folded turns';
+  bar.append(edit, reveal);
+  n.append(bar);
+  return n;
+}
+
 function renderEntry(e) {
+  if (e.type === 'compaction') return compactionEntry(e);
   if (e.type === 'prompt') return promptEntry(e);
   if (e.type === 'event') {
     // Laid out as a log line — clock, kind, detail — so it cannot be read as
@@ -591,18 +644,14 @@ function promptEntry(e) {
   return box;
 }
 
-async function showSummary() {
-  const s = state.session;
-  const v = $('view');
-  v.innerHTML = '';
-  setHeader('Summary', true);
-  $('foot').innerHTML = '';
-  v.append(el('p', 'note', 'The rolling summary is what a rotation carries forward. Editing it changes what the next session is told.'));
-  const ta = el('textarea'); ta.style.minHeight = '320px';
-  ta.className = 'text'; ta.value = s.summary || '(no summary yet — this session has not grown past the threshold)';
-  const save = el('button', 'btn primary', 'Save summary');
-  save.onclick = async () => { await patch('/sessions/' + s.id, { summary: ta.value }); location.hash = '#session/' + s.id; };
-  v.append(ta, save);
+// Compacting on request is how a memory written a moment ago takes effect
+// without waiting for the threshold. The summary it writes is editable where it
+// lands, in the transcript, rather than on a screen of its own.
+async function compactNow(id) {
+  if (!confirm('Fold the older turns of this conversation into a summary? ' +
+               'Nothing is deleted — what is folded stays on disk and stays searchable.')) return;
+  await post('/sessions/' + id + '/compact', {});
+  location.hash = '#session/' + id;
 }
 
 // ---------- session configuration ----------
@@ -720,7 +769,7 @@ async function viewFiles(v) {
   setHeader('Files', true);
   v.append(el('p', 'note',
     'This conversation has a working directory of its own. Its tools run there, uploads land there, ' +
-    'and a fork starts from a copy of it.'));
+    'and a fork starts from a copy of it. Compacting does not touch it.'));
 
   const bar = el('div');
   const up = el('button', 'btn primary', 'Upload file');
@@ -766,18 +815,18 @@ async function viewFiles(v) {
 }
 
 // Forking is the same act as starting a conversation: choose the configuration,
-// then create the session. The predecessor's settings are the starting point.
+// then create the session. The origin's settings are the starting point.
 async function viewFork(v) {
   const id = state.arg;
   const res = await api('/sessions/' + id);
   setHeader('Fork', true);
   v.append(el('p', 'note',
-    'A fork continues this conversation in a new session, carrying its summary and recent turns ' +
-    'across. Its configuration is chosen here and fixed once the fork exists.'));
+    'A fork copies this whole conversation into a new session. This one stays where it is, stays ' +
+    'active, and keeps its jobs. The fork\'s configuration is chosen here and fixed once it exists.'));
   const read = await configEditor(v, res.session);
   const go = el('button', 'btn primary', 'Create fork');
   go.onclick = async () => {
-    const succ = await post('/sessions/' + id + '/rotate', Object.assign({ archive: false }, read()));
+    const succ = await post('/sessions/' + id + '/fork', read());
     location.hash = '#session/' + succ.id;
   };
   const done = el('div', 'finish'); done.append(go);
@@ -792,13 +841,13 @@ async function viewSettings(v) {
 
   const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools')} and ${describeSet(s.enabled_skills, 'skills')}`;
   v.append(el('p', 'note',
-    `This conversation runs on ${runs}, fixed for its life. Changing any of it continues the ` +
-    `conversation in a new session, carrying the summary and recent turns across.`));
+    `This conversation runs on ${runs}, fixed for its life. Changing any of it copies the ` +
+    `conversation into a new session, leaving this one as it is.`));
 
   const read = await configEditor(v, s);
-  const go = el('button', 'btn primary', 'Continue in a new session');
+  const go = el('button', 'btn primary', 'Fork into a new session');
   go.onclick = async () => {
-    const succ = await post('/sessions/' + id + '/rotate', Object.assign({ archive: true }, read()));
+    const succ = await post('/sessions/' + id + '/fork', read());
     location.hash = '#session/' + succ.id;
   };
   const done = el('div', 'finish'); done.append(go);

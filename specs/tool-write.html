@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>write — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>write</code></h1>
+<p class="lede">Create or replace a file in the session's working directory.</p>
+
+<h2>What it does</h2>
+<p>Writes the content to the path, creating parent directories as needed and replacing the file whole
+if it exists. Paths are confined to the session's working directory.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>path</code></td><td>Relative to the session's working directory. Required.</td></tr>
+<tr><td><code>content</code></td><td>The entire new contents. Required.</td></tr>
+</table>
+<div class="note">
+<strong>It replaces; it does not append.</strong> A write is the whole file. Changing part of a file is <a href="tool-edit.html"><code>edit</code></a>, which refuses an ambiguous match — where a partial write through this tool would silently discard everything it did not mention.
+</div>
+
+<p>The result names the path and the number of bytes written, so a write of empty content is visible as
+one rather than reading like a call that did nothing.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A file is created with exactly the content given.</li>
+<li>An existing file is replaced whole.</li>
+<li>Missing parent directories are created.</li>
+<li>Empty content writes an empty file and says that it wrote zero bytes.</li>
+<li>The result names the path and the byte count.</li>
+<li>A path that would resolve outside the session's working directory is refused.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-web_search.html">← web_search</a></footer>
+</div>
+</body></html>

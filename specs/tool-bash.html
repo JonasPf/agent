@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>bash — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>bash</code></h1>
+<p class="lede">Run a shell command in the session's working directory.</p>
+
+<h2>What it does</h2>
+<p>Runs the command under <code>/bin/sh -c</code>, in the session's working directory, and returns
+standard output and standard error interleaved as one body — which is what a person reading a terminal
+sees, and what makes a diagnostic printed to stderr legible beside the output it explains.</p>
+
+<p>It is a shell, so it does what it is told. Nothing in the tool inspects the command, refuses one, or
+decides what is safe. The boundary is the operating system's
+(<a href="adrs.html#adr-039">ADR-039</a>): the command can reach the session's own directory and the
+runtime, and is refused by the kernel everywhere else.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>command</code></td><td>The shell command. Required.</td></tr>
+<tr><td><code>timeout_seconds</code></td><td>How long to allow. Optional; the tool's own default is 120.</td></tr>
+</table>
+
+<h2>Two timeouts, and why</h2>
+<p>The registry kills a tool at the manifest's <code>timeout_seconds</code>, which for this tool is
+150. The tool imposes its own, lower, at 120 by default. The gap is deliberate: a command that
+overruns is stopped by the tool, which is still alive and can say <em>timed out after 120s</em>. Were
+there only the outer limit, the subprocess would be killed with nothing written to stdout, and an
+overrun would be indistinguishable from a crash.</p>
+
+<p>A caller may raise <code>timeout_seconds</code>, but the registry's limit still bounds it: asking
+for more than the manifest allows buys a kill rather than a message.</p>
+
+<h2>Limits</h2>
+<p>Output is capped at twenty thousand characters. A command that produces more has its output cut, and
+the cut is reported rather than silent — an unannounced truncation is a fact the model would reason
+from as though it were the whole answer.</p>
+
+<p>A command that produces nothing says so. An empty body and a failed call must not look alike.</p>
+
+<table>
+<tr><th>Case</th><th>Result</th></tr>
+<tr><td>Empty or whitespace command</td><td>Fails: <code>command is required</code>.</td></tr>
+<tr><td>Non-zero exit</td><td>Fails, carrying the exit status and everything the command wrote.</td></tr>
+<tr><td>Overruns the timeout</td><td>Fails, naming the limit it passed.</td></tr>
+<tr><td>Succeeds with no output</td><td>Succeeds, saying there was none.</td></tr>
+<tr><td>Writes past the cap</td><td>Succeeds with the output cut, saying that it was cut and by how much.</td></tr>
+</table>
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Standard output and standard error come back interleaved, in the order written.</li>
+<li>A non-zero exit is a failure and carries what the command wrote, not only its status.</li>
+<li>A command producing no output reports that it produced none, distinguishably from a failure.</li>
+<li>Output beyond the cap is truncated, and the result says it was truncated and how much was dropped.</li>
+<li>A command that overruns is stopped by the tool and reports the limit it passed.</li>
+<li>The tool's own timeout is below the manifest's, so an overrun is always reported rather than killed.</li>
+<li>The command runs in the session's working directory, and a relative path resolves inside it.</li>
+<li>A command reaching outside the session's directory is refused by the sandbox, not by the tool.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-clock.html">clock →</a></footer>
+</div>
+</body></html>

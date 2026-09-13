@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -27,28 +26,31 @@ func (a *App) baseConfig(seed *Session) SessionConfig {
 // writes its prompt entry at position zero. The configuration is chosen before
 // the session exists and is fixed once it does, so there is no window in which a
 // session is live and its prompt is still open to change.
-func (a *App) NewSession(cfg SessionConfig, continuedFrom string) (*Session, error) {
+func (a *App) NewSession(cfg SessionConfig, forkedFrom string) (*Session, error) {
 	if cfg.Model == "" {
 		cfg.Model = a.cfg.DefaultModel
 	}
+	// A session always gets a positive threshold. A zero would mean every turn
+	// is over it, so a configuration that forgot to set one would compact on
+	// every single turn rather than never.
+	compactAt, keep := a.cfg.CompactAtTokens, a.cfg.KeepVerbatimTokens
+	if compactAt <= 0 {
+		compactAt = defaultCompactAtTokens
+	}
+	if keep <= 0 {
+		keep = defaultKeepVerbatimTokens
+	}
 	now := time.Now()
 	s := &Session{
-		ID:              newID(),
-		Title:           "New session",
-		SessionConfig:   cfg,
-		Status:          "active",
-		ContinuedFrom:   continuedFrom,
-		RotateAtTokens:  a.cfg.RotateAtTokens,
-		CarryOverTokens: a.cfg.CarryOverTokens,
-		CreatedAt:       now,
-		LastActiveAt:    now,
-	}
-	// The predecessor's summary is read here, before the prompt entry is
-	// written, because that entry is what every later turn sends: a session
-	// whose prompt was photographed before its summary existed would send one
-	// thing and record another.
-	if pred := a.store.Session(continuedFrom); pred != nil {
-		s.CarriedSummary = pred.Summary
+		ID:                 newID(),
+		Title:              "New session",
+		SessionConfig:      cfg,
+		Status:             "active",
+		ForkedFrom:         forkedFrom,
+		CompactAtTokens:    compactAt,
+		KeepVerbatimTokens: keep,
+		CreatedAt:          now,
+		LastActiveAt:       now,
 	}
 	if err := a.store.PutSession(s); err != nil {
 		return nil, err
@@ -60,110 +62,52 @@ func (a *App) NewSession(cfg SessionConfig, continuedFrom string) (*Session, err
 	return s, nil
 }
 
-// Rotate seeds a successor from a predecessor: summary first, then the most
-// recent complete turns that fit the carry-over budget. Rotation, fork, resume,
-// and reconfiguration are the same operation — a session's configuration is
-// fixed, so changing it is exactly the act of continuing in a new one.
-func (a *App) Rotate(pred *Session, cfg SessionConfig, archive bool, why string) (*Session, error) {
-	succ, err := a.NewSession(cfg, pred.ID)
+// Fork copies a conversation into a new session. Everything comes across: the
+// whole transcript, compactions and all, and a copy of the working directory.
+// The origin is untouched, stays active, and keeps its jobs.
+//
+// It is the only way to change a configuration, and it is also how a
+// conversation is branched. Both intentions are the same act, so there is one
+// operation rather than three that differ only in name.
+func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
+	fork, err := a.NewSession(cfg, origin.ID)
 	if err != nil {
 		return nil, err
 	}
-	if changed := describeConfigChange(pred.SessionConfig, succ.SessionConfig); changed != "" {
+	why := "fork"
+	if changed := describeConfigChange(origin.SessionConfig, fork.SessionConfig); changed != "" {
 		why += ", " + changed
 	}
-	// A continuation carries the predecessor's files as well as its words: the
-	// successor starts from a copy of the working directory, and neither
-	// session's writes reach the other afterwards.
-	if err := copyTree(a.sessionWorkspace(pred.ID), a.ensureWorkspace(succ.ID)); err != nil {
+	// A fork carries files as well as words: it starts from a copy of the
+	// origin's directory, and neither session's writes reach the other
+	// afterwards.
+	if err := copyTree(a.sessionWorkspace(origin.ID), a.ensureWorkspace(fork.ID)); err != nil {
 		return nil, err
 	}
-	carried := carryOver(a.store.Entries(pred.ID), pred.CarryOverTokens)
-	// The summary travels in the successor's system prompt, not as a message:
-	// it is context about the situation, and the user role means the operator is
-	// speaking. The event below keeps the record in the append-only transcript,
-	// where the projection drops it, so it costs the model nothing.
-	seeded := fmt.Sprintf("seeded from %s (%s): %d carried messages", pred.ID, why, len(carried))
-	if pred.Summary != "" {
-		seeded += "\n[summary of " + pred.ID + "]\n" + pred.Summary
-	}
-	a.append(succ.ID, Entry{Type: "event", EventKind: "carried_over", CarriedFrom: pred.ID, Text: seeded})
-	for _, e := range carried {
-		e.CarriedFrom = pred.ID
-		e.Usage = nil
-		a.append(succ.ID, e)
-	}
 
-	pred.ContinuedBy = succ.ID
-	if archive {
-		pred.Status = "archived"
-	}
-	_ = a.store.PutSession(pred)
-	if archive {
-		if err := a.store.MoveJobs(pred.ID, succ.ID); err != nil {
-			return nil, err
-		}
-	}
-	a.append(pred.ID, Entry{Type: "event", EventKind: "rotation",
-		Text: fmt.Sprintf("continued in %s (%s)", succ.ID, why)})
-	succ.Title = pred.Title
-	_ = a.store.PutSession(succ)
-	a.hub.Broadcast(wsEvent{Kind: "sessions"})
-	return succ, nil
-}
-
-// carryOver returns the trailing complete turns that fit a token budget, oldest
-// first. A turn is carried whole or not at all.
-func carryOver(entries []Entry, budget int) []Entry {
-	var msgs []Entry
+	entries := a.store.Entries(origin.ID)
+	a.append(fork.ID, Entry{Type: "event", EventKind: "forked_from", CarriedFrom: origin.ID,
+		Text: fmt.Sprintf("copied from %s (%s): %d entries", origin.ID, why, len(entries))})
 	for _, e := range entries {
-		if e.Type == "message" {
-			msgs = append(msgs, e)
+		// The origin's own prompt entry is not copied: the fork has one of its
+		// own, written from the configuration this fork was created under, and
+		// two would leave the newest — the wrong one — in force.
+		if e.Type == "prompt" {
+			continue
 		}
+		e.CarriedFrom = origin.ID
+		e.Usage = nil
+		a.append(fork.ID, e)
 	}
-	// A turn starts at a user message and runs to just before the next one.
-	var starts []int
-	for i, e := range msgs {
-		if e.Role == "user" {
-			starts = append(starts, i)
-		}
-	}
-	total := 0
-	pick := len(starts)
-	for i := len(starts) - 1; i >= 0; i-- {
-		end := len(msgs)
-		if i+1 < len(starts) {
-			end = starts[i+1]
-		}
-		size := 0
-		for _, e := range msgs[starts[i]:end] {
-			size += estTokens(e.Text) + estTokens(string(e.ToolResult))
-		}
-		if total+size > budget {
-			break
-		}
-		total += size
-		pick = i
-	}
-	if pick >= len(starts) {
-		return nil
-	}
-	return msgs[starts[pick]:]
-}
 
-// LiveSession follows continued_by to the live session of a chain.
-func (a *App) LiveSession(id string) *Session {
-	s := a.store.Session(id)
-	seen := map[string]bool{}
-	for s != nil && s.ContinuedBy != "" && !seen[s.ID] {
-		seen[s.ID] = true
-		next := a.store.Session(s.ContinuedBy)
-		if next == nil {
-			break
-		}
-		s = next
-	}
-	return s
+	// Jobs do not move. A job belongs to the conversation it was created in,
+	// which still exists and is still running.
+	a.append(origin.ID, Entry{Type: "event", EventKind: "fork",
+		Text: fmt.Sprintf("copied into %s (%s)", fork.ID, why)})
+	fork.Title = origin.Title
+	_ = a.store.PutSession(fork)
+	a.hub.Broadcast(wsEvent{Kind: "sessions"})
+	return fork, nil
 }
 
 // firstLine keeps a title to one short line whatever the model returns.
@@ -188,7 +132,7 @@ func (a *App) appendEvent(sessionID string, e Entry) Entry {
 }
 
 // describeConfigChange names the parts of a configuration that differ, for the
-// entries either side of a rotation. It is what replaced the mid-session
+// entries either side of a fork. It is what replaced the mid-session
 // availability and model-change entries: the same record, at the only point the
 // configuration can now move.
 func describeConfigChange(from, to SessionConfig) string {
@@ -213,74 +157,6 @@ func describeSet(set []string) string {
 		return "none"
 	}
 	return strings.Join(set, ", ")
-}
-
-// maybeSummarise updates the rolling summary once a session has grown enough.
-// The update reads only the previous summary and the entries since it.
-func (a *App) maybeSummarise(ctx context.Context, s *Session) {
-	entries := a.store.Entries(s.ID)
-	var added []ChatMessage
-	grown := 0
-	for _, e := range entries {
-		if e.Seq < s.SummarySeq || e.Type != "message" {
-			continue
-		}
-		// Growth is measured on the projected message, not on the entry's text.
-		// A tool-heavy session carries its bulk in tool results, which leave
-		// Text empty; counting text alone let such a session rotate on tokens
-		// summarisation could not see, and hand its successor nothing.
-		m, ok := toMessage(e)
-		if !ok {
-			continue
-		}
-		added = append(added, m)
-		b, _ := json.Marshal(m)
-		grown += estTokens(string(b))
-	}
-	if grown < a.cfg.SummaryEvery || len(added) == 0 {
-		return
-	}
-	var sb strings.Builder
-	if s.Summary != "" {
-		fmt.Fprintf(&sb, "Previous summary:\n%s\n\n", s.Summary)
-	}
-	sb.WriteString("New messages since:\n")
-	for _, m := range added {
-		fmt.Fprintf(&sb, "%s: %s\n", m.Role, truncate(messageText(m), 2000))
-	}
-	sb.WriteString("\nWrite the updated summary. Keep it under 250 words. State decisions, open questions, and anything a successor conversation would need. No preamble.")
-
-	res, err := a.or.Chat(ctx, ChatRequest{Model: s.Model, Messages: []ChatMessage{
-		{Role: "system", Content: "You maintain a rolling summary of a conversation."},
-		{Role: "user", Content: sb.String()},
-	}}, nil)
-	if err != nil {
-		return
-	}
-	now := time.Now()
-	s.Summary = strings.TrimSpace(res.Text)
-	s.SummaryUpdated = &now
-	s.SummarySeq = len(entries)
-	s.Cost += res.Usage.Cost
-	_ = a.store.PutSession(s)
-	// No transcript entry: the summary itself is readable from the session, and
-	// a line saying it changed adds nothing the summary does not already show.
-}
-
-// maybeRotate opens a successor when the session passes its size threshold.
-// It runs only between turns.
-func (a *App) maybeRotate(s *Session) *Session {
-	if s.Status != "active" {
-		return s
-	}
-	if projectedTokens(a.store.Entries(s.ID)) < s.RotateAtTokens {
-		return s
-	}
-	succ, err := a.Rotate(s, s.SessionConfig, true, "size")
-	if err != nil {
-		return s
-	}
-	return succ
 }
 
 // titleIfNeeded gives a session a title within one turn of its first user message.

@@ -51,7 +51,6 @@ func seedSession(t *testing.T, a *App) *Session {
 	t.Helper()
 	s := newSession(t, a)
 	s.Title = "Roof repair"
-	s.Summary = "The roof leaks."
 	if err := a.store.PutSession(s); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +105,7 @@ func TestExportCarriesEveryPartOfASession(t *testing.T) {
 	if err := json.Unmarshal([]byte(files["meta.json"]), &meta); err != nil {
 		t.Fatal(err)
 	}
-	if meta.ID != s.ID || meta.Title != "Roof repair" || meta.Summary != "The roof leaks." {
+	if meta.ID != s.ID || meta.Title != "Roof repair" {
 		t.Errorf("exported metadata = %+v", meta)
 	}
 	if !strings.Contains(files["transcript.jsonl"], "the roof leaks") {

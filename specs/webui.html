@@ -81,11 +81,12 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 
 <table>
 <tr><th>Element</th><th>Shows</th></tr>
-<tr><td>Prompt entry</td><td>First entry of the transcript. Persona, memory, skills index, and full tool definitions, each collapsible with a token count. Memory is editable.</td></tr>
+<tr><td>Prompt entry</td><td>Persona, memory, skills index, and full tool definitions, each collapsible with a token count. Memory is editable. The first is at position zero; a compaction writes another, and the newest is the one in force.</td></tr>
 <tr><td>Messages</td><td>User and assistant turns, tool calls with their results. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links. What the operator typed is shown as they typed it.</td></tr>
-<tr><td>Events</td><td>Job checks, rotations, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
+<tr><td>Events</td><td>Job checks, forks, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
+<tr><td>Compaction</td><td>A banner standing where the folded turns were. Says how many turns it replaced and the token count before and after, states that the agent no longer sees them, shows the summary, and offers to reveal them. Editable.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
-<tr><td>Status line</td><td>Model, context used against the window, tokens per second while streaming, session cost.</td></tr>
+<tr><td>Status line</td><td>Model, context used against the compaction threshold, live cache size and its countdown, tokens per second while streaming, session cost.</td></tr>
 <tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send.</td></tr>
 </table>
 
@@ -94,20 +95,29 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <ul>
 <li>Assistant output streams token by token.</li>
 <li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
-<li>Context usage is shown against the session's rotation threshold, not the model's window.</li>
+<li>Context usage is shown against the session's compaction threshold, not the model's window.</li>
 <li>The estimated cost of the next call is shown, and whether it will be cached.</li>
 <li>An event is laid out as a log line — clock, kind, detail — with no speaker and no bubble, so it cannot be read as a message or a tool result.</li>
 <li>A session identifier appearing in an event or a prompt section is a link to that session.</li>
 <li>The session list is ordered by last activity, and can be reordered by disk used, largest first.</li>
 <li>Each session row shows what it holds on disk and offers a delete that confirms first.</li>
-<li>Carried messages are marked by their styling; where they came from is said once, in the seeding event, not on each one.</li>
+<li>Copied messages in a fork are marked by their styling; where they came from is said once, in the seeding event, not on each one.</li>
 <li>Colour marks a failure and nothing else; a routine tick that did not fire is not coloured.</li>
 <li>Long transcripts scroll to the newest entry without loading the entire history.</li>
 <li>A tool call can be expanded to show its arguments and result.</li>
 <li>A collapsed tool result previews its first line, and a call that returned nothing says so, so an empty result is never mistaken for a missing one.</li>
 <li>A collapsed tool call previews its arguments the same way, and a call made without arguments says so.</li>
 <li>A failed tool call is expanded by default and marked as an error.</li>
-<li>Scrolling to the top of any conversation reaches the prompt entry.</li>
+<li>Scrolling to the top of any conversation reaches the prompt entry it opened with.</li>
+<li>A compacted session shows the compaction banner in place of the entries it covers, and does not render those entries by default.</li>
+<li>The banner names itself a compaction, says the agent can no longer see what is above it, and shows the turn count and the tokens before and after.</li>
+<li>The entries a compaction covers can be revealed in place, and when revealed are visually distinct from live context so they cannot be read as something the agent can see.</li>
+<li>The compaction summary is editable, and an edit changes what the next turn sends.</li>
+<li>A compaction that refreshed memory says so, and links to the prompt entry it wrote.</li>
+<li>A compaction says that it reset the cache.</li>
+<li>The status line shows the live cache size and counts down to its expiry, and shows it as expired when it is.</li>
+<li>Each assistant message shows the cached proportion of the call that produced it, from what the provider reported, and says so plainly when there was no hit.</li>
+<li>No cache lifetime is shown per message.</li>
 <li>Expanding the tool section shows every tool definition as the model receives it.</li>
 <li>An assistant message renders its markdown: headings, bullet and numbered lists, tables, block quotes, rules, emphasis, inline code, and fenced code blocks that keep their lines.</li>
 <li>A turn still streaming renders as markdown while it arrives, including a fenced block whose closing fence has not been sent yet.</li>
@@ -128,10 +138,10 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>The list shows which sessions have jobs attached.</li>
 <li>Every session shows what it occupies on disk, so it is clear what deleting one frees.</li>
-<li>A session can be forked, or rotated into a new session, in one action.</li>
-<li>A session seeded from another links back to it, and the predecessor links forward.</li>
-<li>Opening a link to an archived session lands on the live session of its chain and says so.</li>
-<li>The rolling summary is viewable and editable from the session.</li>
+<li>A session can be forked in one action.</li>
+<li>A fork links back to its origin, and the origin links forward to it.</li>
+<li>A session can be compacted on request, from the session itself, without waiting for the threshold.</li>
+<li>Every compaction a session has had is reachable from it, newest in force.</li>
 </ul>
 </div>
 
@@ -140,9 +150,10 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The controls screen shows the session's model, tools, and skills, and offers a new configuration, which takes effect by rotating.</li>
+<li>The controls screen shows the session's model, tools, and skills, and offers a new configuration, which takes effect by forking.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
-<li>Forking opens a configuration screen carrying the predecessor's settings, and creates the fork when it is confirmed.</li>
+<li>Forking opens a configuration screen carrying the origin's settings, and creates the fork when it is confirmed.</li>
+<li>The fork screen says that the whole conversation is copied and that the origin keeps its jobs.</li>
 <li>Starting a conversation reaches the same screen, prefilled from the most recent session.</li>
 <li>No screen offers to edit the configuration of a session that already exists.</li>
 <li>Enable-all and disable-all act on the whole list in one tap.</li>

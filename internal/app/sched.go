@@ -89,7 +89,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 			continue
 		}
 		// A job whose session is mid-turn defers to the next tick.
-		sess := s.app.LiveSession(j.SessionID)
+		sess := s.app.store.Session(j.SessionID)
 		if sess == nil {
 			s.jobFailed(j, fmt.Errorf("the session this job belongs to no longer exists"))
 			continue
@@ -352,7 +352,7 @@ func (a *App) CreateJob(spec JobSpec) (*Job, error) {
 	if spec.SessionID == "" {
 		return nil, fmt.Errorf("session_id is required")
 	}
-	sess := a.LiveSession(spec.SessionID)
+	sess := a.store.Session(spec.SessionID)
 	if sess == nil {
 		return nil, fmt.Errorf("no session %s", spec.SessionID)
 	}

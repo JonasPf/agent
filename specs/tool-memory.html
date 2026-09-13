@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>memory — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>memory</code></h1>
+<p class="lede">Write, revise, or remove what the agent carries between conversations.</p>
+
+<h2>What it does</h2>
+<p>The write side of <a href="memory.html">Memory</a>. Reading does not need a tool: every item in
+force is already in the prompt, listed and visible. This tool exists to change what is there.</p>
+
+<table>
+<tr><th>Action</th><th>Does</th></tr>
+<tr><td><code>add</code></td><td>Stores one item. Requires <code>text</code>.</td></tr>
+<tr><td><code>edit</code></td><td>Replaces an item's text. Requires <code>id</code> and <code>text</code>.</td></tr>
+<tr><td><code>delete</code></td><td>Removes an item. Requires <code>id</code>.</td></tr>
+<tr><td><code>list</code></td><td>Returns every item with its id, and the capacity used.</td></tr>
+</table>
+
+<h2>Why list exists when memory is already in the prompt</h2>
+<p>Two reasons, and neither is recall.</p>
+
+<p>The prompt shows the items but not their identifiers, and <code>edit</code> and <code>delete</code>
+need one. Listing is how an item is addressed.</p>
+
+<p>And the prompt is frozen between compactions, so after a write it is out of date — it shows memory
+as it stood, not as it stands. A question about what is remembered is therefore answered by listing,
+which the description says outright: <em>this is the only record of what is remembered; list it to
+answer any question about what you know, rather than answering from the conversation.</em></p>
+
+<h2>When to write</h2>
+<p>There is no automatic trigger. No extraction pass runs at the end of a turn, nothing scans a
+transcript for facts, and nothing writes memory on the agent's behalf. The decision is the model's, and
+the only steering is one line of the persona:</p>
+
+<pre><code>- Write a memory item only for what stays true across conversations.</code></pre>
+
+<div class="note">
+<strong>Deliberately discretionary.</strong> Recall is automatic so it cannot be forgotten; writing is not, because an agent that records everything it hears fills a capped store with the transient and then cannot fit what matters. The asymmetry is the design, and it is why the store is small enough to read at a glance.
+</div>
+
+<h2>Consolidation</h2>
+<p>Memory is capped. A write that would exceed the cap fails, and the failure carries everything
+already stored along with how much room there is. The agent is then expected to merge or delete in the
+same turn and retry.</p>
+
+<p>Failing loudly is the point. Dropping the oldest item to make room produces an agent that quietly
+forgets and cannot tell you what it forgot.</p>
+
+<p>This is also why <code>edit</code> and <code>delete</code> exist, and why they are exercised under
+pressure: they are reached from a failed <code>add</code>, in a turn that was trying to do something
+else.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li><code>add</code> stores one item and returns its identifier.</li>
+<li><code>list</code> returns every item with its identifier, and the capacity used against the capacity available.</li>
+<li><code>edit</code> replaces the text of the named item and nothing else.</li>
+<li><code>delete</code> removes the named item and nothing else.</li>
+<li><code>edit</code> or <code>delete</code> naming an unknown identifier fails and says so.</li>
+<li><code>add</code> with empty text is refused.</li>
+<li>A write that would exceed the capacity fails, states what is stored and how much room there is, and stores nothing.</li>
+<li>The store is not scoped to a session: an item written in one conversation is listed in every other.</li>
+<li>Every action writes a visible transcript entry naming what it did.</li>
+<li>Eval cases cover all four actions, including consolidation reached from a failed write.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-edit.html">← edit</a> · <a href="tool-notes.html">notes →</a></footer>
+</div>
+</body></html>

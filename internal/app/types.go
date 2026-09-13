@@ -22,11 +22,22 @@ type Entry struct {
 	// hours late reads as current unless it says otherwise.
 	DueAt       time.Time `json:"due_at,omitzero"`
 	Status      string    `json:"status,omitempty"`     // fired | not_fired
-	EventKind   string    `json:"event_kind,omitempty"` // job_check, job_error, error, rotation, carried_over
+	EventKind   string    `json:"event_kind,omitempty"` // job_check, job_error, error, fork, forked_from
 	Usage       *Usage    `json:"usage,omitempty"`
 	Sections    []Section `json:"sections,omitempty"`
 	CarriedFrom string    `json:"carried_from,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	// CoversThrough is the last sequence number a compaction entry stands for.
+	// The projection drops everything at or before it and sends this entry's
+	// text instead, so a compaction is a rule rather than a rewrite: the covered
+	// entries are still on disk, still searchable, and still readable.
+	CoversThrough int `json:"covers_through,omitempty"`
+	// FoldedTurns, TokensBefore, and TokensAfter are what the banner reports.
+	// They are stored rather than recomputed so the figures shown cannot drift
+	// if the estimator changes.
+	FoldedTurns  int       `json:"folded_turns,omitempty"`
+	TokensBefore int       `json:"tokens_before,omitempty"`
+	TokensAfter  int       `json:"tokens_after,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // JobRun is one wake, kept on the job rather than in the session it fired into.
@@ -93,24 +104,24 @@ type Session struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	SessionConfig
-	Status         string     `json:"status"` // active | archived
-	Unread         int        `json:"unread"`
-	Summary        string     `json:"summary"`
-	SummaryUpdated *time.Time `json:"summary_updated_at"`
-	// CarriedSummary is the predecessor's summary, frozen at rotation and never
-	// rewritten. It goes into this session's system prompt, so it must not move
-	// for the session's life: a changed prompt discards the whole prompt cache.
-	CarriedSummary  string    `json:"carried_summary"`
-	SummarySeq      int       `json:"summary_seq"`
-	ContinuedFrom   string    `json:"continued_from"`
-	ContinuedBy     string    `json:"continued_by"`
-	RotateAtTokens  int       `json:"rotate_at_tokens"`
-	CarryOverTokens int       `json:"carry_over_tokens"`
-	Cost            float64   `json:"cost"`
-	PromptTokens    int       `json:"prompt_tokens"`
-	CachedTokens    int       `json:"cached_tokens"`
-	CreatedAt       time.Time `json:"created_at"`
-	LastActiveAt    time.Time `json:"last_active_at"`
+	Status string `json:"status"` // active | archived
+	Unread int    `json:"unread"`
+	// ForkedFrom names the session this one was copied from. There is no
+	// corresponding forward pointer: a fork does not supersede its origin, which
+	// stays active and keeps its jobs, so no identifier ever comes to address
+	// different content and nothing has to be followed forward.
+	ForkedFrom string `json:"forked_from"`
+	// CompactAtTokens and KeepVerbatimTokens are the whole trade between cost and
+	// retention, and they are independent: the first is what a call costs at its
+	// most expensive, the second is how much of the conversation is never lossy.
+	CompactAtTokens    int        `json:"compact_at_tokens"`
+	KeepVerbatimTokens int        `json:"keep_verbatim_tokens"`
+	LastCompactedAt    *time.Time `json:"last_compacted_at"`
+	Cost               float64    `json:"cost"`
+	PromptTokens       int        `json:"prompt_tokens"`
+	CachedTokens       int        `json:"cached_tokens"`
+	CreatedAt          time.Time  `json:"created_at"`
+	LastActiveAt       time.Time  `json:"last_active_at"`
 
 	// Derived, not persisted.
 
