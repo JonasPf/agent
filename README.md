@@ -65,7 +65,7 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_TOOLS` / `AGENT_SKILLS` | `tools` / `skills` | Scanned at start and on reload. |
 | `AGENT_CHANGELOG` | `CHANGELOG.md` | What changed, shown with the running version under **More → version**. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
-| `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
+| `AGENT_EVAL_MODEL` | `google/gemma-4-26b-a4b-it` | Model used by `go run ./cmd/eval`. A run against a model the gateway no longer lists says so, rather than failing every case. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. Reaches a tool only in a session granted it. |
 | `GH_TOKEN` | — | GitHub credential. Reaches a tool only in a session granted it. |
 | `AGENT_ROTATE_TOKENS` | `40000` | Projected size at which a session rotates. |

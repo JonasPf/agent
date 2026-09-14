@@ -26,7 +26,7 @@ file too.
 | **Run** | `task run` | Serves http://localhost:8080. See the README table for `AGENT_*` env vars. |
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
 | **Test** | `task test` | Go tests across the agent and every tool; the browser's pure helpers (`web/transcript.js`) under node's built-in runner. Sub-tasks: `test:go`, `test:web`. `test:go` builds the tools first, because the registry will not load one whose `run` is missing. |
-| **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `AGENT_EVAL_MODEL` overrides the default free model. Not part of the test run. |
+| **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `AGENT_EVAL_MODEL` overrides the default model, which is named in `internal/app/evals.go`; a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
 | **Reset** | `task db:clear` | Moves sessions, jobs, memory, and per-session files to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
 | **Inspect** | `task db:status` | What the running agent currently holds. |
 
