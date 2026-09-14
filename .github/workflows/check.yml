@@ -35,16 +35,14 @@ jobs:
         with:
           node-version: '22'
 
-      # The tool sandbox on Linux is bubblewrap, and the runner is Ubuntu 24.04,
-      # which refuses unprivileged user namespaces to a container. Lifting that
-      # here is what makes the tool subprocess tests run confined, instead of
-      # taking the unsandboxed path and passing for the wrong reason.
-      - name: Install bubblewrap
+      # The tool sandbox on Linux is Landlock, which needs no package and no
+      # sysctl: it is a kernel facility an unprivileged process asks for. This
+      # says which ABI the runner has, so a suite that ran unconfined is visible
+      # as that rather than as a suite that passed.
+      - name: Report the sandbox
         run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          bwrap --ro-bind / / --dev /dev --tmpfs /tmp true
-          echo "bubblewrap works"
+          grep -q landlock /sys/kernel/security/lsm && echo "landlock is enabled" || echo "NO LANDLOCK on this runner"
+          cat /sys/kernel/security/lsm; uname -r
 
       - name: Install Task
         run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin

@@ -63,7 +63,7 @@ function findAll(n, cls, out) {
 
 const session = over => Object.assign({
   id: 'S1', title: 'Greenhouse sensors', model: 'x/y', status: 'active', entry_count: 3,
-  context_used: 10, rotate_at_tokens: 40000, cost: 0, disk_bytes: 0,
+  context_used: 10, compact_at_tokens: 40000, cost: 0, disk_bytes: 0,
   last_active_at: new Date().toISOString(), unread: 0
 }, over);
 
@@ -389,4 +389,49 @@ test('the interface is legible in both colour schemes', () => {
   const dark = block('(prefers-color-scheme: dark)');
   const tokens = (rule(CSS, ':root').match(/--[a-z0-9-]+:/g) || []).filter(t => !/--(r|r-sm|r-lg|rail|column|mono|sans)\b/.test(t));
   for (const t of tokens) assert.ok(dark.includes(t), 'dark mode never redefines ' + t);
+});
+
+// ---------- version ----------
+
+// Everything the node and its descendants would put on screen, as one string:
+// the panel's version line is a div among others and asserting on the whole
+// screen is what says it is visible without opening anything.
+function textOf(n) {
+  let out = String(n._text || '') + ' ' + String(n._html == null ? '' : n._html);
+  for (const c of n.children || []) out += ' ' + textOf(c);
+  return out;
+}
+
+// Which build is answering is a question asked once, after an upgrade. It sits
+// at the foot of the More panel, and the changelog stays folded until it is
+// asked for, so neither is ever in the way of a conversation.
+test('the More panel names the running build', async () => {
+  const ctx = load({ '/version': { version: '7da7e74', built_at: '2026-09-11T10:00:00Z', changelog: '## 2026-09-11\n\n- Compact in place.\n' } });
+  const v = ctx._id('view');
+  await ctx.viewPanels(v);
+  assert.match(textOf(v), /7da7e74/, 'the panel does not say which build it is');
+});
+
+test('the changelog is folded away until it is opened', async () => {
+  const ctx = load({ '/version': { version: '7da7e74', built_at: '2026-09-11T10:00:00Z', changelog: '## 2026-09-11\n\n- Compact in place.\n' } });
+  const v = ctx._id('view');
+  await ctx.viewPanels(v);
+  const log = find(v, 'changelog');
+  assert.ok(log, 'no changelog on the panel');
+  assert.strictEqual(log.hidden, true, 'the changelog is open before it was asked for');
+  const toggle = findAll(v, 'btn').find(b => /changed/i.test(b.textContent || ''));
+  assert.ok(toggle, 'nothing offers to show what changed');
+  toggle.onclick();
+  assert.strictEqual(log.hidden, false, 'asking for the changelog did not open it');
+  assert.match(String(log.innerHTML), /Compact in place\./, 'the changelog is not rendered markdown');
+});
+
+// The changelog ships in the image. Its absence is a packaging mistake, and the
+// version has to stay readable through it.
+test('a build without a changelog still names itself', async () => {
+  const ctx = load({ '/version': { version: '7da7e74', built_at: '', changelog: '' } });
+  const v = ctx._id('view');
+  await ctx.viewPanels(v);
+  assert.match(textOf(v), /7da7e74/, 'the version went missing with the changelog');
+  assert.strictEqual(find(v, 'changelog'), null, 'an empty changelog was rendered anyway');
 });

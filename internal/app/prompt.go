@@ -68,9 +68,12 @@ session; a file uploaded to this conversation lands there, and relative paths in
 resolved against it.
 Transcript entries are append-only. Events you see in the interface are not sent to you.
 This session's model, tools, and skills are fixed for its life; they change only by
-continuing in a new session, which carries this conversation over.
-This session rotates into a successor at about %d projected tokens.`,
-		sess.ID, sess.Model, a.sessionWorkspace(sess.ID), sess.RotateAtTokens)
+forking, which copies this conversation into a new session.
+At about %d projected tokens this session compacts: the oldest turns are replaced, in
+what you are sent, by a written summary of them. Nothing is deleted — what is folded
+away stays on disk and session_search still finds it, so look there rather than
+assuming something earlier in this conversation is lost.`,
+		sess.ID, sess.Model, a.sessionWorkspace(sess.ID), sess.CompactAtTokens)
 
 	secs := []Section{
 		{Name: "persona", Text: persona},
@@ -78,13 +81,6 @@ This session rotates into a successor at about %d projected tokens.`,
 		{Name: "skills_index", Text: strings.TrimRight(skillText.String(), "\n")},
 		{Name: "platform", Text: platform},
 		{Name: "tool_schemas", Text: string(schemas)},
-	}
-	// Only a continued session has one, and it never changes once set, so it
-	// joins the cached prefix rather than breaking it.
-	if sess.CarriedSummary != "" {
-		secs = append(secs[:2], append([]Section{{Name: "carried_summary",
-			Text: "Summary of " + sess.ContinuedFrom + ", the conversation this one continues:\n" +
-				sess.CarriedSummary}}, secs[2:]...)...)
 	}
 	for i := range secs {
 		secs[i].Tokens = estTokens(secs[i].Text)
@@ -114,11 +110,12 @@ func sectionsTotal(sections []Section) int {
 }
 
 // promptEntry returns the session's prompt entry, written when it was created.
+// promptEntry returns the prompt in force: the newest one. A session has one at
+// creation and gains another at every compaction, which is the only moment its
+// prompt is allowed to change.
 func (a *App) promptEntry(sessionID string) (Entry, bool) {
-	for _, e := range a.store.Entries(sessionID) {
-		if e.Type == "prompt" {
-			return e, true
-		}
+	if p := NewestPrompt(a.store.Entries(sessionID)); p != nil {
+		return *p, true
 	}
 	return Entry{}, false
 }

@@ -5,7 +5,6 @@ package main
 import (
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"agent/internal/tool"
@@ -62,18 +61,11 @@ func main() {
 		tool.Failf("url is required")
 	}
 
-	browser := ""
-	if os.Getenv("AGENT_NO_BROWSER") == "" {
-		b, err := tool.Browser()
-		if err != nil {
-			tool.Failf("%s", err)
-		}
-		browser = b
-	}
-	// Without a browser the tool still fetches. A page that needs scripts comes
-	// back thin, which is the honest result rather than an error.
+	// One path, chosen by what is installed. A browser renders the page; where
+	// none is installed the tool still fetches, and a page that needs its scripts
+	// comes back thin — the honest result rather than an error.
 	var out string
-	if browser != "" {
+	if _, err := tool.Browser(); err == nil {
 		out = inBrowser(url)
 	} else {
 		out = overHTTP(url)

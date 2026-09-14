@@ -118,7 +118,7 @@ what it costs where the model's price is known.</p>
 
 <p>The estimate is computed on the way out and never stored, because the thing it prices grows: a wake
 re-sends the system prompt and the conversation as it stands, so today's figure is a floor that rises
-until the session rotates. A gated job estimates nothing per day &mdash; its wakes are a shell command
+until the session compacts. A gated job estimates nothing per day &mdash; its wakes are a shell command
 &mdash; and reports what the wake that does fire will cost. A schedule that fires once is priced once.
 Where the model catalogue cannot be reached the tokens are still shown; a money figure is never
 invented.</p>
@@ -183,7 +183,7 @@ deadline meant to stop it.
 
 <p>A job runs on its session's model, in its session's context, like any other turn. Nothing about a job
 is configured separately — no model of its own, no context of its own — so the cost of a wake that acts
-is proportional to the conversation it lives in, which the rotation threshold already bounds.</p>
+is proportional to the conversation it lives in, which the compaction threshold already bounds.</p>
 
 <p>The agent is instructed to reach for a check first, because a check makes a wake free and a missing
 one makes every wake a turn.</p>
@@ -271,8 +271,8 @@ only ever the operator's: the agent has no bulk delete.</p>
 
 <p>Every wake a job has had is recorded on the job: when it was due, when it ran, what came of it, and
 what was said. That is the answer to "has this been running?", and it is kept where the question is
-asked. A job outlives the conversation that created it &mdash; it follows the chain across a rotation
-&mdash; so its history cannot live only in a transcript.</p>
+asked. A job outlives any one turn of the conversation that created it, and outlives every compaction of it,
+so its history cannot live only in what the transcript still sends.</p>
 
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
@@ -292,7 +292,7 @@ evidence. Nothing deletes a job now, so nothing has to be preserved from it.</p>
 <li>Every wake writes one line to the job's log, whether it acted, skipped, or failed.</li>
 <li>A line that acted carries what the agent said; one that failed carries the failure.</li>
 <li>A line records when the wake ran and when it was due, so a late run is visible as one.</li>
-<li>The log belongs to the job and survives the rotation of the session it fires into.</li>
+<li>The log belongs to the job and survives every compaction of the session it fires into.</li>
 <li>Deleting a job deletes its log; nothing else does.</li>
 <li>A job's log travels with it in a session export.</li>
 </ul>
@@ -336,7 +336,8 @@ itself when the user changes their mind. The same operations are available in th
 <li>The interface shows a job's own fields — schedule, check, after_acting, prompt — its status, its next wake, and its log, with no derived label.</li>
 <li>A job can be edited or deleted from the interface without involving the agent.</li>
 <li>Deleting a session deletes its jobs, and each job takes its log with it.</li>
-<li>When a session rotates, its jobs move to the successor.</li>
+<li>A job stays on the session it was created in, for that session's whole life. Nothing moves it.</li>
+<li>A fork does not copy jobs; the origin keeps them and keeps running them.</li>
 </ul>
 </div>
 

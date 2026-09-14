@@ -57,7 +57,7 @@ func estimateJob(schedule string, gated bool, contextTokens int, promptPrice flo
 		e.CostPerMonth = e.CostPerDay * daysPerMonth
 	}
 	if e.TokensPerDay > 0 {
-		notes = append(notes, "the estimate is this conversation at its current size, and it grows with every turn until the session rotates")
+		notes = append(notes, "the estimate is this conversation at its current size, and it grows with every turn until the session compacts")
 	}
 	notes = append(notes, "the prompt side only; what the model says back is not counted")
 	e.Note = strings.Join(notes, "; ")
