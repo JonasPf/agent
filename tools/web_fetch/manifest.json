@@ -1,0 +1,16 @@
+{
+  "name": "web_fetch",
+  "description": "Fetch a URL over HTTP and return what the server sent, as text. No browser and no scripts, so it is fast and cheap — the right first choice for an API or JSON endpoint, a raw file, a feed, a README, documentation, or any page whose text is in the HTML the server sends. A non-HTML body comes back verbatim. If the page turns out to be assembled by its scripts, the result says so and names web_browse; call that on the same URL.",
+  "db_prefix": "web_fetch_",
+  "timeout_seconds": 30,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Absolute URL to fetch."
+      }
+    },
+    "required": ["url"]
+  }
+}
