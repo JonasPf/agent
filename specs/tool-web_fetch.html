@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>web_fetch — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="memory.html">Memory</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>web_fetch</code></h1>
+
+<p class="lede">Retrieve what a server sends, and return it as text. No browser, no scripts.</p>
+
+<p>Most of what is asked for is already in the bytes: an API, a JSON endpoint, a raw file, a feed, a
+README, documentation, a changelog. For those, starting a browser costs seconds and hundreds of
+megabytes of memory to arrive at the same answer a single request already had.</p>
+
+<p>A body that is not a document comes back exactly as it was served, because the point of fetching an
+API is its bytes. A document is flattened to text by the same code
+<a href="tool-web_browse.html"><code>web_browse</code></a> uses, so the same page reached either way
+reads the same.</p>
+
+<h2>It says when it was the wrong tool</h2>
+
+<p>This is the whole reason a cheap fetch is safe to offer. Its predecessor was a silent fallback
+inside the browser tool: with no browser installed, a page whose text had not been written yet came
+back as the shell it ships as, and whoever asked could not tell that from a page that simply says
+little (<a href="adrs.html#adr-044">ADR-044</a>).</p>
+
+<p>So the shape is the same and the honesty is new. When a fetched document both runs scripts and has
+almost nothing to say without them, the result says so and names <code>web_browse</code>. The caller
+decides whether to spend a browser on it; nothing is substituted on their behalf.</p>
+
+<p>The test is deliberately reluctant. A warning that fires on finished pages is a warning nobody
+reads, and it sends the reader to a tool that costs a hundred times as much to return the same thing.
+A page with no scripts is never questioned, and neither is a body that is not a document.</p>
+
+<div class="note">
+<strong>A status is part of the answer.</strong> A page that answers 404 or 500 is reported as a failure that names the code <em>and</em> carries the body the server sent. Hiding either would leave a caller unable to tell a missing page from an empty one.
+</div>
+
+<div class="note">
+<strong>Nothing here disguises the request.</strong> The agent identifies itself as what it is. There is no spoofed browser string, no cookie jar, and no retry through another route; a site that declines to serve the agent is reported as declining.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A page whose text the server already sent is returned as text, without a browser being started.</li>
+<li>A JSON or plain-text body is returned verbatim, not as flattened prose.</li>
+<li>A document whose text is written by its scripts is returned with a note saying so and naming <code>web_browse</code>.</li>
+<li>A page that is already readable is returned without that note, whether or not it runs scripts.</li>
+<li>A response of 400 or worse is reported as a failure naming the status code and carrying the body that came with it.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-web_browse.html">← web_browse</a> · <a href="tool-web_search.html">web_search →</a></footer>
+</div>
+</body></html>

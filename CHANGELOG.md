@@ -2,6 +2,14 @@
 
 ## 2026-09-15
 
+- `web_fetch` is back, as its own tool: one HTTP request, no browser, for an
+  API, a raw file, a feed, a README — most of what is actually asked for, in
+  milliseconds instead of seconds. It is the first thing to reach for, and
+  `web_browse` is for pages that need scripts.
+- When a fetched page turns out to be assembled by its scripts, `web_fetch` says
+  so and names `web_browse`. That is the difference from the old fallback it
+  replaces: the substitution is offered, not made, so a shell can never be
+  mistaken for a page that simply says little.
 - A conversation grants its tools the environment they may read. `granted_env`
   on a session names the variables its tools receive — names, never values — and
   is fixed for that session's life like the model and the tools beside it. A

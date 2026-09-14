@@ -27,10 +27,10 @@ const limit = 40000
 // declines to serve it.
 func inBrowser(url string) string {
 	dom := tool.Render(url, 15)
-	if body, ok := UnwrapPlain(dom); ok {
+	if body, ok := tool.UnwrapPlain(dom); ok {
 		return body
 	}
-	return ToText(dom)
+	return tool.ToText(dom)
 }
 
 func main() {

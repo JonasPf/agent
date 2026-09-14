@@ -1,4 +1,4 @@
-package main
+package tool
 
 import (
 	"html"
@@ -6,8 +6,12 @@ import (
 	"strings"
 )
 
-// Turning what a browser hands back into text a model can read. Pure functions,
-// no network and no subprocess, so they can be tested directly.
+// Turning HTML into text a model can read. Pure functions, no network and no
+// subprocess, so they can be tested directly.
+//
+// Both web tools need this and must agree: web_fetch reads the bytes a server
+// sent, web_browse reads the DOM after the scripts have run, and the same page
+// reached either way should read the same. Two copies of this would drift.
 
 // A body the browser could not render as a document — JSON, plain text, a
 // stylesheet — comes back wrapped in a minimal shell: a head of nothing but

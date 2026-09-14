@@ -56,6 +56,7 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 <tr><td><a href="tool-session_search.html"><code>session_search</code></a></td><td>Full-text search across transcripts.</td></tr>
 <tr><td><a href="tool-skill_read.html"><code>skill_read</code></a></td><td>Load the full text of a skill.</td></tr>
 <tr><td><a href="tool-web_browse.html"><code>web_browse</code></a></td><td>Open a URL in a browser and return the page's text.</td></tr>
+<tr><td><a href="tool-web_fetch.html"><code>web_fetch</code></a></td><td>Retrieve a URL over HTTP and return it as text, without a browser.</td></tr>
 <tr><td><a href="tool-web_search.html"><code>web_search</code></a></td><td>Search the web and return titles, URLs, and snippets.</td></tr>
 <tr><td><a href="tool-write.html"><code>write</code></a></td><td>Create or replace a file in the session's working directory.</td></tr>
 </table>
@@ -338,7 +339,7 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 <tr><th>Tool</th><th>Purpose</th></tr>
 <tr><td><code>bash</code>, <code>read</code>, <code>write</code>, <code>edit</code></td><td>Filesystem and shell access within the workspace.</td></tr>
 <tr><td><code>clock</code></td><td>The current date and time, with an optional offset. An autonomous agent cannot read a clock from a prompt written once at the session's creation, so it asks.</td></tr>
-<tr><td><code>web_search</code>, <code>web_browse</code></td><td>Retrieve information from the internet. Both render the page in a headless browser, so what they read is what a person would see.</td></tr>
+<tr><td><code>web_search</code>, <code>web_browse</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. The first two render the page in a headless browser, so what they read is what a person would see; <code>web_fetch</code> reads what the server sent, and says when that was not enough.</td></tr>
 <tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
 <tr><td><code>memory</code></td><td>Write and revise durable memory.</td></tr>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
@@ -404,6 +405,35 @@ that declines to serve it is not worked around.</p>
 <li>A JSON or plain-text body is returned verbatim, not as flattened prose.</li>
 <li>The tool renders every page it returns; there is no unrendered path, so a thin page means a thin page.</li>
 <li>With no browser at the path the image installs it, the tool fails naming that path rather than returning something unrendered.</li>
+</ul>
+</div>
+
+<h3>Fetching without a browser</h3>
+
+<p>A browser is the correct answer for every page and the proportionate one for few. An API, a raw
+file, a feed, a README: the text is in the bytes the server sent, and rendering it costs seconds and
+hundreds of megabytes to reach the same answer. <code>web_fetch</code> makes one request and returns
+what came back &mdash; a document as text, anything else verbatim, using the same flattening
+<code>web_browse</code> uses so the same page reached either way reads the same.</p>
+
+<p>The two are offered as a pair, and the model is told which to reach for first: <code>web_fetch</code>
+unless the page is already known to need scripts. What makes that safe is that <code>web_fetch</code>
+can tell when it was the wrong choice. A document that both runs scripts and has almost nothing to say
+without them comes back with a note saying so and naming <code>web_browse</code>.</p>
+
+<p>This is the distinction <a href="adrs.html#adr-044">ADR-044</a> drew when it deleted the old silent
+fallback. The behaviour is the same; what changed is who decides. A tool that quietly substitutes a
+worse answer leaves the caller unable to tell it happened. A tool that says what it got and names the
+one that can do better leaves the choice where it belongs, in the transcript.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A page whose text the server already sent is returned as text, without a browser being started.</li>
+<li>A JSON or plain-text body is returned verbatim, not as flattened prose.</li>
+<li>A document whose text is written by its scripts is returned with a note saying so and naming the tool that can read it.</li>
+<li>A page that is already readable is returned without that note, whether or not it runs scripts.</li>
+<li>A response of 400 or worse is reported as a failure naming the status code and carrying the body that came with it.</li>
 </ul>
 </div>
 

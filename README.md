@@ -94,7 +94,7 @@ skills/            prose the agent loads on demand
 internal/tool      the package every tool is built on (subprocess contract, API, browser)
 tools/<name>/      one Go package per capability, each with manifest.json,
                    main.go, eval.json, and a `run` built from it: bash read write
-                   edit clock web_browse web_search schedule memory session_search
+                   edit clock web_fetch web_browse web_search schedule memory session_search
                    skill_read notes — written by you, not by the agent
 data/sessions/<id>/{meta.json,transcript.jsonl}
 data/db/agent.db   the database and its journals, alone in a directory of their
