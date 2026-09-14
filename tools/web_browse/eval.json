@@ -54,7 +54,9 @@
         "args_match": {
           "url": "shop\\.example\\.com/item/42"
         },
-        "clean": true
+        "not_tools": [
+          "web_fetch"
+        ]
       }
     }
   ]

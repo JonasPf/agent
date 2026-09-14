@@ -2,11 +2,12 @@
   "cases": [
     {
       "name": "an API endpoint goes to the cheap tool",
-      "prompt": "What does https://api.example.com/v1/stock/W-1 return? It is a JSON endpoint.",
+      "prompt": "Fetch https://api.github.com/repos/golang/go and tell me the repository's description.",
       "tools": ["web_fetch", "web_browse"],
       "expect": {
         "tool": "web_fetch",
-        "args_match": {"url": "api\\.example\\.com"},
+        "args_match": {"url": "api\\.github\\.com"},
+        "not_tools": ["web_browse"],
         "clean": true
       }
     },
@@ -16,15 +17,17 @@
       "tools": ["web_fetch", "web_browse"],
       "expect": {
         "tool": "web_fetch",
+        "not_tools": ["web_browse"],
         "clean": true
       }
     },
     {
       "name": "an unknown page starts cheap rather than in a browser",
-      "prompt": "Have a look at https://example.com/pricing and tell me what the plans cost.",
+      "prompt": "Have a look at https://example.com and tell me what it says.",
       "tools": ["web_fetch", "web_browse"],
       "expect": {
         "tool": "web_fetch",
+        "not_tools": ["web_browse"],
         "clean": true
       }
     },
@@ -35,7 +38,7 @@
       "expect": {
         "tool": "web_browse",
         "args_match": {"url": "app\\.example\\.com"},
-        "clean": true
+        "not_tools": ["web_fetch"]
       }
     }
   ]
