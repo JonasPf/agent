@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>web_fetch — Agent Spec</title>
+<title>web_browse — Agent Spec</title>
 <link rel="stylesheet" href="style.css"></head>
 <body>
 <nav class="top"><div class="wrap">
@@ -19,7 +19,7 @@
 </div></nav>
 <div class="wrap">
 
-<h1><code>web_fetch</code></h1>
+<h1><code>web_browse</code></h1>
 <p class="lede">Fetch a URL and return the page's text.</p>
 
 <h2>What it does</h2>
@@ -33,15 +33,19 @@ being stripped of markup it does not have.</p>
 <tr><td><code>url</code></td><td>The address to fetch. Required.</td></tr>
 </table>
 
-<h2>What is installed decides the path</h2>
-<p>One code path, chosen by whether a browser is present. With one, the page is rendered. Without one,
-the bytes are fetched over HTTP and a page that needs its scripts comes back as the shell it ships —
-thin, and honestly so.</p>
+<h2>One path, and it renders</h2>
+<p>There is no second way through. Every page this tool returns has been run in a browser and read
+from the settled DOM.</p>
 
-<p>This is not a fallback bolted on. The deployment the agent actually runs in has too little memory
-for a browser (<a href="adrs.html#adr-038">ADR-038</a>), so the unrendered path is the one in
-production. Returning a thin page is the right answer there; failing because a browser is absent would
-make the tool useless on the hardware it runs on.</p>
+<p>It used to have a fallback: with no browser installed it fetched the bytes over plain HTTP, and a
+page that assembles itself on the client came back as the shell it ships as. The trouble was that the
+caller could not tell which had happened &mdash; a thin page and a page whose scripts never ran read
+identically. The browser is now installed in the image at a fixed path
+(<a href="adrs.html#adr-044">ADR-044</a>), so its absence is a broken image and is reported as one.</p>
+
+<p>A plain HTTP fetch is a reasonable thing to want, and cheaper than this. When it is wanted it should
+be a tool of its own, named for what it does, chosen by the model on purpose &mdash; not a silent
+substitution made on its behalf.</p>
 
 <div class="note">
 <strong>Nothing here disguises the request.</strong> The browser is used as it comes. There is no spoofed agent string, no cookie jar, no retry through another route, and a site that declines to serve the agent is reported as declining. A tool that worked around refusals would be a tool whose behaviour the operator could not predict from what it says.

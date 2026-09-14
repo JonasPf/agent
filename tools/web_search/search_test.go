@@ -45,7 +45,7 @@ func TestNoResultsIsEmptyNotAnError(t *testing.T) {
 
 // Bing wraps every result in a click-tracking redirect that carries the real URL
 // base64'd in its u parameter. A wrapper is useless to the model: it cannot be
-// read, and web_fetch on it just bounces.
+// read, and web_browse on it just bounces.
 func TestCleanURL(t *testing.T) {
 	for _, c := range []struct{ name, in, want string }{
 		{"unwraps a redirect",

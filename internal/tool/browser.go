@@ -5,8 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
-	"sort"
 	"strings"
 	"time"
 )
@@ -15,85 +13,33 @@ import (
 // text a person reads is written into it by scripts once the page is running.
 // Reading it therefore means running it, which means a browser.
 
-// browsers is where a Chrome-family browser usually lives. AGENT_BROWSER
-// overrides the lot.
-var browsers = []string{
-	"/usr/bin/chromium",
-	"/usr/bin/chromium-browser",
-	"/usr/bin/google-chrome",
-	"/usr/bin/google-chrome-stable",
-	"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-	"/Applications/Chromium.app/Contents/MacOS/Chromium",
+// BrowserPath is the browser, and there is only one. The image installs
+// chromium from Debian and CI installs the same package, so the path is the
+// same everywhere the browser tools are expected to work. It sits under /usr,
+// which the sandbox already grants every tool, so nothing has to be told about
+// it — no override variable, no cache to scan, no candidate list, and no way
+// for a machine to be subtly different from the one the tests ran on.
+//
+// A laptop is not one of those places. Off Linux there is no sandbox either
+// (ADR-039), and the answer to both is the same: run the container.
+const BrowserPath = "/usr/bin/chromium"
+
+// lookupBrowser is BrowserPath checked for existence. exists is a parameter so
+// the missing case can be tested on a machine where the browser is present.
+func lookupBrowser(exists func(string) bool) (string, error) {
+	if !exists(BrowserPath) {
+		return "", fmt.Errorf("no browser at %s. The image installs chromium there; "+
+			"an image without it is broken rather than degraded", BrowserPath)
+	}
+	return BrowserPath, nil
 }
 
-// PlaywrightBrowsers lists the Chromium builds Playwright has downloaded,
-// newest first. The headless shell comes before the full application: a full
-// browser bundle does not start under the sandbox, and the shell does.
-func PlaywrightBrowsers() []string {
-	root := os.Getenv("PLAYWRIGHT_BROWSERS_PATH")
-	if root == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil
-		}
-		if runtime.GOOS == "darwin" {
-			root = filepath.Join(home, "Library", "Caches", "ms-playwright")
-		} else {
-			root = filepath.Join(home, ".cache", "ms-playwright")
-		}
-	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return nil
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "chromium") {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(names)))
-	var found []string
-	for _, name := range names {
-		for _, p := range []struct{ glob, exe string }{
-			{"chrome-headless-shell-*", "chrome-headless-shell"},
-			{"chrome-*", "chrome"},
-			{"chrome-*", "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"},
-		} {
-			dirs, _ := filepath.Glob(filepath.Join(root, name, p.glob))
-			sort.Strings(dirs)
-			for _, d := range dirs {
-				found = append(found, filepath.Join(d, p.exe))
-			}
-		}
-	}
-	return found
-}
-
-// Exists reports whether a path is there. It is a parameter of PickBrowser so
-// the choice can be tested without a browser installed.
+// Exists reports whether a path is there.
 func Exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
-// PickBrowser resolves the browser to drive.
-//
-// An explicit AGENT_BROWSER that does not exist is an error rather than a
-// fallback: a setting that is silently ignored is worse than one that fails.
-func PickBrowser(env string, candidates []string, exists func(string) bool) (string, error) {
-	if env != "" {
-		if !exists(env) {
-			return "", fmt.Errorf("AGENT_BROWSER is set to %s, which does not exist", env)
-		}
-		return env, nil
-	}
-	for _, c := range candidates {
-		if exists(c) {
-			return c, nil
-		}
-	}
-	return "", nil
-}
+// Browser resolves the one browser, or says why it cannot.
+func Browser() (string, error) { return lookupBrowser(Exists) }
 
-// Browser is PickBrowser over the real environment.
 // lastLines is the tail of a stream, for an error message that has to fit in a
 // tool result: what a program said just before it stopped is the useful part.
 func lastLines(s string, n int) string {
@@ -101,11 +47,6 @@ func lastLines(s string, n int) string {
 		return s
 	}
 	return "…" + s[len(s)-n:]
-}
-
-func Browser() (string, error) {
-	return PickBrowser(os.Getenv("AGENT_BROWSER"),
-		append(PlaywrightBrowsers(), browsers...), Exists)
 }
 
 // Render returns the DOM of url after the page has loaded and run its scripts.
@@ -116,11 +57,6 @@ func Render(url string, seconds int) string {
 	browser, err := Browser()
 	if err != nil {
 		Failf("%s", err)
-	}
-	if browser == "" {
-		Failf("no headless browser found. Install Chromium, or set AGENT_BROWSER " +
-			"to a Chrome-family executable. It must sit inside a path the sandbox " +
-			"allows a tool to read — see AGENT_READ_PATHS.")
 	}
 	// A browser insists on a profile directory it can write. The system one is
 	// outside what a tool may touch, so it goes in the session's own directory

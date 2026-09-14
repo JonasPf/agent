@@ -1070,7 +1070,9 @@ production a tool can read every session's files and the agent's own directory; 
 thing it can do about a boundary that is off.</p>
 <p>A headless browser does not fit in the memory available, so <code>web_fetch</code> retrieves pages
 over HTTP and a page assembled by scripts reads as empty. That is a hardware problem, and naming it
-here keeps it from being rediscovered as a bug.</p>
+here keeps it from being rediscovered as a bug.
+<em>No longer true: <a href="#adr-044">ADR-044</a> puts chromium in the image and raises the limit that
+made this necessary.</em></p>
 </div>
 
 <div class="adr" id="adr-039">
@@ -1316,6 +1318,49 @@ load-bearing, the boundary between one session and another, was never in that fi
 kernel, and it is tested.</p>
 <p>The existing deployment is recreated rather than migrated. Two volumes become one, and the
 conversations in them are not carried across; that was accepted deliberately rather than discovered.</p>
+</div>
+
+<div class="adr" id="adr-044">
+<div class="meta">ADR-044 · accepted</div>
+<h3>One browser, installed, and nothing to discover</h3>
+<h4>Context</h4>
+<p>Finding a browser took six candidate paths, a scan of Playwright's download cache, and an
+<code>AGENT_BROWSER</code> override &mdash; three mechanisms answering one question, because the browser
+might be anywhere. Both browser tools had to name <code>AGENT_BROWSER</code> and
+<code>PLAYWRIGHT_BROWSERS_PATH</code> in their manifests to receive them, and the cache lived under
+<code>$HOME</code>, which the sandbox does not grant, so a browser could be found and still not be
+readable.</p>
+<p>The reason none of this could collapse into one path was <a href="#adr-030">ADR-030</a>'s sandbox: a
+full browser bundle would not start under bubblewrap, so CI fetched Chromium's headless shell through
+Playwright instead. <a href="#adr-039">ADR-039</a> replaced bubblewrap with Landlock four days later.
+Landlock builds no mount namespace &mdash; it grants path trees &mdash; and the premise was never
+retested. Measured now, the Debian <code>chromium</code> package starts and renders under Landlock.</p>
+<p>Meanwhile <code>web_fetch</code> carried a fallback for the deployment, which had too little memory
+for a browser: with none installed it fetched the bytes over plain HTTP. The check for that was
+<code>if _, err := tool.Browser(); err == nil</code>, which discarded the path &mdash; and the resolver
+returned an empty path and no error when nothing was found. So the fallback was unreachable and the
+tool failed outright on every call in production, for weeks, silently.</p>
+<h4>Decision</h4>
+<p>The image installs <code>chromium</code> and CI installs the same package. The path is a constant,
+<code>/usr/bin/chromium</code>, under <code>/usr</code>, which the sandbox already grants every tool.
+The candidate list, the cache scan, <code>PickBrowser</code>, <code>AGENT_BROWSER</code> and
+<code>PLAYWRIGHT_BROWSERS_PATH</code> are deleted. A browser missing from that path is a broken image
+and is reported as one, not worked around.</p>
+<p>The HTTP fallback goes with them. Its real defect was not the broken condition but what it did when
+it worked: a page needing its scripts came back as the shell it ships as, which whoever asked could not
+tell from a page that simply says little. A plain fetch is a different thing to want and belongs in a
+tool of its own, chosen on purpose. So <code>web_fetch</code> is renamed <code>web_browse</code>, which
+is what it does, and leaves the name free for that tool.</p>
+<h4>Consequences</h4>
+<p>The image roughly doubles, from about 426&nbsp;MB to about 846&nbsp;MB, and the deployment's memory
+limit has to rise for a browser to run in it. Both were accepted deliberately: the alternative is two
+environments that behave differently, which is what produced a production failure nobody saw.</p>
+<p>A laptop no longer runs the browser tools from source, because the path does not exist there. That
+is the same answer <a href="#adr-039">ADR-039</a> already gives about the sandbox &mdash; a laptop that
+wants either runs the container &mdash; and it is one answer now rather than two.</p>
+<p>Manifest <code>env</code> is left with no users at all: the browser variables were the only ones any
+tool named. The field stays for now, and the next decision about it is whether a session, rather than a
+manifest, is where a tool should be granted a variable.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

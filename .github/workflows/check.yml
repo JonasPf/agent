@@ -22,13 +22,16 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Debian, because the image is Debian. The browser tools drive the chromium
+    # the image installs, and on the Ubuntu runner `apt-get install chromium` is
+    # a stub that installs the chromium *snap* — a different browser, under its
+    # own confinement, which hangs where the Debian package renders. Testing
+    # against it would be testing something the agent never runs. This container
+    # shares the runner's kernel, so Landlock is still the host's.
+    container:
+      image: golang:1.25-bookworm
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       # web/*.test.js runs under node's own test runner; there are no packages.
       - uses: actions/setup-node@v4
@@ -36,27 +39,38 @@ jobs:
           node-version: '22'
 
       # The tool sandbox on Linux is Landlock, which needs no package and no
-      # sysctl: it is a kernel facility an unprivileged process asks for. This
-      # says which ABI the runner has, so a suite that ran unconfined is visible
-      # as that rather than as a suite that passed.
+      # sysctl: it is a kernel facility an unprivileged process asks for, so the
+      # kernel this container shares with the runner is the one that answers.
+      #
+      # /sys/kernel/security is a host mount and is not in here, so this cannot
+      # read the LSM list any more. It does not need to: whether anything is
+      # actually confining a tool is settled by the suite, where every test that
+      # needs confinement skips with its reason rather than passing against a
+      # boundary that is not there. A green run with those skips in it is not the
+      # same as a green run, and says so.
       - name: Report the sandbox
         run: |
-          grep -q landlock /sys/kernel/security/lsm && echo "landlock is enabled" || echo "NO LANDLOCK on this runner"
-          cat /sys/kernel/security/lsm; uname -r
+          uname -r
+          cat /sys/kernel/security/lsm 2>/dev/null \
+            || echo "(the host's LSM list is not visible from inside the container)"
 
       - name: Install Task
         run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-      # The browser tools drive Chromium's headless shell, not a full browser
-      # bundle — a bundle does not start under the sandbox, which is what the
-      # runner was failing on. Locally the shell comes from a Playwright cache
-      # that is already there; here it has to be fetched, into the same cache
-      # the tools look in.
-      - name: Install the headless browser
-        run: npx --yes playwright install chromium-headless-shell
+      # The checkout is owned by a different uid than the one running git here.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # The same package the Dockerfile installs, to the same path the tools
+      # look at. This was Playwright's headless shell, chosen when a full browser
+      # bundle would not start under bubblewrap; Landlock replaced bubblewrap and
+      # builds no mount namespace, so the bundle starts — and the cache, the
+      # override variable, and the search that went with them are gone.
+      - name: Install the browser
+        run: apt-get update && apt-get install -y --no-install-recommends chromium
 
       - name: Report the browser
-        run: ls ~/.cache/ms-playwright 2>/dev/null || echo "no playwright cache"
+        run: /usr/bin/chromium --version
 
       - name: task check
         run: task check
