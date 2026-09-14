@@ -621,3 +621,93 @@ func TestAnUnenforcedSandboxSaysSoAsAWarning(t *testing.T) {
 		t.Errorf("Describe() = %q, want no warning when a boundary is in force", on.Describe())
 	}
 }
+
+// The deployment used to carry two named volumes, and the separation read as if
+// it were the boundary: transcripts in one, session working directories in the
+// other. It never was. Landlock grants the session's own directory and the
+// directory the database lives in, and denies everything nobody granted —
+// whether or not it shares a mount with something that was. So the deployment
+// now carries one volume, and this is the property that makes that safe.
+func TestOneVolumeIsStillTwoTrustLevels(t *testing.T) {
+	// One volume, with both directories inside it, which is the layout the
+	// image sets: AGENT_DATA and AGENT_WORKSPACE under a single mount.
+	volume := t.TempDir()
+	data := filepath.Join(volume, "data")
+	workspace := filepath.Join(volume, "workspace")
+	for _, d := range []string{data, workspace} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := OpenStore(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envFile := filepath.Join(volume, ".env")
+	if err := os.WriteFile(envFile, []byte("OPENROUTER_API_KEY=sk-secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{DataDir: data, Workspace: workspace, ToolsDir: "../../tools",
+		DefaultModel: "test/model", EnvFile: envFile}
+	sandbox := NewSandbox(cfg)
+	a := &App{cfg: cfg, sandbox: sandbox, store: st,
+		tools:  NewRegistry(cfg.ToolsDir, DBPath(data), st.DB()),
+		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
+		queues: map[string]chan func(){}, busy: map[string]bool{}}
+	a.registerBuiltins()
+	if _, failures := a.tools.Load(a); len(failures) > 0 {
+		t.Fatalf("tools failed to load: %v", failures)
+	}
+
+	victim, err := a.NewSession(SessionConfig{Model: "test/model"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prowler, err := a.NewSession(SessionConfig{Model: "test/model"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.ensureWorkspace(prowler.ID)
+	// The transcript is the source of truth, and it is the thing on the other
+	// side of the boundary that the volume split used to stand in front of.
+	transcript := filepath.Join(data, "sessions", victim.ID, "transcript.jsonl")
+	if err := os.WriteFile(transcript, []byte(`{"role":"user","content":"the other conversation"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(command string) toolResult {
+		t.Helper()
+		args, _ := json.Marshal(map[string]string{"command": command})
+		return a.tools.Call(context.Background(),
+			&ToolCtx{App: a, SessionID: prowler.ID}, "bash", args)
+	}
+
+	readTranscript := run("cat " + transcript)
+	readKey := run("cat " + envFile)
+	listVolume := run("ls " + volume + "/data/sessions")
+	writeData := run("echo x > " + filepath.Join(data, "planted.txt"))
+	own := run("echo mine > own.txt && cat own.txt")
+
+	confinementOrSkip(t, a.sandbox)
+
+	if readTranscript.OK {
+		t.Errorf("a tool read another session's transcript from the shared volume: %q", readTranscript.Content)
+	}
+	if readKey.OK && strings.Contains(readKey.Content, "sk-secret") {
+		t.Errorf("a tool read the API key from the shared volume: %q", readKey.Content)
+	}
+	if listVolume.OK && strings.Contains(listVolume.Content, victim.ID) {
+		t.Errorf("a tool listed the sessions directory: %q", listVolume.Content)
+	}
+	if writeData.OK {
+		t.Errorf("a tool wrote into the data directory: %q", writeData.Content)
+	}
+	if _, err := os.Stat(filepath.Join(data, "planted.txt")); err == nil {
+		t.Error("a tool planted a file in the data directory")
+	}
+	// A boundary that also broke the session's own directory would be useless,
+	// and sharing a volume must not narrow what the session may do.
+	if !own.OK || !strings.Contains(own.Content, "mine") {
+		t.Errorf("a tool could not use its own directory: ok=%v %s%s", own.OK, own.Content, own.Error)
+	}
+}

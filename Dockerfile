@@ -85,17 +85,23 @@ COPY skills /app/skills
 # What changed, as written by whoever changed it. It is read from disk at the
 # version screen, because there is no repository here to derive it from.
 COPY CHANGELOG.md /app/CHANGELOG.md
-RUN mkdir -p /app/data /app/workspace && chown -R agent:agent /app
+# Everything that outlives the container is under /app/state, which is the one
+# volume a deployment mounts. The split inside it is for the agent's own use —
+# transcripts and the database on one side, session working directories on the
+# other — and is not a boundary: Landlock is, and it holds whether or not the
+# two share a mount. Both are created here so a fresh named volume inherits an
+# owner before anything runs.
+RUN mkdir -p /app/state/data /app/state/workspace && chown -R agent:agent /app
 
 USER agent
 ENV AGENT_ADDR=:8080 \
     AGENT_CHANGELOG=/app/CHANGELOG.md \
-    AGENT_DATA=/app/data \
-    AGENT_WORKSPACE=/app/workspace \
+    AGENT_DATA=/app/state/data \
+    AGENT_WORKSPACE=/app/state/workspace \
     AGENT_TOOLS=/app/tools \
     AGENT_SKILLS=/app/skills \
     AGENT_WEB=/app/web \
-    AGENT_ENV=/app/data/.env
+    AGENT_ENV=/app/state/data/.env
 EXPOSE 8080
 # The agent asks itself, over /status, which answers without reaching a model.
 # A network client in the image for one request the agent can make of itself is

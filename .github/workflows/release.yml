@@ -69,16 +69,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Dokploy pulls the new image and restarts the service. The transcript,
-      # jobs, and session files are on volumes, so the conversation survives it.
+      # A POST to whatever the host listens on: pull the new image and restart.
+      # Which host that is, this workflow does not know and must not — the URL is
+      # a secret, and every platform worth deploying to offers one. The state
+      # volume outlives the container, so the conversation survives the restart.
       # Without the secret set, the build still publishes and the deploy is
       # skipped rather than failing the run.
       - name: Deploy
         env:
-          HOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
+          HOOK: ${{ secrets.DEPLOY_WEBHOOK }}
         run: |
           if [ -z "$HOOK" ]; then
-            echo "DOKPLOY_DEPLOY_WEBHOOK is not set; the image is published and nothing was deployed."
+            echo "DEPLOY_WEBHOOK is not set; the image is published and nothing was deployed."
             exit 0
           fi
           curl -fsS -X POST "$HOOK"

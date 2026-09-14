@@ -216,16 +216,21 @@ flowchart TB
 certificate valid for the tailnet hostname.</p>
 
 <p><strong>What is deployed today does not do this</strong>, and
-<a href="adrs.html#adr-038">ADR-038</a> records why. The agent runs as a Dokploy Compose application on
-a shared box; Traefik terminates HTTPS with a Let's Encrypt certificate for a public hostname and puts
-a Basic Auth middleware in front of the agent. The container still publishes no host port &mdash; only
-Traefik reaches it, over the internal network &mdash; but the hostname is public and one password is the
-whole of the access control. The tailnet remains the intended answer; the password is what stands in
-for it.</p>
+<a href="adrs.html#adr-038">ADR-038</a> records why. The container runs on a shared box behind a
+reverse proxy that terminates HTTPS for a public hostname and demands a credential before anything
+reaches the agent. The container still publishes no host port &mdash; only the proxy reaches it &mdash;
+but the hostname is public and one password is the whole of the access control. The tailnet remains
+the intended answer; the password is what stands in for it.</p>
+
+<p>Which proxy, and which host, the system does not know and does not encode:
+<a href="adrs.html#adr-043">ADR-043</a>. The repository ships an image and nothing that names a
+platform, because a deployment the agent is shaped around is a deployment it cannot be moved off.</p>
 
 <p>The image is built by CI and pulled by tag, never built on the server, which has neither the memory
-nor a toolchain. Transcripts and session working directories are named volumes, so a redeploy replaces
-the process and keeps every conversation, job, and file.</p>
+nor a toolchain. Everything that outlives the container &mdash; transcripts, the database, and session
+working directories &mdash; is under one mounted volume, so a redeploy replaces the process and keeps
+every conversation, job, and file. The two directories inside it are not a boundary; the sandbox is
+(<a href="adrs.html#adr-039">ADR-039</a>).</p>
 
 <p>Nothing reaches the phone unless the phone asks. There is no push service and no outbound
 notification path: the operator reads what happened by opening the interface, which means the phone
@@ -238,6 +243,7 @@ must be on the tailnet to learn anything at all.</p>
 <li>Nothing reaches the interface without either being on the tailnet or presenting the credential the proxy requires.</li>
 <li>The web UI is served over HTTPS with a certificate the browser trusts without exception.</li>
 <li>A redeploy replaces the process and keeps every session, job, memory item, and uploaded file.</li>
+<li>Everything that outlives the container is under a single mounted directory, and a tool confined to one session still reaches nothing else under it.</li>
 <li>The container reports whether the process inside it is answering, using the agent's own binary rather than a second program carried for the purpose.</li>
 <li>A confinement mechanism is claimed only after it has been shown to run on this machine; one that is installed but refused reports as not enforced, with the refusal as its reason.</li>
 <li>The deployed image is built from a commit on the default branch and is tagged with it, so what is running can be named.</li>

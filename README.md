@@ -60,7 +60,7 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_ENV` | `.env` | File to read settings from. |
 | `AGENT_ADDR` | `:8080` | Listen address. |
 | `AGENT_MODEL` | `anthropic/claude-sonnet-4.5` | Default model for a new session. |
-| `AGENT_DATA` | `data` | SQLite plus one directory per session. |
+| `AGENT_DATA` | `data` | Transcripts, one directory per session, and the database under `db/`. |
 | `AGENT_WORKSPACE` | `workspace` | Holds one working directory per session, where that session's file and shell tools operate. |
 | `AGENT_TOOLS` / `AGENT_SKILLS` | `tools` / `skills` | Scanned at start and on reload. |
 | `AGENT_CHANGELOG` | `CHANGELOG.md` | What changed, shown with the running version under **More → version**. |
@@ -98,53 +98,99 @@ tools/<name>/      one Go package per capability, each with manifest.json,
                    edit clock web_fetch web_search schedule memory session_search
                    skill_read notes — written by you, not by the agent
 data/sessions/<id>/{meta.json,transcript.jsonl}
+data/db/agent.db   the database and its journals, alone in a directory of their
+                   own because Landlock grants a tree or it does not
+workspace/<id>/    one working directory per session
 ```
 
-Deleting `data/agent.db` and restarting rebuilds session metadata and the search index from the
+Deleting `data/db/agent.db` and restarting rebuilds session metadata and the search index from the
 transcripts.
 
 ## Deploy
 
-The image is built by CI and pulled by tag; the server never compiles anything.
+One image, one container, one volume. Nothing in this repository names a hosting
+platform: the image is a plain OCI image, and anything that runs one runs it.
 
 ```
 push to a branch → PR → .github/workflows/check.yml runs `task check`
 merge to main    → .github/workflows/release.yml builds the image, pushes it to
-                   GHCR, and calls Dokploy's deploy webhook
+                   GHCR, and POSTs to $DEPLOY_WEBHOOK if that secret is set
 ```
 
-| File | Is |
-| --- | --- |
-| `Dockerfile` | Two stages: build the agent, every tool, and a pinned `gh`, then a Debian runtime with `git` and `gh` — the userland the tools need, and nothing else. The sandbox needs no package: Landlock is the kernel's. |
-| `deploy/compose.yml` | The whole deployment: the image to run, named volumes for `data` and `workspace` so a redeploy keeps every conversation, and the Traefik labels that route to it. |
+The image is built by CI and pulled by tag; the server never compiles anything.
+`Dockerfile` is two stages — build the agent, every tool, and a pinned `gh`, then
+a Debian runtime with `git` and `gh`, the userland the tools need and nothing
+else. The sandbox needs no package: Landlock is the kernel's.
 
-The deployment needs three variables set where it runs, none of which are in this
-repository:
+The runtime is Debian because tools are subprocesses: `tools/bash` execs
+`/bin/sh`, and the model writes GNU-flavoured shell. `agent -health` is the
+container's health check, so the image carries no network client for a request
+the agent can make of itself.
+
+### The volume
+
+Everything that outlives the container is under `/app/state`. Mount one volume
+there and a redeploy keeps every conversation, job, memory item, and file.
+
+```
+/app/state/data       transcripts, the database and its journals, the search index
+/app/state/workspace  one working directory per session
+```
+
+They are two directories for the agent's convenience, not a boundary. The
+boundary is Landlock: a tool is granted its own session's directory and the
+directory the database lives in, and is denied everything else — the other
+directory included, whether or not it shares a mount. `AGENT_DATA` and
+`AGENT_WORKSPACE` still point wherever you like; the image simply puts both
+under one root.
+
+### Running it
+
+```sh
+docker run -d --name agent \
+  -v agent-state:/app/state \
+  -e OPENROUTER_API_KEY=sk-... \
+  -p 127.0.0.1:8080:8080 \
+  ghcr.io/<owner>/agent:latest
+```
 
 | Variable | Is |
 | --- | --- |
 | `OPENROUTER_API_KEY` | Required for model calls. |
-| `AGENT_HOST` | The hostname to serve on. |
-| `AGENT_BASIC_AUTH` | `user:bcrypt-hash`, **with every `$` doubled**. The agent has no login of its own, so this is the whole of the access control. A hash in a public repository is a password with a cost factor in front of it, which is why it is set here rather than committed. |
+| `GH_TOKEN` | Optional. Fine-grained, one repository, contents + pull requests write, no workflow scope — what the agent needs to propose changes to itself. The most it can do with this is open a pull request nobody has merged yet. |
+| `AGENT_REPO` | Optional. The repository the agent clones when it changes itself. |
 
-Generate that value with the doubling already applied:
+Every other setting has a default; the table under [Configuration](#configuration)
+has the rest.
 
-```sh
-htpasswd -nbBC 12 <user> '<password>' | sed -e 's/\$/$$/g'
-```
+**The agent has no login of its own** — one person, no accounts. It publishes no
+host port in production and expects a reverse proxy in front of it terminating
+TLS and demanding a credential. Binding to `127.0.0.1` above is the same idea on
+a single box. Putting the container on a public port with nothing in front of it
+exposes an interface that runs shell commands.
 
-The doubling is not optional and its absence is not obvious. Compose reads `$name`
-inside a substituted value as another variable, so a single-`$` bcrypt hash arrives
-at Traefik truncated at its first field — `jonas:$2y$05` and nothing more. Traefik
-accepts that as a perfectly valid user list which no password will ever match, and
-the failure presents as a password that does not work.
+### Deploying to Dokploy
 
-The runtime is Debian because tools are subprocesses: `tools/bash` execs `/bin/sh`, and the model
-writes GNU-flavoured shell. `agent -health` is the container's health check, so the image carries no
-network client for a request the agent can make of itself.
+An example, not a dependency — the deployment described here is the one that
+runs, and nothing in the repository is shaped around it.
 
-Secrets live in Dokploy (`OPENROUTER_API_KEY`, `GH_TOKEN`) and in GitHub Actions
-(`DOKPLOY_DEPLOY_WEBHOOK`); none of them are in this repository.
+1. Create an **Application**, provider **Docker**, image
+   `ghcr.io/<owner>/agent:latest`.
+2. **Environment**: `OPENROUTER_API_KEY`, and `GH_TOKEN` / `AGENT_REPO` if the
+   agent is to propose changes to itself.
+3. **Advanced → Volumes**: one volume mount, `agent-state` → `/app/state`.
+4. **Advanced → Resources**: a memory limit. A single-user agent on a shared host
+   without one takes the machine down with it; 512 MB is enough.
+5. **Advanced → Security**: switch on Basic Auth and set a user and password.
+   This is the whole of the access control.
+6. **Domains**: the hostname, port 8080, HTTPS on, Let's Encrypt.
+
+Then set `DEPLOY_WEBHOOK` in the repository's GitHub Actions secrets to the
+application's deploy webhook URL, so a merge to `main` publishes the image and
+the host pulls it.
+
+Secrets live where it is deployed (`OPENROUTER_API_KEY`, `GH_TOKEN`) and in
+GitHub Actions (`DEPLOY_WEBHOOK`); none of them are in this repository.
 
 ## Changing the agent
 
