@@ -2,6 +2,15 @@
 
 ## 2026-09-15
 
+- `.env.example` lists every setting the agent reads, with its default, and a
+  test keeps it that way in both directions. Thirteen were missing, including
+  `AGENT_EVAL_MODEL`; the README documented `AGENT_ROTATE_TOKENS`, which nothing
+  has read since compaction replaced rotation.
+- The eval model is `google/gemma-4-26b-a4b-it`. The free tier it replaces was
+  withdrawn, and a withdrawn model failed every case at once in a way that read
+  as broken cases — so a run now checks the gateway lists the model first and
+  says so if it does not. The new one is cheap rather than free, and takes under
+  two seconds a case where the last free one took three and a half minutes.
 - `web_fetch` is back, as its own tool: one HTTP request, no browser, for an
   API, a raw file, a feed, a README — most of what is actually asked for, in
   milliseconds instead of seconds. It is the first thing to reach for, and

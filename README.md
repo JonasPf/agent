@@ -65,11 +65,19 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_TOOLS` / `AGENT_SKILLS` | `tools` / `skills` | Scanned at start and on reload. |
 | `AGENT_CHANGELOG` | `CHANGELOG.md` | What changed, shown with the running version under **More → version**. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
-| `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
+| `AGENT_EVAL_MODEL` | `google/gemma-4-26b-a4b-it` | Model used by `go run ./cmd/eval`. A run against a model the gateway no longer lists says so, rather than failing every case. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. Reaches a tool only in a session granted it. |
 | `GH_TOKEN` | — | GitHub credential. Reaches a tool only in a session granted it. |
-| `AGENT_ROTATE_TOKENS` | `40000` | Projected size at which a session rotates. |
+| `AGENT_COMPACT_TOKENS` | `40000` | Projected size at which a conversation compacts in place. |
+| `AGENT_KEEP_TOKENS` | `10000` | How much of the tail a compaction leaves word for word. |
+| `AGENT_SUMMARY_EVERY` | `4000` | Tokens of growth between rewrites of the running summary. |
 | `AGENT_MEMORY_CAPACITY` | `8000` | Characters of durable memory. |
+| `AGENT_WEB` | `web` | The browser interface, served as static files. |
+
+Every one of these is in [`.env.example`](.env.example) with its default, and a
+test checks that in both directions: a setting missing from that file is one
+nobody can find, and one listed there that nothing reads is worse, because
+changing it appears to do something.
 
 ## Layout
 
