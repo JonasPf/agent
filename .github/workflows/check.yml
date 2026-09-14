@@ -22,13 +22,16 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # Debian, because the image is Debian. The browser tools drive the chromium
+    # the image installs, and on the Ubuntu runner `apt-get install chromium` is
+    # a stub that installs the chromium *snap* — a different browser, under its
+    # own confinement, which hangs where the Debian package renders. Testing
+    # against it would be testing something the agent never runs. This container
+    # shares the runner's kernel, so Landlock is still the host's.
+    container:
+      image: golang:1.25-bookworm
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       # web/*.test.js runs under node's own test runner; there are no packages.
       - uses: actions/setup-node@v4
@@ -47,13 +50,17 @@ jobs:
       - name: Install Task
         run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-      # The same package the image installs, at the same path the tools look at.
-      # This was Playwright's headless shell, chosen when a full browser bundle
-      # would not start under bubblewrap; Landlock replaced bubblewrap and does
-      # not build a mount namespace, so the bundle starts and the cache, the
+      # The checkout is owned by a different uid than the one running git here.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # The same package the Dockerfile installs, to the same path the tools
+      # look at. This was Playwright's headless shell, chosen when a full browser
+      # bundle would not start under bubblewrap; Landlock replaced bubblewrap and
+      # builds no mount namespace, so the bundle starts — and the cache, the
       # override variable, and the search that went with them are gone.
       - name: Install the browser
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends chromium
+        run: apt-get update && apt-get install -y --no-install-recommends chromium
 
       - name: Report the browser
         run: /usr/bin/chromium --version
