@@ -100,3 +100,68 @@ func TestTheShippedChangelogIsTheDefault(t *testing.T) {
 		t.Errorf("the shipped changelog is missing: %v", err)
 	}
 }
+
+// The changelog opens with a note to whoever writes it: how the file is
+// organised, and that a change to behaviour belongs in it. That is a rule for
+// working in this repository, and the version screen is not where it is read —
+// it is read on a phone, once, after an upgrade, by someone who wants to know
+// what changed. So the screen is served the entries and nothing above them.
+func TestTheVersionScreenIsServedTheEntriesAndNotTheNoteToWriters(t *testing.T) {
+	a := newTestApp(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CHANGELOG.md")
+	body := "# Changelog\n\n" +
+		"What changed, newest first. A change to behaviour belongs here in the\n" +
+		"same commit that makes it.\n\n" +
+		"## 2026-09-14\n\n- One volume, and no compose file.\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.ChangelogPath = path
+
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, httptest.NewRequest("GET", "/version", nil))
+	var got struct {
+		Changelog string `json:"changelog"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got.Changelog, "## 2026-09-14") {
+		t.Errorf("changelog starts %q, want the first dated section", truncate(got.Changelog, 60))
+	}
+	for _, unwanted := range []string{"# Changelog", "newest first", "same commit"} {
+		if strings.Contains(got.Changelog, unwanted) {
+			t.Errorf("the screen was served %q, which is a note to whoever writes the file", unwanted)
+		}
+	}
+	if !strings.Contains(got.Changelog, "One volume, and no compose file.") {
+		t.Error("the entries themselves did not survive")
+	}
+}
+
+// A file with no dated section has no entries, and says so by being empty —
+// which is the state the interface already reports as a changelog it cannot
+// show. Serving the preamble instead would put the note to writers on the
+// screen precisely when there is nothing to distract from it.
+func TestAChangelogWithNoEntriesServesNothing(t *testing.T) {
+	a := newTestApp(t)
+	path := filepath.Join(t.TempDir(), "CHANGELOG.md")
+	if err := os.WriteFile(path, []byte("# Changelog\n\nNothing has happened yet.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.ChangelogPath = path
+
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, httptest.NewRequest("GET", "/version", nil))
+	var got map[string]any
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got["changelog"] != "" {
+		t.Errorf("changelog = %v, want empty", got["changelog"])
+	}
+	if got["version"] == "" || got["version"] == nil {
+		t.Error("an entryless changelog must not take the version with it")
+	}
+}

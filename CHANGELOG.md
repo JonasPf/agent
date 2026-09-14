@@ -1,15 +1,10 @@
 # Changelog
 
-What changed, newest first. One section per day of merged changes; the version
-running is the commit the image was built from, which the app shows beside this
-list under **More → version**.
-
-This file ships with the app and is what that screen reads, so a change to
-behaviour belongs here in the same commit that makes it — the same rule the
-specs follow.
-
 ## 2026-09-14
 
+- The version screen shows what changed and nothing else. The changelog's note
+  to whoever writes it is a rule for this repository, kept in `CLAUDE.md`, and
+  the screen is served the dated entries from the first one on.
 - The repository ships an image, not a deployment. The Compose file is gone and
   nothing in the code, the workflows, or the image names a hosting platform; how
   to run it on one is documentation, with Dokploy worked through as an example.

@@ -98,6 +98,21 @@ Use test-driven development. Before changing behavior, write a test that
 captures the intended behavior and watch it fail (red), then make the change to
 turn it green, then refactor while keeping it green.
 
+## Say what changed, in the changelog
+
+[`CHANGELOG.md`](CHANGELOG.md) ships inside the image and is what the version
+screen reads — the container has no repository to derive one from. **A change to
+behaviour belongs there in the same commit that makes it**, the same rule the
+specs follow.
+
+One `##` section per day of merged changes, newest first, each entry a sentence
+or two saying what is different now. Write for whoever opens that screen on a
+phone after an upgrade, not for whoever reviews the diff.
+
+Nothing above the first dated section reaches the screen: the version endpoint
+serves the file from its first `##` on, which is why this instruction lives here
+and not in the file it is about.
+
 ## Keep specs and code in sync
 
 The specification in [`specs/`](specs/index.html) and the code are two views of

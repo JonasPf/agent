@@ -3,6 +3,7 @@ package app
 import (
 	"net/http"
 	"os"
+	"strings"
 )
 
 // Version is the commit the running build was made from, and BuiltAt is when it
@@ -37,7 +38,25 @@ func (a *App) hVersion(w http.ResponseWriter, r *http.Request) {
 		if len(b) > maxChangelog {
 			b = b[:maxChangelog]
 		}
-		out["changelog"] = string(b)
+		out["changelog"] = changelogEntries(string(b))
 	}
 	writeJSON(w, 200, out)
+}
+
+// changelogEntries is the part of the file the version screen is served: from
+// its first dated section on. What sits above that is a note to whoever writes
+// the file — how it is organised, and that a change to behaviour belongs in it
+// in the same commit — which is a rule for working in this repository and is
+// kept in CLAUDE.md. This screen is read on a phone, once, after an upgrade, by
+// someone who wants to know what changed; instructions to its authors are not
+// that. A file with no section has no entries and returns empty, which the
+// interface already reports as a changelog it cannot show.
+func changelogEntries(s string) string {
+	if strings.HasPrefix(s, "## ") {
+		return s
+	}
+	if i := strings.Index(s, "\n## "); i >= 0 {
+		return s[i+1:]
+	}
+	return ""
 }
