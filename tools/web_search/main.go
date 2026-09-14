@@ -38,7 +38,7 @@ func main() {
 		}
 		if why := Refusal(text); why != "" {
 			tool.Failf("the search engine declined this query (%s). Try again later, or "+
-				"fetch a specific page with web_fetch.", why)
+				"fetch a specific page with web_browse.", why)
 		}
 		tool.OKf("no results for %q", q)
 	}

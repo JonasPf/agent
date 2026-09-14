@@ -1,0 +1,23 @@
+{
+  "name": "web_browse",
+  "description": "Open a URL in a browser and return the page's text. The page's scripts run first, so a page assembled by JavaScript reads the same as it would to a person. A non-HTML body (JSON, plain text) comes back verbatim.",
+  "db_prefix": "web_browse_",
+  "reads": [
+    "/proc",
+    "/sys",
+    "/var"
+  ],
+  "timeout_seconds": 60,
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Absolute URL."
+      }
+    },
+    "required": [
+      "url"
+    ]
+  }
+}

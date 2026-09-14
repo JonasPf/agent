@@ -47,16 +47,16 @@ jobs:
       - name: Install Task
         run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
-      # The browser tools drive Chromium's headless shell, not a full browser
-      # bundle — a bundle does not start under the sandbox, which is what the
-      # runner was failing on. Locally the shell comes from a Playwright cache
-      # that is already there; here it has to be fetched, into the same cache
-      # the tools look in.
-      - name: Install the headless browser
-        run: npx --yes playwright install chromium-headless-shell
+      # The same package the image installs, at the same path the tools look at.
+      # This was Playwright's headless shell, chosen when a full browser bundle
+      # would not start under bubblewrap; Landlock replaced bubblewrap and does
+      # not build a mount namespace, so the bundle starts and the cache, the
+      # override variable, and the search that went with them are gone.
+      - name: Install the browser
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends chromium
 
       - name: Report the browser
-        run: ls ~/.cache/ms-playwright 2>/dev/null || echo "no playwright cache"
+        run: /usr/bin/chromium --version
 
       - name: task check
         run: task check

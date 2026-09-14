@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-15
+
+- `web_fetch` is now `web_browse`, which is what it does. It opens the page in a
+  browser, every time; the plain-HTTP fallback is gone, because a page that
+  needed its scripts came back looking exactly like a page that simply says
+  little, and whoever asked could not tell which they had.
+- The browser is installed in the image at one path instead of searched for.
+  `AGENT_BROWSER` and `PLAYWRIGHT_BROWSERS_PATH` are gone with the search.
+- Fixes `web_browse` failing on every call in production, where it was meant to
+  fall back and could not.
+
 ## 2026-09-14
 
 - The version screen shows what changed and nothing else. The changelog's note

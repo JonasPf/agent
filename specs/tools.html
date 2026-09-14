@@ -55,7 +55,7 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 <tr><td><a href="tool-schedule.html"><code>schedule</code></a></td><td>Create, list, edit, and delete the jobs that make future work visible.</td></tr>
 <tr><td><a href="tool-session_search.html"><code>session_search</code></a></td><td>Full-text search across transcripts.</td></tr>
 <tr><td><a href="tool-skill_read.html"><code>skill_read</code></a></td><td>Load the full text of a skill.</td></tr>
-<tr><td><a href="tool-web_fetch.html"><code>web_fetch</code></a></td><td>Fetch a URL and return the page's text.</td></tr>
+<tr><td><a href="tool-web_browse.html"><code>web_browse</code></a></td><td>Open a URL in a browser and return the page's text.</td></tr>
 <tr><td><a href="tool-web_search.html"><code>web_search</code></a></td><td>Search the web and return titles, URLs, and snippets.</td></tr>
 <tr><td><a href="tool-write.html"><code>write</code></a></td><td>Create or replace a file in the session's working directory.</td></tr>
 </table>
@@ -164,7 +164,6 @@ is not set stays absent rather than arriving empty.</p>
 <tr><td><code>AGENT_URL</code></td><td>Base URL of the HTTP API, the same one the interface uses.</td></tr>
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
-<tr><td><code>AGENT_BROWSER</code></td><td>Optional, and reaches only a tool whose manifest names it &mdash; the browser tools do. A Chrome-family executable to drive; the usual install paths are searched when it is unset. It must be inside a readable path &mdash; see <code>AGENT_READ_PATHS</code>.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
 </table>
 
@@ -333,7 +332,7 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 <tr><th>Tool</th><th>Purpose</th></tr>
 <tr><td><code>bash</code>, <code>read</code>, <code>write</code>, <code>edit</code></td><td>Filesystem and shell access within the workspace.</td></tr>
 <tr><td><code>clock</code></td><td>The current date and time, with an optional offset. An autonomous agent cannot read a clock from a prompt written once at the session's creation, so it asks.</td></tr>
-<tr><td><code>web_search</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. Both render the page in a headless browser, so what they read is what a person would see.</td></tr>
+<tr><td><code>web_search</code>, <code>web_browse</code></td><td>Retrieve information from the internet. Both render the page in a headless browser, so what they read is what a person would see.</td></tr>
 <tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
 <tr><td><code>memory</code></td><td>Write and revise durable memory.</td></tr>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
@@ -343,8 +342,8 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 <h3>Searching the web</h3>
 
 <p>A search results page is assembled by scripts, so fetching its HTML returns a shell with no results
-in it. <code>web_search</code> therefore drives a headless Chrome-family browser, found on the usual
-paths or named by <code>AGENT_BROWSER</code>, and reads the results out of the rendered DOM.</p>
+in it. <code>web_search</code> therefore drives the headless browser the image installs, at the one path it
+installs it to, and reads the results out of the rendered DOM.</p>
 
 <p>The browser is used as it is delivered. Nothing disguises the request, and an engine that declines
 to serve an automated query is reported as having declined — naming the phrase it used — rather than
@@ -364,7 +363,7 @@ wants search: delete the directory and the dependency is gone, with no rebuild. 
 <li>A search returns result titles, absolute URLs, and snippets, with click-tracking redirects resolved to the page they point at.</li>
 <li>An engine declining to serve the query is reported as a refusal, distinct from a query with no results.</li>
 <li>No request is disguised and no bot check is answered or evaded.</li>
-<li>With no browser installed the tool fails with an error naming <code>AGENT_BROWSER</code>, and every other tool keeps working.</li>
+<li>With no browser at the path the image installs it, the tool fails naming that path, and every other tool keeps working.</li>
 </ul>
 </div>
 
@@ -372,22 +371,22 @@ wants search: delete the directory and the dependency is gone, with no rebuild. 
 
 <p>Most of the web arrives empty. The HTML a server sends is a shell, and the text a person reads is
 written into it by scripts once the page is running. Retrieving the bytes therefore answers a
-different question from the one the model asked. <code>web_fetch</code> loads the URL in the same
-headless browser <code>web_search</code> uses — found on the usual paths or named by
-<code>AGENT_BROWSER</code> — lets the scripts run, and reads the settled DOM.</p>
+different question from the one the model asked. <code>web_browse</code> loads the URL in the same
+headless browser <code>web_search</code> uses — the one the image installs, at one path — lets
+the scripts run, and reads the settled DOM.</p>
 
 <p>Text is recovered from that DOM rather than from the source, because a rendered DOM has had its
 source whitespace squeezed out: the tags that end a line on screen are the only remaining evidence of
 where one thing ends and the next begins. A body the browser cannot render as a document — JSON,
 plain text — is returned exactly as it was served, since the point of fetching an API is its bytes.</p>
 
-<p>A browser is not required. Where none is installed the tool retrieves the URL over plain HTTP and
-says nothing further; a page that needs its scripts then comes back as the shell it ships as, which is
-the honest result and not an error. There is no setting for this: what is installed decides, so there
-is one path and not a second way of saying the same thing. A browser named in
-<code>AGENT_BROWSER</code> that does not exist is an error rather
-than a silent fall back to HTTP, because a setting that is quietly ignored is worse than one that
-fails.</p>
+<p>The browser is required, and there is one of it: the image installs chromium and CI installs the
+same package, so the path is fixed and nothing is searched for (<a href="adrs.html#adr-044">ADR-044</a>).
+An image without it is broken rather than degraded, and the tool says so. The tool used to fall back to
+a plain HTTP GET, which returned a page needing its scripts as the shell it ships as &mdash;
+indistinguishable, to whoever asked, from a page that simply says little. A plain fetch is a different
+thing to want, and when it is wanted it belongs in a tool of its own that the model chooses on
+purpose.</p>
 
 <p>As in search, the browser is used as it is delivered: nothing disguises the request, and a site
 that declines to serve it is not worked around.</p>
@@ -397,8 +396,8 @@ that declines to serve it is not worked around.</p>
 <ul>
 <li>A page whose text is written by its scripts is returned with that text in it, and without the placeholder it replaced.</li>
 <li>A JSON or plain-text body is returned verbatim, not as flattened prose.</li>
-<li>With no browser available the page is still fetched over HTTP, and every other tool keeps working.</li>
-<li>A browser named in <code>AGENT_BROWSER</code> that does not exist fails with an error naming it.</li>
+<li>The tool renders every page it returns; there is no unrendered path, so a thin page means a thin page.</li>
+<li>With no browser at the path the image installs it, the tool fails naming that path rather than returning something unrendered.</li>
 </ul>
 </div>
 

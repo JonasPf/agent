@@ -7,9 +7,10 @@
 # does, and fetches the one binary that is not built here. The second carries
 # them, the interface, the skills, and the userland the tools need — a shell,
 # because tools/bash execs /bin/sh; git and gh, because the agent proposes
-# changes to itself by opening a pull request. The sandbox needs nothing here:
-# Landlock is the kernel's, and the agent asks for it itself. Nothing else: no
-# package manager state, no network client.
+# changes to itself by opening a pull request; chromium, because reading most of
+# the web means running it. The sandbox needs nothing here: Landlock is the
+# kernel's, and the agent asks for it itself. Nothing else: no package manager
+# state, no network client.
 
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
@@ -68,8 +69,14 @@ FROM debian:bookworm-slim
 # call verifiable, the model gateway included. The sandbox adds nothing to this
 # list — Landlock is a kernel facility the agent asks for directly, which is why
 # it works in an unprivileged container where bubblewrap did not.
+#
+# chromium is the browser web_browse and web_search drive, and installing it here
+# is what lets them stop searching for one: /usr/bin/chromium is a path the
+# sandbox already grants, the same package CI installs, and the only one either
+# tool will look at. It roughly doubles the image, which is the price of the
+# tools working the same way everywhere they run.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates git \
+ && apt-get install -y --no-install-recommends ca-certificates git chromium \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent runs as one user, and it is not root. The data and workspace

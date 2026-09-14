@@ -17,11 +17,11 @@ func growWithToolResults(t *testing.T, a *App, s *Session, rounds int) {
 	a.append(s.ID, Entry{Type: "message", Role: "user", Text: "Find broadband options."})
 	for i := 0; i < rounds; i++ {
 		a.append(s.ID, Entry{Type: "message", Role: "assistant", Text: "Fetching.",
-			ToolCalls: []ToolCall{{ID: "c", Name: "web_fetch", Arguments: `{"url":"https://x"}`}}})
+			ToolCalls: []ToolCall{{ID: "c", Name: "web_browse", Arguments: `{"url":"https://x"}`}}})
 		body, _ := json.Marshal(map[string]any{"ok": true,
 			"content": strings.Repeat("page text ", 500)})
 		a.append(s.ID, Entry{Type: "message", Role: "tool", ToolCallID: "c",
-			ToolName: "web_fetch", ToolResult: body})
+			ToolName: "web_browse", ToolResult: body})
 		a.append(s.ID, Entry{Type: "message", Role: "user", Text: "Keep going."})
 	}
 }

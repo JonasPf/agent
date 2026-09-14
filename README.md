@@ -64,7 +64,6 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_WORKSPACE` | `workspace` | Holds one working directory per session, where that session's file and shell tools operate. |
 | `AGENT_TOOLS` / `AGENT_SKILLS` | `tools` / `skills` | Scanned at start and on reload. |
 | `AGENT_CHANGELOG` | `CHANGELOG.md` | What changed, shown with the running version under **More → version**. |
-| `AGENT_BROWSER` | auto | Chrome-family executable for `web_search` and `web_fetch`. Usual install paths and Playwright's cache are searched when unset. Must sit inside a readable path — see `AGENT_READ_PATHS`. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
 | `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. |
@@ -95,7 +94,7 @@ skills/            prose the agent loads on demand
 internal/tool      the package every tool is built on (subprocess contract, API, browser)
 tools/<name>/      one Go package per capability, each with manifest.json,
                    main.go, eval.json, and a `run` built from it: bash read write
-                   edit clock web_fetch web_search schedule memory session_search
+                   edit clock web_browse web_search schedule memory session_search
                    skill_read notes — written by you, not by the agent
 data/sessions/<id>/{meta.json,transcript.jsonl}
 data/db/agent.db   the database and its journals, alone in a directory of their

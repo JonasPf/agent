@@ -554,7 +554,7 @@ func TestOnlyAToolThatAsksForAPathCanReadIt(t *testing.T) {
 		}
 	}
 
-	asked := landlockPolicy(t, s.Wrap("/tools/web_fetch/run", "/w/S1", "/t", []string{"/proc", "/sys"}, nil))
+	asked := landlockPolicy(t, s.Wrap("/tools/web_browse/run", "/w/S1", "/t", []string{"/proc", "/sys"}, nil))
 	if !strings.Contains(strings.Join(asked.Read, " "), "/proc") {
 		t.Errorf("read = %v, want the path the tool asked for", asked.Read)
 	}
