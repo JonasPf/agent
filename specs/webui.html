@@ -273,6 +273,11 @@ built without that stamp says <code>dev</code> rather than inventing a number.</
 with the app. It is rendered as markdown, newest first, and the interface reads it rather than deriving
 it: the container has no repository to ask.</p>
 
+<p>The screen is served the dated entries and nothing above them. A changelog opens with a note to
+whoever writes it &mdash; how the file is organised, and that a change to behaviour belongs in it in
+the same commit &mdash; and that is a rule for working in the repository, not something to read on a
+phone after an upgrade. The rule lives in <code>CLAUDE.md</code>; the file keeps only what it is for.</p>
+
 <p>Both sit at the foot of the More panel, under the device and isolation sections. Nothing about a
 version is urgent &mdash; it is read once after an upgrade and never again &mdash; so the changelog
 stays folded until it is asked for, and neither is ever shown over a conversation.</p>
@@ -284,6 +289,7 @@ stays folded until it is asked for, and neither is ever shown over a conversatio
 <li>The version is the commit the running image was built from; a build with no stamp says so rather than showing a number it invented.</li>
 <li>The changelog ships with the app, is read from disk rather than derived from a repository, and is rendered as markdown newest first.</li>
 <li>The changelog is folded away until it is opened.</li>
+<li>The changelog reaches the screen from its first dated section on, so a note addressed to whoever writes the file is never shown to whoever reads it.</li>
 <li>A missing changelog file leaves the version readable and says the changelog is unavailable.</li>
 </ul>
 </div>
