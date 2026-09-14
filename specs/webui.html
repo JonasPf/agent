@@ -262,6 +262,32 @@ panel appear alongside them.</p>
 </ul>
 </div>
 
+<h2 id="version">Version and changelog</h2>
+
+<p>The interface says which build it is. The version is the commit the image was built from &mdash; the
+same string the image is tagged with, so what is on screen is what a rollback names. The image carries
+no git history, so the commit and the build time are stamped into the binary at build time; a binary
+built without that stamp says <code>dev</code> rather than inventing a number.</p>
+
+<p>What changed is a file, <code>CHANGELOG.md</code>, written by whoever made the change and shipped
+with the app. It is rendered as markdown, newest first, and the interface reads it rather than deriving
+it: the container has no repository to ask.</p>
+
+<p>Both sit at the foot of the More panel, under the device and isolation sections. Nothing about a
+version is urgent &mdash; it is read once after an upgrade and never again &mdash; so the changelog
+stays folded until it is asked for, and neither is ever shown over a conversation.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The interface names the version it is running and when that build was made, from the More panel, without interrupting anything.</li>
+<li>The version is the commit the running image was built from; a build with no stamp says so rather than showing a number it invented.</li>
+<li>The changelog ships with the app, is read from disk rather than derived from a repository, and is rendered as markdown newest first.</li>
+<li>The changelog is folded away until it is opened.</li>
+<li>A missing changelog file leaves the version readable and says the changelog is unavailable.</li>
+</ul>
+</div>
+
 <footer><a href="memory.html">← Memory</a> · <a href="mock.html">UI mock →</a></footer>
 </div>
 </body></html>

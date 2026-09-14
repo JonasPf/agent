@@ -926,6 +926,30 @@ async function viewPanels(v) {
     const k = state.status.key;
     v.append(el('div', 's', `usage ${fmtMoney(k.usage)}${k.remaining != null ? ' · remaining ' + fmtMoney(k.remaining) : ''}`));
   }
+  await versionSection(v);
+}
+
+// Which build is answering, and what changed in it. The version is the commit
+// the image was built from, so what is on screen is what a rollback names. Both
+// are read once after an upgrade and never again, so they sit at the foot of
+// this panel and the changelog stays folded until it is asked for.
+async function versionSection(v) {
+  let info;
+  try { info = await api('/version'); } catch (e) { return; }
+  if (!info) return;
+  v.append(el('h2', null, 'version'));
+  const built = info.built_at ? ' · built ' + ago(info.built_at) : '';
+  v.append(el('div', 's', (info.version || 'unknown') + built));
+  if (!info.changelog) {
+    v.append(el('div', 's', 'No changelog shipped with this build.'));
+    return;
+  }
+  const log = el('div', 'changelog md');
+  log.hidden = true;
+  log.innerHTML = renderMarkdown(info.changelog);
+  const toggle = el('button', 'btn', 'What changed');
+  toggle.onclick = () => { log.hidden = !log.hidden; };
+  v.append(toggle, log);
 }
 
 async function viewJobs(v) {
