@@ -2,6 +2,10 @@
 
 ## 2026-09-15
 
+- `.env.example` lists every setting the agent reads, with its default, and a
+  test keeps it that way in both directions. Thirteen were missing, including
+  `AGENT_EVAL_MODEL`; the README documented `AGENT_ROTATE_TOKENS`, which nothing
+  has read since compaction replaced rotation.
 - The eval model is `google/gemma-4-26b-a4b-it`. The free tier it replaces was
   withdrawn, and a withdrawn model failed every case at once in a way that read
   as broken cases — so a run now checks the gateway lists the model first and
