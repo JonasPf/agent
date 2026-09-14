@@ -39,13 +39,20 @@ jobs:
           node-version: '22'
 
       # The tool sandbox on Linux is Landlock, which needs no package and no
-      # sysctl: it is a kernel facility an unprivileged process asks for. This
-      # says which ABI the runner has, so a suite that ran unconfined is visible
-      # as that rather than as a suite that passed.
+      # sysctl: it is a kernel facility an unprivileged process asks for, so the
+      # kernel this container shares with the runner is the one that answers.
+      #
+      # /sys/kernel/security is a host mount and is not in here, so this cannot
+      # read the LSM list any more. It does not need to: whether anything is
+      # actually confining a tool is settled by the suite, where every test that
+      # needs confinement skips with its reason rather than passing against a
+      # boundary that is not there. A green run with those skips in it is not the
+      # same as a green run, and says so.
       - name: Report the sandbox
         run: |
-          grep -q landlock /sys/kernel/security/lsm && echo "landlock is enabled" || echo "NO LANDLOCK on this runner"
-          cat /sys/kernel/security/lsm; uname -r
+          uname -r
+          cat /sys/kernel/security/lsm 2>/dev/null \
+            || echo "(the host's LSM list is not visible from inside the container)"
 
       - name: Install Task
         run: sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
