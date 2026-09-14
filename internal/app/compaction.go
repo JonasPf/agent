@@ -15,6 +15,12 @@ import (
 const (
 	defaultCompactAtTokens    = 40000
 	defaultKeepVerbatimTokens = 10000
+	// How often, in tokens of growth, the running summary is rewritten, and how
+	// many characters of durable memory ride in every prompt. Constants rather
+	// than settings: nothing ever set them, and a number nobody tunes is a
+	// number that belongs in the code that depends on it.
+	defaultSummaryEvery   = 4000
+	defaultMemoryCapacity = 8000
 )
 
 // The summariser is asked to edit rather than to re-summarise. Material that has

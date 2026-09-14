@@ -18,14 +18,14 @@ func TestAnEvalModelThatIsNotThereIsNamedAsTheProblem(t *testing.T) {
 	if err := checkEvalModel("minimax/minimax-m3:free", available); err == nil {
 		t.Fatal("a model that is not available was accepted")
 	} else {
-		for _, want := range []string{"minimax/minimax-m3:free", "AGENT_EVAL_MODEL"} {
+		for _, want := range []string{"minimax/minimax-m3:free", "-model"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("the error does not mention %q: %v", want, err)
 			}
 		}
 	}
 
-	if err := checkEvalModel("google/gemma-4-26b-a4b-it", available); err != nil {
+	if err := checkEvalModel(DefaultEvalModel, available); err != nil {
 		t.Errorf("a model that is available was rejected: %v", err)
 	}
 }

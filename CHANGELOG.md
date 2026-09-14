@@ -2,6 +2,13 @@
 
 ## 2026-09-15
 
+- Eighteen settings become eight. Seven paths only ever said where two roots
+  were, so there are now two: `AGENT_STATE` for what outlives the container and
+  `AGENT_HOME` for what the image ships. Four numbers that nothing ever set are
+  constants — two of them were defaults for `compact_at_tokens` and
+  `keep_verbatim_tokens`, which a session already carries and the interface
+  already edits. And the eval model configures `cmd/eval` rather than the agent,
+  so it is a flag on that command: `go run ./cmd/eval -model <id>`.
 - `.env.example` lists every setting the agent reads, with its default, and a
   test keeps it that way in both directions. Thirteen were missing, including
   `AGENT_EVAL_MODEL`; the README documented `AGENT_ROTATE_TOKENS`, which nothing

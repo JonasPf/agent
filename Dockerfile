@@ -101,14 +101,14 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 RUN mkdir -p /app/state/data /app/state/workspace && chown -R agent:agent /app
 
 USER agent
+# Two roots and nothing else. /app/state is what outlives the container and is
+# the one volume a deployment mounts; /app is what this image ships. Everything
+# else — data, workspace, tools, skills, the interface, the changelog — is
+# derived from one of the two, so a layout decision is made once here rather
+# than restated on seven lines that have to agree.
 ENV AGENT_ADDR=:8080 \
-    AGENT_CHANGELOG=/app/CHANGELOG.md \
-    AGENT_DATA=/app/state/data \
-    AGENT_WORKSPACE=/app/state/workspace \
-    AGENT_TOOLS=/app/tools \
-    AGENT_SKILLS=/app/skills \
-    AGENT_WEB=/app/web \
-    AGENT_ENV=/app/state/data/.env
+    AGENT_STATE=/app/state \
+    AGENT_HOME=/app
 EXPOSE 8080
 # The agent asks itself, over /status, which answers without reaching a model.
 # A network client in the image for one request the agent can make of itself is

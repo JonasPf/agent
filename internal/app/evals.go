@@ -313,21 +313,19 @@ func readTurn(entries []Entry) TurnRecord {
 	return r
 }
 
-// The default is a real model, named here, and it will stop existing. A free
-// tier is withdrawn without notice, and when that happens every eval fails at
-// once in a way that reads as broken cases rather than a missing model — which
-// is exactly how this default was last found to be gone. Hence the check below:
-// the run says the model is not there and what to do about it.
+// DefaultEvalModel is a real model, named here, and it will stop existing. A
+// free tier is withdrawn without notice, and when that happens every eval fails
+// at once in a way that reads as broken cases rather than a missing model —
+// which is exactly how the last default was found to be gone. Hence the check
+// below: the run says the model is not there and what to do about it.
 //
 // google/gemma-4-26b-a4b-it is cheap rather than free, which is the trade. The
 // free tier that preceded it took three and a half minutes a case; this takes
 // under two seconds, and a suite nobody will wait for is a suite nobody runs.
-const defaultEvalModel = "google/gemma-4-26b-a4b-it"
+const DefaultEvalModel = "google/gemma-4-26b-a4b-it"
 
 // EvalModel is the model the eval command drives. It is deliberately a cheap one
 // by default: an eval that is expensive to run is an eval nobody runs.
-func EvalModel() string { return envOr("AGENT_EVAL_MODEL", defaultEvalModel) }
-
 // RunEvals runs the eval suites for the named tools, or all of them, and writes
 // a report. It returns an error when any case fails, so it can gate a change.
 // checkEvalModel reports that the chosen model is not in the catalogue, which is
@@ -348,11 +346,11 @@ func checkEvalModel(model string, available []ModelInfo) error {
 	}
 	return fmt.Errorf("the eval model %q is not available from the gateway.\n"+
 		"A model — a free tier especially — can be withdrawn, and every case then fails at once "+
-		"in a way that reads as broken cases.\nPick another with AGENT_EVAL_MODEL=<id>, or change "+
-		"defaultEvalModel in internal/app/evals.go", model)
+		"in a way that reads as broken cases.\nPick another with `go run ./cmd/eval -model <id>`, "+
+		"or change DefaultEvalModel in internal/app/evals.go", model)
 }
 
-func RunEvals(only []string, w io.Writer) error {
+func RunEvals(model string, only []string, w io.Writer) error {
 	cfg := LoadConfig()
 	if cfg.APIKey == "" {
 		return fmt.Errorf("OPENROUTER_API_KEY is not set; evals drive a real model")
@@ -360,7 +358,7 @@ func RunEvals(only []string, w io.Writer) error {
 	// Asked before any case runs, so a withdrawn model is reported as one rather
 	// than as every case failing on a rejection nobody can read.
 	if models, err := NewOpenRouter(cfg.APIKey).Models(context.Background()); err == nil {
-		if err := checkEvalModel(EvalModel(), models); err != nil {
+		if err := checkEvalModel(model, models); err != nil {
 			return err
 		}
 	}
@@ -416,7 +414,6 @@ func RunEvals(only []string, w io.Writer) error {
 	a.sched = NewScheduler(a)
 	go func() { _ = http.Serve(ln, a.routes()) }()
 
-	model := EvalModel()
 	fmt.Fprintf(w, "model %s\n\n", model)
 	var run, failed int
 	for _, s := range suites {
