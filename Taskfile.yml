@@ -57,14 +57,16 @@ tasks:
       # the agent runs on Linux, and nowhere else. On a laptop that means the
       # container, built from the same Dockerfile that CI publishes.
       #
-      # data/ and workspace/ are mounted, so a conversation started here survives
-      # the container and is the same one `task run` sees.
+      # The image keeps both under /app/state, which is the single volume a
+      # deployment mounts. Here they are bound separately so a conversation
+      # started in the container survives it and is the same one `task run`
+      # sees, which wants them at the repository root.
       - docker build -t agent:dev --build-arg VERSION='{{.VERSION}}' --build-arg BUILT_AT='{{.BUILT_AT}}' .
       - |
         docker run --rm -it \
           -p {{.ADDR}}:8080 \
-          -v "$PWD/data:/app/data" \
-          -v "$PWD/workspace:/app/workspace" \
+          -v "$PWD/data:/app/state/data" \
+          -v "$PWD/workspace:/app/state/workspace" \
           --env-file .env \
           agent:dev
 
@@ -126,7 +128,12 @@ tasks:
         stamp=$(date +%Y%m%d-%H%M%S)
         dest="{{.BACKUPS}}/$stamp"
         mkdir -p "$dest"
-        for f in data/sessions data/agent.db data/agent.db-wal data/agent.db-shm; do
+        # data/db moves whole, because the database and its journals have to
+        # travel together: a write-ahead log parted from its database is worse
+        # than no log at all. The bare data/agent.db is where the database lived
+        # before it was given a directory of its own, and is moved too so a tree
+        # the agent has not yet started against is also cleared.
+        for f in data/sessions data/db data/agent.db data/agent.db-wal data/agent.db-shm; do
           [ -e "$f" ] && mv "$f" "$dest"/ || true
         done
         # Session working directories are session state too, and an orphaned one
@@ -143,9 +150,12 @@ tasks:
         set -e
         latest=$(ls -1d {{.BACKUPS}}/*/ 2>/dev/null | tail -1)
         if [ -z "$latest" ]; then echo "no backups in {{.BACKUPS}}" >&2; exit 1; fi
-        rm -rf data/sessions data/agent.db data/agent.db-wal data/agent.db-shm workspace
+        rm -rf data/sessions data/db data/agent.db data/agent.db-wal data/agent.db-shm workspace
         cp -R "$latest"/. data/
         if [ -d "data/workspace" ]; then mv data/workspace workspace; fi
+        # A backup taken before the database had a directory of its own restores
+        # as data/agent.db, and is left there: the agent moves it into place on
+        # the next start, journals and all, rather than this doing it twice.
         echo "restored from $latest"
 
   db:status:

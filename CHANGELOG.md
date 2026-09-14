@@ -8,6 +8,19 @@ This file ships with the app and is what that screen reads, so a change to
 behaviour belongs here in the same commit that makes it — the same rule the
 specs follow.
 
+## 2026-09-14
+
+- The repository ships an image, not a deployment. The Compose file is gone and
+  nothing in the code, the workflows, or the image names a hosting platform; how
+  to run it on one is documentation, with Dokploy worked through as an example.
+- One volume. Everything that outlives the container is under `/app/state`, and
+  the two directories inside it are the agent's own convenience rather than a
+  boundary — Landlock is the boundary, and a tool confined to one session is now
+  shown to reach nothing else under a shared root.
+- `task db:clear` backs the database up again. It had been looking for it beside
+  the transcripts, where it stopped living when Landlock gave it a directory of
+  its own, and had been quietly leaving it behind.
+
 ## 2026-09-11
 
 - Compact a conversation in place: a compaction rewrites the session it happens

@@ -1040,8 +1040,13 @@ considered is absent rather than present.</p>
 </div>
 
 <div class="adr" id="adr-038">
-<div class="meta">ADR-038 · accepted</div>
+<div class="meta">ADR-038 · superseded in part</div>
 <h3>Deployed as one image behind a password, with the sandbox off</h3>
+<p><em>Both halves of this record have since moved. The sandbox does run: <a href="#adr-039">ADR-039</a>
+replaced bubblewrap with Landlock, which works in the container this describes. And the deployment no
+longer names a platform: <a href="#adr-043">ADR-043</a> removed the Compose file and the two volumes.
+What still stands is the shape — one image, built by CI, behind a proxy that demands a password
+instead of a tailnet.</em></p>
 <h4>Context</h4>
 <p>The specification described a container on a tailnet with no login, which is the right shape and was
 not what was available: a small shared server, already running Dokploy and Traefik, with little memory
@@ -1271,6 +1276,46 @@ session header carries the live cache size and counts down to its expiry, each a
 what its own call actually hit as measured by the provider, and a compaction says it reset the cache. A
 lifetime is not shown per message — a cache is one prefix with one expiry, so that would print the same
 number beside every message.</p>
+</div>
+
+<div class="adr" id="adr-043">
+<div class="meta">ADR-043 · accepted</div>
+<h3>The repository ships an image, not a deployment</h3>
+<h4>Context</h4>
+<p><a href="#adr-038">ADR-038</a> put a <code>deploy/compose.yml</code> in the repository: the image, two
+named volumes, a memory limit, and the Traefik labels that routed to it and put a password in front.
+It was written for the host that was available, and it named that host throughout &mdash; an external
+network called <code>dokploy-network</code>, a middleware resolved from a file that platform places,
+and a header saying which product would read the file.</p>
+<p>That is a deployment the agent is shaped around rather than one it happens to use. It also carried a
+trap nobody would find twice: a bcrypt hash interpolated by Compose needs every <code>$</code> doubled,
+and a single-<code>$</code> hash arrives at the proxy truncated at its first field &mdash; a valid user
+list that no password matches, which presents as a password that does not work.</p>
+<p>The two volumes had come to read as a boundary: transcripts in one, session working directories in
+the other. They never were one. <a href="#adr-039">ADR-039</a> made the boundary the kernel's.</p>
+<h4>Decision</h4>
+<p>The repository ships an OCI image and nothing that names a platform. The Compose file is deleted, the
+deploy step POSTs to a <code>DEPLOY_WEBHOOK</code> secret whose URL it does not know, and how to run the
+image on any particular host is documentation in the README &mdash; Dokploy worked through as a
+complete example, explicitly as an example.</p>
+<p>Everything that outlives the container is under one directory, <code>/app/state</code>, holding
+<code>data</code> and <code>workspace</code>. One volume, one mount. The split inside it is for the
+agent's own use and is not relied on for trust: Landlock grants a tool its own session's directory and
+the directory the database lives in, and denies what nobody granted whether or not it shares a mount
+with something that was. That is asserted end to end rather than assumed &mdash; a tool is run as a
+real subprocess under a shared root and fails to read another session's transcript, the API key, and
+the sessions directory itself.</p>
+<p>Access control moves with the platform rather than the repository. A host with a password in front
+of its applications configures one; the agent has no login of its own either way, so what changes is
+where the credential is written down, not what protects it.</p>
+<h4>Consequences</h4>
+<p>The deployment stops being reviewable in a diff, which is a real loss and the price of the trade:
+routing and credentials now live wherever it is deployed. What the repository gives up in
+reproducibility it gets back in not being welded to one host &mdash; and the part that was genuinely
+load-bearing, the boundary between one session and another, was never in that file. It is in the
+kernel, and it is tested.</p>
+<p>The existing deployment is recreated rather than migrated. Two volumes become one, and the
+conversations in them are not carried across; that was accepted deliberately rather than discovered.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
