@@ -66,8 +66,8 @@ agent warns at startup if other users can read it. Point somewhere else with `AG
 | `AGENT_CHANGELOG` | `CHANGELOG.md` | What changed, shown with the running version under **More → version**. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
 | `AGENT_EVAL_MODEL` | `minimax/minimax-m3:free` | Model used by `go run ./cmd/eval`. |
-| `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. |
-| `GH_TOKEN` | — | GitHub credential. Reaches only a tool whose manifest names it, and no tool names it yet. |
+| `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. Reaches a tool only in a session granted it. |
+| `GH_TOKEN` | — | GitHub credential. Reaches a tool only in a session granted it. |
 | `AGENT_ROTATE_TOKENS` | `40000` | Projected size at which a session rotates. |
 | `AGENT_MEMORY_CAPACITY` | `8000` | Characters of durable memory. |
 
@@ -159,6 +159,12 @@ docker run -d --name agent \
 | `GH_TOKEN` | Optional. Fine-grained, one repository, contents + pull requests write, no workflow scope — what the agent needs to propose changes to itself. The most it can do with this is open a pull request nobody has merged yet. |
 | `AGENT_REPO` | Optional. The repository the agent clones when it changes itself. |
 
+Setting these two in the deployment does not by itself let the agent change
+itself. A tool receives a variable only in a session **granted** it by name,
+under **Controls → granted environment**, and a grant is fixed for that session's
+life. That is deliberate: the credential reaches the one conversation doing the
+work, not every conversation forever. `OPENROUTER_API_KEY` can never be granted.
+
 Every other setting has a default; the table under [Configuration](#configuration)
 has the rest.
 
@@ -203,7 +209,7 @@ There is no code for this. The whole of it is:
 | --- | --- |
 | [`skills/changing-yourself.md`](skills/changing-yourself.md) | The procedure, as prose. ~3 KB |
 | `git` and `gh` in the image | The two programs it needs. The shell, the file tools and the network are there for every other task |
-| `GH_TOKEN`, `AGENT_REPO` | A credential and an address, reaching only a tool whose manifest names them |
+| `GH_TOKEN`, `AGENT_REPO` | A credential and an address, reaching tools only in a session granted them by name |
 
 No tool, no API route, no branch in the loop — nothing in any package knows this capability exists,
 and a test fails if that changes. Deleting the skill and the two packages deletes the capability.

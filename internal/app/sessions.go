@@ -140,6 +140,9 @@ func describeConfigChange(from, to SessionConfig) string {
 	if from.Model != to.Model {
 		parts = append(parts, "model "+from.Model+" → "+to.Model)
 	}
+	if !sameSet(from.GrantedEnv, to.GrantedEnv) {
+		parts = append(parts, "grants "+describeSet(from.GrantedEnv)+" → "+describeSet(to.GrantedEnv))
+	}
 	if !sameSet(from.EnabledTools, to.EnabledTools) {
 		parts = append(parts, "tools "+describeSet(from.EnabledTools)+" → "+describeSet(to.EnabledTools))
 	}

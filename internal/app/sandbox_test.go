@@ -528,7 +528,7 @@ func TestAMechanismIsOnlyClaimedIfItActuallyRuns(t *testing.T) {
 // deployment violated — it claimed bubblewrap and could not launch anything.
 func TestWhatTheSandboxClaimsIsWhatTheToolGets(t *testing.T) {
 	a := newTestApp(t)
-	installEnvTool(t, a, "canary", nil)
+	installEnvTool(t, a, "canary")
 	if !a.sandbox.Enforcing() {
 		t.Skipf("no sandbox on this machine (%s); the claim and the reality agree", a.sandbox.Reason)
 	}

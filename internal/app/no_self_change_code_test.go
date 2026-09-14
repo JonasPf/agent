@@ -65,6 +65,15 @@ func TestTheProcedureIsASkillAndNothingElse(t *testing.T) {
 			t.Errorf("the skill does not mention %q, and nothing else tells the agent how", needed)
 		}
 	}
+	// The variables arrive by grant, and a conversation that was not granted them
+	// cannot be given them mid-flight. Finding that out from an empty $AGENT_REPO
+	// halfway through a clone is finding it out in the worst place, so the skill
+	// has to say to look first and what the answer means.
+	for _, needed := range []string{"MISSING", "GH_TOKEN", "granted"} {
+		if !strings.Contains(string(body), needed) {
+			t.Errorf("the skill does not tell the agent to check for %q before it starts", needed)
+		}
+	}
 	// The one thing the agent must not be led to believe it can do.
 	for _, absent := range []string{"gh pr merge", "--admin"} {
 		if strings.Contains(string(body), absent) {

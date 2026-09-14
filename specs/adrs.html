@@ -1013,8 +1013,11 @@ longer the only way in &mdash; see <a href="architecture.html">Changing the agen
 </div>
 
 <div class="adr" id="adr-037">
-<div class="meta">ADR-037 · accepted</div>
+<div class="meta">ADR-037 · superseded in part</div>
 <h3>A tool receives only the environment its manifest names</h3>
+<p><em>The allow-list stands; where it is declared has moved. <a href="#adr-045">ADR-045</a> replaces the
+manifest with the calling session, so a credential is granted to one conversation rather than to a tool
+in every conversation. Inheritance stays dead, which is what this record was defending.</em></p>
 <h4>Context</h4>
 <p>A tool is a subprocess, and a subprocess inherited the agent's whole environment. That put
 <code>OPENROUTER_API_KEY</code> in front of every tool ever written, including <code>bash</code>, whose
@@ -1361,6 +1364,47 @@ wants either runs the container &mdash; and it is one answer now rather than two
 <p>Manifest <code>env</code> is left with no users at all: the browser variables were the only ones any
 tool named. The field stays for now, and the next decision about it is whether a session, rather than a
 manifest, is where a tool should be granted a variable.</p>
+</div>
+
+<div class="adr" id="adr-045">
+<div class="meta">ADR-045 · accepted</div>
+<h3>A session grants the environment, not a manifest</h3>
+<h4>Context</h4>
+<p><a href="#adr-037">ADR-037</a> made a tool's environment an allow-list and put the declaration in the
+tool's manifest. That was right about inheritance and wrong about the unit. A manifest is the same in
+every conversation and for the life of the deployment, so <code>"env": ["GH_TOKEN"]</code> on
+<code>bash</code> would hand the credential to every session there will ever be &mdash; and would do it
+invisibly, in a JSON file nobody reads, to the tool that runs commands the model composed.</p>
+<p>The field also turned out to be carrying two unlike things. Its only users were
+<code>AGENT_BROWSER</code> and <code>PLAYWRIGHT_BROWSERS_PATH</code> on the two browser tools, which are
+not credentials at all but runtime locations: static, identical everywhere, and the tool is broken
+without them. <a href="#adr-044">ADR-044</a> installed the browser at a fixed path and deleted both,
+which left the field with no users and made the question answerable: what remained was only the
+credential job, and a session does that job better.</p>
+<h4>Decision</h4>
+<p>A session's configuration carries <code>granted_env</code>: the names of variables its tools may
+read. Names, never values &mdash; the value stays in the agent's own environment, so a grant can be
+stored in <code>meta.json</code>, carried by an export, and read on screen without any of those
+becoming a place a secret lives. The manifest's <code>env</code> field is deleted.</p>
+<p>A grant is fixed for the session's life, like the model, the tools and the skills it sits beside. A
+conversation that could be handed a credential halfway through is one whose reach cannot be read from
+how it started, and the answer to wanting one later is the same as for any other configuration change:
+fork.</p>
+<p><code>OPENROUTER_API_KEY</code> cannot be granted. Everything else is the operator's to hand to their
+own conversation; that one name is the variable the allow-list was built to keep out, and a grant that
+could return it would undo the decision rather than refine it.</p>
+<h4>Consequences</h4>
+<p>Self-modification needs no code change to arm and no code change to disarm: the credential reaches
+<code>bash</code> in the one conversation doing the work and nowhere else, which is what
+<a href="#adr-036">ADR-036</a> wanted and the manifest could not express. The property that no source
+file names the credential survives &mdash; a grant is typed by a person and stored as data.</p>
+<p>What a conversation may reach is now on the screen that conversation is read from, rather than in a
+file beside a tool. That is the visibility half of the guiding constraint doing the work it exists for:
+a reader can see what a session can touch without reading the repository.</p>
+<p>The cost is that a grant is easy to forget, and a tool without it fails in a way that reads as a
+broken tool. The <code>changing-yourself</code> skill therefore checks for both variables before it
+does anything and says which is missing, because the worst place to discover an ungranted credential is
+halfway through a change that cannot be pushed.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

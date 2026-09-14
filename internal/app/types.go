@@ -96,6 +96,15 @@ type SessionConfig struct {
 	Model         string   `json:"model"`
 	EnabledTools  []string `json:"enabled_tools"`  // nil means every tool
 	EnabledSkills []string `json:"enabled_skills"` // nil means every skill
+	// GrantedEnv names the environment variables this conversation's tools
+	// receive beyond the ones every tool is promised. Names, never values: the
+	// value stays wherever the agent's own environment gets it, so a grant can
+	// be exported, read, and reasoned about without carrying a secret with it.
+	//
+	// It is a property of one conversation rather than of a tool, because a
+	// credential is granted rather than required — the manifest could only say
+	// every session or none, for the life of the deployment.
+	GrantedEnv []string `json:"granted_env,omitempty"`
 }
 
 // Session metadata. Stored as meta.json beside the transcript, so SQLite is derived.

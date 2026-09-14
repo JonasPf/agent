@@ -10,6 +10,26 @@ does: a branch, a pull request, a green pipeline, and a human who merges it.
 Nothing you write reaches production until that person merges. Say so plainly when you finish, and do
 not describe a change as done because you pushed it.
 
+## Before you start
+
+This conversation needs two variables, and it only has them if it was granted them: `AGENT_REPO`, the
+clone URL, and `GH_TOKEN`, the credential that pushes and opens the pull request. A grant belongs to
+one session and is fixed when that session starts, so a conversation that was not granted them cannot
+be given them halfway through.
+
+Check first, before writing anything:
+
+```sh
+for v in AGENT_REPO GH_TOKEN; do
+  eval "[ -n \"\$$v\" ]" && echo "$v ok" || echo "$v MISSING"
+done
+```
+
+If either says `MISSING`, stop. Say which one, and that this conversation was not granted it — the
+operator grants it under **Controls → granted environment**, and because grants are fixed for a
+session's life, acting on it means forking this conversation or starting a new one. Do not try to work
+around it, and do not begin a change you cannot push.
+
 ## The loop
 
 1. **Clone into this session's working directory.** `git clone $AGENT_REPO repo` — your tools can only

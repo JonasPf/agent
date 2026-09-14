@@ -36,6 +36,7 @@ private one of its own, so a session is always something a person started and ca
 <tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
 <tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
 <tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
+<tr><td><code>granted_env</code></td><td>Environment variable <em>names</em> this conversation's tools may read, beyond what every tool is promised. Never values: the value stays in the agent's own environment, so a grant can be exported and read without carrying a secret. Fixed for the session's life.</td></tr>
 <tr><td><code>compact_at_tokens</code></td><td>The projected size at which the conversation compacts. Default forty thousand.</td></tr>
 <tr><td><code>keep_verbatim_tokens</code></td><td>How much of the tail a compaction leaves untouched. Default ten thousand.</td></tr>
 </table>
@@ -45,7 +46,11 @@ private one of its own, so a session is always something a person started and ca
 <ul>
 <li>Every session appears in the session list; none are hidden by kind or origin.</li>
 <li>A session receives a title within one turn of its first user message.</li>
-<li>A session's model, tools, and skills cannot be changed once the session exists.</li>
+<li>A session's model, tools, skills, and grants cannot be changed once the session exists.</li>
+<li>A tool receives a granted variable only in a session that was granted it, and a session granted nothing reaches no credential another session holds.</li>
+<li>A granted variable that is not set in the agent's environment is absent from the tool rather than empty.</li>
+<li>The model API key cannot be granted to any session.</li>
+<li>A session says which variables it may read, without saying what any of them hold.</li>
 <li>The configuration of one session does not affect any other.</li>
 <li>The system prompt as sent is retrievable for any session that has taken a turn.</li>
 <li>A session identifier addresses the same conversation for that conversation's whole life.</li>

@@ -658,6 +658,15 @@ async function compactNow(id) {
 
 const describeSet = (set, noun) => set == null ? 'all ' + noun : (set.length ? set.length + ' ' + noun : 'no ' + noun);
 
+// parseGrants reads a list of variable names typed by a person: separated by
+// spaces or commas, in either order, with the empties dropped. A name is not
+// checked against the agent's environment here — an unset one is simply absent
+// when a tool runs, and saying which of them exist would answer a question
+// about the agent's secrets that nobody asked.
+function parseGrants(raw) {
+  return String(raw || '').split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
+}
+
 // configEditor renders a configuration and returns a reader for it. It does not
 // save anything; what the caller does with it depends on whether the session has
 // taken a turn, which is when model, tools, and skills stop being editable.
@@ -666,6 +675,7 @@ async function configEditor(v, current) {
     model: current.model || null,
     enabled_tools: current.enabled_tools == null ? null : current.enabled_tools.slice(),
     enabled_skills: current.enabled_skills == null ? null : current.enabled_skills.slice(),
+    granted_env: (current.granted_env || []).slice(),
   };
 
   v.append(el('h2', null, 'model'));
@@ -743,6 +753,22 @@ async function configEditor(v, current) {
   };
   await picker('tools', '/tools', 'enabled_tools');
   await picker('skills', '/skills', 'enabled_skills');
+
+  // Names, not values. The agent already holds the values; what a conversation
+  // is given is permission to see one, and a name is safe to show, export, and
+  // read back. There is no list to pick from on purpose: enumerating the
+  // agent's environment would tell every reader what secrets it holds.
+  v.append(el('h2', null, 'granted environment'));
+  const envNote = el('p', 'note',
+    'Variable names this conversation\u2019s tools may read \u2014 a credential is granted here, ' +
+    'not required by a tool. Separate names with spaces or commas. Leave empty unless a skill ' +
+    'asks for one. The model key can never be granted.');
+  const envIn = el('input', 'text');
+  envIn.type = 'text';
+  envIn.placeholder = 'GH_TOKEN AGENT_REPO';
+  envIn.value = cfg.granted_env.join(' ');
+  envIn.oninput = () => { cfg.granted_env = parseGrants(envIn.value); };
+  v.append(envNote, envIn);
 
   return () => cfg;
 }
@@ -839,7 +865,9 @@ async function viewSettings(v) {
   const s = res.session;
   setHeader('Controls', true);
 
-  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools')} and ${describeSet(s.enabled_skills, 'skills')}`;
+  const grants = (s.granted_env || []);
+  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools')} and ${describeSet(s.enabled_skills, 'skills')}` +
+    (grants.length ? `, and may read ${grants.join(', ')}` : '');
   v.append(el('p', 'note',
     `This conversation runs on ${runs}, fixed for its life. Changing any of it copies the ` +
     `conversation into a new session, leaving this one as it is.`));
