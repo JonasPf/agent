@@ -110,24 +110,40 @@ func loadEnvFile(path string) {
 	}
 }
 
+// The layout is two roots, not seven paths. State is what outlives the
+// container and is the one directory a deployment mounts; home is what the
+// image ships and never changes. Both default to the working directory, which
+// is what running from a checkout has always meant.
+//
+// There were seven settings here, and nothing ever set them except the image —
+// where they always resolved to these two roots. Seven lines to keep in step
+// with one layout decision is six chances to get it wrong, for a choice nobody
+// wanted to make separately.
 func LoadConfig() Config {
-	envFile := envOr("AGENT_ENV", ".env")
+	state := envOr("AGENT_STATE", ".")
+	home := envOr("AGENT_HOME", ".")
+	// Read before the file is loaded, so the roots come from the real
+	// environment. A settings file cannot say where it lives.
+	envFile := filepath.Join(state, ".env")
 	loadEnvFile(envFile)
 	return Config{
-		EnvFile:            envFile,
-		Addr:               envOr("AGENT_ADDR", ":8080"),
-		DataDir:            envOr("AGENT_DATA", "data"),
-		Workspace:          envOr("AGENT_WORKSPACE", "workspace"),
-		ToolsDir:           envOr("AGENT_TOOLS", "tools"),
-		ReadPaths:          os.Getenv("AGENT_READ_PATHS"),
-		SkillsDir:          envOr("AGENT_SKILLS", "skills"),
-		ChangelogPath:      envOr("AGENT_CHANGELOG", "CHANGELOG.md"),
-		WebDir:             envOr("AGENT_WEB", "web"),
-		DefaultModel:       envOr("AGENT_MODEL", "anthropic/claude-sonnet-4.5"),
-		CompactAtTokens:    envInt("AGENT_COMPACT_TOKENS", defaultCompactAtTokens),
-		KeepVerbatimTokens: envInt("AGENT_KEEP_TOKENS", defaultKeepVerbatimTokens),
-		SummaryEvery:       envInt("AGENT_SUMMARY_EVERY", 4000),
-		MemoryCapacity:     envInt("AGENT_MEMORY_CAPACITY", 8000),
+		EnvFile:       envFile,
+		Addr:          envOr("AGENT_ADDR", ":8080"),
+		DataDir:       filepath.Join(state, "data"),
+		Workspace:     filepath.Join(state, "workspace"),
+		ToolsDir:      filepath.Join(home, "tools"),
+		SkillsDir:     filepath.Join(home, "skills"),
+		WebDir:        filepath.Join(home, "web"),
+		ChangelogPath: filepath.Join(home, "CHANGELOG.md"),
+		ReadPaths:     os.Getenv("AGENT_READ_PATHS"),
+		DefaultModel:  envOr("AGENT_MODEL", "anthropic/claude-sonnet-4.5"),
+		// Not settings. Nothing ever set them, and the first two were defaults
+		// for a default: a session carries its own compact_at_tokens and
+		// keep_verbatim_tokens, editable on the screen it is read from.
+		CompactAtTokens:    defaultCompactAtTokens,
+		KeepVerbatimTokens: defaultKeepVerbatimTokens,
+		SummaryEvery:       defaultSummaryEvery,
+		MemoryCapacity:     defaultMemoryCapacity,
 		APIKey:             os.Getenv("OPENROUTER_API_KEY"),
 	}
 }

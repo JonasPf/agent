@@ -120,6 +120,21 @@ which is worse than having no file at all.
 reports what it read rather than what it expected. It holds a credential, so it is excluded from
 version control and the agent says so at startup if other users can read it.</p>
 
+<p>There are few settings, and that is deliberate. Where things live is two roots &mdash; one for what
+outlives the container, one for what the image ships &mdash; rather than a path for each directory: a
+layout is one decision, and restating it seven times is six chances for the parts to disagree. A number
+nobody has ever set is a constant, not a setting; where a conversation already carries its own value,
+as it does for how much of itself to keep, the environment has no business offering a second answer.
+And a variable that configures a development command rather than the running agent is a flag on that
+command, because a setting the agent parses at startup and then ignores is a setting that lies.</p>
+
+<div class="note">
+<strong>Every setting is written down.</strong> <code>.env.example</code> lists all of them with their
+defaults, and that is checked against the source in both directions. One the code reads and the file
+omits is one nobody can find; one the file offers and nothing reads is worse, because changing it
+appears to do something.
+</div>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -129,6 +144,8 @@ version control and the agent says so at startup if other users can read it.</p>
 <li>Startup reports how many settings were read and from where, and never their values.</li>
 <li>Startup warns when the file is readable by users other than its owner.</li>
 <li>No credential is written to a transcript, to the database, or to the log.</li>
+<li>Every setting the agent reads appears in <code>.env.example</code> with its default, and the file offers nothing the agent does not read.</li>
+<li>Where the agent keeps its state and where it was installed are one setting each, and every directory it uses is derived from one of the two.</li>
 </ul>
 </div>
 

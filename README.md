@@ -52,27 +52,24 @@ AGENT_MODEL=anthropic/claude-opus-4.1 task run
 ```
 
 `.env` holds a credential: keep it mode 600, and out of git. It is already in `.gitignore`, and the
-agent warns at startup if other users can read it. Point somewhere else with `AGENT_ENV=path`.
+agent warns at startup if other users can read it. It lives at the root of `AGENT_STATE`, so moving that
+moves the file with it.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Required for model calls. |
-| `AGENT_ENV` | `.env` | File to read settings from. |
 | `AGENT_ADDR` | `:8080` | Listen address. |
-| `AGENT_MODEL` | `anthropic/claude-sonnet-4.5` | Default model for a new session. |
-| `AGENT_DATA` | `data` | Transcripts, one directory per session, and the database under `db/`. |
-| `AGENT_WORKSPACE` | `workspace` | Holds one working directory per session, where that session's file and shell tools operate. |
-| `AGENT_TOOLS` / `AGENT_SKILLS` | `tools` / `skills` | Scanned at start and on reload. |
-| `AGENT_CHANGELOG` | `CHANGELOG.md` | What changed, shown with the running version under **More → version**. |
-| `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. |
-| `AGENT_EVAL_MODEL` | `google/gemma-4-26b-a4b-it` | Model used by `go run ./cmd/eval`. A run against a model the gateway no longer lists says so, rather than failing every case. |
+| `AGENT_MODEL` | `anthropic/claude-sonnet-4.5` | Model a new conversation starts on. Each keeps its own for life. |
+| `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, and `.env` beneath it. The one directory a deployment mounts. |
+| `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. |
+| `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. It only adds; nothing here removes a boundary. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. Reaches a tool only in a session granted it. |
 | `GH_TOKEN` | — | GitHub credential. Reaches a tool only in a session granted it. |
-| `AGENT_COMPACT_TOKENS` | `40000` | Projected size at which a conversation compacts in place. |
-| `AGENT_KEEP_TOKENS` | `10000` | How much of the tail a compaction leaves word for word. |
-| `AGENT_SUMMARY_EVERY` | `4000` | Tokens of growth between rewrites of the running summary. |
-| `AGENT_MEMORY_CAPACITY` | `8000` | Characters of durable memory. |
-| `AGENT_WEB` | `web` | The browser interface, served as static files. |
+
+That is the whole list. There were eighteen: seven paths that only ever said
+where two roots were, four numbers nothing ever set — two of them defaults for a
+per-session setting the interface already edits — and the eval model, which
+configures `cmd/eval` and not the agent, so it is now a flag on that command.
 
 Every one of these is in [`.env.example`](.env.example) with its default, and a
 test checks that in both directions: a setting missing from that file is one
@@ -147,9 +144,9 @@ there and a redeploy keeps every conversation, job, memory item, and file.
 They are two directories for the agent's convenience, not a boundary. The
 boundary is Landlock: a tool is granted its own session's directory and the
 directory the database lives in, and is denied everything else — the other
-directory included, whether or not it shares a mount. `AGENT_DATA` and
-`AGENT_WORKSPACE` still point wherever you like; the image simply puts both
-under one root.
+directory included, whether or not it shares a mount. Both are derived from
+`AGENT_STATE`, so the layout is one decision rather than two that have to
+agree.
 
 ### Running it
 
