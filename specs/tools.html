@@ -116,7 +116,6 @@ means rebuilding or restarting the agent, which is the property
   "description": "Query deployment status and history.",
   "db_prefix": "deploys_",
   "timeout_seconds": 30,
-  "env": ["DEPLOY_TOKEN"],
   "reads": ["/proc"],
   "parameters": {
     "type": "object",
@@ -133,7 +132,6 @@ means rebuilding or restarting the agent, which is the property
 <ul>
 <li><code>description</code> is a single sentence.</li>
 <li><code>db_prefix</code> is unique across tools and every table the tool creates begins with it.</li>
-<li><code>env</code> is optional and names the environment variables this tool receives beyond the ones every tool is promised. It is the only way a variable of the agent's own environment &mdash; a credential included &mdash; reaches a tool.</li>
 <li><code>reads</code> is optional and names the paths this tool may read beyond the runtime every tool gets. A tool that asks for nothing reads the runtime, its own directory, and its session's working directory. Granting the union of what any tool might need would give every tool the widest boundary any of them asks for.</li>
 <li><code>parameters</code> is a valid JSON Schema object and is exposed verbatim to the model.</li>
 <li>A tool directory without <code>eval.json</code> is reported by the test run, so a capability cannot be added without evidence that a model can use it.</li>
@@ -153,9 +151,9 @@ belongs to.</p>
 <p>It carries nothing else. A subprocess used to inherit the agent's whole environment, which handed
 the model API key to every tool including the one that runs shell commands the model wrote. The
 environment is now built from an allow-list &mdash; what any program needs to start, what the table
-below promises, and whatever the manifest's <code>env</code> names
-(<a href="adrs.html#adr-037">ADR-037</a>). A variable nobody named is absent, and a named variable that
-is not set stays absent rather than arriving empty.</p>
+below promises, and whatever the calling session was granted by name
+(<a href="adrs.html#adr-037">ADR-037</a>, <a href="adrs.html#adr-045">ADR-045</a>). A variable nobody
+granted is absent, and a granted variable that is not set stays absent rather than arriving empty.</p>
 
 <table>
 <tr><th>Variable</th><th>Holds</th></tr>
@@ -166,6 +164,14 @@ is not set stays absent rather than arriving empty.</p>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
 </table>
+
+<p>Beyond that list, and the handful any program needs to start at all &mdash; <code>PATH</code>,
+<code>HOME</code>, the locale, the certificate paths &mdash; a tool receives a variable only because the
+conversation it is running in was granted it by name
+(<a href="adrs.html#adr-045">ADR-045</a>). A grant belongs to a session, not to a tool: a credential is
+something an operator hands to one conversation, where a manifest could only say every session or none
+of them, for the life of the deployment. The <code>OPENROUTER_API_KEY</code> is the one name no grant
+can carry, because it is the variable the whole allow-list exists to keep out.</p>
 
 <pre><code>stdin   {"action": "status", "service": "web"}
 stdout  {"ok": true, "content": "web: deployed 12m ago, healthy"}
@@ -182,7 +188,7 @@ turn rather than the process.</p>
 <li>A tool can reach every capability the interface can, through <code>AGENT_URL</code>, without a private hook into the process.</li>
 <li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
 <li>Standard error is captured and stored with the result, not shown to the model.</li>
-<li>A tool subprocess receives only the variables above and the ones its manifest names; the model API key and every other variable of the agent's environment are absent.</li>
+<li>A tool subprocess receives only the variables above and the ones its calling session was granted; the model API key and every other variable of the agent's environment are absent.</li>
 <li>A variable a manifest names is passed only to that tool, and only when it is set.</li>
 <li>Tool results are recorded as transcript entries.</li>
 </ul>

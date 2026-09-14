@@ -142,6 +142,7 @@ type configRequest struct {
 	Model         string      `json:"model"`
 	EnabledTools  optionalSet `json:"enabled_tools"`
 	EnabledSkills optionalSet `json:"enabled_skills"`
+	GrantedEnv    optionalSet `json:"granted_env"`
 }
 
 func (c configRequest) applyTo(base SessionConfig) SessionConfig {
@@ -153,6 +154,9 @@ func (c configRequest) applyTo(base SessionConfig) SessionConfig {
 	}
 	if c.EnabledSkills.present {
 		base.EnabledSkills = c.EnabledSkills.set
+	}
+	if c.GrantedEnv.present {
+		base.GrantedEnv = c.GrantedEnv.set
 	}
 	return base
 }
@@ -204,6 +208,7 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		Summary       *string     `json:"summary"`
 		EnabledTools  optionalSet `json:"enabled_tools"`
 		EnabledSkills optionalSet `json:"enabled_skills"`
+		GrantedEnv    optionalSet `json:"granted_env"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
@@ -212,10 +217,12 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	if in.Title != nil {
 		s.Title = *in.Title
 	}
-	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present {
+	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present {
 		// A configuration is chosen before the session exists and fixed once it
-		// does. There is one answer here, not two.
-		fail(w, 409, "a session's model, tools, and skills are fixed for its life; "+
+		// does. There is one answer here, not two. Grants are part of it: a
+		// conversation that could be handed a credential halfway through is one
+		// whose reach cannot be read from how it started.
+		fail(w, 409, "a session's model, tools, skills, and grants are fixed for its life; "+
 			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
 		return
 	}

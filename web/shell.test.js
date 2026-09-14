@@ -435,3 +435,60 @@ test('a build without a changelog still names itself', async () => {
   assert.match(textOf(v), /7da7e74/, 'the version went missing with the changelog');
   assert.strictEqual(find(v, 'changelog'), null, 'an empty changelog was rendered anyway');
 });
+
+// ---------- granted environment ----------
+
+// A grant is typed by a person, so the field has to forgive the ways a person
+// writes a list. What it must never do is invent a name: an empty field grants
+// nothing, and nothing is the difference between a conversation that can reach
+// a credential and one that cannot.
+test('a typed list of variable names is read the ways people write one', async () => {
+  const ctx = load({});
+  for (const [raw, want] of [
+    ['GH_TOKEN AGENT_REPO', ['GH_TOKEN', 'AGENT_REPO']],
+    ['GH_TOKEN, AGENT_REPO', ['GH_TOKEN', 'AGENT_REPO']],
+    ['  GH_TOKEN ,,  AGENT_REPO  ', ['GH_TOKEN', 'AGENT_REPO']],
+    ['GH_TOKEN\nAGENT_REPO', ['GH_TOKEN', 'AGENT_REPO']],
+    ['', []],
+    ['   ', []],
+    [null, []],
+  ]) {
+    assert.deepStrictEqual(Array.from(ctx.parseGrants(raw)), want, `parseGrants(${JSON.stringify(raw)})`);
+  }
+});
+
+// What a conversation may read is part of what it is, so the controls screen
+// says it rather than leaving it to be discovered when a tool succeeds.
+test('the controls screen names the variables a conversation may read', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1', granted_env: ['GH_TOKEN', 'AGENT_REPO'] }) },
+    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [],
+  });
+  // route() is what fills in which session the screen is for; the view is then
+  // driven into a node of this test's own, so what it rendered can be read.
+  ctx.location.hash = '#settings/S1';
+  ctx.route();
+  const v = node('div');
+  await ctx.viewSettings(v);
+  // The first note is the summary of what this conversation is; the editor
+  // below it has prose of its own, which is not what is being asked about here.
+  const summary = findAll(v, 'note')[0].textContent;
+  assert.ok(summary.includes('GH_TOKEN') && summary.includes('AGENT_REPO'),
+    'the summary does not say which variables the conversation may read: ' + summary);
+});
+
+// The opposite, so the line above is not simply always printed: a conversation
+// granted nothing says nothing about grants.
+test('a conversation granted nothing says nothing about grants', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1' }) },
+    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [],
+  });
+  ctx.location.hash = '#settings/S1';
+  ctx.route();
+  const v = node('div');
+  await ctx.viewSettings(v);
+  const summary = findAll(v, 'note')[0].textContent;
+  assert.ok(!summary.includes('may read'),
+    'a conversation with no grants still claims it may read something: ' + summary);
+});

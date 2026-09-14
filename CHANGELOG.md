@@ -2,6 +2,16 @@
 
 ## 2026-09-15
 
+- A conversation grants its tools the environment they may read. `granted_env`
+  on a session names the variables its tools receive — names, never values — and
+  is fixed for that session's life like the model and the tools beside it. A
+  credential now reaches the one conversation doing the work rather than every
+  conversation there will ever be, which is what a tool manifest could only say.
+  Set it under **Controls → granted environment**.
+- `OPENROUTER_API_KEY` cannot be granted to anything, ever.
+- The `changing-yourself` skill checks for `AGENT_REPO` and `GH_TOKEN` before it
+  starts, and says which is missing instead of failing halfway through a change
+  it cannot push.
 - `web_fetch` is now `web_browse`, which is what it does. It opens the page in a
   browser, every time; the plain-HTTP fallback is gone, because a page that
   needed its scripts came back looking exactly like a page that simply says
