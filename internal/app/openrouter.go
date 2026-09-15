@@ -18,12 +18,27 @@ import (
 
 const openRouterBase = "https://openrouter.ai/api/v1"
 
+// ModelInfo is what a model is chosen by: what it costs, how much it holds, what
+// it accepts, and how capable it measured.
 type ModelInfo struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	ContextLength int     `json:"context_length"`
-	PromptPrice   float64 `json:"prompt_price"`
-	CompPrice     float64 `json:"completion_price"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Description         string   `json:"description,omitempty"`
+	Created             int64    `json:"created,omitempty"`
+	ContextLength       int      `json:"context_length"`
+	MaxCompletionTokens int      `json:"max_completion_tokens,omitempty"`
+	InputModalities     []string `json:"input_modalities,omitempty"`
+	// Prices are dollars per token, as the gateway reports them.
+	PromptPrice    float64 `json:"prompt_price"`
+	CompPrice      float64 `json:"completion_price"`
+	CacheReadPrice float64 `json:"cache_read_price,omitempty"`
+	Reasoning      bool    `json:"reasoning"`
+	// The indices are Artificial Analysis's, passed through by the gateway. They
+	// are pointers because a model nobody measured has no score, and zero is a
+	// score: it would rank the unmeasured as the least capable.
+	IntelligenceIndex *float64 `json:"intelligence_index,omitempty"`
+	CodingIndex       *float64 `json:"coding_index,omitempty"`
+	AgenticIndex      *float64 `json:"agentic_index,omitempty"`
 }
 
 type KeyInfo struct {
@@ -174,12 +189,28 @@ func (o *OpenRouter) Models(ctx context.Context) ([]ModelInfo, error) {
 		Data []struct {
 			ID                  string   `json:"id"`
 			Name                string   `json:"name"`
+			Description         string   `json:"description"`
+			Created             int64    `json:"created"`
 			ContextLength       int      `json:"context_length"`
 			SupportedParameters []string `json:"supported_parameters"`
-			Pricing             struct {
-				Prompt     string `json:"prompt"`
-				Completion string `json:"completion"`
+			Architecture        struct {
+				InputModalities []string `json:"input_modalities"`
+			} `json:"architecture"`
+			TopProvider struct {
+				MaxCompletionTokens int `json:"max_completion_tokens"`
+			} `json:"top_provider"`
+			Pricing struct {
+				Prompt         string `json:"prompt"`
+				Completion     string `json:"completion"`
+				InputCacheRead string `json:"input_cache_read"`
 			} `json:"pricing"`
+			Benchmarks struct {
+				ArtificialAnalysis struct {
+					Intelligence *float64 `json:"intelligence_index"`
+					Coding       *float64 `json:"coding_index"`
+					Agentic      *float64 `json:"agentic_index"`
+				} `json:"artificial_analysis"`
+			} `json:"benchmarks"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
@@ -192,8 +223,15 @@ func (o *OpenRouter) Models(ctx context.Context) ([]ModelInfo, error) {
 		}
 		p, _ := strconv.ParseFloat(m.Pricing.Prompt, 64)
 		c, _ := strconv.ParseFloat(m.Pricing.Completion, 64)
-		out = append(out, ModelInfo{ID: m.ID, Name: m.Name, ContextLength: m.ContextLength,
-			PromptPrice: p, CompPrice: c})
+		cr, _ := strconv.ParseFloat(m.Pricing.InputCacheRead, 64)
+		aa := m.Benchmarks.ArtificialAnalysis
+		out = append(out, ModelInfo{ID: m.ID, Name: m.Name, Description: m.Description,
+			Created: m.Created, ContextLength: m.ContextLength,
+			MaxCompletionTokens: m.TopProvider.MaxCompletionTokens,
+			InputModalities:     m.Architecture.InputModalities,
+			PromptPrice:         p, CompPrice: c, CacheReadPrice: cr,
+			Reasoning:         contains(m.SupportedParameters, "reasoning"),
+			IntelligenceIndex: aa.Intelligence, CodingIndex: aa.Coding, AgenticIndex: aa.Agentic})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	o.mu.Lock()

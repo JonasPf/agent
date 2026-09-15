@@ -48,7 +48,7 @@ const until = t => {
   return 'in ' + Math.round(d / 86400) + 'd';
 };
 
-const state = { view: null, session: null, entries: [], streaming: '', sessions: [], models: [], status: null, collapsed: {}, sort: 'recent' };
+const state = { view: null, session: null, entries: [], streaming: '', sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent' };
 
 // ---------- routing ----------
 
@@ -59,6 +59,7 @@ function route() {
   state.arg = arg;
   drawer(false);
   closeMenu();
+  closeDialog();
   render();
   renderSidebar();
 }
@@ -656,15 +657,211 @@ async function compactNow(id) {
 
 // ---------- session configuration ----------
 
-const describeSet = (set, noun) => set == null ? 'all ' + noun : (set.length ? set.length + ' ' + noun : 'no ' + noun);
+// What a set nobody chose means depends on the set — every tool, but only the
+// skills that are on by default — so the caller says it.
+const describeSet = (set, noun, unchosen) => set == null ? unchosen : (set.length ? set.length + ' ' + noun : 'no ' + noun);
 
-// parseGrants reads a list of variable names typed by a person: separated by
-// spaces or commas, in either order, with the empties dropped. A name is not
-// checked against the agent's environment here — an unset one is simply absent
-// when a tool runs, and saying which of them exist would answer a question
-// about the agent's secrets that nobody asked.
-function parseGrants(raw) {
-  return String(raw || '').split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
+// ---------- dialogs ----------
+
+// A dialog is a choice that needs more room than the screen it is made on: the
+// model catalogue, the environment. It slides over the page — up from the
+// bottom on a phone, in from the right where there is room — and there is only
+// ever one.
+let dialog = null;
+
+function openDialog(title) {
+  closeDialog();
+  const back = el('div', 'dialog-back');
+  const box = el('div', 'dialog');
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-label', title);
+  const head = el('div', 'dialog-head');
+  const close = el('button', 'icon dialog-close', '×');
+  close.title = 'Close';
+  close.setAttribute('aria-label', 'Close');
+  close.onclick = () => closeDialog();
+  head.append(el('div', 'dialog-title', title), close);
+  const body = el('div', 'dialog-body');
+  const foot = el('div', 'dialog-foot');
+  box.append(head, body, foot);
+  back.append(box);
+  back.onclick = e => { if (e && e.target === back) closeDialog(); };
+  document.body.append(back);
+  dialog = { back, body, foot };
+  // Drawn closed first and opened a frame later, so the slide has somewhere to
+  // start from.
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (dialog && dialog.back === back) back.className = 'dialog-back open';
+  }));
+  return dialog;
+}
+
+function closeDialog() {
+  if (!dialog) return;
+  const back = dialog.back;
+  dialog = null;
+  back.className = 'dialog-back';
+  // Left in place long enough to slide back out.
+  setTimeout(() => back.remove(), 300);
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog(); });
+
+function factList(m) {
+  const w = el('div', 'facts');
+  for (const [label, value] of modelFacts(m)) {
+    const f = el('span', 'fact');
+    f.append(el('span', null, label + ' '), el('b', null, value));
+    w.append(f);
+  }
+  return w;
+}
+
+const MODEL_SORTS = [['intelligence', 'Smartest'], ['price', 'Cheapest'], ['context', 'Largest context'], ['newest', 'Newest']];
+
+// A row is a div acting as a button rather than a button, because it holds a
+// link, and a link inside a button is not a link.
+function modelRow(m, chosen, pick) {
+  const row = el('div', 'model-row' + (chosen ? ' on' : ''));
+  row.dataset.id = m.id;
+  row.tabIndex = 0;
+  row.setAttribute('role', 'button');
+  const top = el('div', 'top');
+  top.append(el('div', 'n', modelName(m)));
+  if (chosen) top.append(el('span', 'tag on', 'chosen'));
+  const link = el('a', 'openrouter', 'OpenRouter ↗');
+  link.href = openRouterURL(m.id);
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.title = 'Providers, uptime, and the full description, on OpenRouter';
+  link.onclick = e => { if (e) e.stopPropagation(); };
+  top.append(link);
+  row.append(top, el('div', 's ident', m.id));
+  if (m.description) row.append(el('div', 'desc', m.description));
+  row.append(factList(m));
+  row.onclick = pick;
+  row.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } };
+  return row;
+}
+
+// chooseModel opens the catalogue. It runs to hundreds of tool-calling models,
+// so it is searched and sorted rather than scrolled. The model already chosen
+// stays listed whatever the search says: searching never changes the choice,
+// and only picking a row does.
+async function chooseModel(current, pick) {
+  const d = openDialog('Choose a model');
+  const search = el('input', 'text');
+  search.type = 'search';
+  search.placeholder = 'search — provider, family, or version';
+  const sorts = el('div', 'sorts');
+  const note = el('p', 'note', '');
+  const list = el('div', 'model-list');
+  d.body.append(search, sorts, note, list);
+
+  let models = state.models || [];
+  let q = '';
+  const draw = () => {
+    sorts.innerHTML = '';
+    for (const [key, label] of MODEL_SORTS) {
+      const b = el('button', 'pill' + (state.modelSort === key ? ' on' : ''), label);
+      b.onclick = () => { state.modelSort = key; draw(); };
+      sorts.append(b);
+    }
+    list.innerHTML = '';
+    const shown = sortModels(models, state.modelSort);
+    if (current && !shown.some(m => m.id === current)) {
+      shown.unshift((state.models || []).find(m => m.id === current) || { id: current });
+    }
+    for (const m of shown) list.append(modelRow(m, m.id === current, () => { closeDialog(); pick(m.id); }));
+    if (models.length) note.textContent = `${models.length} model${models.length === 1 ? '' : 's'}` + (q ? ` match “${q}”` : ' support tool calling');
+    else if (q) note.textContent = `No model matches “${q}”.`;
+    else note.textContent = 'The model list is unavailable.';
+  };
+
+  // Each keystroke supersedes the one before it, so a slow answer to an earlier
+  // query must not overwrite the list a later one already drew.
+  let seq = 0;
+  const load = async query => {
+    const mine = ++seq;
+    const found = await api('/models' + (query ? '?q=' + encodeURIComponent(query) : '')).catch(() => []) || [];
+    if (mine !== seq) return;
+    if (!query) state.models = found;
+    models = found;
+    q = query;
+    draw();
+  };
+  let debounce = null;
+  search.oninput = () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => load(search.value.trim()), 150);
+  };
+  if (models.length) draw(); else await load('');
+  search.focus();
+}
+
+function envRow(name, on, change) {
+  const row = el('label', 'env-row');
+  row.dataset.name = name;
+  const cb = el('input');
+  cb.type = 'checkbox';
+  cb.checked = on;
+  cb.onchange = () => change(cb.checked);
+  row.append(cb, el('span', null, name));
+  return row;
+}
+
+// chooseGrants lists every name the agent could grant, ticked where this
+// configuration grants it, and applies each tick as it is made. Names only: the
+// values stay in the agent. A name already granted that the environment no
+// longer holds is listed too, so it is never carried forward out of sight.
+async function chooseGrants(current, change) {
+  const d = openDialog('Granted environment');
+  let chosen = current.slice();
+  d.body.append(el('p', 'note',
+    'Tick what this conversation’s tools may read. Only names are listed — values never leave ' +
+    'the agent — and the model key is never offered. Leave everything unticked unless a skill asks for one.'));
+  const filter = el('input', 'text');
+  filter.type = 'search';
+  filter.placeholder = 'filter names';
+  const lists = el('div');
+  d.body.append(filter, lists);
+
+  const count = el('span', 's', '');
+  const done = el('button', 'btn primary dialog-done', 'Done');
+  done.onclick = () => closeDialog();
+  d.foot.append(count, el('span', 'sp'), done);
+  const tally = () => { count.textContent = chosen.length ? `${chosen.length} granted` : 'nothing granted'; };
+
+  let offered = [];
+  try { offered = await api('/env') || []; }
+  catch (e) { lists.append(el('div', 'empty', 'The environment could not be listed: ' + e.message)); }
+  const known = new Set(offered.map(x => x.name));
+  const missing = chosen.filter(n => !known.has(n));
+  const groups = [
+    ['from .env', offered.filter(x => x.from_env_file).map(x => x.name)],
+    ['environment', offered.filter(x => !x.from_env_file).map(x => x.name)],
+    ['granted, not set', missing],
+  ];
+  const draw = () => {
+    lists.innerHTML = '';
+    const q = String(filter.value || '').trim().toUpperCase();
+    for (const [label, names] of groups) {
+      const shown = names.filter(n => !q || n.toUpperCase().includes(q));
+      if (!shown.length) continue;
+      lists.append(el('h2', null, label));
+      for (const n of shown) {
+        lists.append(envRow(n, chosen.includes(n), on => {
+          chosen = on ? chosen.filter(x => x !== n).concat(n) : chosen.filter(x => x !== n);
+          tally();
+          change(chosen.slice());
+        }));
+      }
+    }
+    if (!offered.length && !missing.length) lists.append(el('div', 'empty', 'Nothing in the agent’s environment can be granted.'));
+  };
+  filter.oninput = draw;
+  tally();
+  draw();
 }
 
 // configEditor renders a configuration and returns a reader for it. It does not
@@ -678,65 +875,43 @@ async function configEditor(v, current) {
     granted_env: (current.granted_env || []).slice(),
   };
 
+  // The model is one line on the screen and a dialog to change it: the facts
+  // that choose between hundreds of models do not fit in a select.
   v.append(el('h2', null, 'model'));
-  const search = el('input', 'text');
-  search.type = 'search';
-  search.placeholder = 'search models \u2014 provider, family, or version';
-  const sel = el('select', 'text');
-  const note = el('p', 'note', '');
-  v.append(search, sel, note);
-
-  // The catalogue runs to hundreds of tool-calling models, so it is narrowed by
-  // the search rather than scrolled. The chosen model stays in the list even
-  // when the query excludes it, so searching can never silently change it.
-  const fill = (models, q) => {
-    sel.innerHTML = '';
-    const keep = cfg.model && !models.some(m => m.id === cfg.model);
-    const opts = (keep ? [{ id: cfg.model }] : []).concat(models);
-    for (const m of (opts.length ? opts : [{ id: cfg.model || '' }])) {
-      const o = el('option', null, `${m.id}${m.context_length ? '  \u00b7 ' + Math.round(m.context_length / 1000) + 'k' : ''}`);
-      o.value = m.id;
-      if (m.id === cfg.model) o.selected = true;
-      sel.append(o);
-    }
-    if (!cfg.model) cfg.model = sel.value;
-    if (models.length) note.textContent = `${models.length} model${models.length === 1 ? '' : 's'}` + (q ? ` match \u201c${q}\u201d` : ' support tool calling');
-    else if (q) note.textContent = `No model matches \u201c${q}\u201d \u2014 keeping ${cfg.model}.`;
-    else note.textContent = `Model list unavailable \u2014 keeping ${cfg.model || 'the default'}.`;
+  const choice = el('button', 'choice model-choice');
+  const drawChoice = () => {
+    choice.innerHTML = '';
+    const m = (state.models || []).find(x => x.id === cfg.model) || { id: cfg.model || '' };
+    const text = el('div', 'm');
+    text.append(el('div', 'n', m.id ? modelName(m) : 'Choose a model'));
+    if (m.name) text.append(el('div', 's ident', m.id));
+    choice.append(text, el('span', 'go', 'Change'), factList(m));
   };
+  choice.onclick = () => chooseModel(cfg.model, id => { cfg.model = id; drawChoice(); });
+  v.append(choice);
+  if (!state.models.length) state.models = await api('/models').catch(() => []) || [];
+  drawChoice();
 
-  // Each keystroke supersedes the one before it, so a slow answer to an earlier
-  // query must not overwrite the list a later one already drew.
-  let seq = 0;
-  const load = async q => {
-    const mine = ++seq;
-    const models = await api('/models' + (q ? '?q=' + encodeURIComponent(q) : '')).catch(() => []);
-    if (mine !== seq) return;
-    if (!q) state.models = models;
-    fill(models, q);
-  };
-  let debounce = null;
-  search.oninput = () => {
-    clearTimeout(debounce);
-    debounce = setTimeout(() => load(search.value.trim()), 150);
-  };
-  sel.onchange = () => { cfg.model = sel.value; };
-  if (state.models.length) fill(state.models, ''); else await load('');
-
+  // A set nobody chose is the defaults: every tool, and every skill but those
+  // that ship off. It stays unchosen (null) for as long as it matches them, so
+  // a skill added to disk later still reaches conversations that never chose.
   const picker = async (label, path, key) => {
     const data = await api(path);
-    const names = (data.tools || data.skills).map(x => x.name);
+    const items = data.tools || data.skills;
+    const names = items.map(x => x.name);
+    const defaults = items.filter(x => x.default_enabled !== false).map(x => x.name);
+    const settle = set => set.length === defaults.length && set.every(x => defaults.includes(x)) ? null : set;
     v.append(el('h2', null, label));
     const wrap = el('div');
     const draw = () => {
       wrap.innerHTML = '';
       for (const n of names) {
-        const on = cfg[key] === null || cfg[key].includes(n);
+        const on = cfg[key] === null ? defaults.includes(n) : cfg[key].includes(n);
         const p = el('button', 'pill' + (on ? ' on' : ''), n);
+        if (!defaults.includes(n)) p.title = 'Off unless a conversation chooses it';
         p.onclick = () => {
-          const cur = cfg[key] === null ? names.slice() : cfg[key].slice();
-          cfg[key] = on ? cur.filter(x => x !== n) : cur.concat(n);
-          if (cfg[key].length === names.length) cfg[key] = null;
+          const cur = cfg[key] === null ? defaults.slice() : cfg[key].slice();
+          cfg[key] = settle(on ? cur.filter(x => x !== n) : cur.concat(n));
           draw();
         };
         wrap.append(p);
@@ -745,8 +920,8 @@ async function configEditor(v, current) {
     const bar = el('div');
     const all = el('button', 'act', 'all');
     const none = el('button', 'act', 'none');
-    all.onclick = () => { cfg[key] = null; draw(); };
-    none.onclick = () => { cfg[key] = []; draw(); };
+    all.onclick = () => { cfg[key] = settle(names.slice()); draw(); };
+    none.onclick = () => { cfg[key] = settle([]); draw(); };
     bar.append(all, none);
     v.append(bar, wrap);
     draw();
@@ -756,19 +931,24 @@ async function configEditor(v, current) {
 
   // Names, not values. The agent already holds the values; what a conversation
   // is given is permission to see one, and a name is safe to show, export, and
-  // read back. There is no list to pick from on purpose: enumerating the
-  // agent's environment would tell every reader what secrets it holds.
+  // read back. The names are ticked from what the agent could grant, rather than
+  // typed from memory and found misspelled when a tool fails.
   v.append(el('h2', null, 'granted environment'));
-  const envNote = el('p', 'note',
-    'Variable names this conversation\u2019s tools may read \u2014 a credential is granted here, ' +
-    'not required by a tool. Separate names with spaces or commas. Leave empty unless a skill ' +
-    'asks for one. The model key can never be granted.');
-  const envIn = el('input', 'text');
-  envIn.type = 'text';
-  envIn.placeholder = 'GH_TOKEN AGENT_REPO';
-  envIn.value = cfg.granted_env.join(' ');
-  envIn.oninput = () => { cfg.granted_env = parseGrants(envIn.value); };
-  v.append(envNote, envIn);
+  v.append(el('p', 'note',
+    'Variables this conversation\u2019s tools may read \u2014 a credential is granted here, not required ' +
+    'by a tool. Leave it empty unless a skill asks for one.'));
+  const envLine = el('div', 'env-line');
+  const summary = el('div', 'env-summary');
+  const drawGrants = () => {
+    summary.innerHTML = '';
+    if (!cfg.granted_env.length) summary.append(el('span', 's', 'Nothing granted.'));
+    for (const n of cfg.granted_env) summary.append(el('span', 'tag', n));
+  };
+  const envOpen = el('button', 'btn env-choice', 'Choose variables');
+  envOpen.onclick = () => chooseGrants(cfg.granted_env, next => { cfg.granted_env = next; drawGrants(); });
+  envLine.append(summary, envOpen);
+  v.append(envLine);
+  drawGrants();
 
   return () => cfg;
 }
@@ -776,7 +956,10 @@ async function configEditor(v, current) {
 async function viewNew(v) {
   setHeader('New conversation', true);
   const recent = state.sessions[0] || (await api('/sessions').catch(() => []) || [])[0] || {};
-  const read = await configEditor(v, recent);
+  // Tools, skills, and grants come from the most recent conversation. The model
+  // is the one last chosen, which the most recent conversation need not be on.
+  const prefs = await api('/preferences').catch(() => null) || {};
+  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }));
   const start = el('button', 'btn primary', 'Start conversation');
   start.onclick = async () => {
     const s = await post('/sessions', read());
@@ -866,7 +1049,7 @@ async function viewSettings(v) {
   setHeader('Controls', true);
 
   const grants = (s.granted_env || []);
-  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools')} and ${describeSet(s.enabled_skills, 'skills')}` +
+  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools', 'all tools')} and ${describeSet(s.enabled_skills, 'skills', 'the default skills')}` +
     (grants.length ? `, and may read ${grants.join(', ')}` : '');
   v.append(el('p', 'note',
     `This conversation runs on ${runs}, fixed for its life. Changing any of it copies the ` +

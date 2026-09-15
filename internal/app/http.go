@@ -60,6 +60,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /skills/{name}", a.hSkill)
 
 	mux.HandleFunc("GET /models", a.hModels)
+	mux.HandleFunc("GET /preferences", a.hPreferences)
+	mux.HandleFunc("GET /env", a.hEnv)
 	mux.HandleFunc("GET /status", a.hStatus)
 	mux.HandleFunc("GET /version", a.hVersion)
 	mux.HandleFunc("/ws", a.handleWS)
@@ -180,6 +182,9 @@ func (a *App) hCreateSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "%v", err)
 		return
 	}
+	// Naming a model for a new conversation is choosing it, so the next one
+	// starts there too.
+	a.rememberModel(in.Model)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	writeJSON(w, 201, a.enrich(s))
 }
@@ -293,6 +298,11 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, 500, "%v", err)
 		return
+	}
+	// Forking onto another model is choosing it; a fork that keeps the model
+	// says nothing about what the next conversation should run on.
+	if in.Model != s.Model {
+		a.rememberModel(in.Model)
 	}
 	writeJSON(w, 201, a.enrich(fork))
 }
@@ -656,12 +666,12 @@ func (a *App) hSkills(w http.ResponseWriter, r *http.Request) {
 	skills := a.skills.All()
 	out := make([]map[string]any, 0, len(skills))
 	for _, s := range skills {
-		enabled := true
+		enabled := s.DefaultEnabled
 		if sess != nil {
-			enabled = sess.skillEnabled(s.Name)
+			enabled = sess.skillEnabled(s)
 		}
 		out = append(out, map[string]any{"name": s.Name, "description": s.Description,
-			"bytes": s.Bytes, "enabled": enabled})
+			"bytes": s.Bytes, "default_enabled": s.DefaultEnabled, "enabled": enabled})
 	}
 	writeJSON(w, 200, map[string]any{"skills": out, "failures": a.skills.Failures()})
 }
@@ -816,10 +826,9 @@ func (a *App) hModels(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) hStatus(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{
-		"breaker":       a.sched.State(),
-		"sandbox":       a.sandbox,
-		"default_model": a.cfg.DefaultModel,
-		"workspace":     a.cfg.Workspace,
+		"breaker":   a.sched.State(),
+		"sandbox":   a.sandbox,
+		"workspace": a.cfg.Workspace,
 	}
 	if k, err := a.or.Key(r.Context()); err == nil {
 		out["key"] = k

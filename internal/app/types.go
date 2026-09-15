@@ -95,7 +95,7 @@ type Section struct {
 type SessionConfig struct {
 	Model         string   `json:"model"`
 	EnabledTools  []string `json:"enabled_tools"`  // nil means every tool
-	EnabledSkills []string `json:"enabled_skills"` // nil means every skill
+	EnabledSkills []string `json:"enabled_skills"` // nil means every skill that is on by default
 	// GrantedEnv names the environment variables this conversation's tools
 	// receive beyond the ones every tool is promised. Names, never values: the
 	// value stays wherever the agent's own environment gets it, so a grant can
@@ -141,8 +141,17 @@ type Session struct {
 	CacheHitRate float64 `json:"cache_hit_rate"`
 }
 
-func (s *Session) toolEnabled(name string) bool  { return inSet(s.EnabledTools, name) }
-func (s *Session) skillEnabled(name string) bool { return inSet(s.EnabledSkills, name) }
+func (s *Session) toolEnabled(name string) bool { return inSet(s.EnabledTools, name) }
+
+// skillEnabled is asked of a skill rather than a name, because a session that
+// did not choose its skills has the ones that are on by default, and only the
+// skill says whether it is.
+func (s *Session) skillEnabled(sk *Skill) bool {
+	if s.EnabledSkills == nil {
+		return sk.DefaultEnabled
+	}
+	return inSet(s.EnabledSkills, sk.Name)
+}
 
 // sameAs reports whether two configurations would produce the same prompt.
 func (c SessionConfig) sameAs(o SessionConfig) bool {

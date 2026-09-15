@@ -1,6 +1,7 @@
 ---
 name: changing-yourself
 description: How to propose a change to your own code — clone, edit, test, push a branch, open a pull request, and read what CI says.
+default: off
 ---
 
 You can change the agent you are, the interface you are read through, and the tools you call. You

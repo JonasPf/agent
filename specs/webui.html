@@ -150,11 +150,16 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The controls screen shows the session's model, tools, and skills, and offers a new configuration, which takes effect by forking.</li>
+<li>The controls screen shows the session's model, tools, skills, and grants, and offers a new configuration, which takes effect by forking.</li>
+<li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
+<li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
+<li>Dismissing a dialog changes nothing; only picking in it does.</li>
+<li>The granted environment is chosen in a dialog listing every variable name the agent could grant, those from <code>.env</code> first, each with a checkbox (<a href="adrs.html#adr-048">ADR-048</a>). No value is shown, the model key is not listed, and a granted name that is no longer set is still listed and can be unticked.</li>
+<li>A skill that ships off starts unticked in a configuration that did not choose its skills, and ticking it chooses them.</li>
 <li>Forking opens a configuration screen carrying the origin's settings, and creates the fork when it is confirmed.</li>
 <li>The fork screen says that the whole conversation is copied and that the origin keeps its jobs.</li>
-<li>Starting a conversation reaches the same screen, prefilled from the most recent session.</li>
+<li>Starting a conversation reaches the same screen, prefilled with the most recent session's tools, skills, and grants, on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</li>
 <li>No screen offers to edit the configuration of a session that already exists.</li>
 <li>Enable-all and disable-all act on the whole list in one tap.</li>
 </ul>

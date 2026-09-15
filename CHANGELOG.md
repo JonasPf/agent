@@ -2,6 +2,22 @@
 
 ## 2026-09-15
 
+- The model is picked in a dialog that slides in over the screen. Each model
+  shows its price per million tokens in and out, its context window, and its
+  Artificial Analysis intelligence, coding, and agentic scores where OpenRouter
+  reports them, with a link to its OpenRouter page. The list can be searched and
+  sorted by smartest, cheapest, largest context, or newest.
+- A new conversation starts on the model you last picked, for a new
+  conversation or for a fork onto a different model, and still does after a
+  restart. `AGENT_MODEL` is gone: nothing reads it any more.
+- Granted environment is a button. It opens a list of every variable name the
+  agent could grant, the ones from `.env` first, each with a checkbox. Values
+  are never shown, and the model key is never listed.
+- A skill can ship switched off with `default: off` in its frontmatter, and
+  `changing-yourself` now does. Tick it under skills for a conversation that is
+  meant to change the agent. A conversation already running with the default
+  skills loses it at its next compaction, when its prompt is rewritten.
+
 - `web_browse` and `web_search` introduce themselves as an ordinary Chrome of
   the installed version, without the "HeadlessChrome" that headless chromium
   announces by default. Sites that turn automation away by that one word now

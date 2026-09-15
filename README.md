@@ -52,7 +52,7 @@ is tolerated, and a value may be quoted. A variable already set in the environme
 so a one-off override still works:
 
 ```sh
-AGENT_MODEL=anthropic/claude-opus-4.1 task run
+AGENT_ADDR=:9090 task run
 ```
 
 `.env` holds a credential: keep it mode 600, and out of git. It is already in `.gitignore`, and the
@@ -63,7 +63,6 @@ moves the file with it.
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Required for model calls. |
 | `AGENT_ADDR` | `:8080` | Listen address. |
-| `AGENT_MODEL` | `anthropic/claude-sonnet-4.5` | Model a new conversation starts on. Each keeps its own for life. |
 | `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, and `.env` beneath it. The one directory a deployment mounts. |
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. It only adds; nothing here removes a boundary. |
@@ -74,6 +73,8 @@ That is the whole list. There were eighteen: seven paths that only ever said
 where two roots were, four numbers nothing ever set — two of them defaults for a
 per-session setting the interface already edits — and the eval model, which
 configures `cmd/eval` and not the agent, so it is now a flag on that command.
+The model a conversation starts on was one too; it is now the one last chosen in
+the interface, kept in `AGENT_STATE/data/preferences.json`.
 
 Every one of these is in [`.env.example`](.env.example) with its default, and a
 test checks that in both directions: a setting missing from that file is one

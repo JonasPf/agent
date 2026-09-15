@@ -54,7 +54,7 @@ func browseApp(t *testing.T) *App {
 	// No ReadPaths: the browser lives under /usr, which every tool may already
 	// read. Needing to name it here would mean the deployment needed to as well.
 	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"),
-		ToolsDir: "../../tools", DefaultModel: "test/model"}
+		ToolsDir: "../../tools"}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),

@@ -36,6 +36,11 @@ description: How to turn a request for later into a job.
 
 A request for later is either a time or a condition…</code></pre>
 
+<p>A skill a conversation should set out to use, rather than find in every prompt, adds
+<code>default: off</code> to its frontmatter. A session that did not choose its skills then leaves it
+out; a session that lists its skills has exactly the ones it lists. <code>changing-yourself</code>
+ships off (<a href="adrs.html#adr-050">ADR-050</a>).</p>
+
 <h2>Progressive disclosure</h2>
 
 <p>Only the name and description of each skill appear in the system prompt. The agent loads a skill's
@@ -52,6 +57,10 @@ rather than twenty documents' worth.</p>
 <li>Reading a skill is a tool call visible in the transcript.</li>
 <li>Adding a skill requires no restart.</li>
 <li>A skill with malformed frontmatter is skipped, and the failure is visible in the interface.</li>
+<li>A skill whose frontmatter says <code>default: off</code> is absent from the index of a session that did not choose its skills, and present in one that chose it.</li>
+<li>A <code>default</code> that is neither <code>on</code> nor <code>off</code> is malformed frontmatter.</li>
+<li>The skill list says, for each skill, whether it is on by default.</li>
+<li><code>changing-yourself</code> ships off, and is the only shipped skill that does.</li>
 </ul>
 </div>
 

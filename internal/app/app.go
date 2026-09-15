@@ -30,7 +30,6 @@ type Config struct {
 	// beyond the runtime. A browser installed outside the system roots is the
 	// case it exists for. It only adds; nothing here removes a boundary.
 	ReadPaths          string
-	DefaultModel       string
 	CompactAtTokens    int
 	KeepVerbatimTokens int
 	SummaryEvery       int
@@ -73,7 +72,7 @@ func envInt(k string, def int) int {
 // The file is optional. Blank lines and # comments are skipped, a leading
 // "export " is tolerated, and a value may be wrapped in single or double quotes.
 func loadEnvFile(path string) {
-	b, err := os.ReadFile(path)
+	lines, err := readEnvFile(path)
 	if err != nil {
 		return
 	}
@@ -81,6 +80,29 @@ func loadEnvFile(path string) {
 		log.Printf("warning: %s is readable by other users; chmod 600 it", path)
 	}
 	n := 0
+	for _, l := range lines {
+		if _, set := os.LookupEnv(l.key); set {
+			continue
+		}
+		if os.Setenv(l.key, l.value) == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		log.Printf("config: %d variables from %s", n, path)
+	}
+}
+
+type envLine struct{ key, value string }
+
+// readEnvFile parses a file of KEY=VALUE lines without applying it. Loading the
+// environment and listing what could be granted read the file the same way.
+func readEnvFile(path string) ([]envLine, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var out []envLine
 	for _, line := range strings.Split(string(b), "\n") {
 		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "export "))
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -98,16 +120,9 @@ func loadEnvFile(path string) {
 		if k == "" {
 			continue
 		}
-		if _, set := os.LookupEnv(k); set {
-			continue
-		}
-		if os.Setenv(k, v) == nil {
-			n++
-		}
+		out = append(out, envLine{k, v})
 	}
-	if n > 0 {
-		log.Printf("config: %d variables from %s", n, path)
-	}
+	return out, nil
 }
 
 // The layout is two roots, not seven paths. State is what outlives the
@@ -136,7 +151,9 @@ func LoadConfig() Config {
 		WebDir:        filepath.Join(home, "web"),
 		ChangelogPath: filepath.Join(home, "CHANGELOG.md"),
 		ReadPaths:     os.Getenv("AGENT_READ_PATHS"),
-		DefaultModel:  envOr("AGENT_MODEL", "anthropic/claude-sonnet-4.5"),
+		// The model a conversation starts on is not a setting either: it is the
+		// one last chosen on screen, kept beside the data (see startingModel).
+		//
 		// Not settings. Nothing ever set them, and the first two were defaults
 		// for a default: a session carries its own compact_at_tokens and
 		// keep_verbatim_tokens, editable on the screen it is read from.

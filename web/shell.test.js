@@ -18,7 +18,7 @@ const WEB = __dirname;
 function node(tag) {
   const n = {
     tagName: tag, children: [], style: {}, hidden: false, className: '', id: '',
-    title: '', type: '', value: '', parent: null, _text: '', _html: null,
+    title: '', type: '', value: '', parent: null, _text: '', _html: null, dataset: {},
     get textContent() { return this._text; },
     set textContent(v) { this._text = String(v); this._html = null; this.children = []; },
     set innerHTML(v) { this._html = String(v); this.children = []; },
@@ -84,9 +84,15 @@ function load(routes) {
     navigator: {},
     fetch: async (p, opts) => {
       const method = (opts || {}).method || 'GET';
-      (ctx._calls = ctx._calls || []).push({ path: p, method });
+      (ctx._calls = ctx._calls || []).push({ path: p, method, body: (opts || {}).body });
       const body = (routes || {})[p];
-      if (method !== 'GET') return { ok: true, status: 204, text: async () => '' };
+      if (method !== 'GET') {
+        // A write answers with nothing unless the test gave it a reply, keyed
+        // by method and path: creating a session has to name the one created.
+        const reply = (routes || {})[method + ' ' + p];
+        if (reply == null) return { ok: true, status: 204, text: async () => '' };
+        return { ok: true, status: 201, text: async () => JSON.stringify(reply) };
+      }
       return { ok: true, status: 200, text: async () => JSON.stringify(body == null ? [] : body) };
     },
     confirm: () => ctx._confirm !== false,
@@ -98,7 +104,7 @@ function load(routes) {
   ctx.matchMedia = q => ({ matches: /pointer: fine/.test(q) });
   ctx.window = ctx;
   vm.createContext(ctx);
-  for (const f of ['markdown.js', 'transcript.js', 'notify.js', 'app.js']) {
+  for (const f of ['markdown.js', 'transcript.js', 'notify.js', 'models.js', 'app.js']) {
     let src = fs.readFileSync(path.join(WEB, f), 'utf8');
     if (f === 'app.js') src = src.replace(/^boot\(\);$/m, '');
     vm.runInContext(src, ctx, { filename: f });
@@ -438,23 +444,217 @@ test('a build without a changelog still names itself', async () => {
 
 // ---------- granted environment ----------
 
-// A grant is typed by a person, so the field has to forgive the ways a person
-// writes a list. What it must never do is invent a name: an empty field grants
-// nothing, and nothing is the difference between a conversation that can reach
-// a credential and one that cannot.
-test('a typed list of variable names is read the ways people write one', async () => {
-  const ctx = load({});
-  for (const [raw, want] of [
-    ['GH_TOKEN AGENT_REPO', ['GH_TOKEN', 'AGENT_REPO']],
-    ['GH_TOKEN, AGENT_REPO', ['GH_TOKEN', 'AGENT_REPO']],
-    ['  GH_TOKEN ,,  AGENT_REPO  ', ['GH_TOKEN', 'AGENT_REPO']],
-    ['GH_TOKEN\nAGENT_REPO', ['GH_TOKEN', 'AGENT_REPO']],
-    ['', []],
-    ['   ', []],
-    [null, []],
-  ]) {
-    assert.deepStrictEqual(Array.from(ctx.parseGrants(raw)), want, `parseGrants(${JSON.stringify(raw)})`);
+// The dialog a control opens is appended to the page, not to the view, so that
+// it can cover the whole screen and slide in over it.
+const openDialog = ctx => {
+  const back = findAll(ctx.document.body, 'dialog-back').filter(d => String(d.className).includes('open'));
+  return back.length ? back[back.length - 1] : null;
+};
+
+// What the page would POST when the configuration screen is confirmed.
+async function startConversation(ctx, v) {
+  const start = findAll(v, 'btn').find(b => /Start conversation/.test(b.textContent));
+  assert.ok(start, 'no way to start the conversation');
+  await start.onclick();
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/sessions');
+  assert.strictEqual(sent.length, 1, 'starting did not create exactly one session');
+  return JSON.parse(sent[0].body);
+}
+
+// Enough of a new-conversation screen to drive: no catalogue, no tools, no
+// skills, no environment, unless the test says otherwise.
+function newScreen(routes) {
+  return load(Object.assign({
+    '/sessions': [], '/models': [], '/preferences': {}, '/env': [],
+    '/tools': { tools: [] }, '/skills': { skills: [] },
+    'POST /sessions': session({ id: 'NEW' }),
+  }, routes));
+}
+
+const FABLE = {
+  id: 'anthropic/claude-fable-5.1', name: 'Anthropic: Claude Fable 5.1', created: 300,
+  context_length: 1000000, prompt_price: 0.00001, completion_price: 0.00005,
+  intelligence_index: 53.4, coding_index: 81.6, agentic_index: 58,
+};
+const SMALL = {
+  id: 'small/unmeasured', name: 'Small: Unmeasured', created: 400,
+  context_length: 32000, prompt_price: 0.0000001, completion_price: 0.0000002,
+};
+
+// ---------- the model dialog ----------
+
+test('the model is chosen in a dialog that says what each costs and how it measured', async () => {
+  const ctx = newScreen({ '/models': [SMALL, FABLE], '/preferences': { model: SMALL.id } });
+  const v = node('div');
+  await ctx.viewNew(v);
+
+  const choice = find(v, 'model-choice');
+  assert.ok(choice, 'the model is not a control that opens a dialog');
+  assert.strictEqual(openDialog(ctx), null, 'a dialog is open before anything was clicked');
+  await choice.onclick();
+  const dialog = openDialog(ctx);
+  assert.ok(dialog, 'clicking the model opened no dialog');
+
+  const rows = findAll(dialog, 'model-row');
+  assert.deepStrictEqual(rows.map(r => find(r, 'n').textContent), ['Claude Fable 5.1', 'Unmeasured'],
+    'the dialog does not rank the measured model first');
+  const fable = textOf(rows[0]);
+  for (const want of ['$10', '$50', '1M', '53.4', '81.6', '58']) {
+    assert.ok(fable.includes(want), `the row does not say ${want}: ${fable}`);
   }
+  const link = findAll(rows[0], 'openrouter')[0];
+  assert.ok(link, 'the row has no link to OpenRouter');
+  assert.strictEqual(link.href, 'https://openrouter.ai/anthropic/claude-fable-5.1');
+  assert.strictEqual(link.target, '_blank');
+
+  rows[0].onclick();
+  assert.strictEqual(openDialog(ctx), null, 'choosing a model left the dialog open');
+  assert.ok(textOf(find(v, 'model-choice')).includes('Claude Fable 5.1'), 'the chosen model is not shown on the screen');
+  assert.strictEqual((await startConversation(ctx, v)).model, FABLE.id);
+});
+
+// The most recent conversation is not necessarily what the operator wants next:
+// it may be a fork onto something experimental. The model last chosen is.
+test('a new conversation is preselected on the model last chosen', async () => {
+  const ctx = newScreen({
+    '/sessions': [session({ model: 'y/most-recent' })],
+    '/preferences': { model: 'x/last-chosen' },
+  });
+  const v = node('div');
+  await ctx.viewNew(v);
+  assert.ok(textOf(find(v, 'model-choice')).includes('x/last-chosen'),
+    'the screen is not preselected on the model last chosen');
+  assert.strictEqual((await startConversation(ctx, v)).model, 'x/last-chosen');
+});
+
+test('searching narrows the dialog, and the model already chosen stays in it', async () => {
+  const ctx = newScreen({ '/models': [SMALL, FABLE], '/models?q=unmeasured': [SMALL], '/preferences': { model: FABLE.id } });
+  const v = node('div');
+  await ctx.viewNew(v);
+  await find(v, 'model-choice').onclick();
+  const dialog = openDialog(ctx);
+  const search = findAll(dialog, 'text').find(n => n.type === 'search');
+  assert.ok(search, 'the dialog has no search');
+  search.value = 'unmeasured';
+  search.oninput();
+  await new Promise(r => setTimeout(r, 220));
+  const ids = findAll(openDialog(ctx), 'model-row').map(r => r.dataset.id);
+  assert.ok(ids.includes(SMALL.id), 'the match is not listed');
+  assert.ok(ids.includes(FABLE.id), 'the chosen model vanished from a search that excluded it');
+  assert.strictEqual(ids.length, 2);
+});
+
+test('the dialog can rank by price instead of intelligence', async () => {
+  const ctx = newScreen({ '/models': [SMALL, FABLE], '/preferences': { model: SMALL.id } });
+  const v = node('div');
+  await ctx.viewNew(v);
+  await find(v, 'model-choice').onclick();
+  const cheapest = findAll(openDialog(ctx), 'pill').find(p => p.textContent === 'Cheapest');
+  assert.ok(cheapest, 'the dialog offers no ranking by price');
+  cheapest.onclick();
+  assert.deepStrictEqual(findAll(openDialog(ctx), 'model-row').map(r => r.dataset.id), [SMALL.id, FABLE.id],
+    'ranking by price did not put the cheaper model first');
+});
+
+test('closing the dialog keeps the model that was chosen', async () => {
+  const ctx = newScreen({ '/models': [SMALL, FABLE], '/preferences': { model: SMALL.id } });
+  const v = node('div');
+  await ctx.viewNew(v);
+  await find(v, 'model-choice').onclick();
+  find(openDialog(ctx), 'dialog-close').onclick();
+  assert.strictEqual(openDialog(ctx), null, 'the close button left the dialog open');
+  assert.strictEqual((await startConversation(ctx, v)).model, SMALL.id);
+});
+
+// ---------- the environment dialog ----------
+
+test('the granted environment is ticked in a dialog of names, never typed', async () => {
+  const ctx = newScreen({
+    '/sessions': [session({ granted_env: ['GH_TOKEN'] })],
+    '/env': [
+      { name: 'AGENT_REPO', from_env_file: true },
+      { name: 'GH_TOKEN', from_env_file: true },
+      { name: 'LANGUAGE', from_env_file: false },
+    ],
+  });
+  const v = node('div');
+  await ctx.viewNew(v);
+  assert.strictEqual(findAll(v, 'text').filter(n => n.type === 'text').length, 0,
+    'the screen still has a field to type variable names into');
+
+  const open = find(v, 'env-choice');
+  assert.ok(open, 'the granted environment is not a button that opens a dialog');
+  await open.onclick();
+  const dialog = openDialog(ctx);
+  assert.ok(dialog, 'the button opened no dialog');
+
+  const rows = findAll(dialog, 'env-row');
+  const box = name => rows.find(r => r.dataset.name === name).children.find(c => c.type === 'checkbox');
+  assert.deepStrictEqual(rows.map(r => r.dataset.name), ['AGENT_REPO', 'GH_TOKEN', 'LANGUAGE']);
+  assert.strictEqual(box('GH_TOKEN').checked, true, 'a name already granted is not ticked');
+  assert.strictEqual(box('AGENT_REPO').checked, false);
+  assert.ok(textOf(dialog).includes('.env'), 'the dialog does not say which names come from .env');
+
+  box('AGENT_REPO').checked = true;
+  box('AGENT_REPO').onchange();
+  find(dialog, 'dialog-done').onclick();
+  assert.strictEqual(openDialog(ctx), null, 'done left the dialog open');
+  assert.ok(textOf(find(v, 'env-summary')).includes('AGENT_REPO'), 'the screen does not show the new grant');
+  assert.deepStrictEqual((await startConversation(ctx, v)).granted_env, ['GH_TOKEN', 'AGENT_REPO']);
+});
+
+// A name can be granted and then leave the environment. It must still be on
+// the list, or it could be carried into every new conversation unseen.
+test('a grant whose variable is gone is still listed, and can be unticked', async () => {
+  const ctx = newScreen({ '/sessions': [session({ granted_env: ['OLD_TOKEN'] })], '/env': [] });
+  const v = node('div');
+  await ctx.viewNew(v);
+  await find(v, 'env-choice').onclick();
+  const row = findAll(openDialog(ctx), 'env-row').find(r => r.dataset.name === 'OLD_TOKEN');
+  assert.ok(row, 'a grant no longer in the environment is not listed');
+  assert.ok(/not set/.test(textOf(openDialog(ctx))), 'the dialog does not say the variable is not set');
+  const cb = row.children.find(c => c.type === 'checkbox');
+  cb.checked = false;
+  cb.onchange();
+  assert.deepStrictEqual((await startConversation(ctx, v)).granted_env, []);
+});
+
+// ---------- skills that ship off ----------
+
+const SKILLS = { skills: [{ name: 'changing-yourself', default_enabled: false }, { name: 'scheduling', default_enabled: true }] };
+const pills = v => findAll(v, 'pill').filter(p => ['changing-yourself', 'scheduling'].includes(p.textContent));
+const isOn = p => String(p.className).split(/\s+/).includes('on');
+
+test('a skill that ships off starts unticked in a configuration that did not choose skills', async () => {
+  const ctx = newScreen({ '/skills': SKILLS, '/sessions': [session({ enabled_skills: null })] });
+  const v = node('div');
+  await ctx.viewNew(v);
+  const byName = Object.fromEntries(pills(v).map(p => [p.textContent, isOn(p)]));
+  assert.deepStrictEqual(byName, { 'changing-yourself': false, scheduling: true });
+  assert.strictEqual((await startConversation(ctx, v)).enabled_skills, null,
+    'an untouched configuration should leave the skills to their defaults');
+});
+
+test('ticking a skill that ships off chooses the skills, and unticking it goes back to the defaults', async () => {
+  const ctx = newScreen({ '/skills': SKILLS, '/sessions': [session({ enabled_skills: null })] });
+  const v = node('div');
+  await ctx.viewNew(v);
+  pills(v).find(p => p.textContent === 'changing-yourself').onclick();
+  assert.ok(isOn(pills(v).find(p => p.textContent === 'changing-yourself')), 'the pill did not turn on');
+  pills(v).find(p => p.textContent === 'changing-yourself').onclick();
+  pills(v).find(p => p.textContent === 'changing-yourself').onclick();
+  const body = await startConversation(ctx, v);
+  assert.deepStrictEqual(Array.from(body.enabled_skills).sort(), ['changing-yourself', 'scheduling']);
+});
+
+test('all turns on the skills that ship off as well', async () => {
+  const ctx = newScreen({ '/skills': SKILLS });
+  const v = node('div');
+  await ctx.viewNew(v);
+  const skillsBar = findAll(v, 'act').filter(b => b.textContent === 'all')[1];
+  skillsBar.onclick();
+  assert.ok(pills(v).every(isOn), 'all left a skill off');
+  assert.deepStrictEqual(Array.from((await startConversation(ctx, v)).enabled_skills).sort(), ['changing-yourself', 'scheduling']);
 });
 
 // What a conversation may read is part of what it is, so the controls screen

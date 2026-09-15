@@ -50,7 +50,7 @@ func (a *App) systemSections(sess *Session) []Section {
 	var skillText strings.Builder
 	var skills []*Skill
 	for _, sk := range a.skills.All() {
-		if sess.skillEnabled(sk.Name) {
+		if sess.skillEnabled(sk) {
 			skills = append(skills, sk)
 		}
 	}
