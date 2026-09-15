@@ -32,6 +32,14 @@ decides what is safe. The boundary is the operating system's
 (<a href="adrs.html#adr-039">ADR-039</a>): the command can reach the session's own directory and the
 runtime, and is refused by the kernel everywhere else.</p>
 
+<p>The description tells the model what that boundary means in practice, because the kernel's refusals
+do not. Scratch files belong under <code>$TMPDIR</code>, since <code>/tmp</code> is not writable. A
+browser does not start from the shell, since <code>/proc</code> is not readable here: only the browser
+tools are granted it, because through <code>/proc</code> a tool could read the agent's own environment.
+Web pages are for <code>web_fetch</code> and <code>web_browse</code>. Without that, a model reaches for
+<code>chromium</code> in the shell, meets a permission error that names neither cause, and concludes
+the browser is broken.</p>
+
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
 <tr><td><code>command</code></td><td>The shell command. Required.</td></tr>

@@ -1097,7 +1097,8 @@ unprivileged container on a host that refuses user namespaces.</p>
 do not stay in step: within a day of a tool being able to declare the paths it needs, the macOS profile
 was silently ignoring that declaration while Landlock honoured it. The agent is a Linux program. A
 laptop runs the tests and the interface; a laptop that wants a confined tool runs the container, which
-is <code>task dev</code>, built from the same Dockerfile CI publishes.</p>
+is <code>task dev</code>, built from the same Dockerfile CI publishes. A laptop that wants the tests
+that assert confinement proved runs them in a container too (<a href="#adr-047">ADR-047</a>).</p>
 <p>What that costs is stated rather than hidden. On a laptop <code>task run</code> confines nothing:
 the startup line is a warning, the interface says NOT ENFORCED, and every test that asserts
 confinement skips with a message naming why instead of passing against a boundary that is not there.
@@ -1405,6 +1406,67 @@ a reader can see what a session can touch without reading the repository.</p>
 broken tool. The <code>changing-yourself</code> skill therefore checks for both variables before it
 does anything and says which is missing, because the worst place to discover an ungranted credential is
 halfway through a change that cannot be pushed.</p>
+</div>
+
+<div class="adr" id="adr-046">
+<div class="meta">ADR-046 · accepted</div>
+<h3>A browser introduces itself as the Chrome it is</h3>
+<h4>Context</h4>
+<p>The browser tools used chromium's user agent as delivered, and the spec said so: no spoofed agent
+string. Headless chromium sends <code>HeadlessChrome/140.0.0.0</code>, and everything else in that
+string is true of the browser running. The one word is what a site that turns away automation reads
+first, and the operator asked for the tools to stop tripping it.</p>
+<p>The same session showed a second defect. A Cloudflare challenge came back from
+<code>web_browse</code> as the page's text &mdash; <em>Just a moment… Performing security
+verification</em> &mdash; and the model, reading it as a page that had not loaded, ran chromium from
+<code>bash</code>, where the sandbox stops a browser from starting at all.</p>
+<h4>Decision</h4>
+<p><code>Render</code> passes <code>--user-agent</code>: the string an ordinary desktop Chrome sends,
+at the major version the installed browser reports for itself, with the platform and the minor parts
+frozen the way Chrome freezes them. The version is read, not written down. A Chrome string that
+disagrees with the browser behind it is a second tell, and a constant would start disagreeing at the
+next upgrade.</p>
+<p>Nothing else changes. There is no fingerprint masking, no cookie jar, no answering a challenge, and
+no retry by another route. <code>web_fetch</code> keeps <code>compatible; agent/0.1</code>: it is not
+a browser, and a Chrome string on Go's HTTP client would claim to be something it is not rather than
+leave out one word. That is the line: a tool may leave out that it is headless, and may not say it is
+something else.</p>
+<p>A page that is a vendor's bot check makes <code>web_browse</code> fail, naming the vendor, rather than
+return the check's text as the page.</p>
+<h4>Consequences</h4>
+<p>Sites that refuse by user agent now serve the page. Checks that test the browser itself &mdash;
+Cloudflare's managed challenge among them &mdash; still stop it, and are now reported as what they
+are instead of read as content.</p>
+<p>The agent no longer names itself to the sites its browser visits: a site's logs cannot tell it
+from a person's Chrome by user agent. That is accepted for a single-user agent opening pages a person
+asked about, at a person's pace. Each render also starts one short extra process, to ask the browser
+its version.</p>
+</div>
+
+<div class="adr" id="adr-047">
+<div class="meta">ADR-047 · accepted</div>
+<h3>The whole suite runs where the agent runs</h3>
+<h4>Context</h4>
+<p>On a Mac, <code>task check</code> went green while every browser test and every test that asserts
+confinement skipped: there is no chromium at <code>/usr/bin/chromium</code> and no Landlock. The
+skips were honest &mdash; each said NOT RUN &mdash; but a green run reads as green, and the only place
+those tests ran was CI, after a push. The evals were worse. A browser tool's case runs the tool, which
+failed with <em>no browser</em>, and the failure read as a case the model got wrong.</p>
+<h4>Decision</h4>
+<p><code>testenv/Dockerfile</code> is the environment CI's workflow describes &mdash; Debian bookworm,
+Go 1.25, the Debian chromium package, node 22, Task &mdash; with no source in it.
+<code>task check:container</code> mounts the working tree read-only, copies it in, and runs
+<code>task check</code>; <code>task eval:container</code> runs the evals the same way, handed
+<code>.env</code> at run time rather than in the image. The copy keeps the Linux executables a build
+writes into <code>tools/*/run</code> out of the tree a host <code>task run</code> loads.</p>
+<p>The image sets <code>AGENT_TEST_FULL</code>, under which a test that cannot run fails instead of
+skipping. A green run in the container means every test ran; a green run on the host still means what
+it did.</p>
+<h4>Consequences</h4>
+<p>A Mac proves everything before a push: the container VM's kernel is Linux, and it has Landlock.
+The cost is two descriptions of one environment, the workflow and the Dockerfile, which name each other
+so a change to one points at the other. CI could build the Dockerfile and run the check in it, leaving
+one description; that is not done here.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

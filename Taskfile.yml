@@ -19,6 +19,10 @@ vars:
   BUILT_AT:
     sh: 'date -u +%Y-%m-%dT%H:%M:%SZ'
   STAMP: '-X agent/internal/app.Version={{.VERSION}} -X agent/internal/app.BuiltAt={{.BUILT_AT}}'
+  # docker where it is installed, podman otherwise. Every command the tasks use
+  # means the same in both.
+  CONTAINER:
+    sh: 'command -v docker >/dev/null 2>&1 && echo docker || echo podman'
 
 tasks:
   default:
@@ -61,9 +65,9 @@ tasks:
       # deployment mounts. Here they are bound separately so a conversation
       # started in the container survives it and is the same one `task run`
       # sees, which wants them at the repository root.
-      - docker build -t agent:dev --build-arg VERSION='{{.VERSION}}' --build-arg BUILT_AT='{{.BUILT_AT}}' .
+      - '{{.CONTAINER}} build -t agent:dev --build-arg VERSION="{{.VERSION}}" --build-arg BUILT_AT="{{.BUILT_AT}}" .'
       - |
-        docker run --rm -it \
+        {{.CONTAINER}} run --rm -it \
           -p {{.ADDR}}:8080 \
           -v "$PWD/data:/app/state/data" \
           -v "$PWD/workspace:/app/state/workspace" \
@@ -112,8 +116,42 @@ tasks:
 
   eval:
     desc: Put each tool's eval.json cases to a real model (costs money; CLI={{.CLI_ARGS}})
+    # A case runs the tool it calls, and the registry will not load a tool whose
+    # run is missing.
+    deps: [build:tools]
     cmds:
       - go run ./cmd/eval {{.CLI_ARGS}}
+
+  check:container:
+    desc: Run `task check` on Linux in the test container, where the browser and sandbox tests run instead of skipping
+    cmds:
+      - task: container:run
+        vars: {CMD: 'task check'}
+
+  eval:container:
+    desc: Run the evals in the test container, where the browser tools have a browser (costs money; CLI={{.CLI_ARGS}})
+    cmds:
+      - task: container:run
+        vars: {CMD: 'task eval -- {{.CLI_ARGS}}', ENV_FILE: '--env-file .env'}
+
+  container:run:
+    internal: true
+    cmds:
+      # The environment is built once and holds no source. The working tree is
+      # mounted read-only and copied in, so the Linux executables a build writes
+      # to tools/*/run never land in the tree a host `task run` loads. The Go
+      # caches outlive the container, so a second run does not recompile
+      # everything. .env stays out of the copy and out of the image; the evals
+      # are handed it at run time.
+      - '{{.CONTAINER}} build -q -t agent:test testenv'
+      - |
+        {{.CONTAINER}} run --rm {{.ENV_FILE}} \
+          -v "$PWD:/repo:ro" \
+          -v agent-test-gomod:/go/pkg/mod \
+          -v agent-test-gocache:/root/.cache/go-build \
+          agent:test sh -c 'tar -C /repo -cf - \
+            --exclude=./.git --exclude=./.backups --exclude=./data --exclude=./workspace \
+            --exclude=./.env --exclude="./tools/*/run" . | tar -C /src -xf - && {{.CMD}}'
 
   db:clear:
     desc: Move sessions, jobs, memory, and session files to a timestamped backup and start fresh

@@ -1,10 +1,12 @@
 package tool
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -49,10 +51,43 @@ func lastLines(s string, n int) string {
 	return "…" + s[len(s)-n:]
 }
 
+// chromeVersion is the four-part version in a browser's --version banner.
+var chromeVersion = regexp.MustCompile(`\b(\d+)\.\d+\.\d+\.\d+\b`)
+
+// userAgentFor is the user agent of an ordinary desktop Chrome at the version a
+// banner names, or nothing if it names none. The shape is the one Chrome sends
+// since it froze the string: the Linux platform is fixed and everything after
+// the major version is zero, so the only part that varies is the part that has
+// to agree with the browser actually running.
+func userAgentFor(banner string) string {
+	m := chromeVersion.FindStringSubmatch(banner)
+	if m == nil {
+		return ""
+	}
+	return "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" +
+		m[1] + ".0.0.0 Safari/537.36"
+}
+
+// userAgent asks the browser its version. A browser that cannot say keeps its
+// own string rather than one made up for it.
+func userAgent(browser string, env []string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, browser, "--version")
+	cmd.Env = env
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return userAgentFor(string(out))
+}
+
 // Render returns the DOM of url after the page has loaded and run its scripts.
 //
-// The browser is used as it comes. Nothing here disguises the request or works
-// around a site that declines to serve it.
+// The browser introduces itself as the Chrome it is, without the "Headless"
+// that headless chromium adds to its user agent (ADR-046). Nothing else is
+// altered: no bot check is answered or evaded, and a site that declines to
+// serve the page is not worked around.
 func Render(url string, seconds int) string {
 	browser, err := Browser()
 	if err != nil {
@@ -71,7 +106,7 @@ func Render(url string, seconds int) string {
 	// channel between sessions, so the browser is told to keep that memory in
 	// its own directory instead. Chrome's own sandbox is off for the same reason
 	// bubblewrap is on: one confinement, enforced by the agent.
-	cmd := exec.Command(browser, "--headless", "--disable-gpu", "--no-sandbox",
+	args := []string{"--headless", "--disable-gpu", "--no-sandbox",
 		"--disable-dev-shm-usage",
 		// A browser started with a fresh profile wants to fetch components,
 		// check for updates, and sync before it will settle — none of which the
@@ -80,13 +115,17 @@ func Render(url string, seconds int) string {
 		// the requests that URL needs and no others.
 		"--disable-background-networking", "--disable-component-update",
 		"--disable-sync", "--no-first-run", "--no-default-browser-check",
-		"--user-data-dir="+profile,
-		fmt.Sprintf("--virtual-time-budget=%d", seconds*1000),
-		"--dump-dom", url)
+		"--user-data-dir=" + profile}
 	// HOME is the agent's, and the sandbox does not bind it: a browser sent
 	// there is being pointed at a directory that does not exist in its own
 	// namespace. Its profile directory is somewhere it can actually write.
-	cmd.Env = append(os.Environ(), "HOME="+profile)
+	env := append(os.Environ(), "HOME="+profile)
+	if ua := userAgent(browser, env); ua != "" {
+		args = append(args, "--user-agent="+ua)
+	}
+	args = append(args, fmt.Sprintf("--virtual-time-budget=%d", seconds*1000), "--dump-dom", url)
+	cmd := exec.Command(browser, args...)
+	cmd.Env = env
 	var out, errb strings.Builder
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	done := make(chan error, 1)

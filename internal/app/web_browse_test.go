@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -29,8 +31,8 @@ const scriptedPage = `<html><head><title>Shop</title></head><body>
 func browserOrSkip(t *testing.T) {
 	t.Helper()
 	if _, err := tool.Browser(); err != nil {
-		t.Skipf("NOT RUN: %v. This test is proved where the browser is installed — "+
-			"in CI, and in the container with `task dev`.", err)
+		notRun(t, "%v. This test is proved where the browser is installed — "+
+			"in CI, and in the test container with `task check:container`.", err)
 	}
 }
 
@@ -115,5 +117,75 @@ func TestWebBrowseReturnsAJSONBodyVerbatim(t *testing.T) {
 	}
 	if strings.TrimSpace(res.Content) != body {
 		t.Errorf("content = %q, want the bytes as served %q", res.Content, body)
+	}
+}
+
+// A site reads the user agent before anything else, and headless chromium's
+// says HeadlessChrome. The request carries the string of the Chrome that is
+// actually running, with that word gone. It is checked at the server, because
+// the server is the only reader whose opinion of it matters.
+func TestWebBrowseIntroducesItselfAsTheChromeItIs(t *testing.T) {
+	browserOrSkip(t)
+	banner, err := exec.Command(tool.BrowserPath, "--version").Output()
+	if err != nil {
+		t.Fatalf("%s --version: %v", tool.BrowserPath, err)
+	}
+	major := regexp.MustCompile(`(\d+)\.\d+\.\d+\.\d+`).FindStringSubmatch(string(banner))
+	if major == nil {
+		t.Fatalf("no version in %q", banner)
+	}
+	agents := make(chan string, 16)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case agents <- r.UserAgent():
+		default:
+		}
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(`<html><body><p>hello</p></body></html>`))
+	}))
+	defer srv.Close()
+
+	res := browseURL(t, browseApp(t), srv.URL)
+	if !res.OK {
+		t.Fatalf("fetch failed: %s\n%s", res.Error, res.stderr)
+	}
+	select {
+	case ua := <-agents:
+		if strings.Contains(ua, "Headless") {
+			t.Errorf("the request announced a headless browser: %q", ua)
+		}
+		if want := "Chrome/" + major[1] + ".0.0.0"; !strings.Contains(ua, want) {
+			t.Errorf("user agent %q does not name the installed Chrome (%s)", ua, want)
+		}
+	default:
+		t.Fatal("the server saw no request")
+	}
+}
+
+// A bot check is served in place of the page, and a browser cannot tell: it
+// loads, its scripts run, and it has text. The tool reads that text for what it
+// is and fails naming whose check it was, so "Just a moment" never reaches the
+// model as what a page says.
+const botCheckPage = `<!DOCTYPE html><html><head><title>Just a moment...</title></head><body>
+<h2>Performing security verification</h2>
+<p>This website uses a security service to protect against malicious bots.</p>
+<script>window._cf_chl_opt={cType:'managed'};</script>
+<div>Performance and Security by Cloudflare</div></body></html>`
+
+func TestWebBrowseReportsABotCheckRatherThanReadingIt(t *testing.T) {
+	browserOrSkip(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(botCheckPage))
+	}))
+	defer srv.Close()
+
+	res := browseURL(t, browseApp(t), srv.URL)
+	if res.OK {
+		t.Fatalf("a bot check came back as the page: %q", res.Content)
+	}
+	if !strings.Contains(res.Error, "bot check") || !strings.Contains(res.Error, "Cloudflare") {
+		t.Errorf("error %q does not say the page was Cloudflare's bot check", res.Error)
 	}
 }

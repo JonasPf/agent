@@ -27,6 +27,7 @@ file too.
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
 | **Test** | `task test` | Go tests across the agent and every tool; the browser's pure helpers (`web/transcript.js`) under node's built-in runner. Sub-tasks: `test:go`, `test:web`. `test:go` builds the tools first, because the registry will not load one whose `run` is missing. |
 | **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
+| **Test in a container** | `task check:container` | `task check` on Linux in `testenv/Dockerfile` (CI's environment: Debian, chromium, Landlock), with the working tree copied in. A test that cannot run there fails instead of skipping. `task eval:container -- [tool...]` runs the evals the same way. Docker where installed, Podman otherwise. |
 | **Reset** | `task db:clear` | Moves sessions, jobs, memory, and per-session files to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
 | **Inspect** | `task db:status` | What the running agent currently holds. |
 
@@ -39,6 +40,16 @@ task check
 ```
 
 That runs lint, build, and every test suite.
+
+Off Linux, `task check` skips the browser and sandbox tests (each says NOT
+RUN), so a green run there has not proved them. On a Mac, also run:
+
+```sh
+task check:container
+```
+
+Evals of the browser tools need a browser too: run them with
+`task eval:container -- <tool>`.
 
 Do not commit if any of them fail. Fix the change (or the tests) until all
 of them pass.
