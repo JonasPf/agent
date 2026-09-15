@@ -31,8 +31,8 @@ const scriptedPage = `<html><head><title>Shop</title></head><body>
 func browserOrSkip(t *testing.T) {
 	t.Helper()
 	if _, err := tool.Browser(); err != nil {
-		t.Skipf("NOT RUN: %v. This test is proved where the browser is installed — "+
-			"in CI, and in the container with `task dev`.", err)
+		notRun(t, "%v. This test is proved where the browser is installed — "+
+			"in CI, and in the test container with `task check:container`.", err)
 	}
 }
 

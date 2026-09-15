@@ -114,9 +114,21 @@ func TestTheLandlockPolicyGrantsOnlyWhatIsAllowed(t *testing.T) {
 func confinementOrSkip(t *testing.T, s *Sandbox) {
 	t.Helper()
 	if !s.Enforcing() {
-		t.Skipf("NOT RUN: nothing confines a tool here (%s). This test is proved on Linux — "+
-			"in CI, and in the container with `task dev`.", s.Reason)
+		notRun(t, "nothing confines a tool here (%s). This test is proved on Linux — "+
+			"in CI, and in the test container with `task check:container`.", s.Reason)
 	}
+}
+
+// notRun is how a test says this machine cannot prove it. Where the machine
+// claims to prove everything — the test container sets AGENT_TEST_FULL — the
+// same condition is a failure, because a green run there is supposed to mean
+// every test ran.
+func notRun(t *testing.T, format string, args ...any) {
+	t.Helper()
+	if os.Getenv("AGENT_TEST_FULL") != "" {
+		t.Fatalf("NOT RUN where every test must: "+format, args...)
+	}
+	t.Skipf("NOT RUN: "+format, args...)
 }
 
 func TestAShellInOneSessionCannotReachAnother(t *testing.T) {

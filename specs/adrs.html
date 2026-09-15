@@ -1097,7 +1097,8 @@ unprivileged container on a host that refuses user namespaces.</p>
 do not stay in step: within a day of a tool being able to declare the paths it needs, the macOS profile
 was silently ignoring that declaration while Landlock honoured it. The agent is a Linux program. A
 laptop runs the tests and the interface; a laptop that wants a confined tool runs the container, which
-is <code>task dev</code>, built from the same Dockerfile CI publishes.</p>
+is <code>task dev</code>, built from the same Dockerfile CI publishes. A laptop that wants the tests
+that assert confinement proved runs them in a container too (<a href="#adr-047">ADR-047</a>).</p>
 <p>What that costs is stated rather than hidden. On a laptop <code>task run</code> confines nothing:
 the startup line is a warning, the interface says NOT ENFORCED, and every test that asserts
 confinement skips with a message naming why instead of passing against a boundary that is not there.
@@ -1440,6 +1441,32 @@ are instead of read as content.</p>
 from a person's Chrome by user agent. That is accepted for a single-user agent opening pages a person
 asked about, at a person's pace. Each render also starts one short extra process, to ask the browser
 its version.</p>
+</div>
+
+<div class="adr" id="adr-047">
+<div class="meta">ADR-047 · accepted</div>
+<h3>The whole suite runs where the agent runs</h3>
+<h4>Context</h4>
+<p>On a Mac, <code>task check</code> went green while every browser test and every test that asserts
+confinement skipped: there is no chromium at <code>/usr/bin/chromium</code> and no Landlock. The
+skips were honest &mdash; each said NOT RUN &mdash; but a green run reads as green, and the only place
+those tests ran was CI, after a push. The evals were worse. A browser tool's case runs the tool, which
+failed with <em>no browser</em>, and the failure read as a case the model got wrong.</p>
+<h4>Decision</h4>
+<p><code>testenv/Dockerfile</code> is the environment CI's workflow describes &mdash; Debian bookworm,
+Go 1.25, the Debian chromium package, node 22, Task &mdash; with no source in it.
+<code>task check:container</code> mounts the working tree read-only, copies it in, and runs
+<code>task check</code>; <code>task eval:container</code> runs the evals the same way, handed
+<code>.env</code> at run time rather than in the image. The copy keeps the Linux executables a build
+writes into <code>tools/*/run</code> out of the tree a host <code>task run</code> loads.</p>
+<p>The image sets <code>AGENT_TEST_FULL</code>, under which a test that cannot run fails instead of
+skipping. A green run in the container means every test ran; a green run on the host still means what
+it did.</p>
+<h4>Consequences</h4>
+<p>A Mac proves everything before a push: the container VM's kernel is Linux, and it has Landlock.
+The cost is two descriptions of one environment, the workflow and the Dockerfile, which name each other
+so a change to one points at the other. CI could build the Dockerfile and run the check in it, leaving
+one description; that is not done here.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
