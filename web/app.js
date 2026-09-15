@@ -48,7 +48,9 @@ const until = t => {
   return 'in ' + Math.round(d / 86400) + 'd';
 };
 
-const state = { view: null, session: null, entries: [], streaming: '', sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent' };
+// working holds, per session, when this page learned the agent started on it,
+// in this browser's clock.
+const state = { view: null, session: null, entries: [], streaming: '', sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent', working: {} };
 
 // ---------- routing ----------
 
@@ -126,6 +128,12 @@ function handle(e) {
     }
   } else if (e.kind === 'turn_start') {
     state.streaming = '';
+  } else if (e.kind === 'working' || e.kind === 'idle') {
+    // A wait already counting — started when the message was sent — keeps its
+    // start; the server's word only confirms it.
+    if (e.kind === 'idle') delete state.working[e.session_id];
+    else if (state.working[e.session_id] == null) state.working[e.session_id] = Date.now();
+    if (state.view === 'session' && e.session_id === state.arg) renderStatus();
   } else if (e.kind === 'sessions' || e.kind === 'jobs' || e.kind === 'status') {
     if (['sessions', 'jobs', 'panels'].includes(state.view)) render();
     // The rail is on screen whatever the view is, so it follows every change to
@@ -361,11 +369,15 @@ async function viewSession(v) {
   state.session = res.session;
   state.entries = await api('/sessions/' + state.arg + '/transcript');
   const id = state.session.id;
+  // Opened mid-turn, the wait counts from when the agent started, not from now.
+  if (res.session.working_seconds != null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
+  else delete state.working[id];
   // What you do to a conversation belongs in its header, not on top of its
   // first message: the transcript starts at the top of the screen.
   setHeader(state.session.title || 'Conversation', true, [
     { label: 'Jobs', fn: () => location.hash = '#jobs/' + id },
     { label: 'Files', fn: () => location.hash = '#files/' + id },
+    { label: 'Copy', fn: () => copyConversation() },
     { label: 'Compact', fn: () => compactNow(id) },
     { label: 'Fork', fn: () => location.hash = '#fork/' + id },
     { label: 'Controls', fn: () => location.hash = '#settings/' + id },
@@ -407,7 +419,17 @@ async function viewSession(v) {
     const text = ta.value.trim();
     if (!text) return;
     ta.value = ''; ta.style.height = 'auto';
-    await post('/sessions/' + state.session.id + '/messages', { text });
+    // The wait starts when the message leaves, not when the server first says
+    // so: that gap is part of what the operator is waiting through.
+    const sid = state.session.id;
+    if (state.working[sid] == null) state.working[sid] = Date.now();
+    renderStatus();
+    try { await post('/sessions/' + sid + '/messages', { text }); }
+    catch (err) {
+      delete state.working[sid];
+      renderStatus();
+      toast({ title: 'Not sent', body: String(err.message) });
+    }
   };
   const hint = el('div', 'hint', 'Enter sends · Shift+Enter for a new line');
   foot.append(status, form, hint);
@@ -442,6 +464,13 @@ function renderStatus() {
   // the point at which the number is worth reading.
   const bar = el('span', 'bar' + (pct >= 80 ? ' hot' : '')); const fill = el('i'); fill.style.width = pct + '%'; bar.append(fill);
   const add = (label, val) => { const w = el('span'); if (label) w.append(document.createTextNode(label + ' ')); w.append(el('b', null, val)); line.append(w); };
+  // First on the line, because while it is there it is the only thing on the
+  // line worth reading.
+  const since = state.working[s.id];
+  if (since != null) {
+    line.append(el('span', 'gen working', 'working ' + waitingLabel((Date.now() - since) / 1000)));
+    tickWorking();
+  }
   add('', s.model.split('/').pop());
   line.append(bar);
   add('', `${s.context_used.toLocaleString()} / ${s.compact_at_tokens.toLocaleString()} tok`);
@@ -449,7 +478,53 @@ function renderStatus() {
   if (s.cache_hit_rate) add('cached', Math.round(s.cache_hit_rate * 100) + '%');
   const last = [...state.entries].reverse().find(e => e.usage && e.usage.tokens_per_second);
   if (last) add('', last.usage.tokens_per_second.toFixed(1) + ' tok/s');
-  if (state.streaming) line.append(el('span', 'gen', 'generating'));
+  if (state.streaming && since == null) line.append(el('span', 'gen', 'generating'));
+}
+
+// tickWorking redraws the status line once a second while the conversation on
+// screen is waiting on the agent, and stops by itself when it is not.
+let workingTicker = null;
+function tickWorking() {
+  if (workingTicker) return;
+  workingTicker = setInterval(() => {
+    const s = state.session;
+    if (state.view !== 'session' || !s || state.working[s.id] == null) {
+      clearInterval(workingTicker);
+      workingTicker = null;
+      return;
+    }
+    renderStatus();
+  }, 1000);
+}
+
+// copyConversation puts the whole conversation on the clipboard as Markdown.
+// The clipboard API needs a secure page — https or localhost — so a plain http
+// one falls back to the selection the browser has always been able to copy.
+async function copyConversation() {
+  const s = state.session;
+  const text = conversationText(state.entries, s && s.title);
+  const messages = state.entries.filter(e => e.type === 'message' && e.role !== 'tool').length;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(text);
+    else copyBySelection(text);
+  } catch (err) {
+    try { copyBySelection(text); }
+    catch (e) { toast({ title: 'Not copied', body: String(err.message || err) }); return; }
+  }
+  toast({ title: 'Copied the conversation', body: `${messages} message${messages === 1 ? '' : 's'} · ${fmtBytes(text.length)} of Markdown` });
+}
+
+function copyBySelection(text) {
+  const ta = el('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.append(ta);
+  ta.select();
+  const ok = document.execCommand && document.execCommand('copy');
+  ta.remove();
+  if (!ok) throw new Error('the browser would not copy');
 }
 
 async function loadStatus() {

@@ -72,7 +72,13 @@ const session = over => Object.assign({
 function load(routes) {
   const ids = {};
   const ctx = {
-    console, setTimeout, clearTimeout, requestAnimationFrame: f => f(),
+    console, clearTimeout, requestAnimationFrame: f => f(),
+    // A toast lingers for seconds; unref'd, its timer still fires while a test
+    // waits and no longer holds the process open after the last one.
+    setTimeout: (f, ms) => { const h = setTimeout(f, ms); if (h && h.unref) h.unref(); return h; },
+    // A ticking clock would keep the test process alive; a test that needs the
+    // tick calls the view again instead.
+    setInterval: () => 0, clearInterval: () => {},
     document: {
       createElement: node, createTextNode: t => ({ text: t, textContent: t }),
       createDocumentFragment: () => node('#fragment'),
@@ -480,6 +486,60 @@ const SMALL = {
   id: 'small/unmeasured', name: 'Small: Unmeasured', created: 400,
   context_length: 32000, prompt_price: 0.0000001, completion_price: 0.0000002,
 };
+
+// ---------- waiting, and copying ----------
+
+function conversationScreen(sess, entries) {
+  const ctx = load({ '/sessions/S1': { session: sess }, '/sessions/S1/transcript': entries || [] });
+  ctx.location.hash = '#session/S1';
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  return ctx;
+}
+
+// A turn can take a minute. Nothing on screen during it reads as stuck, so the
+// status line says the agent is working and counts the seconds.
+test('the status line counts how long the agent has been working', async () => {
+  const ctx = conversationScreen(session({ id: 'S1', working_seconds: 7 }));
+  await ctx.viewSession(node('div'));
+  assert.match(textOf(ctx._id('statusline')), /working\s+7s/, 'a working session does not say how long it has been');
+
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  assert.ok(!/working/.test(textOf(ctx._id('statusline'))), 'the indicator stayed after the agent finished');
+
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  assert.match(textOf(ctx._id('statusline')), /working\s+0s/, 'a turn that starts on screen does not show at once');
+});
+
+test('an idle conversation shows no indicator', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  assert.ok(!/working/.test(textOf(ctx._id('statusline'))));
+});
+
+test('sending a message shows the indicator before the server answers', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const form = findAll(ctx._id('foot'), 'composer')[0];
+  form.children.find(c => c.tagName === 'textarea').value = 'hello';
+  await form.onsubmit({ preventDefault() {} });
+  assert.match(textOf(ctx._id('statusline')), /working\s+0s/);
+});
+
+test('the whole conversation copies to the clipboard from its header', async () => {
+  const ctx = conversationScreen(session({ id: 'S1', title: 'Greenhouse sensors' }), [
+    { seq: 1, type: 'message', role: 'user', text: 'How warm is it?', created_at: '2026-09-15T10:01:00Z' },
+    { seq: 2, type: 'message', role: 'assistant', text: '21.5 degrees.', created_at: '2026-09-15T10:01:05Z' },
+  ]);
+  let copied = null;
+  ctx.navigator.clipboard = { writeText: async t => { copied = t; } };
+  await ctx.viewSession(node('div'));
+  const copy = ctx._id('head-acts').children.find(b => /copy/i.test(b.textContent));
+  assert.ok(copy, 'the conversation header offers no copy');
+  await copy.onclick();
+  assert.ok(copied && copied.includes('How warm is it?') && copied.includes('21.5 degrees.'),
+    'the clipboard does not hold the conversation: ' + copied);
+  assert.ok(copied.includes('Greenhouse sensors'), 'the copy does not carry the title');
+});
 
 // ---------- what a tool may reach ----------
 

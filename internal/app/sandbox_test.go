@@ -147,7 +147,7 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
-		queues: map[string]chan func(){}, busy: map[string]bool{}}
+		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
@@ -434,7 +434,7 @@ func confinedApp(t *testing.T, toolsDir, skillsDir, readPaths string) (*App, str
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
-		queues: map[string]chan func(){}, busy: map[string]bool{}}
+		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
@@ -495,7 +495,7 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
-		queues: map[string]chan func(){}, busy: map[string]bool{}}
+		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
@@ -663,7 +663,7 @@ func TestOneVolumeIsStillTwoTrustLevels(t *testing.T) {
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(data), st.DB()),
 		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
-		queues: map[string]chan func(){}, busy: map[string]bool{}}
+		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)

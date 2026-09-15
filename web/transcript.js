@@ -202,8 +202,63 @@ function splitSessionIds(text) {
   return parts;
 }
 
+// ---- waiting ----
+
+// waitingLabel is how long the agent has been working, as it ticks: seconds
+// while that is all it is, then minutes and seconds, then hours and minutes.
+function waitingLabel(seconds) {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const pad = n => String(n).padStart(2, '0');
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm ' + pad(s % 60) + 's';
+  return Math.floor(s / 3600) + 'h ' + pad(Math.floor(s / 60) % 60) + 'm';
+}
+
+// ---- copying a conversation ----
+
+const COPY_RESULT_LIMIT = 2000;
+
+function copyStamp(iso) {
+  const d = new Date(iso);
+  if (!iso || isNaN(d)) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// conversationText is the whole conversation as Markdown, to paste somewhere
+// else: every message in full, each call with its arguments, each result kept
+// to a readable length, and each compaction's summary where it stands. What was
+// said by neither party — the prompt and the event log — is left out. Folded
+// turns are included: the conversation is what happened, not what the model
+// can still see.
+function conversationText(entries, title) {
+  const out = ['# ' + (title || 'Conversation')];
+  for (const e of entries || []) {
+    if (e.type === 'compaction') {
+      out.push(`---\n\n*Compacted: ${e.folded_turns || 0} turns folded into this summary.*\n\n${e.text || ''}\n\n---`);
+      continue;
+    }
+    if (e.type !== 'message') continue;
+    if (e.role === 'tool') {
+      const body = resultBody(toolResult(e.tool_result));
+      const kept = body.length > COPY_RESULT_LIMIT
+        ? body.slice(0, COPY_RESULT_LIMIT) + `\n… (${body.length - COPY_RESULT_LIMIT} more characters)`
+        : body;
+      out.push('← ' + (e.tool_name || 'tool') + '\n\n```\n' + kept + '\n```');
+      continue;
+    }
+    const who = e.role !== 'user' ? 'Agent' : e.job_id ? 'Job (' + e.job_id.slice(-6) + ')' : 'You';
+    const parts = [`**${who}** · ${copyStamp(e.created_at)}`];
+    if (e.text) parts.push(e.text);
+    for (const c of e.tool_calls || []) parts.push('→ ' + c.name + '\n\n```json\n' + callBody(c.arguments) + '\n```');
+    out.push(parts.join('\n\n'));
+  }
+  return out.join('\n\n') + '\n';
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { toolResult, resultBody, resultPreview, callBody, callPreview,
     eventLabel, eventDetail, eventTime, isFailure,
-    speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds };
+    speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds,
+    waitingLabel, conversationText };
 }

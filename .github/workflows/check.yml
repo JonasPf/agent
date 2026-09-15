@@ -70,7 +70,7 @@ jobs:
       # builds no mount namespace, so the bundle starts — and the cache, the
       # override variable, and the search that went with them are gone.
       - name: Install the browser
-        run: apt-get update && apt-get install -y --no-install-recommends chromium
+        run: apt-get update && apt-get install -y --no-install-recommends chromium curl wget python3 perl
 
       - name: Report the browser
         run: /usr/bin/chromium --version

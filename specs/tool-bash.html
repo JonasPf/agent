@@ -82,6 +82,7 @@ from as though it were the whole answer.</p>
 <li>The tool's own timeout is below the manifest's, so an overrun is always reported rather than killed.</li>
 <li>The command runs in the session's working directory, and a relative path resolves inside it.</li>
 <li>A command reaching outside the session's directory is refused by the sandbox, not by the tool.</li>
+<li><code>curl</code>, <code>wget</code>, <code>python3</code>, and <code>perl</code> are installed and run in the shell under the sandbox, and the description says they are there.</li>
 </ul>
 </div>
 

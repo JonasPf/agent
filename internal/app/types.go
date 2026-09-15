@@ -139,6 +139,9 @@ type Session struct {
 	ContextUsed  int     `json:"context_used"`
 	JobCount     int     `json:"job_count"`
 	CacheHitRate float64 `json:"cache_hit_rate"`
+	// WorkingSeconds is how long a turn has been running or queued, absent when
+	// none is, so a conversation opened mid-turn counts from the right place.
+	WorkingSeconds *float64 `json:"working_seconds,omitempty"`
 }
 
 func (s *Session) toolEnabled(name string) bool { return inSet(s.EnabledTools, name) }

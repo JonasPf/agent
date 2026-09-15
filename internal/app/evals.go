@@ -395,7 +395,7 @@ func RunEvals(model string, only []string, w io.Writer) error {
 		skills: NewSkills(cfg.SkillsDir),
 		or:     NewOpenRouter(cfg.APIKey),
 		hub:    NewHub(),
-		queues: map[string]chan func(){}, busy: map[string]bool{}}
+		queues: map[string]chan func(){}}
 	// Tools reach the system over the tool API, so the eval serves its own,
 	// against this store, on a port of its own.
 	stopTools, err := a.listenTools()

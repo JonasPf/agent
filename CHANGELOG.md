@@ -2,6 +2,14 @@
 
 ## 2026-09-15
 
+- While the agent is working, the status line under the message box says so
+  and counts the seconds, starting the moment you send. Reopening the
+  conversation mid-turn keeps the count going from when the turn started.
+- **Copy** in a conversation's header puts the whole conversation on the
+  clipboard as Markdown: every message, each tool call and its result (long
+  results clipped), and compaction summaries.
+- The shell has `curl`, `wget`, `python3`, and `perl`.
+
 - **The interface moves from port 8080 to 7770.** A proxy or port mapping
   that points at 8080 must point at 7770, or the interface will not answer.
   8080 is left free for the development servers tools start.
