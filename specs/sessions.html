@@ -31,11 +31,11 @@ private one of its own, so a session is always something a person started and ca
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste. It addresses the same conversation for as long as the conversation exists.</td></tr>
 <tr><td><code>title</code></td><td>Generated from the first user message. Editable.</td></tr>
-<tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life.</td></tr>
+<tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life. A conversation that names none starts on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</td></tr>
 <tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>. Archiving is something a person does when they are finished; nothing archives a session automatically.</td></tr>
 <tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
 <tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
-<tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
+<tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means every skill that is on by default (<a href="adrs.html#adr-050">ADR-050</a>). Fixed for the session's life.</td></tr>
 <tr><td><code>granted_env</code></td><td>Environment variable <em>names</em> this conversation's tools may read, beyond what every tool is promised. Never values: the value stays in the agent's own environment, so a grant can be exported and read without carrying a secret. Fixed for the session's life.</td></tr>
 <tr><td><code>compact_at_tokens</code></td><td>The projected size at which the conversation compacts. Default forty thousand.</td></tr>
 <tr><td><code>keep_verbatim_tokens</code></td><td>How much of the tail a compaction leaves untouched. Default ten thousand.</td></tr>
@@ -50,6 +50,8 @@ private one of its own, so a session is always something a person started and ca
 <li>A tool receives a granted variable only in a session that was granted it, and a session granted nothing reaches no credential another session holds.</li>
 <li>A granted variable that is not set in the agent's environment is absent from the tool rather than empty.</li>
 <li>The model API key cannot be granted to any session.</li>
+<li>The names a session can be granted are listable without their values, and the list leaves out the model API key, what every tool already receives, and what each tool call overwrites.</li>
+<li>A session created without a model starts on the one last chosen, for a new session or a fork onto a different model, and the choice survives a restart. Before any choice, the most recent session's model; before any session, a named fallback.</li>
 <li>A session says which variables it may read, without saying what any of them hold.</li>
 <li>The configuration of one session does not affect any other.</li>
 <li>The system prompt as sent is retrievable for any session that has taken a turn.</li>

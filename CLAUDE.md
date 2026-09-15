@@ -23,7 +23,7 @@ file too.
 | Task | Command | Notes |
 |------|---------|-------|
 | **Build** | `task build` | Compiles all packages and every tool. Agent entry point is `./cmd/agent`; each `tools/<name>` builds to its own `run`. |
-| **Run** | `task run` | Serves http://localhost:8080. See the README table for `AGENT_*` env vars. |
+| **Run** | `task run` | Serves http://localhost:7770. See the README table for `AGENT_*` env vars. |
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
 | **Test** | `task test` | Go tests across the agent and every tool; the browser's pure helpers (`web/transcript.js`) under node's built-in runner. Sub-tasks: `test:go`, `test:web`. `test:go` builds the tools first, because the registry will not load one whose `run` is missing. |
 | **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |

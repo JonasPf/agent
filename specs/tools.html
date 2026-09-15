@@ -160,7 +160,8 @@ granted is absent, and a granted variable that is not set stays absent rather th
 <tr><th>Variable</th><th>Holds</th></tr>
 <tr><td><code>AGENT_DB</code></td><td>Path to the SQLite database.</td></tr>
 <tr><td><code>AGENT_DB_PREFIX</code></td><td>The tool's table prefix.</td></tr>
-<tr><td><code>AGENT_URL</code></td><td>Base URL of the HTTP API, the same one the interface uses.</td></tr>
+<tr><td><code>AGENT_URL</code></td><td>Base URL of the tool API: memory, the calling conversation's jobs, the skills it has, and search. Not the operator's API (<a href="adrs.html#adr-051">ADR-051</a>).</td></tr>
+<tr><td><code>AGENT_TOKEN</code></td><td>Names this call to the tool API. Issued when the call starts and revoked when it ends; the call decides which conversation a request acts in.</td></tr>
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
@@ -186,7 +187,7 @@ turn rather than the process.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A tool exceeding its timeout is killed and reported as an error result.</li>
-<li>A tool can reach every capability the interface can, through <code>AGENT_URL</code>, without a private hook into the process.</li>
+<li>A tool reaches memory, its own conversation's jobs, that conversation's skills, and search through <code>AGENT_URL</code>, naming its call with <code>AGENT_TOKEN</code>, without a private hook into the process; nothing it can reach creates or drives a conversation.</li>
 <li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
 <li>Standard error is captured and stored with the result, not shown to the model.</li>
 <li>A tool subprocess receives only the variables above and the ones its calling session was granted; the model API key and every other variable of the agent's environment are absent.</li>

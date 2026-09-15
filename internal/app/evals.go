@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -381,15 +379,6 @@ func RunEvals(model string, only []string, w io.Writer) error {
 	}
 	defer os.RemoveAll(dir)
 
-	// Tools reach the system over AGENT_URL, so the eval serves its own API on
-	// an ephemeral port. Without this every tool call would land on whatever
-	// happens to be listening on the default port, against a different store.
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return err
-	}
-	defer ln.Close()
-	cfg.Addr = ln.Addr().String()
 	cfg.DataDir = dir
 	cfg.Workspace = filepath.Join(dir, "workspace")
 	if err := os.MkdirAll(cfg.Workspace, 0o755); err != nil {
@@ -407,12 +396,18 @@ func RunEvals(model string, only []string, w io.Writer) error {
 		or:     NewOpenRouter(cfg.APIKey),
 		hub:    NewHub(),
 		queues: map[string]chan func(){}, busy: map[string]bool{}}
+	// Tools reach the system over the tool API, so the eval serves its own,
+	// against this store, on a port of its own.
+	stopTools, err := a.listenTools()
+	if err != nil {
+		return err
+	}
+	defer stopTools()
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		return fmt.Errorf("tools failed to load: %v", failures)
 	}
 	a.sched = NewScheduler(a)
-	go func() { _ = http.Serve(ln, a.routes()) }()
 
 	fmt.Fprintf(w, "model %s\n\n", model)
 	var run, failed int

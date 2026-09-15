@@ -162,7 +162,10 @@ func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, 
 	cmd.Dir = ws
 	tmp := s.app.sandbox.TempDir(ws)
 	_ = os.MkdirAll(tmp, 0o755)
-	cmd.Env = append(os.Environ(), "TMPDIR="+tmp)
+	// The model writes a check, so it gets what a bash call in the same
+	// conversation gets — what a program needs to start, and that conversation's
+	// grants — and never the agent's whole environment, which holds the model key.
+	cmd.Env = append(toolBaseEnv(sess.GrantedEnv), "TMPDIR="+tmp)
 	// Killing the shell does not close pipes a grandchild still holds, and
 	// CombinedOutput waits for every writer. WaitDelay bounds that wait, so the
 	// timeout above bounds the whole call.

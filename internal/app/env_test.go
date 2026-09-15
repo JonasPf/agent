@@ -12,7 +12,7 @@ func TestLoadEnvFile(t *testing.T) {
 		"# a comment\n" +
 		"\n" +
 		"OPENROUTER_API_KEY=sk-or-plain\n" +
-		"export AGENT_MODEL=anthropic/claude-opus-4.1\n" +
+		"export AGENT_ADDR=:9090\n" +
 		"QUOTED=\"has spaces\"\n" +
 		"SINGLE='single'\n" +
 		"  SPACED  =  padded  \n" +
@@ -22,7 +22,7 @@ func TestLoadEnvFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("ALREADY_SET", "from-environment")
-	for _, k := range []string{"OPENROUTER_API_KEY", "AGENT_MODEL", "QUOTED", "SINGLE", "SPACED"} {
+	for _, k := range []string{"OPENROUTER_API_KEY", "AGENT_ADDR", "QUOTED", "SINGLE", "SPACED"} {
 		t.Setenv(k, "")
 		os.Unsetenv(k)
 	}
@@ -31,7 +31,7 @@ func TestLoadEnvFile(t *testing.T) {
 
 	want := map[string]string{
 		"OPENROUTER_API_KEY": "sk-or-plain",
-		"AGENT_MODEL":        "anthropic/claude-opus-4.1",
+		"AGENT_ADDR":         ":9090",
 		"QUOTED":             "has spaces",
 		"SINGLE":             "single",
 		"SPACED":             "padded",

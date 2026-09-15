@@ -23,7 +23,7 @@ var envRead = regexp.MustCompile(`(?:envOr|envInt|os\.Getenv|os\.LookupEnv)\("([
 // from configuration. Naming one of these in .env.example would invite an
 // operator to set a value the agent overwrites on every call.
 var toolContract = map[string]bool{
-	"AGENT_URL": true, "AGENT_SESSION": true, "AGENT_JOB": true,
+	"AGENT_URL": true, "AGENT_SESSION": true, "AGENT_JOB": true, "AGENT_TOKEN": true,
 	"AGENT_DB": true, "AGENT_DB_PREFIX": true, "TMPDIR": true,
 	// Granted per session rather than configured for the agent, and the value
 	// still comes from the environment — so these are documented, but as

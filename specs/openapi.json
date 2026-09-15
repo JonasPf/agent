@@ -905,7 +905,7 @@
         "tags": [
           "system"
         ],
-        "summary": "Models that support tool calling, with context window and price. Cached from OpenRouter, refreshed daily.",
+        "summary": "Models that support tool calling, with what one is chosen by: price, context, accepted input, and benchmark indices. Cached from OpenRouter, refreshed daily. ?q= narrows to models whose id or name contains every term.",
         "responses": {
           "200": {
             "description": "Models.",
@@ -922,17 +922,108 @@
                       "name": {
                         "type": "string"
                       },
+                      "description": {
+                        "type": "string"
+                      },
+                      "created": {
+                        "type": "integer",
+                        "description": "Release time, Unix seconds."
+                      },
                       "context_length": {
                         "type": "integer"
                       },
-                      "price_prompt": {
-                        "type": "string"
+                      "max_completion_tokens": {
+                        "type": "integer"
                       },
-                      "price_completion": {
-                        "type": "string"
+                      "input_modalities": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
                       },
-                      "explicit_cache_control": {
+                      "prompt_price": {
+                        "type": "number",
+                        "description": "Dollars per input token."
+                      },
+                      "completion_price": {
+                        "type": "number",
+                        "description": "Dollars per output token."
+                      },
+                      "cache_read_price": {
+                        "type": "number",
+                        "description": "Dollars per cached input token."
+                      },
+                      "reasoning": {
                         "type": "boolean"
+                      },
+                      "intelligence_index": {
+                        "type": "number",
+                        "description": "Artificial Analysis intelligence index as the gateway reports it. Absent when unmeasured, never zero."
+                      },
+                      "coding_index": {
+                        "type": "number",
+                        "description": "Artificial Analysis coding index as the gateway reports it. Absent when unmeasured, never zero."
+                      },
+                      "agentic_index": {
+                        "type": "number",
+                        "description": "Artificial Analysis agentic index as the gateway reports it. Absent when unmeasured, never zero."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/preferences": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "What a new conversation starts from: the model last chosen, else the most recent session's, else a fallback. A model is chosen by creating a session that names it or forking onto a different one.",
+        "responses": {
+          "200": {
+            "description": "Preferences.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "model": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/env": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "The variable names a session could be granted. Names only, never values; leaves out OPENROUTER_API_KEY, what every tool already receives, and what each call overwrites.",
+        "responses": {
+          "200": {
+            "description": "Grantable names, sorted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "from_env_file": {
+                        "type": "boolean",
+                        "description": "Written in the agent's .env rather than inherited by the process."
                       }
                     }
                   }
@@ -1171,7 +1262,7 @@
               "type": "string"
             },
             "nullable": true,
-            "description": "Skills readable in this session. Null means all. A new session inherits the most recently used set."
+            "description": "Skills indexed in this session. Null means every skill that is on by default. A new session inherits the most recently used set."
           },
           "unread": {
             "type": "integer"
@@ -1542,6 +1633,57 @@
           "enabled": {
             "type": "boolean",
             "description": "Whether this tool is callable in the requested session."
+          },
+          "reach": {
+            "type": "object",
+            "nullable": true,
+            "description": "What the tool may touch, from the policy the sandbox applies. Absent for a builtin, which runs inside the agent.",
+            "properties": {
+              "enforced": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "read_write": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "read": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "network_enforced": {
+                "type": "boolean"
+              },
+              "network_reason": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "TCP ports the tool may connect to, the tool API's included."
+              },
+              "tool_api_port": {
+                "type": "integer"
+              },
+              "operator_port": {
+                "type": "integer",
+                "description": "The interface's port, which no tool may connect to."
+              }
+            }
           }
         }
       },
@@ -1557,6 +1699,14 @@
           },
           "bytes": {
             "type": "integer"
+          },
+          "default_enabled": {
+            "type": "boolean",
+            "description": "Whether a session that did not choose its skills has this one. False when the frontmatter says default: off."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "With ?session_id=, whether that session has it; otherwise the default."
           }
         }
       }

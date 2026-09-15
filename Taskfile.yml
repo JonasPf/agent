@@ -8,7 +8,7 @@ version: '3'
 dotenv: ['.env']
 
 vars:
-  ADDR: '{{.AGENT_ADDR | default ":8080"}}'
+  ADDR: '{{.AGENT_ADDR | default ":7770"}}'
   BACKUPS: '.backups'
   # What the interface reports as the running version. The deployment tags
   # images by commit, so the version on screen is the one a rollback names; a
@@ -68,7 +68,7 @@ tasks:
       - '{{.CONTAINER}} build -t agent:dev --build-arg VERSION="{{.VERSION}}" --build-arg BUILT_AT="{{.BUILT_AT}}" .'
       - |
         {{.CONTAINER}} run --rm -it \
-          -p {{.ADDR}}:8080 \
+          -p {{.ADDR}}:7770 \
           -v "$PWD/data:/app/state/data" \
           -v "$PWD/workspace:/app/state/workspace" \
           --env-file .env \

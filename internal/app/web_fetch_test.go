@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -19,8 +21,23 @@ func fetchURL(t *testing.T, a *App, url string) toolResult {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowServer(t, a, url)
 	args, _ := json.Marshal(map[string]string{"url": url})
 	return a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "web_fetch", args)
+}
+
+// A test server listens on a port nobody chose, and a confined tool connects
+// only to the ports the sandbox names. The test names this one, the way an
+// operator names theirs in AGENT_TOOL_PORTS.
+func allowServer(t *testing.T, a *App, raw string) {
+	t.Helper()
+	u, err := neturl.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, err := strconv.Atoi(u.Port()); err == nil {
+		a.sandbox.Ports = append(a.sandbox.Ports, n)
+	}
 }
 
 func serve(t *testing.T, contentType, body string, status int) string {

@@ -142,8 +142,7 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte("OPENROUTER_API_KEY=sk-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: dir, Workspace: workspace, ToolsDir: "../../tools",
-		DefaultModel: "test/model", EnvFile: envFile}
+	cfg := Config{DataDir: dir, Workspace: workspace, ToolsDir: "../../tools", EnvFile: envFile}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
@@ -430,7 +429,7 @@ func confinedApp(t *testing.T, toolsDir, skillsDir, readPaths string) (*App, str
 		t.Fatal(err)
 	}
 	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"),
-		ToolsDir: toolsDir, SkillsDir: skillsDir, DefaultModel: "test/model",
+		ToolsDir: toolsDir, SkillsDir: skillsDir,
 		EnvFile: envFile, ReadPaths: readPaths}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
@@ -491,7 +490,7 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"),
-		ToolsDir: "../../tools", DefaultModel: "test/model"}
+		ToolsDir: "../../tools"}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
@@ -659,8 +658,7 @@ func TestOneVolumeIsStillTwoTrustLevels(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte("OPENROUTER_API_KEY=sk-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: data, Workspace: workspace, ToolsDir: "../../tools",
-		DefaultModel: "test/model", EnvFile: envFile}
+	cfg := Config{DataDir: data, Workspace: workspace, ToolsDir: "../../tools", EnvFile: envFile}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(data), st.DB()),

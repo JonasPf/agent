@@ -14,12 +14,18 @@ import (
 // calls, so no API key is needed.
 func newTestApp(t *testing.T) *App {
 	t.Helper()
-	dir := t.TempDir()
+	return newTestAppAt(t, t.TempDir())
+}
+
+// newTestAppAt builds one over a state directory the caller chose, so a test
+// can start a second agent where the first one left off.
+func newTestAppAt(t *testing.T, dir string) *App {
+	t.Helper()
 	st, err := OpenStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: dir, Workspace: dir, DefaultModel: "test/model"}
+	cfg := Config{DataDir: dir, Workspace: dir}
 	a := &App{
 		sandbox: NewSandbox(cfg),
 		cfg:     cfg,

@@ -1370,6 +1370,8 @@ manifest, is where a tool should be granted a variable.</p>
 <div class="adr" id="adr-045">
 <div class="meta">ADR-045 · accepted</div>
 <h3>A session grants the environment, not a manifest</h3>
+<p><em>What a grant is stands; how it is chosen has moved. <a href="#adr-048">ADR-048</a> replaces the
+typed list of names with a list to tick.</em></p>
 <h4>Context</h4>
 <p><a href="#adr-037">ADR-037</a> made a tool's environment an allow-list and put the declaration in the
 tool's manifest. That was right about inheritance and wrong about the unit. A manifest is the same in
@@ -1467,6 +1469,113 @@ it did.</p>
 The cost is two descriptions of one environment, the workflow and the Dockerfile, which name each other
 so a change to one points at the other. CI could build the Dockerfile and run the check in it, leaving
 one description; that is not done here.</p>
+</div>
+
+<div class="adr" id="adr-048">
+<div class="meta">ADR-048 · accepted</div>
+<h3>A grant is ticked from the names the agent holds</h3>
+<h4>Context</h4>
+<p><a href="#adr-045">ADR-045</a> made a grant a list of names a person typed, and the interface offered
+nothing to pick from, on purpose: listing the agent's environment was held to tell every reader what
+secrets it holds. In a single-user agent the reader is the operator who put them there. What typing
+cost was real: a misspelled name grants nothing, and a tool without its credential fails in a way that
+reads as a broken tool &mdash; the cost ADR-045 itself names &mdash; and nothing on screen said which
+names existed to be typed.</p>
+<h4>Decision</h4>
+<p><code>GET /env</code> lists the names a session could be granted: those in the agent's environment
+and in its <code>.env</code>, less <code>OPENROUTER_API_KEY</code>, the variables every tool already
+receives, and the ones each call overwrites. Names only, each marked with whether it is written in
+<code>.env</code>, which is where an operator puts a credential on purpose.</p>
+<p>The configuration screen shows what is granted and a button. The button opens a dialog of those
+names, <code>.env</code> first, each with a checkbox. A name already granted that the environment no
+longer holds stays on the list, marked, so it is never carried into a new conversation out of
+sight.</p>
+<h4>Consequences</h4>
+<p>A grant cannot be misspelled, and what could be granted is visible before anything is. Nothing about
+a grant itself changes: names, never values, fixed for the session's life.</p>
+<p>Anything that reaches the API can read the list, including a tool through <code>AGENT_URL</code>. It
+learns names, not values. It could already create a session granted any name it guessed through the
+same API; the list makes the guessing unnecessary, not possible.</p>
+</div>
+
+<div class="adr" id="adr-049">
+<div class="meta">ADR-049 · accepted</div>
+<h3>A conversation starts on the model last chosen</h3>
+<h4>Context</h4>
+<p><code>AGENT_MODEL</code> named the model a new conversation started on, but it was consulted only
+when no session existed: after that the new-conversation screen prefilled from the most recent session.
+The most recent session is often not what the next one should run on &mdash; a fork onto an experiment,
+an import, a conversation kept for a job. So the setting did almost nothing after the first day while
+appearing to decide, and what did decide was not something anyone chose.</p>
+<h4>Decision</h4>
+<p>The model last chosen is kept in <code>data/preferences.json</code>. Creating a session that names a
+model chooses it; so does forking onto a model other than the origin's. A fork that keeps its model
+chooses nothing. <code>GET /preferences</code> answers the model a new conversation starts on: the
+choice, else the most recent session's model, else a fallback named in the code. The setting is
+deleted.</p>
+<h4>Consequences</h4>
+<p>A model is chosen once, on screen, and stays chosen across restarts without editing a file.
+<code>task db:clear</code> leaves it in place: it is a preference, not a record of anything the agent
+did. Whatever reaches the API and creates a session naming a model changes the preselection, which is
+visible the next time the new-conversation screen opens.</p>
+</div>
+
+<div class="adr" id="adr-050">
+<div class="meta">ADR-050 · accepted</div>
+<h3>A skill can ship off</h3>
+<h4>Context</h4>
+<p>A session that did not choose its skills had every skill, so <code>changing-yourself</code> was indexed
+in a conversation about the weather: how to clone, change, and push the agent's own code, offered to
+every conversation that never set out to do it. Its credentials are withheld unless granted
+(<a href="#adr-045">ADR-045</a>), but the index is still prompt, and prompt is invitation.</p>
+<h4>Decision</h4>
+<p>A skill's frontmatter may say <code>default: off</code>. A session whose <code>enabled_skills</code> is
+absent has every skill that is on by default rather than every skill; a session that lists its skills
+has exactly those. A default that is neither <code>on</code> nor <code>off</code> fails the skill's
+load visibly, because a typo in the line that keeps a skill out of every conversation must not quietly
+put it in. <code>changing-yourself</code> ships off.</p>
+<p>The interface keeps an unchosen set unchosen for as long as it matches the defaults, so a skill added
+to disk later still reaches conversations that never chose. <em>all</em> chooses every skill,
+including those that ship off.</p>
+<h4>Consequences</h4>
+<p>Any skill can be made opt-in with one line and no code. A conversation created before this change
+with the default skills loses <code>changing-yourself</code> at its next compaction, which is when its
+prompt is rewritten; forking with the skill ticked keeps it. Tools have no equivalent, because no tool
+has needed one.</p>
+</div>
+
+<div class="adr" id="adr-051">
+<div class="meta">ADR-051 · accepted</div>
+<h3>A tool reaches the agent on an API of its own, and cannot reach the operator's</h3>
+<h4>Context</h4>
+<p>Tools reached the agent over <code>AGENT_URL</code>, the operator's own API. The filesystem sandbox kept
+a tool out of other sessions' files and did nothing about that port. A tool could create a session granted
+<code>GH_TOKEN</code> and send it the message that pushes, or schedule a job into a conversation that
+already held the credential. <a href="#adr-048">ADR-048</a> named the hole. Only four tools use the API at
+all &mdash; memory, schedule, skill_read, session_search &mdash; and none of them creates, forks, or
+drives a conversation.</p>
+<h4>Decision</h4>
+<p>The tool API listens on a loopback port the kernel picks at startup and offers what those four call:
+memory, the calling conversation's jobs, the skills that conversation has, and search. Every request
+carries <code>AGENT_TOKEN</code>, issued for one call and revoked when it ends; the call decides the
+conversation, so a job lands in the conversation the tool was called from or is refused.</p>
+<p>Landlock's network rules (version 4, Linux 6.7) restrict a tool's outgoing TCP to an allow-list: the
+ports software commonly talks on, what the operator names in <code>AGENT_TOOL_PORTS</code>, and the tool
+API. The operator's port is never on it. An allow-list rather than a single denied port, for the reason
+paths are one (<a href="#adr-034">ADR-034</a>): a port nobody considered is refused, and the list says
+what a tool is for. Connecting is restricted; binding is not.</p>
+<p>The operator moves from 8080 to 7770, so the port development servers most often take stays open to
+tools. The Tools screen shows each tool's files and ports, drawn from the same policy the wrapper
+applies.</p>
+<h4>Consequences</h4>
+<p>A tool cannot create, fork, message, or configure a conversation, cannot schedule into another, and
+cannot read a skill its conversation does not have. Inside the container the kernel enforces it.</p>
+<p>A tool or a job check that needs an uncommon port fails until the port is named, and the failure is a
+refused connection rather than an explanation; the Tools screen is where to look. A kernel older than 6.7
+confines files and not the network, and says so. On a Mac nothing is enforced, as before. A deployment
+whose proxy points at 8080 must point at 7770.</p>
+<p>What stays open: search reaches every transcript when a tool asks for it, and memory is shared by
+every conversation. Both are what those tools are for.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,8 +13,12 @@ type Skill struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Bytes       int    `json:"bytes"`
-	Body        string `json:"-"`
-	Path        string `json:"-"`
+	// DefaultEnabled is whether a session that did not choose its skills has
+	// this one. A skill turns it off with `default: off` in its frontmatter,
+	// which is for a skill a conversation should have set out to use.
+	DefaultEnabled bool   `json:"default_enabled"`
+	Body           string `json:"-"`
+	Path           string `json:"-"`
 }
 
 type Skills struct {
@@ -71,7 +76,7 @@ func parseSkill(text string) (*Skill, error) {
 		return nil, errFrontmatter
 	}
 	head, body := rest[:end], strings.TrimPrefix(rest[end+4:], "\n")
-	sk := &Skill{Body: body}
+	sk := &Skill{Body: body, DefaultEnabled: true}
 	for _, line := range strings.Split(head, "\n") {
 		k, v, ok := strings.Cut(line, ":")
 		if !ok {
@@ -82,6 +87,18 @@ func parseSkill(text string) (*Skill, error) {
 			sk.Name = strings.TrimSpace(v)
 		case "description":
 			sk.Description = strings.TrimSpace(v)
+		case "default":
+			// Anything but on or off is refused rather than read as one of them:
+			// a typo here would otherwise put a skill meant to be off into every
+			// conversation, and nothing on screen would say why.
+			switch strings.TrimSpace(v) {
+			case "on":
+				sk.DefaultEnabled = true
+			case "off":
+				sk.DefaultEnabled = false
+			default:
+				return nil, fmt.Errorf("malformed frontmatter: default must be on or off, not %q", strings.TrimSpace(v))
+			}
 		}
 	}
 	if sk.Name == "" || sk.Description == "" {

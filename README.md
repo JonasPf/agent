@@ -11,7 +11,7 @@ chmod 600 .env
 task run
 ```
 
-Open http://localhost:8080. Add it to the home screen for a full-screen app with its own icon.
+Open http://localhost:7770. Add it to the home screen for a full-screen app with its own icon.
 
 `task run` builds and runs from source, which is the fastest loop and confines nothing off Linux: the
 sandbox is Landlock, a kernel facility, and a laptop has no equivalent worth keeping a second policy
@@ -52,7 +52,7 @@ is tolerated, and a value may be quoted. A variable already set in the environme
 so a one-off override still works:
 
 ```sh
-AGENT_MODEL=anthropic/claude-opus-4.1 task run
+AGENT_ADDR=:9090 task run
 ```
 
 `.env` holds a credential: keep it mode 600, and out of git. It is already in `.gitignore`, and the
@@ -62,11 +62,11 @@ moves the file with it.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Required for model calls. |
-| `AGENT_ADDR` | `:8080` | Listen address. |
-| `AGENT_MODEL` | `anthropic/claude-sonnet-4.5` | Model a new conversation starts on. Each keeps its own for life. |
+| `AGENT_ADDR` | `:7770` | Listen address. |
 | `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, and `.env` beneath it. The one directory a deployment mounts. |
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. It only adds; nothing here removes a boundary. |
+| `AGENT_TOOL_PORTS` | none | Extra TCP ports a tool may **connect** to, beyond 22, 53, 80, 443, 3000, 3306, 4000, 5000, 5173, 5432, 6379, 8000, 8080, 8443, 8888, 9418, and 27017. The operator's own port is never added: a tool that could reach it could create a conversation holding a credential. The Tools screen shows what is in force. |
 | `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. Reaches a tool only in a session granted it. |
 | `GH_TOKEN` | — | GitHub credential. Reaches a tool only in a session granted it. |
 
@@ -74,6 +74,8 @@ That is the whole list. There were eighteen: seven paths that only ever said
 where two roots were, four numbers nothing ever set — two of them defaults for a
 per-session setting the interface already edits — and the eval model, which
 configures `cmd/eval` and not the agent, so it is now a flag on that command.
+The model a conversation starts on was one too; it is now the one last chosen in
+the interface, kept in `AGENT_STATE/data/preferences.json`.
 
 Every one of these is in [`.env.example`](.env.example) with its default, and a
 test checks that in both directions: a setting missing from that file is one
@@ -158,7 +160,7 @@ agree.
 docker run -d --name agent \
   -v agent-state:/app/state \
   -e OPENROUTER_API_KEY=sk-... \
-  -p 127.0.0.1:8080:8080 \
+  -p 127.0.0.1:7770:7770 \
   ghcr.io/<owner>/agent:latest
 ```
 
@@ -197,7 +199,7 @@ runs, and nothing in the repository is shaped around it.
    without one takes the machine down with it; 512 MB is enough.
 5. **Advanced → Security**: switch on Basic Auth and set a user and password.
    This is the whole of the access control.
-6. **Domains**: the hostname, port 8080, HTTPS on, Let's Encrypt.
+6. **Domains**: the hostname, port 7770, HTTPS on, Let's Encrypt.
 
 Then set `DEPLOY_WEBHOOK` in the repository's GitHub Actions secrets to the
 application's deploy webhook URL, so a merge to `main` publishes the image and

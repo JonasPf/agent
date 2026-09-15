@@ -8,18 +8,18 @@ import (
 )
 
 // baseConfig is the configuration a new session starts from when the request
-// does not fully specify one: the seed's, else the most recently used session's,
-// else the configured default.
+// does not fully specify one: the seed's; else the most recently used session's
+// tools, skills, and grants on the model last chosen.
 func (a *App) baseConfig(seed *Session) SessionConfig {
-	if seed == nil {
-		if recent := a.store.Sessions(); len(recent) > 0 {
-			seed = recent[0]
-		}
-	}
 	if seed != nil {
 		return seed.SessionConfig
 	}
-	return SessionConfig{Model: a.cfg.DefaultModel}
+	var cfg SessionConfig
+	if recent := a.store.Sessions(); len(recent) > 0 {
+		cfg = recent[0].SessionConfig
+	}
+	cfg.Model = a.startingModel()
+	return cfg
 }
 
 // NewSession creates a session under an already resolved configuration and
@@ -28,7 +28,7 @@ func (a *App) baseConfig(seed *Session) SessionConfig {
 // session is live and its prompt is still open to change.
 func (a *App) NewSession(cfg SessionConfig, forkedFrom string) (*Session, error) {
 	if cfg.Model == "" {
-		cfg.Model = a.cfg.DefaultModel
+		cfg.Model = a.startingModel()
 	}
 	// A session always gets a positive threshold. A zero would mean every turn
 	// is over it, so a configuration that forgot to set one would compact on
@@ -141,20 +141,23 @@ func describeConfigChange(from, to SessionConfig) string {
 		parts = append(parts, "model "+from.Model+" → "+to.Model)
 	}
 	if !sameSet(from.GrantedEnv, to.GrantedEnv) {
-		parts = append(parts, "grants "+describeSet(from.GrantedEnv)+" → "+describeSet(to.GrantedEnv))
+		parts = append(parts, "grants "+describeSet(from.GrantedEnv, "none")+" → "+describeSet(to.GrantedEnv, "none"))
 	}
 	if !sameSet(from.EnabledTools, to.EnabledTools) {
-		parts = append(parts, "tools "+describeSet(from.EnabledTools)+" → "+describeSet(to.EnabledTools))
+		parts = append(parts, "tools "+describeSet(from.EnabledTools, "all")+" → "+describeSet(to.EnabledTools, "all"))
 	}
 	if !sameSet(from.EnabledSkills, to.EnabledSkills) {
-		parts = append(parts, "skills "+describeSet(from.EnabledSkills)+" → "+describeSet(to.EnabledSkills))
+		parts = append(parts, "skills "+describeSet(from.EnabledSkills, "defaults")+" → "+describeSet(to.EnabledSkills, "defaults"))
 	}
 	return strings.Join(parts, "; ")
 }
 
-func describeSet(set []string) string {
+// describeSet names a set for a transcript line. What an unchosen set means
+// differs by field — every tool, the default skills, no grants — so the caller
+// says it.
+func describeSet(set []string, unchosen string) string {
 	if set == nil {
-		return "all"
+		return unchosen
 	}
 	if len(set) == 0 {
 		return "none"

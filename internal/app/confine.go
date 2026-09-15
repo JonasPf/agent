@@ -26,6 +26,10 @@ type policy struct {
 	// Chdir is where the tool starts, applied before the restriction so a
 	// working directory outside the policy is still refused by it.
 	Chdir string `json:"cd,omitempty"`
+	// Net restricts outgoing TCP to Ports and nothing else. Binding is left
+	// alone: a tool may start a server, it may not reach the operator's.
+	Net   bool  `json:"n,omitempty"`
+	Ports []int `json:"p,omitempty"`
 }
 
 func (p policy) encode() string {

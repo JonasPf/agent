@@ -225,7 +225,7 @@ flowchart TB
   TS{{"Tailscale Serve<br/>HTTPS, real certificate"}}
   PH --> TS
   LP --> TS
-  TS --> GW["Gateway :8080"]
+  TS --> GW["Gateway :7770"]
   GW --> OR["OpenRouter"]
 </div>
 
@@ -352,10 +352,41 @@ only reason to run unconfined is that the platform offers nothing to confine wit
 already reports itself. <code>AGENT_READ_PATHS</code> is not that setting &mdash; it only adds, and what
 it adds is visible in <code>/status</code>.</p>
 
-<p>What this is not: a tool still holds the agent's other privileges. It is given <code>AGENT_DB</code>
-and reaches the system over <code>AGENT_URL</code>, and that API is unauthenticated &mdash; a tool can
-ask it for another session's transcript or files. The filesystem boundary is real; the API is
-deliberately open, and closing it is a separate decision.</p>
+<p><strong>A tool opens TCP connections only to named ports, and the operator's is never one of
+them.</strong> The operator's API can create a conversation holding a credential and send it the message
+that spends it, so a tool that could reach it could hand itself anything the operator ever set. The same
+Landlock ruleset that confines files confines outgoing TCP, as an allow-list for the same reason paths
+are one: a port nobody considered is refused (<a href="adrs.html#adr-051">ADR-051</a>). Binding is not
+restricted &mdash; a tool may start a server, it may not reach the operator's.</p>
+
+<table>
+<tr><th>Ports</th><th>For</th></tr>
+<tr><td>22, 9418</td><td>ssh, and git over it or over its own protocol</td></tr>
+<tr><td>53</td><td>DNS answers too large for UDP (UDP itself is not restricted)</td></tr>
+<tr><td>80, 443</td><td>The web</td></tr>
+<tr><td>3000, 4000, 5000, 5173, 8000, 8080, 8443, 8888</td><td>Development servers</td></tr>
+<tr><td>3306, 5432, 6379, 27017</td><td>MySQL, Postgres, Redis, MongoDB</td></tr>
+<tr><td><code>AGENT_TOOL_PORTS</code></td><td>Named by the operator. It only adds, and never adds the operator's own port.</td></tr>
+<tr><td>The tool API's port</td><td>Chosen by the kernel when the agent starts; how a tool reaches the agent.</td></tr>
+</table>
+
+<p>The operator listens on 7770 by default, which nothing in that list commonly uses, so 8080 stays free
+for the development servers tools start. An operator who moves onto a listed port takes that port from
+tools, and the Tools screen says so. Network rules need Landlock version 4, in Linux 6.7 and later; on an
+older kernel files stay confined, the network is not, and that is said at startup, in
+<code>/status</code>, and on the Tools screen.</p>
+
+<p><strong>A tool reaches the agent on an API of its own.</strong> <code>AGENT_URL</code> is the tool API,
+not the operator's: memory, the calling conversation's jobs, the skills that conversation has, and
+search. Every request carries <code>AGENT_TOKEN</code>, issued for one call and revoked when it ends, and
+the call &mdash; not the request &mdash; says which conversation it is. Nothing on it creates, forks,
+messages, or configures a conversation, and a tool cannot schedule a job into, or read a skill outside,
+the conversation it was called from.</p>
+
+<p>What this is not: a tool still holds the agent's other privileges on that API. It is given
+<code>AGENT_DB</code>, it may read and change memory, and it may search every transcript when it asks to.
+On a platform with no Landlock none of the network half holds either, and nothing keeps a tool off the
+operator's port there.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -365,10 +396,13 @@ deliberately open, and closing it is a separate decision.</p>
 <li>A tool cannot write the tool directory or the skill directory, and is refused by the operating system rather than by its own good manners.</li>
 <li>A tool may read and write the database file it is handed, and no other file in the data directory.</li>
 <li>A path named in <code>AGENT_READ_PATHS</code> is readable and still not writable, and the paths in force are visible in <code>/status</code>.</li>
-<li>A check command is confined exactly as a tool is.</li>
+<li>A check command is confined exactly as a tool is: the same files, the same ports, and the environment a tool in its conversation receives &mdash; what a program needs to start and that conversation's grants, never the model API key.</li>
 <li>A confined tool can drive a headless browser, so the web tools work under the sandbox rather than only outside it.</li>
 <li>When nothing is enforcing, the system says so at startup, in <code>/status</code>, and in the interface.</li>
-<li>Aside from the filesystem boundary, a tool runs with the agent's privileges, including its access to the unauthenticated API.</li>
+<li>A confined tool can open TCP connections to the listed ports, the ports named in <code>AGENT_TOOL_PORTS</code>, and the tool API, and is refused the operator's port by the operating system rather than by its own good manners.</li>
+<li>The operator's default port is not one tools commonly use; an operator port among the tools' ports is taken from them, and that is said.</li>
+<li>Where the kernel cannot restrict the network, the system says so at startup, in <code>/status</code>, and on the Tools screen, and files stay confined.</li>
+<li>A tool reaches the agent only through the tool API, which answers only a running tool call, offers no way to create, fork, message, or configure a conversation, schedules only into the calling conversation, and serves only the skills that conversation has.</li>
 <li>Nothing recovers automatically from a tool that damages the system; repair is manual, and the specification says so rather than implying otherwise.</li>
 </ul>
 </div>
