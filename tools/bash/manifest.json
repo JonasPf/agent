@@ -1,6 +1,6 @@
 {
   "name": "bash",
-  "description": "Run a shell command in the workspace.",
+  "description": "Run a shell command in the workspace. The shell is sandboxed: only the workspace is writable, so put scratch files under $TMPDIR rather than /tmp, and /proc cannot be read, so a browser will not start here. To read a web page, use web_fetch or web_browse instead of running a browser from the shell.",
   "db_prefix": "bash_",
   "timeout_seconds": 150,
   "parameters": {

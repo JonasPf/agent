@@ -352,8 +352,9 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 in it. <code>web_search</code> therefore drives the headless browser the image installs, at the one path it
 installs it to, and reads the results out of the rendered DOM.</p>
 
-<p>The browser is used as it is delivered. Nothing disguises the request, and an engine that declines
-to serve an automated query is reported as having declined — naming the phrase it used — rather than
+<p>The browser is used as it is delivered, except that it introduces itself as an ordinary Chrome of
+the installed version rather than a headless one (<a href="adrs.html#adr-046">ADR-046</a>). Nothing
+else disguises the request, and an engine that declines to serve an automated query is reported as having declined — naming the phrase it used — rather than
 worked around or reported as a query that found nothing. The two are different answers and only one of
 them means the query was wrong.</p>
 
@@ -369,7 +370,7 @@ wants search: delete the directory and the dependency is gone, with no rebuild. 
 <ul>
 <li>A search returns result titles, absolute URLs, and snippets, with click-tracking redirects resolved to the page they point at.</li>
 <li>An engine declining to serve the query is reported as a refusal, distinct from a query with no results.</li>
-<li>No request is disguised and no bot check is answered or evaded.</li>
+<li>The request carries an ordinary Chrome user agent at the installed version, and no bot check is answered or evaded.</li>
 <li>With no browser at the path the image installs it, the tool fails naming that path, and every other tool keeps working.</li>
 </ul>
 </div>
@@ -395,8 +396,12 @@ indistinguishable, to whoever asked, from a page that simply says little. A plai
 thing to want, and when it is wanted it belongs in a tool of its own that the model chooses on
 purpose.</p>
 
-<p>As in search, the browser is used as it is delivered: nothing disguises the request, and a site
-that declines to serve it is not worked around.</p>
+<p>As in search, the browser introduces itself as the Chrome it is and nothing more, and a site that
+declines to serve the page is not worked around. A page that is a bot check &mdash; Cloudflare's,
+DataDome's, HUMAN's &mdash; is not returned as though it were the page: the tool fails naming whose
+check it met. The check is recognised by a vendor's marker on a page with almost nothing else to say,
+because the same markers appear on pages those vendors serve normally, and a readable page reported as
+unreadable is the costlier mistake.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -405,6 +410,7 @@ that declines to serve it is not worked around.</p>
 <li>A JSON or plain-text body is returned verbatim, not as flattened prose.</li>
 <li>The tool renders every page it returns; there is no unrendered path, so a thin page means a thin page.</li>
 <li>With no browser at the path the image installs it, the tool fails naming that path rather than returning something unrendered.</li>
+<li>A page that is a bot check fails naming the vendor, and is not returned as the page's text.</li>
 </ul>
 </div>
 

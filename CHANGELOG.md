@@ -2,6 +2,17 @@
 
 ## 2026-09-15
 
+- `web_browse` and `web_search` introduce themselves as an ordinary Chrome of
+  the installed version, without the "HeadlessChrome" that headless chromium
+  announces by default. Sites that turn automation away by that one word now
+  serve the page. Checks that test the browser itself, like Cloudflare's
+  "Just a moment…", still stop it; nothing answers or evades them.
+- When a page is a bot check, `web_browse` fails and says whose it is —
+  Cloudflare, DataDome, HUMAN — instead of returning the check's text as though
+  it were the page.
+- `bash` tells the model what its sandbox refuses: only the workspace is
+  writable, so scratch files go under `$TMPDIR`, and a browser will not start
+  from the shell. Web pages are for `web_fetch` and `web_browse`.
 - Eighteen settings become eight. Seven paths only ever said where two roots
   were, so there are now two: `AGENT_STATE` for what outlives the container and
   `AGENT_HOME` for what the image ships. Four numbers that nothing ever set are

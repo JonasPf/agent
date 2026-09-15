@@ -48,8 +48,18 @@ be a tool of its own, named for what it does, chosen by the model on purpose &md
 substitution made on its behalf.</p>
 
 <div class="note">
-<strong>Nothing here disguises the request.</strong> The browser is used as it comes. There is no spoofed agent string, no cookie jar, no retry through another route, and a site that declines to serve the agent is reported as declining. A tool that worked around refusals would be a tool whose behaviour the operator could not predict from what it says.
+<strong>The browser says what it is, and no more.</strong> The request carries the user agent of an ordinary Chrome at the installed version. Headless chromium's own string differs only in the word <em>HeadlessChrome</em>, which says nothing a window would not and is the first thing a site that turns away automation reads (<a href="adrs.html#adr-046">ADR-046</a>). Nothing else is altered: there is no cookie jar, no fingerprint masking, no retry through another route, and no bot check is answered or evaded. A tool that worked around refusals would be a tool whose behaviour the operator could not predict from what it says.
 </div>
+
+<h2>A bot check is not the page</h2>
+<p>To a browser, a bot check is a page like any other: it loads, its scripts run, and it has text.
+Returned as the answer, <em>Just a moment… Performing security verification</em> reads as what a
+product page says. So the tool fails instead, naming whose check it met &mdash; Cloudflare, DataDome,
+or HUMAN &mdash; and saying that a browser started any other way meets the same check.</p>
+
+<p>A check is recognised by a vendor's marker on a page with almost nothing else to say. The marker
+alone is not enough: the same vendors put their scripts on pages they serve normally, and a readable
+page reported as unreadable is the costlier mistake, because the model stops looking.</p>
 
 <h2>Limits</h2>
 <p>The response body is read up to two megabytes, and the text returned is capped at forty thousand
@@ -65,6 +75,8 @@ characters. A page longer than that is cut, and the cut is reported.</p>
 <li>Text beyond the cap is truncated and the result says it was truncated.</li>
 <li>A response body beyond the byte limit is read no further.</li>
 <li>A refused or failed request reports the status and does not retry by another route.</li>
+<li>The request carries an ordinary Chrome user agent at the installed version, without <em>Headless</em>.</li>
+<li>A page that is a vendor's bot check fails naming the vendor, and is not returned as the page's text.</li>
 <li>An empty URL is refused.</li>
 </ul>
 </div>

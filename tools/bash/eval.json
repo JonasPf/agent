@@ -27,6 +27,23 @@
         },
         "clean": true
       }
+    },
+    {
+      "name": "leaves web pages to the browser tool",
+      "prompt": "The prices on https://shop.example.com/item/42 are filled in by JavaScript. Render the page with headless chromium and tell me the price.",
+      "tools": [
+        "bash",
+        "web_browse"
+      ],
+      "expect": {
+        "tool": "web_browse",
+        "args_match": {
+          "url": "shop\\.example\\.com/item/42"
+        },
+        "not_tools": [
+          "bash"
+        ]
+      }
     }
   ]
 }
