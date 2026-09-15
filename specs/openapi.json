@@ -3,7 +3,7 @@
   "info": {
     "title": "Agent API",
     "version": "1.0.0",
-    "description": "Single-operator agent. No authentication: reachability over the tailnet is the only access control. A WebSocket at /ws streams transcript entries, token deltas, job ticks, and breaker changes; every state change delivered there is also retrievable from the endpoints below."
+    "description": "Single-operator agent. No authentication: reachability over the tailnet is the only access control. A WebSocket at /ws streams transcript entries, token deltas, job ticks, breaker changes, and `working` / `idle` as a session's turns start and the last queued one ends; every state change delivered there is also retrievable from the endpoints below."
   },
   "servers": [
     {
@@ -1318,6 +1318,11 @@
             "type": "string",
             "nullable": true,
             "description": "The session that succeeded this one. Following continued_by to its end gives the live session of this chain."
+          },
+          "working_seconds": {
+            "type": "number",
+            "nullable": true,
+            "description": "How long a turn has been running or queued in this session, in seconds; absent when none is. Elapsed rather than a start time, so a client clock that disagrees still counts correctly."
           }
         }
       },

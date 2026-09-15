@@ -177,7 +177,11 @@ type App struct {
 
 	qmu    sync.Mutex
 	queues map[string]chan func()
-	busy   map[string]bool
+	// pending counts the turns running or queued in each session; since is
+	// when that count last left zero, which is how long the operator has been
+	// waiting on it.
+	pending map[string]int
+	since   map[string]time.Time
 }
 
 func Run() error {
@@ -213,7 +217,6 @@ func Run() error {
 		or:      NewOpenRouter(cfg.APIKey),
 		hub:     NewHub(),
 		queues:  map[string]chan func(){},
-		busy:    map[string]bool{},
 	}
 	// Before any tool can run, and before the sandbox is described: the tool
 	// API's port is part of the policy.
@@ -261,25 +264,48 @@ func (a *App) ReloadTools(sessionID string) ([]string, []LoadFailure) {
 
 // enqueue runs fn on the session's single-turn queue. Two turns never run
 // concurrently in one session, and nothing is reordered.
+//
+// A session is working from the moment its first turn is queued until its last
+// one finishes, and says so once each way. A turn queued behind another does
+// not end the wait: the operator is waiting on both.
 func (a *App) enqueue(sessionID string, fn func()) {
 	a.qmu.Lock()
+	if a.pending == nil {
+		a.pending = map[string]int{}
+		a.since = map[string]time.Time{}
+	}
+	a.pending[sessionID]++
+	began := a.pending[sessionID] == 1
+	if began {
+		a.since[sessionID] = time.Now()
+	}
 	q, ok := a.queues[sessionID]
 	if !ok {
 		q = make(chan func(), 64)
 		a.queues[sessionID] = q
 		go func() {
 			for f := range q {
-				a.qmu.Lock()
-				a.busy[sessionID] = true
-				a.qmu.Unlock()
 				f()
 				a.qmu.Lock()
-				a.busy[sessionID] = false
+				a.pending[sessionID]--
+				idle := a.pending[sessionID] <= 0
+				if idle {
+					delete(a.pending, sessionID)
+					delete(a.since, sessionID)
+				}
 				a.qmu.Unlock()
+				if idle && a.hub != nil {
+					a.hub.Broadcast(wsEvent{Kind: "idle", SessionID: sessionID})
+				}
 			}
 		}()
 	}
 	a.qmu.Unlock()
+	// Said before the turn is handed over, so "working" always arrives ahead of
+	// the "idle" that ends it, however quickly the turn runs.
+	if began && a.hub != nil {
+		a.hub.Broadcast(wsEvent{Kind: "working", SessionID: sessionID})
+	}
 	q <- fn
 }
 
@@ -287,7 +313,21 @@ func (a *App) enqueue(sessionID string, fn func()) {
 func (a *App) Busy(sessionID string) bool {
 	a.qmu.Lock()
 	defer a.qmu.Unlock()
-	return a.busy[sessionID] || len(a.queues[sessionID]) > 0
+	return a.pending[sessionID] > 0
+}
+
+// workingSeconds is how long a session has been working, or nil when it is not.
+// Elapsed rather than a start time, so a browser whose clock disagrees with the
+// agent's still counts from the right place.
+func (a *App) workingSeconds(sessionID string) *float64 {
+	a.qmu.Lock()
+	defer a.qmu.Unlock()
+	t, ok := a.since[sessionID]
+	if !ok {
+		return nil
+	}
+	s := time.Since(t).Seconds()
+	return &s
 }
 
 func newID() string {

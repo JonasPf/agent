@@ -11,7 +11,7 @@
 FROM docker.io/library/golang:1.25-bookworm
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends chromium \
+ && apt-get install -y --no-install-recommends chromium curl wget python3 perl \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=docker.io/library/node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node

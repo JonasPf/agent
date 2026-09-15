@@ -129,13 +129,12 @@ merge to main    → .github/workflows/release.yml builds the image, pushes it t
 
 The image is built by CI and pulled by tag; the server never compiles anything.
 `Dockerfile` is two stages — build the agent, every tool, and a pinned `gh`, then
-a Debian runtime with `git` and `gh`, the userland the tools need and nothing
-else. The sandbox needs no package: Landlock is the kernel's.
+a Debian runtime with `git`, `gh`, `chromium`, `curl`, `wget`, `python3`, and
+`perl`, the userland the tools need and nothing else. The sandbox needs no package: Landlock is the kernel's.
 
 The runtime is Debian because tools are subprocesses: `tools/bash` execs
 `/bin/sh`, and the model writes GNU-flavoured shell. `agent -health` is the
-container's health check, so the image carries no network client for a request
-the agent can make of itself.
+container's health check, so it depends on nothing but the agent.
 
 ### The volume
 

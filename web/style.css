@@ -488,6 +488,9 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
 }
 .status b { color: var(--fg-2); font-weight: 600; font-variant-numeric: tabular-nums; }
 .status .gen { color: var(--accent); }
+/* The count changes every second; fixed-width digits keep the line from
+   shuffling sideways as it does. */
+.status .working { font-weight: 600; font-variant-numeric: tabular-nums; }
 .status .gen::before {
   content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
   background: var(--accent); margin-right: 6px; animation: pulse 1.1s ease-in-out infinite;

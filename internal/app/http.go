@@ -109,6 +109,7 @@ func (a *App) enrich(s *Session) *Session {
 	if s.PromptTokens > 0 {
 		out.CacheHitRate = float64(s.CachedTokens) / float64(s.PromptTokens)
 	}
+	out.WorkingSeconds = a.workingSeconds(s.ID)
 	return &out
 }
 

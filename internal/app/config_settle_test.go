@@ -34,7 +34,6 @@ func newTestAppAt(t *testing.T, dir string) *App {
 		skills:  NewSkills(filepath.Join(dir, "skills")),
 		hub:     NewHub(),
 		queues:  map[string]chan func(){},
-		busy:    map[string]bool{},
 	}
 	a.registerBuiltins()
 	return a

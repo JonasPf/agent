@@ -8,9 +8,10 @@
 # them, the interface, the skills, and the userland the tools need — a shell,
 # because tools/bash execs /bin/sh; git and gh, because the agent proposes
 # changes to itself by opening a pull request; chromium, because reading most of
-# the web means running it. The sandbox needs nothing here: Landlock is the
-# kernel's, and the agent asks for it itself. Nothing else: no package manager
-# state, no network client.
+# the web means running it; curl, wget, python3 and perl, because a shell is
+# only as useful as the programs it can call, and these are the ones reached for
+# first. The sandbox needs nothing here: Landlock is the kernel's, and the agent
+# asks for it itself. Nothing else: no package manager state.
 
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
@@ -77,6 +78,7 @@ FROM debian:bookworm-slim
 # tools working the same way everywhere they run.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates git chromium \
+      curl wget python3 perl \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent runs as one user, and it is not root. The data and workspace
@@ -110,9 +112,8 @@ ENV AGENT_ADDR=:7770 \
     AGENT_STATE=/app/state \
     AGENT_HOME=/app
 EXPOSE 7770
-# The agent asks itself, over /status, which answers without reaching a model.
-# A network client in the image for one request the agent can make of itself is
-# a dependency bought for nothing.
+# The agent asks itself, over /status, which answers without reaching a model,
+# so the health check depends on nothing but the agent.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD ["/app/agent", "-health"]
 ENTRYPOINT ["/app/agent"]

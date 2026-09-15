@@ -4,7 +4,64 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { toolResult, resultBody, resultPreview, callBody, callPreview,
         eventLabel, eventDetail, eventTime, isFailure,
-        speaker, bubbleClass, messageTime, runTime, lateBy, jobCost } = require('./transcript.js');
+        speaker, bubbleClass, messageTime, runTime, lateBy, jobCost,
+        waitingLabel, conversationText } = require('./transcript.js');
+
+// ---- waiting ----
+
+test('a wait reads in seconds, then minutes, then hours', () => {
+  assert.strictEqual(waitingLabel(0), '0s');
+  assert.strictEqual(waitingLabel(12.7), '12s');
+  assert.strictEqual(waitingLabel(65), '1m 05s');
+  assert.strictEqual(waitingLabel(3725), '1h 02m');
+  assert.strictEqual(waitingLabel(-3), '0s');
+});
+
+// ---- copying a conversation ----
+
+const convo = [
+  { seq: 0, type: 'prompt', sections: [{ name: 'persona', text: 'SECRET PERSONA', tokens: 3 }], created_at: '2026-09-15T10:00:00Z' },
+  { seq: 1, type: 'message', role: 'user', text: 'How warm is the greenhouse?', created_at: '2026-09-15T10:01:00Z' },
+  { seq: 2, type: 'message', role: 'assistant', text: 'Checking.', created_at: '2026-09-15T10:01:05Z',
+    tool_calls: [{ id: 'c1', name: 'bash', arguments: '{"command":"cat temp.txt"}' }] },
+  { seq: 3, type: 'message', role: 'tool', tool_name: 'bash', tool_call_id: 'c1',
+    tool_result: { ok: true, content: 'x'.repeat(2500) }, created_at: '2026-09-15T10:01:06Z' },
+  { seq: 4, type: 'event', event_kind: 'job_check', text: 'EVENT LINE', created_at: '2026-09-15T10:02:00Z' },
+  { seq: 5, type: 'compaction', text: 'The operator asked about the greenhouse.', folded_turns: 2, covers_through: 3, created_at: '2026-09-15T10:03:00Z' },
+  { seq: 6, type: 'message', role: 'user', job_id: 'J0000000000ABCDEF', text: 'Check again.', created_at: '2026-09-15T11:00:00Z' },
+  { seq: 7, type: 'message', role: 'assistant', text: 'It is **21.5 °C**.', created_at: '2026-09-15T11:00:02Z' },
+];
+
+test('a copied conversation carries every message, call, and summary, in order', () => {
+  const text = conversationText(convo, 'Greenhouse sensors');
+  const order = ['# Greenhouse sensors', 'How warm is the greenhouse?', 'Checking.', 'bash',
+    'cat temp.txt', 'Compacted', 'The operator asked about the greenhouse.', 'Check again.', 'It is **21.5 °C**.'];
+  let at = -1;
+  for (const want of order) {
+    const i = text.indexOf(want, at + 1);
+    assert.ok(i > at, `"${want}" is missing or out of order in:\n${text}`);
+    at = i;
+  }
+  assert.match(text, /\*\*You\*\*/, 'the operator is not named as the speaker');
+  assert.match(text, /\*\*Agent\*\*/, 'the agent is not named as the speaker');
+  assert.match(text, /job \(ABCDEF\)/i, 'a wake is not attributed to its job');
+});
+
+// The prompt is the agent's own configuration and an event is the interface's
+// log; neither is something either party said.
+test('a copied conversation leaves out the prompt and the event log', () => {
+  const text = conversationText(convo, 'Greenhouse sensors');
+  assert.ok(!text.includes('SECRET PERSONA'), 'the prompt was copied');
+  assert.ok(!text.includes('EVENT LINE'), 'an event was copied');
+});
+
+// A tool result can be a whole web page. It is kept to a readable length, and
+// says how much was left out rather than ending mid-sentence without a word.
+test('a long tool result is clipped and says by how much', () => {
+  const text = conversationText(convo, 'Greenhouse sensors');
+  assert.ok(!text.includes('x'.repeat(2001)), 'the whole result was copied');
+  assert.match(text, /500 more characters/);
+});
 
 // The transcript API sends tool_result as a JSON object. Treating it as a
 // string silently produced an empty result box: every tool answer in the
