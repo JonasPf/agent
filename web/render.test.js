@@ -267,3 +267,33 @@ test('the row still shows how much disk the session holds', () => {
   const row = ctx.sessionRow(session({ disk_bytes: 2048 }));
   assert.match(find(row, 's').textContent, /2\.0 kB/);
 });
+
+// allText is every piece of text under a node, in order.
+const allText = n => [n.textContent, ...(n.children || []).map(allText)].join(' ');
+
+const reach = over => Object.assign({
+  enforced: true, network_enforced: true, read_write: ["this session's working directory"],
+  read: ['/tools/web_browse', '/usr', '/etc'], tool_read: [], files: ['/dev/null'], ports: [443]
+}, over);
+
+// A path one tool asked for is a decision about that tool; the rest is the same
+// on every card. Mixed into one list, the one that matters reads like the others.
+test('the Tools screen sets what a tool asked for apart from what every tool gets', () => {
+  const ctx = load();
+  const box = ctx.reachList({ name: 'web_browse', reach: reach({
+    read: ['/tools/web_browse', '/usr', '/etc', '/proc', '/sys'], tool_read: ['/proc', '/sys'] }) });
+  const every = find(box, 'reach-every');
+  const own = find(box, 'reach-own');
+  assert.ok(every, 'no group for what every tool gets');
+  assert.ok(own, 'no group for what this tool asked for');
+  assert.match(allText(own), /\/proc, \/sys/);
+  assert.doesNotMatch(allText(every), /\/proc|\/sys/);
+  assert.match(allText(every), /\/tools\/web_browse, \/usr, \/etc/);
+  assert.match(allText(every), /443/);
+});
+
+test('a tool that asks for nothing of its own says so', () => {
+  const ctx = load();
+  const box = ctx.reachList({ name: 'read', reach: reach() });
+  assert.match(allText(find(box, 'reach-own')), /nothing beyond what every tool gets/);
+});

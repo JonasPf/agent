@@ -2,6 +2,10 @@
 
 ## 2026-09-15
 
+- On the Tools screen, each tool's sandbox is split in two: **Every tool**,
+  which is the same on every card, and **This tool only**, which lists the
+  paths that tool's manifest asked for (the browser tools ask for `/proc`,
+  `/sys`, and `/var`).
 - While the agent is working, the status line under the message box says so
   and counts the seconds, starting the moment you send. Reopening the
   conversation mid-turn keeps the count going from when the turn started.

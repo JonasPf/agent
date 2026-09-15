@@ -272,6 +272,12 @@ p.note { color: var(--muted); font-size: 13px; margin: 0 0 16px; max-width: 62ch
 /* What a tool may reach is a list of paths and ports, read to check one, so it
    is set like one. */
 .reach dd { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+/* What every tool gets repeats on every card; what one tool asked for is the
+   part worth checking, so it carries the accent. */
+.reach-scope { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.reach-group .settings { margin-top: 2px; }
+.reach-own { border-left: 2px solid var(--accent); padding-left: 8px; }
+.reach-own .reach-scope { color: var(--accent); }
 
 .env-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .env-summary { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
