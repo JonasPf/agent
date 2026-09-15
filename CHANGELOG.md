@@ -2,6 +2,25 @@
 
 ## 2026-09-15
 
+- **The interface moves from port 8080 to 7770.** A proxy or port mapping
+  that points at 8080 must point at 7770, or the interface will not answer.
+  8080 is left free for the development servers tools start.
+- Tools can no longer reach the interface's own API. They reach the agent
+  through an API of their own, which offers memory, their own conversation's
+  jobs, the skills that conversation has, and search. Nothing on it creates,
+  forks, or messages a conversation, so a tool can no longer start a session
+  holding `GH_TOKEN` or schedule a job into one.
+- Inside the container, a tool may open TCP connections only to common ports:
+  22, 53, 80, 443, 3000, 3306, 4000, 5000, 5173, 5432, 6379, 8000, 8080, 8443,
+  8888, 9418, and 27017. Add others with `AGENT_TOOL_PORTS`. Linux older than
+  6.7 cannot enforce this, and the agent says so.
+- The Tools screen shows, for each tool, which paths it may read and write and
+  which ports it may connect to, and says when either is not enforced.
+- A job's check command no longer sees the agent's whole environment. It gets
+  what a `bash` call in the same conversation gets: basics like `PATH`, plus
+  that conversation's grants. Before this, a check the model wrote could read
+  `OPENROUTER_API_KEY`.
+
 - The model is picked in a dialog that slides in over the screen. Each model
   shows its price per million tokens in and out, its context window, and its
   Artificial Analysis intelligence, coding, and agentic scores where OpenRouter

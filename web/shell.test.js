@@ -481,6 +481,45 @@ const SMALL = {
   context_length: 32000, prompt_price: 0.0000001, completion_price: 0.0000002,
 };
 
+// ---------- what a tool may reach ----------
+
+const REACH = {
+  enforced: true, network_enforced: true,
+  read_write: ['this session’s working directory', '/app/state/data/db'],
+  read: ['/app/tools', '/usr', '/etc'], files: ['/dev/null'],
+  ports: [22, 443, 8080, 45123], tool_api_port: 45123, operator_port: 7770,
+};
+
+// A tool's boundary is part of what the tool is, so the Tools screen says it:
+// the files it may read and write, and the ports it may open.
+test('the tools screen says what each tool may read, write, and connect to', async () => {
+  const ctx = load({ '/tools': { failures: [], tools: [
+    { name: 'bash', description: 'Run a command.', parameters: {}, reach: REACH },
+    { name: 'reload_tools', description: 'Reload.', parameters: {}, builtin: true },
+  ] } });
+  const v = node('div');
+  await ctx.viewTools(v);
+  const rows = findAll(v, 'row-item');
+  const bash = textOf(rows[0]);
+  for (const want of ['working directory', '/app/state/data/db', '/usr', '/dev/null', '22', '443', '8080']) {
+    assert.ok(bash.includes(want), `the bash row does not say ${want}: ${bash}`);
+  }
+  assert.match(bash, /7770/, 'the row does not say the operator port is out of reach');
+  assert.match(bash, /tool API/, 'the row does not say how the tool reaches the agent');
+  assert.match(textOf(rows[1]), /inside the agent/, 'a builtin does not say it runs inside the agent');
+});
+
+test('a boundary that is not enforced says so on the tool', async () => {
+  const ctx = load({ '/tools': { failures: [], tools: [
+    { name: 'bash', description: 'Run a command.', parameters: {}, reach: Object.assign({}, REACH,
+      { enforced: false, reason: 'Landlock is a Linux facility', network_enforced: false, network_reason: 'Landlock is a Linux facility' }) },
+  ] } });
+  const v = node('div');
+  await ctx.viewTools(v);
+  const text = textOf(findAll(v, 'row-item')[0]);
+  assert.match(text, /not enforced/i, 'an unenforced boundary is presented as though it holds');
+});
+
 // ---------- the model dialog ----------
 
 test('the model is chosen in a dialog that says what each costs and how it measured', async () => {

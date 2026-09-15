@@ -106,10 +106,10 @@ USER agent
 # else — data, workspace, tools, skills, the interface, the changelog — is
 # derived from one of the two, so a layout decision is made once here rather
 # than restated on seven lines that have to agree.
-ENV AGENT_ADDR=:8080 \
+ENV AGENT_ADDR=:7770 \
     AGENT_STATE=/app/state \
     AGENT_HOME=/app
-EXPOSE 8080
+EXPOSE 7770
 # The agent asks itself, over /status, which answers without reaching a model.
 # A network client in the image for one request the agent can make of itself is
 # a dependency bought for nothing.

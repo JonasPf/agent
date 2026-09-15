@@ -72,6 +72,7 @@ func browseURL(t *testing.T, a *App, url string) toolResult {
 	if err != nil {
 		t.Fatal(err)
 	}
+	allowServer(t, a, url)
 	args, _ := json.Marshal(map[string]string{"url": url})
 	return a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "web_browse", args)
 }

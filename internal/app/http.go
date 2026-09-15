@@ -620,10 +620,16 @@ func (a *App) hTools(w http.ResponseWriter, r *http.Request) {
 		if sess != nil {
 			enabled = sess.toolEnabled(t.Name)
 		}
-		out = append(out, map[string]any{"name": t.Name, "description": t.Description,
+		entry := map[string]any{"name": t.Name, "description": t.Description,
 			"db_prefix": t.DBPrefix, "timeout_seconds": t.Timeout, "parameters": t.Parameters,
 			"has_panel": t.HasPanel, "builtin": t.Builtin, "loaded_at": t.LoadedAt,
-			"enabled": enabled})
+			"enabled": enabled}
+		// A builtin runs inside the agent, not in a subprocess, so no sandbox
+		// applies and none is claimed.
+		if !t.Builtin {
+			entry["reach"] = a.sandbox.Reach(a.tools.dir, t.Reads)
+		}
+		out = append(out, entry)
 	}
 	writeJSON(w, 200, map[string]any{"tools": out, "failures": a.tools.Failures()})
 }

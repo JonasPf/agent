@@ -1303,6 +1303,7 @@ async function viewTools(v) {
     if (t.builtin) m.append(el('span', 'tag', 'builtin'));
     if (t.db_prefix) m.append(el('span', 'tag', t.db_prefix));
     if (t.has_panel) m.append(el('span', 'tag on', 'panel'));
+    m.append(reachList(t));
     const pre = el('pre', null, JSON.stringify(t.parameters, null, 2));
     pre.hidden = true; pre.style.fontSize = '11px'; pre.style.whiteSpace = 'pre-wrap';
     const sh = el('button', 'btn', 'Manifest');
@@ -1312,6 +1313,30 @@ async function viewTools(v) {
     grid.append(row);
   }
   v.append(grid);
+}
+
+// reachList is what a tool may touch, as the sandbox applies it: the files it
+// may read and write, and the ports it may open. A boundary that is not
+// enforced here says so first, and then what it would be where it is.
+function reachList(t) {
+  const box = el('dl', 'settings reach');
+  const field = (k, val) => box.append(el('dt', null, k), el('dd', null, val));
+  if (t.builtin || !t.reach) {
+    field('runs', 'inside the agent — no sandbox applies');
+    return box;
+  }
+  const r = t.reach;
+  if (!r.enforced) field('boundary', `NOT ENFORCED here (${r.reason || 'no sandbox'}). Where it is, this applies:`);
+  field('read & write', (r.read_write || []).join(', '));
+  field('read', (r.read || []).join(', '));
+  if ((r.files || []).length) field('files', r.files.join(', '));
+  const ports = (r.ports || []).filter(p => p !== r.tool_api_port);
+  let net = 'TCP to ports ' + ports.join(', ');
+  if (r.tool_api_port) net += '; the agent through its tool API';
+  if (r.operator_port) net += '; never the operator port ' + r.operator_port;
+  if (r.enforced && !r.network_enforced) net = `NOT ENFORCED (${r.network_reason || 'no network rules'}); would be ${net}`;
+  field('network', net);
+  return box;
 }
 
 async function viewSkills(v) {

@@ -29,6 +29,11 @@ const (
 
 	landlockCreateRulesetVersion = 1 << 0
 	landlockRuleTypePathBeneath  = 1
+	landlockRuleTypeNetPort      = 2
+
+	// Network access rights, ABI 4. Only connecting is handled: a tool may
+	// listen on whatever it likes, and may open connections to named ports.
+	netConnectTCP = 1 << 1
 
 	// Filesystem access rights, by the ABI that introduced them.
 	fsExecute    = 1 << 0
@@ -122,6 +127,53 @@ func createRuleset(handled uint64) (int, error) {
 	return int(fd), nil
 }
 
+// rulesetAttrNet is struct landlock_ruleset_attr as of ABI 4, which appends the
+// network rights. Passing this size is how a ruleset asks to handle them.
+type rulesetAttrNet struct{ HandledAccessFS, HandledAccessNet uint64 }
+
+func createRulesetNet(handledFS, handledNet uint64) (int, error) {
+	attr := rulesetAttrNet{HandledAccessFS: handledFS, HandledAccessNet: handledNet}
+	fd, _, errno := syscall.Syscall(sysLandlockCreateRuleset,
+		uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0)
+	if errno != 0 {
+		return 0, errno
+	}
+	return int(fd), nil
+}
+
+// landlockNetAvailable is the probe for the network half. It builds a real
+// ruleset for the same reason the filesystem probe does: a boundary claimed and
+// then refused by the kernel stops every tool from starting.
+func landlockNetAvailable() (bool, string) {
+	if ok, why := landlockAvailable(); !ok {
+		return false, why
+	}
+	abi, _ := landlockABI()
+	if abi < 4 {
+		return false, fmt.Sprintf("this kernel's Landlock is version %d; network rules are in version 4, Linux 6.7 and later", abi)
+	}
+	fd, err := createRulesetNet(handledFor(abi), netConnectTCP)
+	if err != nil {
+		return false, "Landlock refused a network ruleset here: " + err.Error()
+	}
+	syscall.Close(fd)
+	return true, ""
+}
+
+// addPortRule allows connecting to one TCP port. struct landlock_net_port_attr
+// is packed — two u64s — and laid out by hand like the path rule.
+func addPortRule(rulesetFD, port int) error {
+	var attr [16]byte
+	*(*uint64)(unsafe.Pointer(&attr[0])) = netConnectTCP
+	*(*uint64)(unsafe.Pointer(&attr[8])) = uint64(port)
+	_, _, errno := syscall.Syscall6(sysLandlockAddRule, uintptr(rulesetFD),
+		landlockRuleTypeNetPort, uintptr(unsafe.Pointer(&attr[0])), 0, 0, 0)
+	if errno != 0 {
+		return fmt.Errorf("port %d: %w", port, errno)
+	}
+	return nil
+}
+
 // addRule grants access beneath one path.
 //
 // The path is opened with O_PATH, which resolves it without opening what is
@@ -160,11 +212,27 @@ func applyPolicy(p policy) error {
 		return fmt.Errorf("no Landlock on this kernel: %v", err)
 	}
 	handled := handledFor(abi)
-	fd, err := createRuleset(handled)
+	var fd int
+	if p.Net {
+		// Refused rather than quietly dropped: the agent said this tool's
+		// network is confined, and running it with the network open would make
+		// that untrue.
+		if abi < 4 {
+			return fmt.Errorf("the policy confines the network and this kernel's Landlock (version %d) cannot", abi)
+		}
+		fd, err = createRulesetNet(handled, netConnectTCP)
+	} else {
+		fd, err = createRuleset(handled)
+	}
 	if err != nil {
 		return fmt.Errorf("landlock ruleset: %w", err)
 	}
 	defer syscall.Close(fd)
+	for _, port := range p.Ports {
+		if err := addPortRule(fd, port); err != nil {
+			return err
+		}
+	}
 
 	for _, path := range p.Write {
 		if err := addRule(fd, path, handled); err != nil {

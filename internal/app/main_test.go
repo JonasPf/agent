@@ -1,8 +1,11 @@
 package app
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"testing"
+	"time"
 )
 
 // On Linux the sandbox wrapper is the agent's own binary, re-run in front of
@@ -16,6 +19,18 @@ import (
 func TestMain(m *testing.M) {
 	if len(os.Args) > 4 && os.Args[1] == "-confine" && os.Args[3] == "--" {
 		Confine(os.Args[2], os.Args[4:]) // never returns
+	}
+	// The same trick for the network boundary: a confined copy of this binary
+	// opens one TCP connection and reports whether the kernel let it.
+	if len(os.Args) == 3 && os.Args[1] == "-dial" {
+		conn, err := net.DialTimeout("tcp", os.Args[2], 3*time.Second)
+		if err != nil {
+			fmt.Println("refused:", err)
+			os.Exit(3)
+		}
+		conn.Close()
+		fmt.Println("connected")
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }

@@ -13,7 +13,7 @@ import (
 // image for one request the agent can make of itself.
 //
 // addr is the listen address the agent was configured with, which may name no
-// host at all (":8080") or a wildcard one ("0.0.0.0:8080"). Either way the
+// host at all (":7770") or a wildcard one ("0.0.0.0:7770"). Either way the
 // request goes to the loopback, because it is made from inside the container.
 func Health(addr string) error {
 	host, port, err := net.SplitHostPort(addr)

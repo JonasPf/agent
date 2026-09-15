@@ -104,14 +104,17 @@ func TestOnlyTheRegistryControlSurfaceIsCompiledIn(t *testing.T) {
 	}
 }
 
-// A tool on disk reaches the system the way the interface does, so it is given
-// the API base URL and the session and job the call belongs to. Without these a
-// capability could only be compiled in, which is what R4 forbids.
+// A tool on disk reaches the system over the tool API, so it is given that API's
+// base URL, a token naming this call, and the session and job the call belongs
+// to. Without these a capability could only be compiled in, which is what R4
+// forbids. The URL is the tool API's, never the operator's.
 func TestToolEnvironmentCarriesAPIBaseSessionAndJob(t *testing.T) {
 	a := newTestApp(t)
 	a.cfg.Addr = ":9931"
+	toolAPI(t, a)
 	dir := t.TempDir()
 	writeTool(t, dir, "envtool", `#!/bin/sh
+[ -n "$AGENT_TOKEN" ] || { printf '{"ok":false,"error":"no AGENT_TOKEN"}'; exit 0; }
 printf '{"ok":true,"content":"%s|%s|%s"}' "$AGENT_URL" "$AGENT_SESSION" "$AGENT_JOB"
 `)
 	a.tools.dir = dir
@@ -123,7 +126,10 @@ printf '{"ok":true,"content":"%s|%s|%s"}' "$AGENT_URL" "$AGENT_SESSION" "$AGENT_
 	if !res.OK {
 		t.Fatalf("call failed: %s", res.Error)
 	}
-	want := "http://127.0.0.1:9931|S1|J1"
+	want := a.toolURL() + "|S1|J1"
+	if strings.Contains(want, ":9931") {
+		t.Fatalf("the tool API is the operator's address: %s", want)
+	}
 	if res.Content != want {
 		t.Errorf("tool saw %q, want %q", res.Content, want)
 	}

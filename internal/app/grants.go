@@ -11,7 +11,7 @@ import (
 // environment held, so granting one of these names would deliver nothing.
 var toolContractEnv = map[string]bool{
 	"AGENT_DB": true, "AGENT_DB_PREFIX": true, "AGENT_URL": true, "AGENT_WORKSPACE": true,
-	"AGENT_SESSION": true, "AGENT_JOB": true, "TMPDIR": true,
+	"AGENT_SESSION": true, "AGENT_JOB": true, "AGENT_TOKEN": true, "TMPDIR": true,
 }
 
 type grantableName struct {

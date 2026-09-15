@@ -1633,6 +1633,57 @@
           "enabled": {
             "type": "boolean",
             "description": "Whether this tool is callable in the requested session."
+          },
+          "reach": {
+            "type": "object",
+            "nullable": true,
+            "description": "What the tool may touch, from the policy the sandbox applies. Absent for a builtin, which runs inside the agent.",
+            "properties": {
+              "enforced": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "read_write": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "read": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "network_enforced": {
+                "type": "boolean"
+              },
+              "network_reason": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                },
+                "description": "TCP ports the tool may connect to, the tool API's included."
+              },
+              "tool_api_port": {
+                "type": "integer"
+              },
+              "operator_port": {
+                "type": "integer",
+                "description": "The interface's port, which no tool may connect to."
+              }
+            }
           }
         }
       },

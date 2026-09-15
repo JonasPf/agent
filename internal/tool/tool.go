@@ -2,8 +2,9 @@
 // access to the agent's own HTTP API, and the workspace boundary.
 //
 // A tool holds no private channel into the system. It reaches the agent over
-// AGENT_URL, the same API the interface uses, and its filesystem reach is
-// whatever the sandbox permits — which is its own session's working directory
+// AGENT_URL, the tool API — memory, its own conversation's jobs, the skills it
+// has, and search — naming its call with AGENT_TOKEN. Its filesystem reach is
+// whatever the sandbox permits, which is its own session's working directory
 // and nothing else.
 package tool
 
@@ -23,7 +24,8 @@ import (
 // The environment the registry hands a tool. Read once, so a tool reads the
 // same values throughout a call.
 var (
-	BaseURL   = envOr("AGENT_URL", "http://127.0.0.1:8080")
+	BaseURL   = os.Getenv("AGENT_URL")
+	Token     = os.Getenv("AGENT_TOKEN")
 	Session   = os.Getenv("AGENT_SESSION")
 	Job       = os.Getenv("AGENT_JOB")
 	DBPath    = os.Getenv("AGENT_DB")
@@ -100,6 +102,11 @@ var client = &http.Client{Timeout: 30 * time.Second}
 // Any failure ends the call, because a tool that cannot reach the system has
 // nothing further to say.
 func API(method, path string, body any, query url.Values, out any) {
+	// There is no default to fall back on: the tool API listens on a port the
+	// agent picks when it starts, and answers only a call it is running.
+	if BaseURL == "" {
+		Failf("AGENT_URL is not set: a tool reaches the agent only when the agent runs it")
+	}
 	u := BaseURL + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -117,6 +124,7 @@ func API(method, path string, body any, query url.Values, out any) {
 		Failf("could not build the request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+Token)
 	resp, err := client.Do(req)
 	if err != nil {
 		Failf("cannot reach the agent API at %s: %v", BaseURL, err)

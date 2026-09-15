@@ -269,6 +269,10 @@ p.note { color: var(--muted); font-size: 13px; margin: 0 0 16px; max-width: 62ch
 .facts:empty { display: none; }
 .facts b { color: var(--fg-2); font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* What a tool may reach is a list of paths and ports, read to check one, so it
+   is set like one. */
+.reach dd { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
+
 .env-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .env-summary { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }
 .env-summary .tag { margin: 0; font-family: var(--mono); font-size: 11.5px; }

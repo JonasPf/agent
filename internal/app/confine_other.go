@@ -14,6 +14,10 @@ func landlockAvailable() (bool, string) {
 		"run the agent in its container (task dev) for a confined tool"
 }
 
+func landlockNetAvailable() (bool, string) {
+	return landlockAvailable()
+}
+
 func applyPolicy(policy) error {
 	return errors.New("no confinement is implemented for this platform")
 }

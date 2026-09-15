@@ -1544,6 +1544,40 @@ prompt is rewritten; forking with the skill ticked keeps it. Tools have no equiv
 has needed one.</p>
 </div>
 
+<div class="adr" id="adr-051">
+<div class="meta">ADR-051 · accepted</div>
+<h3>A tool reaches the agent on an API of its own, and cannot reach the operator's</h3>
+<h4>Context</h4>
+<p>Tools reached the agent over <code>AGENT_URL</code>, the operator's own API. The filesystem sandbox kept
+a tool out of other sessions' files and did nothing about that port. A tool could create a session granted
+<code>GH_TOKEN</code> and send it the message that pushes, or schedule a job into a conversation that
+already held the credential. <a href="#adr-048">ADR-048</a> named the hole. Only four tools use the API at
+all &mdash; memory, schedule, skill_read, session_search &mdash; and none of them creates, forks, or
+drives a conversation.</p>
+<h4>Decision</h4>
+<p>The tool API listens on a loopback port the kernel picks at startup and offers what those four call:
+memory, the calling conversation's jobs, the skills that conversation has, and search. Every request
+carries <code>AGENT_TOKEN</code>, issued for one call and revoked when it ends; the call decides the
+conversation, so a job lands in the conversation the tool was called from or is refused.</p>
+<p>Landlock's network rules (version 4, Linux 6.7) restrict a tool's outgoing TCP to an allow-list: the
+ports software commonly talks on, what the operator names in <code>AGENT_TOOL_PORTS</code>, and the tool
+API. The operator's port is never on it. An allow-list rather than a single denied port, for the reason
+paths are one (<a href="#adr-034">ADR-034</a>): a port nobody considered is refused, and the list says
+what a tool is for. Connecting is restricted; binding is not.</p>
+<p>The operator moves from 8080 to 7770, so the port development servers most often take stays open to
+tools. The Tools screen shows each tool's files and ports, drawn from the same policy the wrapper
+applies.</p>
+<h4>Consequences</h4>
+<p>A tool cannot create, fork, message, or configure a conversation, cannot schedule into another, and
+cannot read a skill its conversation does not have. Inside the container the kernel enforces it.</p>
+<p>A tool or a job check that needs an uncommon port fails until the port is named, and the failure is a
+refused connection rather than an explanation; the Tools screen is where to look. A kernel older than 6.7
+confines files and not the network, and says so. On a Mac nothing is enforced, as before. A deployment
+whose proxy points at 8080 must point at 7770.</p>
+<p>What stays open: search reaches every transcript when a tool asks for it, and memory is shared by
+every conversation. Both are what those tools are for.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

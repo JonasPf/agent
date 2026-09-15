@@ -29,23 +29,15 @@ type Config struct {
 	// ReadPaths are directories the operator adds to what a tool may read,
 	// beyond the runtime. A browser installed outside the system roots is the
 	// case it exists for. It only adds; nothing here removes a boundary.
-	ReadPaths          string
+	ReadPaths string
+	// ToolPorts are TCP ports the operator adds to the ones a tool may connect
+	// to. Like ReadPaths it only adds; the operator's own port is never added.
+	ToolPorts          string
 	CompactAtTokens    int
 	KeepVerbatimTokens int
 	SummaryEvery       int
 	MemoryCapacity     int
 	APIKey             string
-}
-
-// BaseURL is the address a tool uses to reach the API. Tools run beside the
-// gateway in the same container, so this is always the loopback address: a tool
-// asks the system for what it needs the same way the interface does.
-func (c Config) BaseURL() string {
-	addr := c.Addr
-	if strings.HasPrefix(addr, ":") {
-		addr = "127.0.0.1" + addr
-	}
-	return "http://" + addr
 }
 
 func envOr(k, def string) string {
@@ -142,8 +134,11 @@ func LoadConfig() Config {
 	envFile := filepath.Join(state, ".env")
 	loadEnvFile(envFile)
 	return Config{
-		EnvFile:       envFile,
-		Addr:          envOr("AGENT_ADDR", ":8080"),
+		EnvFile: envFile,
+		// Not 8080: that is a port tools commonly use, and a tool may not reach
+		// the operator's. This one nothing else commonly takes.
+		Addr:          envOr("AGENT_ADDR", ":7770"),
+		ToolPorts:     os.Getenv("AGENT_TOOL_PORTS"),
 		DataDir:       filepath.Join(state, "data"),
 		Workspace:     filepath.Join(state, "workspace"),
 		ToolsDir:      filepath.Join(home, "tools"),
@@ -174,6 +169,11 @@ type App struct {
 	or      *OpenRouter
 	hub     *Hub
 	sched   *Scheduler
+
+	// calls are the tool calls running now, which the tool API answers; toolAddr
+	// is where it listens.
+	calls    callTokens
+	toolAddr string
 
 	qmu    sync.Mutex
 	queues map[string]chan func()
@@ -215,6 +215,14 @@ func Run() error {
 		queues:  map[string]chan func(){},
 		busy:    map[string]bool{},
 	}
+	// Before any tool can run, and before the sandbox is described: the tool
+	// API's port is part of the policy.
+	stopTools, err := a.listenTools()
+	if err != nil {
+		return err
+	}
+	defer stopTools()
+	log.Printf("tool API on %s", a.toolAddr)
 	log.Print(sandbox.Describe())
 	a.registerBuiltins()
 	loaded, failures := a.tools.Load(a)
