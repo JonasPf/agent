@@ -1,7 +1,27 @@
 # Changelog
 
+## 2026-09-16
+
+- A tool call in a conversation now carries a **logs** toggle when the tool
+  wrote anything to standard error. It stays closed, including on a call that
+  failed and is already showing its error, and what it holds travels with the
+  conversation when you copy it. These logs were always kept; there was simply
+  nowhere to read them.
+- When `web_fetch` cannot read a page — a 404, a refusal, a connection that
+  never answered — it now names `web_browse` as the next thing to try, and says
+  to look elsewhere rather than fetch the same URL again if that fails too. It
+  used to say this only about pages it had already fetched successfully.
+- `web_fetch` also recognises a page that never rendered by the template syntax
+  left in its text — a binding nothing replaced, an attribute expression that
+  leaked into the page — and not only by how little text there is. A shell with
+  a large navigation bar used to pass as a page that simply says little.
+
 ## 2026-09-15
 
+- On the Tools screen, each tool's sandbox is split in two: **Every tool**,
+  which is the same on every card, and **This tool only**, which lists the
+  paths that tool's manifest asked for (the browser tools ask for `/proc`,
+  `/sys`, and `/var`).
 - While the agent is working, the status line under the message box says so
   and counts the seconds, starting the moment you send. Reopening the
   conversation mid-turn keeps the count going from when the turn started.

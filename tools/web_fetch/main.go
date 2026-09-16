@@ -42,6 +42,19 @@ const tryBrowse = "\n\n---\n[web_fetch] This page's text appears to be written b
 	"which did not run here — what is above may be only the shell the server ships. " +
 	"Call web_browse on the same URL to read the page as a person would see it."
 
+// afterFailure is appended to an error. A fetch that failed is the moment the
+// caller most needs to know the other tool exists: the note above appears only
+// on a page that came back readable, so a refusal, a 404, or a handshake that
+// failed left the model with nothing to try next — and what it tried next was
+// this tool again, on another URL, until it ran out of guesses.
+//
+// It says when to stop, too. A browser is one more attempt, not an unlimited
+// one, and a page neither tool can reach is a page to find another way.
+const afterFailure = "\n\n[web_fetch] A browser may still reach it: the page may be served " +
+	"only to one, or assembled by scripts this request did not run. Call web_browse on the " +
+	"same URL. If that fails too, this page is out of reach — look for the information " +
+	"elsewhere rather than fetching this URL again."
+
 func main() {
 	var a args
 	tool.Args(&a)
@@ -60,20 +73,20 @@ func main() {
 	client := &http.Client{Timeout: wait}
 	resp, err := client.Do(req)
 	if err != nil {
-		tool.Failf("%s", err)
+		tool.Failf("%s%s", err, afterFailure)
 	}
 	defer resp.Body.Close()
 
 	b, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes))
 	if err != nil {
-		tool.Failf("%s", err)
+		tool.Failf("%s%s", err, afterFailure)
 	}
 	// A status is part of the answer, not a reason to say nothing: a 404 page and
 	// a 500 page both carry text worth reading, and hiding the code behind them
 	// would leave a caller unable to tell a missing page from an empty one.
 	if resp.StatusCode >= 400 {
-		tool.Failf("%s returned %s. The body it sent:\n\n%s",
-			url, resp.Status, truncate(bodyText(resp, string(b)), 2000))
+		tool.Failf("%s returned %s. The body it sent:\n\n%s%s",
+			url, resp.Status, truncate(bodyText(resp, string(b)), 2000), afterFailure)
 	}
 
 	out := bodyText(resp, string(b))

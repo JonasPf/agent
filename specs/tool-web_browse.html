@@ -71,7 +71,7 @@ characters. A page longer than that is cut, and the cut is reported.</p>
 <li>An HTML page returns its readable text, without markup.</li>
 <li>A page whose content is assembled by scripts returns that content where a browser is available.</li>
 <li>A non-HTML body is returned verbatim.</li>
-<li>Where no browser is available the tool still fetches, and says the page was not rendered.</li>
+<li>Where no browser is available the tool fails saying so, rather than fetching the bytes instead: an image without a browser is broken, not degraded.</li>
 <li>Text beyond the cap is truncated and the result says it was truncated.</li>
 <li>A response body beyond the byte limit is read no further.</li>
 <li>A refused or failed request reports the status and does not retry by another route.</li>

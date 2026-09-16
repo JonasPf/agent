@@ -660,6 +660,22 @@ function renderEntry(e) {
     head.onclick = () => show(pre.hidden);
     if (peek) head.append(peek);
     n.append(head, pre);
+    // What the tool wrote to standard error, behind a toggle of its own. It has
+    // always been kept with the result and never shown, which made a tool that
+    // half-worked unreadable from here. It stays closed even when the call
+    // failed: the error is the answer, the logs are the evidence, and an
+    // operator reading the conversation is not debugging it until they are.
+    const logs = String(e.stderr || '').trim();
+    if (logs) {
+      const out = el('pre', 'logs', logs);
+      out.hidden = true;
+      const toggle = el('button', 'logtoggle', 'logs');
+      toggle.onclick = () => {
+        out.hidden = !out.hidden;
+        toggle.className = 'logtoggle' + (out.hidden ? '' : ' on');
+      };
+      n.append(toggle, out);
+    }
     return n;
   }
   // Carried messages are marked by the style alone. Which session they came from
@@ -1392,18 +1408,33 @@ async function viewTools(v) {
 
 // reachList is what a tool may touch, as the sandbox applies it: the files it
 // may read and write, and the ports it may open. A boundary that is not
-// enforced here says so first, and then what it would be where it is.
+// enforced here says so first, and then what it would be where it is. What
+// every tool gets is set apart from what this tool's manifest asked for, because
+// the first is the same on every card and the second is a decision about one.
 function reachList(t) {
-  const box = el('dl', 'settings reach');
-  const field = (k, val) => box.append(el('dt', null, k), el('dd', null, val));
+  const box = el('div', 'reach');
+  const list = parent => {
+    const dl = el('dl', 'settings');
+    parent.append(dl);
+    return (k, val) => dl.append(el('dt', null, k), el('dd', null, val));
+  };
+  const group = (cls, title) => {
+    const g = el('div', 'reach-group ' + cls);
+    g.append(el('div', 'reach-scope', title));
+    box.append(g);
+    return list(g);
+  };
   if (t.builtin || !t.reach) {
-    field('runs', 'inside the agent — no sandbox applies');
+    list(box)('runs', 'inside the agent — no sandbox applies');
     return box;
   }
   const r = t.reach;
-  if (!r.enforced) field('boundary', `NOT ENFORCED here (${r.reason || 'no sandbox'}). Where it is, this applies:`);
+  if (!r.enforced) list(box)('boundary', `NOT ENFORCED here (${r.reason || 'no sandbox'}). Where it is, this applies:`);
+  const read = r.read || [], own = r.tool_read || [];
+  const field = group('reach-every', 'Every tool');
   field('read & write', (r.read_write || []).join(', '));
-  field('read', (r.read || []).join(', '));
+  // The policy lists what the tool asked for after everything else.
+  field('read', read.slice(0, read.length - own.length).join(', '));
   if ((r.files || []).length) field('files', r.files.join(', '));
   const ports = (r.ports || []).filter(p => p !== r.tool_api_port);
   let net = 'TCP to ports ' + ports.join(', ');
@@ -1411,6 +1442,9 @@ function reachList(t) {
   if (r.operator_port) net += '; never the operator port ' + r.operator_port;
   if (r.enforced && !r.network_enforced) net = `NOT ENFORCED (${r.network_reason || 'no network rules'}); would be ${net}`;
   field('network', net);
+  const mine = group('reach-own', 'This tool only');
+  if (own.length) mine('read', own.join(', '));
+  else mine('adds', 'nothing beyond what every tool gets');
   return box;
 }
 

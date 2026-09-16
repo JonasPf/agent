@@ -156,6 +156,22 @@ func TestAConfinedToolReachesAnAllowedPortAndNotTheOperators(t *testing.T) {
 func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 	a := newTestApp(t)
 	installEnvTool(t, a, "envcheck")
+	// A path of the tool's own, so the screen has something to set apart from
+	// what every tool gets.
+	extra := t.TempDir()
+	mf := filepath.Join(a.tools.dir, "envcheck", "manifest.json")
+	var manifest map[string]any
+	if b, err := os.ReadFile(mf); err != nil {
+		t.Fatal(err)
+	} else if err := json.Unmarshal(b, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest["reads"] = []string{extra}
+	if b, err := json.Marshal(manifest); err != nil {
+		t.Fatal(err)
+	} else if err := os.WriteFile(mf, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("%+v", failures)
 	}
@@ -193,6 +209,9 @@ func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 	}
 	if strings.Join(reach.Read, "|") != strings.Join(p.Read, "|") {
 		t.Errorf("read = %v, policy reads %v", reach.Read, p.Read)
+	}
+	if strings.Join(reach.ToolRead, "|") != extra {
+		t.Errorf("tool_read = %v, the manifest asked for %v", reach.ToolRead, extra)
 	}
 	if strings.Join(reach.Files, "|") != strings.Join(p.Files, "|") {
 		t.Errorf("files = %v, policy files %v", reach.Files, p.Files)

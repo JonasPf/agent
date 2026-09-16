@@ -18,7 +18,20 @@ var (
 	// Text a page shows while it waits. On its own this means nothing; with
 	// almost no other text around it, it is the whole visible page.
 	waiting = regexp.MustCompile(`(?i)\b(loading|please wait|just a moment|one moment)\b`)
+	// A binding the framework was going to replace. A page that rendered has
+	// none left: whatever stood between the braces is the value by the time a
+	// person reads it.
+	binding = regexp.MustCompile(`\{\{\s*[\w$.\[\]]+[^{}]{0,200}\}\}`)
+	// An expression inside an attribute closes the tag at its own first ">", so
+	// the rest of it lands in the page as words — `1 && isAllowed()">`. One such
+	// fragment is a page documenting HTML; several is a page that never ran.
+	leaked = regexp.MustCompile(`["']\s*>`)
 )
+
+// leaks is how many stray attribute fragments it takes to mean the page did not
+// render. Documentation shows markup on purpose, and showing one snippet of it
+// is not a symptom.
+const leaks = 3
 
 // thin is the amount of readable text below which a document with scripts in it
 // is more likely a shell than a short page. A genuinely brief page — a status
@@ -43,6 +56,14 @@ func NeedsScripts(body string) bool {
 		return true
 	}
 	text := tool.ToText(body)
+	// Template syntax left in the text is proof rather than a threshold, so it
+	// is asked first. The length test below measures the whole document —
+	// navigation, cookie banner, footer — which a shell clears comfortably while
+	// its content is still unwritten; that is how a shop's item page came back
+	// carrying Angular's own source with nothing to say it had not rendered.
+	if binding.MatchString(text) || len(leaked.FindAllString(text, leaks)) >= leaks {
+		return true
+	}
 	if len(text) >= thin {
 		return false
 	}

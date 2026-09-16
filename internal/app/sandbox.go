@@ -263,10 +263,13 @@ func (s *Sandbox) policyFor(ws, tools string, reads []string) policy {
 
 // ToolReach is what one tool may touch, as the Tools screen shows it.
 type ToolReach struct {
-	Enforced        bool     `json:"enforced"`
-	Reason          string   `json:"reason,omitempty"`
-	ReadWrite       []string `json:"read_write"`
-	Read            []string `json:"read"`
+	Enforced  bool     `json:"enforced"`
+	Reason    string   `json:"reason,omitempty"`
+	ReadWrite []string `json:"read_write"`
+	Read      []string `json:"read"`
+	// ToolRead is the part of Read this tool's manifest asked for. The rest is
+	// what every tool gets, and the screen says which is which.
+	ToolRead        []string `json:"tool_read"`
 	Files           []string `json:"files"`
 	NetworkEnforced bool     `json:"network_enforced"`
 	NetworkReason   string   `json:"network_reason,omitempty"`
@@ -285,7 +288,7 @@ func (s *Sandbox) Reach(toolRoot string, reads []string) *ToolReach {
 	}
 	p := s.policyFor(sessionDirLabel, tools, reads)
 	r := &ToolReach{Enforced: s.Enforcing(), Reason: s.Reason, ReadWrite: p.Write, Read: p.Read,
-		Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
+		ToolRead: append([]string{}, reads...), Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
 		Ports: s.connectPorts(), ToolAPIPort: s.ToolAPIPort, OperatorPort: s.OperatorPort}
 	if !r.NetworkEnforced {
 		r.NetworkReason = s.NetworkReason

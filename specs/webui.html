@@ -109,6 +109,8 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>A collapsed tool result previews its first line, and a call that returned nothing says so, so an empty result is never mistaken for a missing one.</li>
 <li>A collapsed tool call previews its arguments the same way, and a call made without arguments says so.</li>
 <li>A failed tool call is expanded by default and marked as an error.</li>
+<li>A tool call that wrote to standard error offers those logs behind a toggle of their own, closed by default &mdash; including on a call that failed, where the error is already open: the error is the answer and the logs are the evidence.</li>
+<li>A tool call that wrote nothing to standard error offers no logs toggle, so a toggle never promises detail that is not there.</li>
 <li>Scrolling to the top of any conversation reaches the prompt entry it opened with.</li>
 <li>A compacted session shows the compaction banner in place of the entries it covers, and does not render those entries by default.</li>
 <li>The banner names itself a compaction, says the agent can no longer see what is above it, and shows the turn count and the tokens before and after.</li>
@@ -128,7 +130,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>A key that ends a composition &mdash; an accent, a kana, a candidate &mdash; sends nothing.</li>
 <li>From the moment a message is sent until the agent's last queued turn in that conversation ends, the status line says the agent is working and counts the seconds; a conversation opened mid-turn counts from when the turn started, and the indicator goes when the turn ends.</li>
 <li>A session reports whether it is working and for how long, and the change is pushed as it happens, once when work starts and once when the last queued turn ends.</li>
-<li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, and each compaction's summary &mdash; and not the prompt or the event log.</li>
+<li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
 </ul>
 </div>
 
@@ -268,7 +270,7 @@ panel appear alongside them.</p>
 <li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
-<li>The Tools panel shows, for each tool, the paths it may read and write and the ports it may connect to, from the policy the sandbox applies, and that it can never reach the operator's port; it says when either half is not enforced, and that a builtin runs inside the agent.</li>
+<li>The Tools panel shows, for each tool, the paths it may read and write and the ports it may connect to, from the policy the sandbox applies, and that it can never reach the operator's port; it sets what that tool's manifest asked for apart from what every tool gets; it says when either half is not enforced, and that a builtin runs inside the agent.</li>
 </ul>
 </div>
 

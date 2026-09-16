@@ -325,3 +325,23 @@ test('an id inside a word is not linked', () => {
 test('empty text splits into nothing', () => {
   assert.deepStrictEqual(splitSessionIds(''), []);
 });
+
+// ---- tool logs ----
+
+// A conversation is copied to be read somewhere else, and the usual reason to
+// copy one carrying logs is that something went wrong in it. Leaving them behind
+// drops the half that says why.
+test("a copied conversation carries a tool call's logs", () => {
+  const text = conversationText([
+    { seq: 1, type: 'message', role: 'tool', tool_name: 'web_fetch',
+      tool_result: { ok: false, error: 'connection refused' },
+      stderr: 'dial tcp 127.0.0.1:9: connect: connection refused',
+      created_at: '2026-09-16T10:00:00Z' },
+  ], 'Debugging');
+  assert.match(text, /logs/i, 'the logs are not labelled as logs');
+  assert.match(text, /dial tcp 127\.0\.0\.1:9/, 'the logs were left out');
+});
+
+test('a call that logged nothing copies no empty logs section', () => {
+  assert.doesNotMatch(conversationText(convo, 'Greenhouse sensors'), /logs/i);
+});
