@@ -218,6 +218,16 @@ function waitingLabel(seconds) {
 
 const COPY_RESULT_LIMIT = 2000;
 
+// clipped keeps a tool's output to a length someone will read, and says how much
+// it dropped. A result that ends mid-sentence with nothing to mark the cut reads
+// as a tool that stopped there.
+function clipped(text) {
+  const s = String(text == null ? '' : text);
+  return s.length > COPY_RESULT_LIMIT
+    ? s.slice(0, COPY_RESULT_LIMIT) + `\n… (${s.length - COPY_RESULT_LIMIT} more characters)`
+    : s;
+}
+
 function copyStamp(iso) {
   const d = new Date(iso);
   if (!iso || isNaN(d)) return '';
@@ -241,10 +251,12 @@ function conversationText(entries, title) {
     if (e.type !== 'message') continue;
     if (e.role === 'tool') {
       const body = resultBody(toolResult(e.tool_result));
-      const kept = body.length > COPY_RESULT_LIMIT
-        ? body.slice(0, COPY_RESULT_LIMIT) + `\n… (${body.length - COPY_RESULT_LIMIT} more characters)`
-        : body;
-      out.push('← ' + (e.tool_name || 'tool') + '\n\n```\n' + kept + '\n```');
+      const parts = ['← ' + (e.tool_name || 'tool') + '\n\n```\n' + clipped(body) + '\n```'];
+      // The usual reason to copy a conversation carrying logs is that something
+      // in it went wrong, so they travel with it rather than staying on screen.
+      const logs = String(e.stderr || '').trim();
+      if (logs) parts.push('logs\n\n```\n' + clipped(logs) + '\n```');
+      out.push(parts.join('\n\n'));
       continue;
     }
     const who = e.role !== 'user' ? 'Agent' : e.job_id ? 'Job (' + e.job_id.slice(-6) + ')' : 'You';

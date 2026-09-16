@@ -297,3 +297,49 @@ test('a tool that asks for nothing of its own says so', () => {
   const box = ctx.reachList({ name: 'read', reach: reach() });
   assert.match(allText(find(box, 'reach-own')), /nothing beyond what every tool gets/);
 });
+
+// ---- tool logs ----
+
+// What a tool wrote to standard error has always been kept with its result and
+// never shown. It belongs beside the call it explains — but an operator reading
+// a conversation is not debugging it, until they are, so it waits behind
+// something small enough to ignore.
+
+const toolEntry = over => Object.assign({
+  type: 'message', role: 'tool', tool_name: 'web_fetch', tool_call_id: 'c1',
+  tool_result: { ok: true, content: 'the page' }, created_at: new Date().toISOString()
+}, over);
+
+test('a tool call that logged offers its logs, closed', () => {
+  const ctx = load();
+  const n = ctx.renderEntry(toolEntry({ stderr: 'chromium: dbus not available' }));
+  assert.ok(findAll(n, 'logtoggle').length === 1, 'a call with logs offers no way to see them');
+  const pre = find(n, 'logs');
+  assert.ok(pre, 'the logs were not rendered at all');
+  assert.strictEqual(pre.hidden, true, 'the logs are open by default and crowd out the conversation');
+  assert.match(pre.textContent, /dbus not available/);
+});
+
+test('opening the logs shows them', () => {
+  const ctx = load();
+  const n = ctx.renderEntry(toolEntry({ stderr: 'chromium: dbus not available' }));
+  findAll(n, 'logtoggle')[0].onclick();
+  assert.strictEqual(find(n, 'logs').hidden, false, 'the toggle did not open the logs');
+});
+
+// A toggle that opens nothing is a promise of detail that is not there.
+test('a tool call that logged nothing offers no toggle', () => {
+  const ctx = load();
+  const n = ctx.renderEntry(toolEntry({}));
+  assert.strictEqual(findAll(n, 'logtoggle').length, 0, 'a toggle appeared with no logs behind it');
+  assert.strictEqual(findAll(n, 'logs').length, 0);
+});
+
+// A tool that failed is already open at its error. The logs stay behind the
+// toggle even then: the error is the answer, the logs are the evidence.
+test('a failed call opens its error and still folds its logs away', () => {
+  const ctx = load();
+  const n = ctx.renderEntry(toolEntry({
+    tool_result: { ok: false, error: 'connection refused' }, stderr: 'dial tcp: connect: refused' }));
+  assert.strictEqual(find(n, 'logs').hidden, true);
+});

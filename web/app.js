@@ -660,6 +660,22 @@ function renderEntry(e) {
     head.onclick = () => show(pre.hidden);
     if (peek) head.append(peek);
     n.append(head, pre);
+    // What the tool wrote to standard error, behind a toggle of its own. It has
+    // always been kept with the result and never shown, which made a tool that
+    // half-worked unreadable from here. It stays closed even when the call
+    // failed: the error is the answer, the logs are the evidence, and an
+    // operator reading the conversation is not debugging it until they are.
+    const logs = String(e.stderr || '').trim();
+    if (logs) {
+      const out = el('pre', 'logs', logs);
+      out.hidden = true;
+      const toggle = el('button', 'logtoggle', 'logs');
+      toggle.onclick = () => {
+        out.hidden = !out.hidden;
+        toggle.className = 'logtoggle' + (out.hidden ? '' : ' on');
+      };
+      n.append(toggle, out);
+    }
     return n;
   }
   // Carried messages are marked by the style alone. Which session they came from

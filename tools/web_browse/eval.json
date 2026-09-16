@@ -58,6 +58,23 @@
           "web_fetch"
         ]
       }
+    },
+    {
+      "name": "takes the hint when a fetch fails outright",
+      "prompt": "I called web_fetch on https://shop.example.com/item/42 and it returned:\n\nhttps://shop.example.com/item/42 returned 403 Forbidden. The body it sent:\n\nAccess denied.\n\n[web_fetch] A browser may still reach it: the page may be served only to one, or assembled by scripts this request did not run. Call web_browse on the same URL. If that fails too, this page is out of reach — look for the information elsewhere rather than fetching this URL again.\n\nGet me the item's price.",
+      "tools": [
+        "web_fetch",
+        "web_browse"
+      ],
+      "expect": {
+        "tool": "web_browse",
+        "args_match": {
+          "url": "shop\\.example\\.com/item/42"
+        },
+        "not_tools": [
+          "web_fetch"
+        ]
+      }
     }
   ]
 }

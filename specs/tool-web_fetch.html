@@ -47,6 +47,22 @@ decides whether to spend a browser on it; nothing is substituted on their behalf
 reads, and it sends the reader to a tool that costs a hundred times as much to return the same thing.
 A page with no scripts is never questioned, and neither is a body that is not a document.</p>
 
+<p>Reluctant is not the same as blind. A page whose own template syntax is still in its text &mdash; a
+binding nothing replaced, an attribute expression that closed its tag early and landed in the page as
+words &mdash; did not render, however much navigation and footer it carries around that. A length
+threshold cannot see this: it measures the whole document, and a shell with a large menu clears it
+comfortably while its content is still unwritten.</p>
+
+<h2>A failure says it too</h2>
+
+<p>A refusal, a missing page, or a connection that never answered is the moment the caller most needs
+to know the other tool exists. The note above is appended only to a page that came back readable, so a
+failure used to say nothing about <code>web_browse</code> at all &mdash; and what the model tried next
+was this tool again, on another URL, until it ran out of guesses.</p>
+
+<p>The error now names <code>web_browse</code>, and says where to stop: a browser is one more attempt,
+not an unlimited one, and a page neither tool can reach is a page to find another way.</p>
+
 <div class="note">
 <strong>A status is part of the answer.</strong> A page that answers 404 or 500 is reported as a failure that names the code <em>and</em> carries the body the server sent. Hiding either would leave a caller unable to tell a missing page from an empty one.
 </div>
@@ -63,6 +79,8 @@ A page with no scripts is never questioned, and neither is a body that is not a 
 <li>A document whose text is written by its scripts is returned with a note saying so and naming <code>web_browse</code>.</li>
 <li>A page that is already readable is returned without that note, whether or not it runs scripts.</li>
 <li>A response of 400 or worse is reported as a failure naming the status code and carrying the body that came with it.</li>
+<li>A fetch that fails &mdash; a status of 400 or worse, or a request that never completed &mdash; names <code>web_browse</code> as the next thing to try, and says to look elsewhere rather than fetch the same URL again if that fails too.</li>
+<li>A document whose own template syntax survives into its text is reported as unrendered however much other text it carries; a page showing a single snippet of markup is not.</li>
 </ul>
 </div>
 

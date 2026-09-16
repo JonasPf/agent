@@ -189,7 +189,7 @@ turn rather than the process.</p>
 <li>A tool exceeding its timeout is killed and reported as an error result.</li>
 <li>A tool reaches memory, its own conversation's jobs, that conversation's skills, and search through <code>AGENT_URL</code>, naming its call with <code>AGENT_TOKEN</code>, without a private hook into the process; nothing it can reach creates or drives a conversation.</li>
 <li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
-<li>Standard error is captured and stored with the result, not shown to the model.</li>
+<li>Standard error is captured and stored with the result, not shown to the model, and readable by the operator beside the call that wrote it.</li>
 <li>A tool subprocess receives only the variables above and the ones its calling session was granted; the model API key and every other variable of the agent's environment are absent.</li>
 <li>A variable a manifest names is passed only to that tool, and only when it is set.</li>
 <li>Tool results are recorded as transcript entries.</li>

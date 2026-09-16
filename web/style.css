@@ -483,6 +483,14 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
 .tool.err .t .peek { color: inherit; }
 .tool pre { margin: 7px 0 0; white-space: pre-wrap; word-break: break-word; max-height: 280px; overflow: auto; }
 .tool.err { border-color: var(--bad); color: var(--bad); background: var(--card); }
+/* A tool's own diagnostics. Quiet enough that a conversation reads past them,
+   and close enough to the call that they are where you would look. */
+.tool .logtoggle {
+  margin-top: 7px; padding: 0; border: none; background: none;
+  color: var(--muted); font-family: var(--mono); font-size: 11.5px;
+}
+.tool .logtoggle:hover, .tool .logtoggle.on { color: var(--accent); }
+.tool pre.logs { color: var(--muted); font-size: 11.5px; max-height: 200px; }
 
 /* ---------- status and composer ---------- */
 

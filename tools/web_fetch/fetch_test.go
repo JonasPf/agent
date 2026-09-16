@@ -41,10 +41,45 @@ func TestAPageThatIsAlreadyReadableIsNotSecondGuessed(t *testing.T) {
 		{"plain prose, no scripts at all", `<html><body><h1>Notes</h1><p>` +
 			strings.Repeat("A sentence that carries some actual meaning. ", 12) + `</p></body></html>`},
 		{"a short page with nothing dynamic about it", `<html><body><p>Service is up.</p></body></html>`},
+		// Documentation about HTML shows markup on purpose, and a page that
+		// renders a single snippet of it has rendered perfectly well.
+		{"documentation showing a snippet of markup", `<html><head><script src="/docs.js"></script></head><body>
+<h1>Links</h1><p>` + strings.Repeat("Write the href attribute first, then the text it wraps. ", 20) +
+			`</p><pre><code>&lt;a href="/help"&gt;Help&lt;/a&gt;</code></pre></body></html>`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if NeedsScripts(c.html) {
 				t.Error("a page that was already readable was reported as needing a browser")
+			}
+		})
+	}
+}
+
+// The character threshold measures the whole document, chrome included, so a
+// page with a fat navigation bar clears it while its content is still unwritten.
+// That is how a shop's item page came back carrying Angular's own template
+// source with nothing to say it had not rendered. Template syntax surviving into
+// the text is not a threshold but a proof: a rendered page has already replaced
+// its own bindings.
+func TestTemplateSyntaxSurvivingIntoTheTextIsRecognised(t *testing.T) {
+	nav := "<nav>" + strings.Repeat("Residential Business About Us Contact Us Support Blog and News ", 12) + "</nav>"
+	for _, c := range []struct {
+		name string
+		html string
+	}{
+		{"a binding the framework never filled in", `<html><head><script src="/main.js"></script></head><body>` +
+			nav + `<div class="price">{{ item.price | currency }}</div></body></html>`},
+		// An expression inside an attribute closes the tag at its own first ">",
+		// so the rest of it lands in the page as words. One such fragment is a
+		// code sample; a page full of them never rendered.
+		{"attribute expressions leaking into the page", `<html><head><script src="/main.js"></script></head><body>` +
+			nav + `<div *ngIf="cart.length > 1 && isSwitchingAccountAllowed()">Switch Account</div>
+<div *ngIf="cart.length > 0 && hasOffers()">Offers</div>
+<span data-show="items.length > 2 && ready()">More</span></body></html>`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if !NeedsScripts(c.html) {
+				t.Error("a page still showing its own template syntax was not recognised as unrendered")
 			}
 		})
 	}

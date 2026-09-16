@@ -121,3 +121,39 @@ func TestWebFetchReportsARefusalRatherThanReturningItAsThePage(t *testing.T) {
 		t.Errorf("the body the server sent was thrown away: %q", res.Error)
 	}
 }
+
+// A fetch that failed is exactly when the caller needs to know the other tool
+// exists. The note used to appear only on a page that came back readable, so a
+// refusal, a 404, or a certificate the agent does not trust left the model with
+// nothing to try next — and what it tried next was the same tool again.
+func TestWebFetchNamesTheBrowserWhenTheFetchFails(t *testing.T) {
+	a := browseApp(t)
+	url := serve(t, "text/html", `<html><body><p>No such item.</p></body></html>`, 404)
+
+	res := fetchURL(t, a, url)
+	if res.OK {
+		t.Fatalf("a 404 came back as a successful read: %q", res.Content)
+	}
+	if !strings.Contains(res.Error, "web_browse") {
+		t.Errorf("a failed fetch did not name the tool that could still read the page: %q", res.Error)
+	}
+}
+
+// The same holds when nothing answered at all: a connection that is refused,
+// a name that does not resolve, a handshake the agent cannot complete.
+func TestWebFetchNamesTheBrowserWhenNothingAnswers(t *testing.T) {
+	a := browseApp(t)
+	// A port nobody is listening on: the server is created and closed, so the
+	// address is real and the connection is refused.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+
+	res := fetchURL(t, a, url)
+	if res.OK {
+		t.Fatalf("a refused connection came back as a successful read: %q", res.Content)
+	}
+	if !strings.Contains(res.Error, "web_browse") {
+		t.Errorf("a failed fetch did not name the tool that could still read the page: %q", res.Error)
+	}
+}
