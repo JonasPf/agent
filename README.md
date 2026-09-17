@@ -168,9 +168,9 @@ docker run -d --name agent \
 | `OPENROUTER_API_KEY` | Required for model calls. |
 | `GH_TOKEN` | Optional. Fine-grained, one repository, contents + pull requests write, no workflow scope — what the agent needs to propose changes to itself. The most it can do with this is open a pull request nobody has merged yet. |
 | `AGENT_REPO` | Optional. The repository the agent clones when it changes itself. |
+| `GITLAB_TOKEN` | Optional. A personal or project access token, `api` + `write_repository`, for the GitLab projects the agent works on. Read by `glab`, and by `git` when it is in the clone URL. |
 
-Setting these two in the deployment does not by itself let the agent change
-itself. A tool receives a variable only in a session **granted** it by name,
+Setting any of these in the deployment does not by itself let the agent use it. A tool receives a variable only in a session **granted** it by name,
 under **Controls → granted environment**, and a grant is fixed for that session's
 life. That is deliberate: the credential reaches the one conversation doing the
 work, not every conversation forever. `OPENROUTER_API_KEY` can never be granted.

@@ -10,9 +10,11 @@ import (
 )
 
 // The shell is more useful with the programs people reach for first: curl and
-// wget to fetch, python3 and perl to compute. The image ships them, and they
-// have to run under the sandbox, not merely exist — an interpreter that cannot
-// read its own library is the same as one that is absent.
+// wget to fetch, python3 and perl to compute, gh and glab to work on a
+// repository. The image ships them, and they have to run under the sandbox, not
+// merely exist — an interpreter that cannot read its own library is the same as
+// one that is absent, and a forge client that cannot read its own configuration
+// directory is the reason its credential arrives in the environment instead.
 func TestTheShellRunsTheProgramsTheImageShips(t *testing.T) {
 	dir := t.TempDir()
 	st, err := OpenStore(dir)
@@ -38,6 +40,12 @@ func TestTheShellRunsTheProgramsTheImageShips(t *testing.T) {
 		{"wget", "wget --version", "Wget"},
 		{"python3", "python3 -c 'import json; print(json.dumps({\"ok\": 1}))'", `{"ok": 1}`},
 		{"perl", "perl -e 'print 6*7'", "42"},
+		{"gh", "gh --version", "gh version"},
+		// glab creates its configuration directory before it runs any command at
+		// all, and its default is under a home directory no tool can write. It is
+		// pointed at the session's own directory, which is writable; the skill
+		// says the same thing in prose, because every glab call needs it.
+		{"glab", "GLAB_CONFIG_DIR=$PWD/.glab glab --version", "glab"},
 	} {
 		args, _ := json.Marshal(map[string]string{"command": c.command})
 		res := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "bash", args)
