@@ -791,3 +791,151 @@ test('a conversation granted nothing says nothing about grants', async () => {
   assert.ok(!summary.includes('may read'),
     'a conversation with no grants still claims it may read something: ' + summary);
 });
+
+// ---------- persona and memory, chosen before a conversation starts ----------
+
+const PERSONAS = {
+  personas: [
+    { name: 'default', description: 'The agent as it ships.', bytes: 900, editable: false },
+    { name: 'terse', description: 'Says little.', bytes: 40, editable: true },
+  ]
+};
+
+// A pill carrying one of these names is the persona chooser; the tool and skill
+// pickers above it draw pills of their own.
+const personaPills = v => findAll(v, 'pill').filter(p => ['default', 'terse'].includes(p.textContent));
+const memoryPills = v => findAll(v, 'pill').filter(p => ['on', 'off'].includes(p.textContent));
+
+test('a new conversation starts on the built-in persona with memory on', async () => {
+  const ctx = newScreen({ '/personas': PERSONAS });
+  const v = node('div');
+  await ctx.viewNew(v);
+  const chosen = personaPills(v).filter(isOn).map(p => p.textContent);
+  assert.deepStrictEqual(chosen, ['default'], 'the built-in persona is not the one preselected');
+  assert.deepStrictEqual(memoryPills(v).filter(isOn).map(p => p.textContent), ['on']);
+  const body = await startConversation(ctx, v);
+  assert.strictEqual(body.persona, '', 'an unchosen persona should be the built-in one');
+  assert.strictEqual(body.memory_off, false);
+});
+
+test('choosing a persona sends it, and the screen says it replaces the built-in one', async () => {
+  const ctx = newScreen({ '/personas': PERSONAS });
+  const v = node('div');
+  await ctx.viewNew(v);
+  const said = findAll(v, 'note').map(n => n.textContent).join(' ');
+  assert.ok(/replaces the built-in persona entirely/.test(said),
+    'the screen does not say that choosing a persona replaces the built-in one: ' + said);
+  personaPills(v).find(p => p.textContent === 'terse').onclick();
+  assert.ok(isOn(personaPills(v).find(p => p.textContent === 'terse')), 'the persona pill did not turn on');
+  assert.strictEqual((await startConversation(ctx, v)).persona, 'terse');
+});
+
+test('turning memory off sends it, and says nothing stored is deleted', async () => {
+  const ctx = newScreen({ '/personas': PERSONAS });
+  const v = node('div');
+  await ctx.viewNew(v);
+  const said = findAll(v, 'note').map(n => n.textContent).join(' ');
+  assert.ok(/no memory section and no memory/.test(said) && /already stored is untouched/.test(said),
+    'the screen does not say what memory off means: ' + said);
+  memoryPills(v).find(p => p.textContent === 'off').onclick();
+  assert.strictEqual((await startConversation(ctx, v)).memory_off, true);
+});
+
+// ---------- writing skills and personas ----------
+
+const SKILL_LIST = {
+  skills: [
+    { name: 'scheduling', description: 'Turning a request into a job.', bytes: 900, editable: false, default_enabled: true },
+    { name: 'watering', description: 'When to water.', bytes: 40, editable: true, default_enabled: true },
+  ]
+};
+
+test('the skills panel marks what ships with the agent apart from what you wrote', async () => {
+  const ctx = load({ '/skills': SKILL_LIST });
+  const v = node('div');
+  await ctx.viewAuthored(v, 'skills');
+  const names = findAll(v, 'n').map(n => n.textContent);
+  assert.deepStrictEqual(names, ['scheduling', 'watering']);
+  const tags = findAll(v, 'tag').map(t => t.textContent);
+  assert.ok(tags.includes('ships with the agent'), 'nothing says which skill is read-only: ' + tags.join(', '));
+});
+
+test('a skill that ships with the agent is read-only and says so', async () => {
+  const ctx = load({
+    '/skills': SKILL_LIST,
+    '/skills/scheduling': { name: 'scheduling', description: 'Turning a request into a job.', body: 'A time or a condition.', editable: false },
+  });
+  await ctx.editAuthored('skills', 'scheduling');
+  const v = ctx._id('view');
+  const said = findAll(v, 'note').map(n => n.textContent).join(' ');
+  assert.ok(/ships with the agent/.test(said), 'it does not say why it cannot be edited: ' + said);
+  assert.ok(!findAll(v, 'btn').some(b => /Save/.test(b.textContent)),
+    'a skill that ships with the agent offers a save that would be refused');
+});
+
+test('a skill you wrote is saved with its name, description, and body', async () => {
+  const ctx = load({ '/skills': { skills: [] } });
+  vm.runInContext("state.view = 'skills';", ctx);
+  await ctx.editAuthored('skills', null);
+  const v = ctx._id('view');
+  const [name, desc] = findAll(v, 'text').filter(n => n.tagName === 'input');
+  const body = findAll(v, 'text').find(n => n.tagName === 'textarea');
+  name.value = 'watering';
+  desc.value = 'When to water.';
+  body.value = 'Twice a week.';
+  await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/skills');
+  assert.strictEqual(sent.length, 1, 'saving did not write exactly one skill');
+  assert.deepStrictEqual(JSON.parse(sent[0].body),
+    { name: 'watering', description: 'When to water.', body: 'Twice a week.', default_enabled: true });
+});
+
+test('a skill you wrote can be turned off by default, and deleted', async () => {
+  const ctx = load({
+    '/skills': SKILL_LIST,
+    '/skills/watering': { name: 'watering', description: 'When to water.', body: 'Twice a week.', editable: true, default_enabled: true },
+  });
+  vm.runInContext("state.view = 'skills';", ctx);
+  await ctx.editAuthored('skills', 'watering');
+  const v = ctx._id('view');
+  findAll(v, 'pill').find(p => /on by default/.test(p.textContent)).onclick();
+  await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
+  const sent = ctx._calls.filter(c => c.method === 'PUT' && c.path === '/skills/watering');
+  assert.strictEqual(sent.length, 1, 'saving did not replace the skill');
+  assert.strictEqual(JSON.parse(sent[0].body).default_enabled, false);
+
+  await ctx.editAuthored('skills', 'watering');
+  // A view's own actions are put in the header, which is where the delete is.
+  const remove = ctx._id('head-acts').children.find(b => /Delete/.test(b.textContent));
+  assert.ok(remove, 'no way to delete the skill');
+  await remove.onclick();
+  assert.ok(ctx._calls.some(c => c.method === 'DELETE' && c.path === '/skills/watering'),
+    'the skill was not deleted');
+});
+
+test('a persona is written through the same screen, in its own words', async () => {
+  const ctx = load({ '/personas': PERSONAS });
+  vm.runInContext("state.view = 'personas';", ctx);
+  const v = node('div');
+  await ctx.viewAuthored(v, 'personas');
+  const said = findAll(v, 'note').map(n => n.textContent).join(' ');
+  assert.ok(/replaces the\s+built-in persona whole/.test(said.replace(/\s+/g, ' ')),
+    'the personas panel does not say what choosing one does: ' + said);
+
+  await ctx.editAuthored('personas', null);
+  const e = ctx._id('view');
+  // A persona has no default-enabled switch: it is chosen per conversation, not
+  // indexed like a skill.
+  assert.ok(!findAll(e, 'pill').some(p => /by default/.test(p.textContent)),
+    'a persona offers a default-enabled switch, which means nothing for a persona');
+  const [name, desc] = findAll(e, 'text').filter(n => n.tagName === 'input');
+  const body = findAll(e, 'text').find(n => n.tagName === 'textarea');
+  name.value = 'terse';
+  desc.value = 'Says little.';
+  body.value = 'You are terse.';
+  await findAll(e, 'btn').find(b => /Save/.test(b.textContent)).onclick();
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/personas');
+  assert.strictEqual(sent.length, 1);
+  assert.deepStrictEqual(JSON.parse(sent[0].body),
+    { name: 'terse', description: 'Says little.', body: 'You are terse.' });
+});

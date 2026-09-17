@@ -156,7 +156,9 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The controls screen shows the session's model, tools, skills, and grants, and offers a new configuration, which takes effect by forking.</li>
+<li>The controls screen shows the session's model, tools, skills, grants, persona, and memory setting, and offers a new configuration, which takes effect by forking.</li>
+<li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
+<li>Memory is turned on or off for the conversation being configured, and the screen says that off means no memory section and no memory tool, and that nothing stored is deleted.</li>
 <li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
 <li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
@@ -259,13 +261,20 @@ popup of its own instead.</p>
 
 <h2>Panels</h2>
 
-<p>Jobs, memory, tools, and skills each have a management panel. Tools that ship their own
+<p>Jobs, memory, tools, skills, and personas each have a management panel. Tools that ship their own
 panel appear alongside them.</p>
+
+<p>Skills and personas are the same kind of thing on disk &mdash; a Markdown file with frontmatter that
+the operator writes &mdash; so they are listed, written, and deleted through one screen, and only the
+wording differs.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every job, memory item, tool, and skill is viewable and editable without the agent.</li>
+<li>Every job, memory item, tool, skill, and persona is viewable without the agent.</li>
+<li>A skill or persona the operator wrote is created, edited, and deleted in the interface, with its name, its one-line description, and its body.</li>
+<li>One that ships in the image is shown read-only, and says so rather than offering an edit that would fail.</li>
+<li>A save that is refused says why and leaves what is on disk unchanged.</li>
 <li>A job's run log is readable from the job, without opening the conversation it fires into.</li>
 <li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>

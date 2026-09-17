@@ -66,6 +66,7 @@ its influence on an answer can always be traced.</p>
 <li>Deleting an item from the section deletes it from storage.</li>
 <li>A session with no memory shows an empty memory section rather than omitting it.</li>
 <li>Memory forms part of the cacheable prefix and does not change between compactions.</li>
+<li>A session with memory off is the one exception: it has no memory section at all, rather than an empty one.</li>
 </ul>
 </div>
 
@@ -115,6 +116,15 @@ conversation unseen.
 definition it programmes against. Changing the callable set mid-conversation is what
 <a href="adrs.html#adr-019">ADR-019</a> removed, and a compaction does not bring it back — a new tool
 still needs a new session, reached by forking. Only the memory section of the prompt is rewritten.
+</div>
+
+<div class="note">
+<strong>A conversation can be held outside memory.</strong> Memory is the one thing that crosses a
+session boundary on its own, and a session may be configured without it
+(<a href="adrs.html#adr-054">ADR-054</a>): no memory section in its prompt, and no memory tool. An empty
+section would say &ldquo;you remember nothing yet&rdquo;; this session remembers nothing ever, and is
+told which it is. Nothing is deleted, and every other conversation is unaffected. Like the rest of a
+configuration it is chosen before the session starts and changed only by forking.
 </div>
 
 <h2>Storage</h2>

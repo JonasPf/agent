@@ -149,7 +149,29 @@ func describeConfigChange(from, to SessionConfig) string {
 	if !sameSet(from.EnabledSkills, to.EnabledSkills) {
 		parts = append(parts, "skills "+describeSet(from.EnabledSkills, "defaults")+" → "+describeSet(to.EnabledSkills, "defaults"))
 	}
+	if from.Persona != to.Persona {
+		parts = append(parts, "persona "+personaLabel(from.Persona)+" → "+personaLabel(to.Persona))
+	}
+	if from.MemoryOff != to.MemoryOff {
+		parts = append(parts, "memory "+memoryLabel(from.MemoryOff)+" → "+memoryLabel(to.MemoryOff))
+	}
 	return strings.Join(parts, "; ")
+}
+
+// personaLabel names a persona for a transcript line. An unchosen one is the
+// built-in, which has a name of its own.
+func personaLabel(name string) string {
+	if name == "" {
+		return defaultPersona
+	}
+	return name
+}
+
+func memoryLabel(off bool) string {
+	if off {
+		return "off"
+	}
+	return "on"
 }
 
 // describeSet names a set for a transcript line. What an unchosen set means

@@ -189,7 +189,7 @@ func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
 	a.cfg.MemoryCapacity = defaultMemoryCapacity
 	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")
 	a.tools = NewRegistry(a.cfg.ToolsDir, DBPath(dir), a.store.DB())
-	a.skills = NewSkills(filepath.Join("..", "..", "skills"))
+	a.skills = NewSkills(filepath.Join("..", "..", "skills"), "")
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %+v", failures)

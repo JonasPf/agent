@@ -57,7 +57,16 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /tools/{name}/call", a.hCallTool)
 
 	mux.HandleFunc("GET /skills", a.hSkills)
+	mux.HandleFunc("POST /skills", a.hSaveSkill)
 	mux.HandleFunc("GET /skills/{name}", a.hSkill)
+	mux.HandleFunc("PUT /skills/{name}", a.hSaveSkill)
+	mux.HandleFunc("DELETE /skills/{name}", a.hDeleteSkill)
+
+	mux.HandleFunc("GET /personas", a.hPersonas)
+	mux.HandleFunc("POST /personas", a.hSavePersona)
+	mux.HandleFunc("GET /personas/{name}", a.hPersona)
+	mux.HandleFunc("PUT /personas/{name}", a.hSavePersona)
+	mux.HandleFunc("DELETE /personas/{name}", a.hDeletePersona)
 
 	mux.HandleFunc("GET /models", a.hModels)
 	mux.HandleFunc("GET /preferences", a.hPreferences)
@@ -146,11 +155,22 @@ type configRequest struct {
 	EnabledTools  optionalSet `json:"enabled_tools"`
 	EnabledSkills optionalSet `json:"enabled_skills"`
 	GrantedEnv    optionalSet `json:"granted_env"`
+	// Persona and MemoryOff are pointers for the same reason the sets carry a
+	// presence flag: absent means inherit, and the zero value of each is a
+	// choice somebody may have made.
+	Persona   *string `json:"persona"`
+	MemoryOff *bool   `json:"memory_off"`
 }
 
 func (c configRequest) applyTo(base SessionConfig) SessionConfig {
 	if c.Model != "" {
 		base.Model = c.Model
+	}
+	if c.Persona != nil {
+		base.Persona = *c.Persona
+	}
+	if c.MemoryOff != nil {
+		base.MemoryOff = *c.MemoryOff
 	}
 	if c.EnabledTools.present {
 		base.EnabledTools = c.EnabledTools.set
@@ -215,6 +235,8 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		EnabledTools  optionalSet `json:"enabled_tools"`
 		EnabledSkills optionalSet `json:"enabled_skills"`
 		GrantedEnv    optionalSet `json:"granted_env"`
+		Persona       *string     `json:"persona"`
+		MemoryOff     *bool       `json:"memory_off"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
@@ -223,12 +245,14 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	if in.Title != nil {
 		s.Title = *in.Title
 	}
-	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present {
+	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present ||
+		in.Persona != nil || in.MemoryOff != nil {
 		// A configuration is chosen before the session exists and fixed once it
 		// does. There is one answer here, not two. Grants are part of it: a
 		// conversation that could be handed a credential halfway through is one
-		// whose reach cannot be read from how it started.
-		fail(w, 409, "a session's model, tools, skills, and grants are fixed for its life; "+
+		// whose reach cannot be read from how it started. So is the persona, and
+		// so is whether memory is in force: both are sections of the prompt.
+		fail(w, 409, "a session's model, tools, skills, grants, persona, and memory setting are fixed for its life; "+
 			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
 		return
 	}
@@ -678,7 +702,8 @@ func (a *App) hSkills(w http.ResponseWriter, r *http.Request) {
 			enabled = sess.skillEnabled(s)
 		}
 		out = append(out, map[string]any{"name": s.Name, "description": s.Description,
-			"bytes": s.Bytes, "default_enabled": s.DefaultEnabled, "enabled": enabled})
+			"bytes": s.Bytes, "default_enabled": s.DefaultEnabled, "enabled": enabled,
+			"editable": s.Editable})
 	}
 	writeJSON(w, 200, map[string]any{"skills": out, "failures": a.skills.Failures()})
 }
@@ -689,7 +714,115 @@ func (a *App) hSkill(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"name": s.Name, "description": s.Description, "body": s.Body})
+	writeJSON(w, 200, map[string]any{"name": s.Name, "description": s.Description,
+		"body": s.Body, "default_enabled": s.DefaultEnabled, "editable": s.Editable})
+}
+
+// hSaveSkill writes one of the operator's skills. A skill that ships in the
+// image is refused rather than copied into the writable root, because the copy
+// would shadow the original until the next deployment brought it back.
+//
+// A saved skill reaches the sessions started after it, not the ones already
+// running: a session's skills are fixed from its first turn.
+func (a *App) hSaveSkill(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name           string `json:"name"`
+		Description    string `json:"description"`
+		Body           string `json:"body"`
+		DefaultEnabled *bool  `json:"default_enabled"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	if name := r.PathValue("name"); name != "" {
+		in.Name = name
+	}
+	// A skill nobody chose is in every conversation, so a new one arrives on by
+	// default the way a shipped one does.
+	on := true
+	if in.DefaultEnabled != nil {
+		on = *in.DefaultEnabled
+	}
+	if err := a.skills.Save(in.Name, in.Description, in.Body, on); err != nil {
+		fail(w, 409, "%v", err)
+		return
+	}
+	a.hub.Broadcast(wsEvent{Kind: "skills"})
+	s := a.skills.Get(in.Name)
+	if s == nil {
+		fail(w, 500, "the skill was written but does not load")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"name": s.Name, "description": s.Description,
+		"body": s.Body, "default_enabled": s.DefaultEnabled, "editable": s.Editable})
+}
+
+func (a *App) hDeleteSkill(w http.ResponseWriter, r *http.Request) {
+	if err := a.skills.Delete(r.PathValue("name")); err != nil {
+		fail(w, 409, "%v", err)
+		return
+	}
+	a.hub.Broadcast(wsEvent{Kind: "skills"})
+	w.WriteHeader(204)
+}
+
+func (a *App) hPersonas(w http.ResponseWriter, r *http.Request) {
+	all := a.personas.All()
+	out := make([]map[string]any, 0, len(all))
+	for _, p := range all {
+		out = append(out, map[string]any{"name": p.Name, "description": p.Description,
+			"bytes": p.Bytes, "editable": p.Editable})
+	}
+	writeJSON(w, 200, map[string]any{"personas": out, "failures": a.personas.Failures()})
+}
+
+func (a *App) hPersona(w http.ResponseWriter, r *http.Request) {
+	p := a.personas.Get(r.PathValue("name"))
+	if p == nil {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"name": p.Name, "description": p.Description,
+		"body": p.Body, "editable": p.Editable})
+}
+
+// hSavePersona writes one of the operator's personas. The built-in is refused:
+// it is the fallback a session with no choice runs on, and it has to stay.
+func (a *App) hSavePersona(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Body        string `json:"body"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	if name := r.PathValue("name"); name != "" {
+		in.Name = name
+	}
+	if err := a.personas.Save(in.Name, in.Description, in.Body); err != nil {
+		fail(w, 409, "%v", err)
+		return
+	}
+	a.hub.Broadcast(wsEvent{Kind: "personas"})
+	p := a.personas.Get(in.Name)
+	if p == nil {
+		fail(w, 500, "the persona was written but does not load")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"name": p.Name, "description": p.Description,
+		"body": p.Body, "editable": p.Editable})
+}
+
+func (a *App) hDeletePersona(w http.ResponseWriter, r *http.Request) {
+	if err := a.personas.Delete(r.PathValue("name")); err != nil {
+		fail(w, 409, "%v", err)
+		return
+	}
+	a.hub.Broadcast(wsEvent{Kind: "personas"})
+	w.WriteHeader(204)
 }
 
 // hUpload writes a file into the session's working directory, where its tools

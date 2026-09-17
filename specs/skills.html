@@ -67,25 +67,40 @@ rather than twenty documents' worth.</p>
 
 <h2>Who writes a skill</h2>
 
-<p><strong>The operator does.</strong> A skill is a Markdown file the person running the agent writes,
-in the skill directory, with whatever editor they already use. The agent reads skills and does not
-write them (<a href="adrs.html#adr-033">ADR-033</a>).</p>
+<p><strong>The operator does</strong> &mdash; in the interface, or on the filesystem. A skill is a
+Markdown file the person running the agent writes. The agent reads skills and does not write them
+(<a href="adrs.html#adr-033">ADR-033</a>, <a href="adrs.html#adr-053">ADR-053</a>).</p>
 
-<p>The skill directory is not writable by a tool &mdash; it is not in any path the sandbox allows a tool
-to write &mdash; and no route on the API writes one. The specification previously said the agent could
-create, edit, and delete skills, and that the interface could edit them. Neither was true.</p>
+<p>There are two roots. Skills that <strong>ship in the image</strong> are read-only: the image is
+replaced on every deployment, so an edit there would be lost at the next upgrade. Skills the
+<strong>operator writes</strong> live beside the data, which is the one directory a deployment keeps, and
+are created, edited, and deleted on the Skills panel.</p>
 
-<p>What survives is the reason skills existed: a lesson worth keeping is worth writing down, and prose
-is the safe form for it. When the agent works something out that the next attempt should start from, it
-says so, and the operator decides whether it becomes a skill.</p>
+<p>Neither root is writable by a tool &mdash; neither is in any path the sandbox allows a tool to write
+&mdash; so the boundary is the operating system's, not the agent's good manners. The interface is the
+operator, and writes; the agent reads.</p>
+
+<p>A skill the operator writes may not take the name of one that ships: a name is an identifier, and two
+skills answering to one would make the index a lie about what <code>skill_read</code> returns. The
+collision is refused and said out loud.</p>
+
+<p>What survives from before is the reason skills existed: a lesson worth keeping is worth writing down,
+and prose is the safe form for it. When the agent works something out that the next attempt should start
+from, it says so, and the operator decides whether it becomes a skill.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A tool subprocess cannot create, modify, or delete anything in the skill directory, and is refused by the operating system rather than by its own good manners.</li>
+<li>A tool subprocess cannot create, modify, or delete anything in either skill directory, and is refused by the operating system rather than by its own good manners.</li>
 <li>Skills are read from files on disk, not from the database, and a skill added by the operator is available to sessions started after it.</li>
 <li>Every skill is readable in the interface.</li>
 <li>A skill outside a session's set is absent from its index, and reading it by name reports no such skill.</li>
+<li>The interface creates, edits, and deletes a skill, and what it writes is a file on disk that a restart reads back.</li>
+<li>A skill written through the interface is stored outside the image, so replacing the image keeps it.</li>
+<li>A skill that ships in the image is refused an edit and a delete, and the refusal says why.</li>
+<li>A skill whose name collides with one that ships is refused, and the shipped skill is the one that keeps the name.</li>
+<li>A skill saved without a name, without a description, without a body, or with a description over more than one line is refused and nothing is stored.</li>
+<li>The interface sets whether a skill is on by default, and the choice survives a reload.</li>
 </ul>
 </div>
 

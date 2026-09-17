@@ -1616,6 +1616,80 @@ like any other and need no change here. Bumping <code>glab</code> moves two dige
 agent knows either client exists.</p>
 </div>
 
+<div class="adr" id="adr-053">
+<div class="meta">ADR-053 · accepted</div>
+<h3>The operator writes skills and personas through the interface; the agent still cannot</h3>
+<h4>Context</h4>
+<p><a href="#adr-033">ADR-033</a> removed self-modification: the agent does not write tools and does not
+write skills. It reasoned about one actor &mdash; a tool subprocess, confined by
+<a href="#adr-034">ADR-034</a> to its own session's working directory &mdash; and concluded that a
+directory a tool could write is a directory in which <code>bash</code> can be rewritten. That reasoning
+stands.</p>
+<p>But it also recorded, as a fact about the system, that &ldquo;no route on the API writes&rdquo; a
+skill, and the skill specification turned that into a rule: skills are authored on the filesystem, with
+whatever editor the operator already uses. On a deployment reached over a tailnet, from a phone, with no
+shell, that means skills cannot be written at all. The constraint that was protecting the agent from
+itself was also stopping the operator from using their own agent.</p>
+<p>The two are not the same actor. The interface <em>is</em> the operator: it is the surface
+<a href="#adr-005">ADR-005</a> puts behind the network boundary, and every other thing the operator owns
+&mdash; memory, jobs, the configuration of a session &mdash; is written through it.</p>
+<h4>Decision</h4>
+<p>The operator writes skills, and personas, through the interface. The agent does not, and the
+enforcement does not change: both roots sit outside every path the sandbox makes writable, so a tool
+attempting either is refused by the kernel exactly as before. No tool is added, and the agent is given
+no route that writes one.</p>
+<p>What ships in the image stays read-only. The operator's documents live beside the data, under
+<code>AGENT_STATE</code>, because the image is replaced on every deployment and the data directory is
+the one thing a deployment keeps &mdash; a document written into the image would vanish at the next
+upgrade with nothing on screen to say why. A name that collides with a shipped document is refused
+rather than shadowing it, and the refusal is visible in the failure list.</p>
+<h4>Consequences</h4>
+<p>The capability <a href="#adr-033">ADR-033</a> removed is still removed. An agent that can rewrite its
+own instructions between turns is the thing that decision was about, and nothing here gives it one: the
+documents change when a person changes them, and the conversation the operator talks to tomorrow is the
+one they wrote today.</p>
+<p>What changes is who has to have a shell. A lesson worth keeping is written down where it was learned,
+from the device it was learned on. The agent still cannot decide that a lesson is worth keeping and act
+on it alone &mdash; it says so, and the operator writes it.</p>
+<p>A skill saved now reaches the conversations started after it, never the ones already running: a
+session's skills are fixed from its first turn (<a href="#adr-019">ADR-019</a>), and that is unchanged.</p>
+</div>
+
+<div class="adr" id="adr-054">
+<div class="meta">ADR-054 · accepted</div>
+<h3>A session chooses its persona, and whether it has memory at all</h3>
+<h4>Context</h4>
+<p>The persona was one constant in the source: every conversation opened with the same paragraphs,
+whoever it was with and whatever it was for. Memory was the same the other way &mdash; a single store
+every conversation read, with no way to hold one outside it. Both are sections of the system prompt, and
+the prompt is the one thing a session's configuration already decides.</p>
+<p>Memory is also the only thing in the system that crosses a session boundary on its own. That reach is
+deliberate and is paid for by being visible, but there is no way to ask for a conversation that is
+outside it &mdash; one about someone else's affairs, or a throwaway, or anything whose contents should
+not steer next week's answers.</p>
+<h4>Decision</h4>
+<p>Both join the configuration, chosen before a session exists and fixed for its life, changed the one
+way a configuration changes: by forking (<a href="#adr-019">ADR-019</a>).</p>
+<p>A chosen persona replaces the built-in one <em>whole</em>, rather than layering over it. The built-in
+persona carries working rules as well as character &mdash; how to turn a request for later into a job,
+that a wake is unattended, that the agent cannot modify itself &mdash; and a layered persona would leave
+two sets of instructions in one prompt with no rule saying which wins. Replacement is the honest
+arrangement: what the file says is what the agent is told, and the screen that chooses says so.</p>
+<p>Memory off means both halves. The prompt carries no memory section, and the session is not offered the
+memory tool. Withdrawing only the section would leave an agent able to write items it could never read
+back &mdash; stored, invisible, and not obviously either. Nothing is deleted: what is already remembered
+is untouched, and every other conversation still has it.</p>
+<h4>Consequences</h4>
+<p>A persona that omits the working rules gets an agent that does not know them. That is the cost of
+replacement over layering, it is chosen deliberately, and the interface states it at the point of choice
+rather than leaving it to be discovered in a conversation that schedules badly.</p>
+<p>A session stored before either setting existed reads back with the built-in persona and memory on,
+which is the state it was actually in: the persona is empty-means-built-in, and memory is stored as the
+exception rather than as a flag that would default to off.</p>
+<p>A session naming a persona that has since been deleted falls back to the built-in one and says so in
+the prompt, rather than running with no persona at all.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

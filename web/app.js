@@ -134,6 +134,10 @@ function handle(e) {
     if (e.kind === 'idle') delete state.working[e.session_id];
     else if (state.working[e.session_id] == null) state.working[e.session_id] = Date.now();
     if (state.view === 'session' && e.session_id === state.arg) renderStatus();
+  } else if (e.kind === 'skills' || e.kind === 'personas') {
+    // Written from another window, or by a second browser. The screen that
+    // lists them follows; every other screen reads them when it next opens.
+    if (state.view === e.kind) render();
   } else if (e.kind === 'sessions' || e.kind === 'jobs' || e.kind === 'status') {
     if (['sessions', 'jobs', 'panels'].includes(state.view)) render();
     // The rail is on screen whatever the view is, so it follows every change to
@@ -250,7 +254,7 @@ function renderSideFoot() {
 
 // A transcript is read in a column; a list of jobs, tools, or files is read
 // across the room a laptop actually has.
-const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'files', 'panels', 'memory', 'search', 'toolpanel'];
+const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'personas', 'files', 'panels', 'memory', 'search', 'toolpanel'];
 
 function render() {
   $('foot').innerHTML = '';
@@ -265,6 +269,7 @@ function render() {
     case 'memory': return viewMemory(v);
     case 'tools': return viewTools(v);
     case 'skills': return viewSkills(v);
+    case 'personas': return viewPersonas(v);
     case 'search': return viewSearch(v);
     case 'settings': return viewSettings(v);
     case 'fork': return viewFork(v);
@@ -964,6 +969,8 @@ async function configEditor(v, current) {
     enabled_tools: current.enabled_tools == null ? null : current.enabled_tools.slice(),
     enabled_skills: current.enabled_skills == null ? null : current.enabled_skills.slice(),
     granted_env: (current.granted_env || []).slice(),
+    persona: current.persona || '',
+    memory_off: !!current.memory_off,
   };
 
   // The model is one line on the screen and a dialog to change it: the facts
@@ -1019,6 +1026,46 @@ async function configEditor(v, current) {
   };
   await picker('tools', '/tools', 'enabled_tools');
   await picker('skills', '/skills', 'enabled_skills');
+
+  // The persona is the opening section of the prompt, and choosing one replaces
+  // the built-in whole. That is said here rather than discovered later, because
+  // a persona that leaves out the working rules is a different agent and nothing
+  // downstream says why.
+  const personas = ((await api('/personas').catch(() => null)) || {}).personas || [];
+  v.append(el('h2', null, 'persona'));
+  v.append(el('p', 'note', 'Who the agent is. Choosing one replaces the built-in persona entirely, ' +
+    'working rules included. Write and edit them under Panels → Personas.'));
+  const pwrap = el('div');
+  const drawPersonas = () => {
+    pwrap.innerHTML = '';
+    for (const p of personas) {
+      const on = (cfg.persona || 'default') === p.name;
+      const b = el('button', 'pill' + (on ? ' on' : ''), p.name);
+      b.title = p.description;
+      b.onclick = () => { cfg.persona = p.name === 'default' ? '' : p.name; drawPersonas(); };
+      pwrap.append(b);
+    }
+  };
+  v.append(pwrap);
+  drawPersonas();
+
+  // Memory crosses the boundary between conversations, so turning it off is a
+  // property of the conversation rather than of the store: nothing is deleted,
+  // and this one neither reads it nor writes it.
+  v.append(el('h2', null, 'memory'));
+  v.append(el('p', 'note', 'With memory off this conversation gets no memory section and no memory ' +
+    'tool, and nothing said in it is carried anywhere else. What is already stored is untouched.'));
+  const mwrap = el('div');
+  const drawMemory = () => {
+    mwrap.innerHTML = '';
+    for (const [label, off] of [['on', false], ['off', true]]) {
+      const b = el('button', 'pill' + (cfg.memory_off === off ? ' on' : ''), label);
+      b.onclick = () => { cfg.memory_off = off; drawMemory(); };
+      mwrap.append(b);
+    }
+  };
+  v.append(mwrap);
+  drawMemory();
 
   // Names, not values. The agent already holds the values; what a conversation
   // is given is permission to see one, and a name is safe to show, export, and
@@ -1185,6 +1232,7 @@ async function viewPanels(v) {
     ['memory', 'Memory', 'What survives a conversation'],
     ['tools', 'Tools', 'Loaded tools and failures'],
     ['skills', 'Skills', 'What the agent knows how to do'],
+    ['personas', 'Personas', 'Who the agent is when a conversation starts'],
     ['search', 'Search', 'Full text across every transcript'],
   ];
   const grid = el('div', 'cards');
@@ -1448,9 +1496,30 @@ function reachList(t) {
   return box;
 }
 
-async function viewSkills(v) {
-  setHeader('Skills', true);
-  const data = await api('/skills');
+// A skill and a persona are the same thing on disk: a Markdown file with
+// frontmatter that the operator writes. So they are listed, written, and deleted
+// through one screen, and only the wording differs.
+const AUTHORED = {
+  skills: {
+    path: '/skills', list: 'skills', one: 'skill',
+    blurb: 'Prose that teaches the agent how to do one thing. Only the name and description reach the ' +
+      'system prompt; the agent reads the body when it judges the skill relevant. A skill you add here ' +
+      'is in the conversations started after it, not the ones already running.',
+  },
+  personas: {
+    path: '/personas', list: 'personas', one: 'persona',
+    blurb: 'The opening section of the system prompt. Choosing one for a conversation replaces the ' +
+      'built-in persona whole — including its working rules about scheduling, unattended wakes, and ' +
+      'what the agent cannot do — so write in the ones you want kept.',
+  },
+};
+
+async function viewAuthored(v, kind) {
+  const spec = AUTHORED[kind];
+  const title = kind === 'skills' ? 'Skills' : 'Personas';
+  setHeader(title, true, [{ label: 'New ' + spec.one, fn: () => editAuthored(kind, null) }]);
+  const data = await api(spec.path);
+  v.append(el('p', 'note', spec.blurb));
   const grid = el('div', 'cards');
   v.append(grid);
   for (const f of (data.failures || [])) {
@@ -1459,22 +1528,109 @@ async function viewSkills(v) {
     m.append(el('div', 'n', f.dir), el('div', 's', f.reason), el('span', 'tag bad', 'skipped'));
     row.append(m); grid.append(row);
   }
-  if (!data.skills.length && !(data.failures || []).length) v.append(el('div', 'empty', 'No skills on disk.'));
-  for (const s of data.skills) {
+  const items = data[spec.list] || [];
+  if (!items.length && !(data.failures || []).length) v.append(el('div', 'empty', 'Nothing on disk.'));
+  for (const s of items) {
     const row = el('button', 'row-item');
     const m = el('div', 'm');
-    m.append(el('div', 'n', s.name), el('div', 's', s.description), el('span', 'tag', s.bytes + ' bytes'));
+    m.append(el('div', 'n', s.name), el('div', 's', s.description));
+    const tags = el('div');
+    tags.append(el('span', 'tag', s.bytes + ' bytes'));
+    if (!s.editable) tags.append(el('span', 'tag', 'ships with the agent'));
+    if (kind === 'skills' && s.default_enabled === false) tags.append(el('span', 'tag', 'off unless chosen'));
+    m.append(tags);
     row.append(m);
-    row.onclick = async () => {
-      const full = await api('/skills/' + s.name);
-      const v2 = $('view'); v2.innerHTML = '';
-      setHeader(s.name, true);
-      const pre = el('pre', null, full.body);
-      pre.style.whiteSpace = 'pre-wrap'; pre.style.fontSize = '13px';
-      v2.append(pre);
-    };
+    row.onclick = () => editAuthored(kind, s.name);
     grid.append(row);
   }
+}
+
+function viewSkills(v) { return viewAuthored(v, 'skills'); }
+function viewPersonas(v) { return viewAuthored(v, 'personas'); }
+
+// editAuthored opens one document for reading, and for writing when it is the
+// operator's. What ships in the image is read-only: writing a copy would shadow
+// the original until the next deployment brought it back, which is the one state
+// nothing on screen could explain.
+async function editAuthored(kind, name) {
+  const spec = AUTHORED[kind];
+  const doc = name ? await api(spec.path + '/' + encodeURIComponent(name)) : null;
+  const v = $('view');
+  v.innerHTML = '';
+  const editable = !doc || doc.editable;
+
+  if (doc && !editable) {
+    setHeader(doc.name, true);
+    v.append(el('p', 'note', 'This ' + spec.one + ' ships with the agent. It is read-only here; ' +
+      'copy it under another name to write your own.'));
+    v.append(el('div', 's', doc.description));
+    const pre = el('pre', null, doc.body);
+    pre.style.whiteSpace = 'pre-wrap'; pre.style.fontSize = '13px';
+    v.append(pre);
+    return;
+  }
+
+  setHeader(doc ? doc.name : 'New ' + spec.one, true, doc ? [{
+    label: 'Delete', danger: true, fn: async () => {
+      try { await del(spec.path + '/' + encodeURIComponent(doc.name)); render(); }
+      catch (e) { toast({ title: 'Not deleted', body: String(e.message) }); }
+    }
+  }] : null);
+
+  v.append(el('h2', null, 'name'));
+  const nameInput = el('input', 'text');
+  nameInput.placeholder = 'one-word-name';
+  if (doc) { nameInput.value = doc.name; nameInput.disabled = true; }
+  v.append(nameInput);
+
+  v.append(el('h2', null, 'description'));
+  v.append(el('p', 'note', kind === 'skills'
+    ? 'One line. This is what the agent reads in every prompt to decide whether to open the skill.'
+    : 'One line, so you can tell them apart when you start a conversation.'));
+  const desc = el('input', 'text');
+  if (doc) desc.value = doc.description;
+  v.append(desc);
+
+  v.append(el('h2', null, 'body'));
+  const body = el('textarea', 'text');
+  body.rows = 20;
+  if (doc) body.value = doc.body;
+  v.append(body);
+
+  let on = doc ? doc.default_enabled !== false : true;
+  if (kind === 'skills') {
+    v.append(el('h2', null, 'by default'));
+    v.append(el('p', 'note', 'A skill that is on by default is indexed in every conversation that did ' +
+      'not choose its skills. Turn it off for one a conversation should set out to use.'));
+    const toggle = el('button', 'pill' + (on ? ' on' : ''), on ? 'on by default' : 'off unless chosen');
+    toggle.onclick = () => {
+      on = !on;
+      toggle.className = 'pill' + (on ? ' on' : '');
+      toggle.textContent = on ? 'on by default' : 'off unless chosen';
+    };
+    v.append(toggle);
+  }
+
+  const save = el('button', 'btn primary', 'Save');
+  save.onclick = async () => {
+    const payload = { name: nameInput.value.trim(), description: desc.value.trim(), body: body.value };
+    if (kind === 'skills') payload.default_enabled = on;
+    try {
+      if (doc) {
+        await api(spec.path + '/' + encodeURIComponent(doc.name), {
+          method: 'PUT', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        await post(spec.path, payload);
+      }
+      render();
+    } catch (e) {
+      toast({ title: 'Not saved', body: String(e.message) });
+    }
+  };
+  const done = el('div', 'finish'); done.append(save);
+  v.append(done);
 }
 
 async function viewSearch(v) {
