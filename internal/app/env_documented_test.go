@@ -33,7 +33,9 @@ var toolContract = map[string]bool{
 // settingsAlsoGranted are read from the agent's environment but reach a tool
 // only in a session granted them. They belong in the file: an operator has to
 // set them somewhere before any session can be granted them.
-var settingsAlsoGranted = map[string]bool{"GH_TOKEN": true, "AGENT_REPO": true}
+var settingsAlsoGranted = map[string]bool{
+	"GH_TOKEN": true, "AGENT_REPO": true, "GITLAB_TOKEN": true,
+}
 
 func TestEverySettingIsInTheExampleEnvironment(t *testing.T) {
 	example, err := os.ReadFile(filepath.Join("..", "..", ".env.example"))

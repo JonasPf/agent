@@ -1578,6 +1578,44 @@ whose proxy points at 8080 must point at 7770.</p>
 every conversation. Both are what those tools are for.</p>
 </div>
 
+<div class="adr" id="adr-052">
+<div class="meta">ADR-052 · accepted</div>
+<h3>A forge client authenticates from the environment, never from a file</h3>
+<h4>Context</h4>
+<p>The image carries <code>gh</code> so the agent can propose changes to itself
+(<a href="#adr-036">ADR-036</a>). Working on any other repository needs the same two things: a client
+and a credential. The obvious way to give a client its credential is the way its own documentation
+says &mdash; <code>gh auth login</code> &mdash; which writes a token under <code>$HOME</code>. Nothing
+under <code>$HOME</code> is readable to a tool: Landlock grants a tool its own session's working
+directory, the tool directory and the system paths, and denies the rest
+(<a href="#adr-034">ADR-034</a>). So the login appears to succeed and the next call finds nothing. An
+ssh key at <code>~/.ssh</code>, a credential helper in <code>~/.gitconfig</code> and a
+<code>~/.netrc</code> all fail the same way, and each fails as a puzzle rather than as a refusal.</p>
+<h4>Decision</h4>
+<p>The image carries <code>glab</code> beside <code>gh</code>, pinned to a version and two digests the
+way <code>gh</code> is. Both read their credential from the environment &mdash; <code>GH_TOKEN</code>,
+<code>GITLAB_TOKEN</code> &mdash; which is a name a session is granted
+(<a href="#adr-045">ADR-045</a>) rather than a file someone writes. <code>git</code> authenticates the
+same way, with the token in the clone URL, which is what <code>AGENT_REPO</code> already does.</p>
+<p><code>working-on-a-repository</code> says this in prose, including what not to reach for, and ships
+off (<a href="#adr-050">ADR-050</a>): a conversation that did not set out to work on a repository has
+no use for it.</p>
+<h4>Consequences</h4>
+<p>A credential reaches one conversation and is fixed for its life. There is no login to run and no key
+to install, and the skill says so before the agent spends a turn discovering it. A repository the token
+does not cover is refused by the forge, which is where that boundary belongs.</p>
+<p><code>glab</code> creates a configuration directory before it runs any command, and its default is
+under the home directory, which no tool can write; pointed at the session's own directory with
+<code>GLAB_CONFIG_DIR</code> it runs, and <code>gh</code> needs nothing of the kind. The skill says so
+and the userland test does it. That is the shape this decision predicts: a client is fitted to the
+boundary from outside, rather than the boundary being opened to admit the client.</p>
+<p>The token is in the clone URL, so it is written into the checkout's <code>.git/config</code>, inside
+the session's working directory and as visible as anything else there; the skill says not to print it.
+A self-hosted forge needs <code>GH_HOST</code> or <code>GITLAB_HOST</code>, which are grantable names
+like any other and need no change here. Bumping <code>glab</code> moves two digests. Nothing in the
+agent knows either client exists.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

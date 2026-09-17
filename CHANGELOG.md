@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-17
+
+- The image now carries `glab`, GitLab's command-line client, beside `gh`. A
+  conversation can work on a GitLab project the way it already works on a GitHub
+  one, and `GITLAB_TOKEN` joins `GH_TOKEN` among the credentials you can grant a
+  conversation under **Controls → granted environment**.
+- A new skill, **working on a repository**, says how to do that on anyone's
+  repository: where the credential comes from, why `gh auth login` and ssh keys
+  cannot work in here, how to clone over HTTPS instead, and that a pushed branch
+  is a proposal rather than a finished change. Like *changing yourself*, it stays
+  out of a conversation that did not ask for it — tick it under **Controls** when
+  you set out to use it.
+
 ## 2026-09-16
 
 - A tool call in a conversation now carries a **logs** toggle when the tool

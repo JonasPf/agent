@@ -132,23 +132,29 @@ func TestTheSkillListSaysWhichSkillsShipOff(t *testing.T) {
 	}
 }
 
-// The criterion as shipped: the skill that proposes changes to the agent is
-// off unless a conversation turns it on, and it is the only one.
-func TestChangingYourselfShipsOff(t *testing.T) {
+// The criterion as shipped: a skill about changing code is off unless a
+// conversation turns it on — the agent's own code or anyone else's. Both walk
+// the agent through cloning and pushing, both want a credential a conversation
+// has to be granted, and neither belongs in the index of a conversation about
+// the weather. Every other shipped skill is on.
+func TestTheSkillsThatChangeCodeShipOff(t *testing.T) {
 	shipped := NewSkills(filepath.Join("..", "..", "skills"))
 	if len(shipped.Failures()) > 0 {
 		t.Fatalf("a shipped skill does not load: %+v", shipped.Failures())
 	}
-	sk := shipped.Get("changing-yourself")
-	if sk == nil {
-		t.Fatal("changing-yourself is not shipped")
-	}
-	if sk.DefaultEnabled {
-		t.Error("changing-yourself is on in every conversation that did not choose its skills")
+	off := map[string]bool{"changing-yourself": true, "working-on-a-repository": true}
+	for name := range off {
+		sk := shipped.Get(name)
+		if sk == nil {
+			t.Fatalf("%s is not shipped", name)
+		}
+		if sk.DefaultEnabled {
+			t.Errorf("%s is on in every conversation that did not choose its skills", name)
+		}
 	}
 	for _, other := range shipped.All() {
-		if other.Name != "changing-yourself" && !other.DefaultEnabled {
-			t.Errorf("%s ships off; only changing-yourself should", other.Name)
+		if !off[other.Name] && !other.DefaultEnabled {
+			t.Errorf("%s ships off; only the skills that change code should", other.Name)
 		}
 	}
 }

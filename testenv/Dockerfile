@@ -14,6 +14,20 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium curl wget python3 perl \
  && rm -rf /var/lib/apt/lists/*
 
+# gh and glab, which the runtime image fetches from their own releases rather
+# than from apt. The userland test proves the shell can run what the image
+# ships, and it can only prove that where they are. The versions are the ones
+# ../Dockerfile pins and move with them; the digests are checked there, where
+# the binary is shipped rather than only tested against.
+ARG GH_VERSION=2.100.0
+ARG GLAB_VERSION=1.118.0
+RUN set -eu; \
+    arch="$(dpkg --print-architecture)"; \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" \
+      | tar -xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_${arch}/bin/gh"; \
+    curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/glab_${GLAB_VERSION}_linux_${arch}.tar.gz" \
+      | tar -xz --strip-components=1 -C /usr/local/bin bin/glab
+
 COPY --from=docker.io/library/node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 
 ARG TASK_VERSION=v3.48.0

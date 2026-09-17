@@ -4,10 +4,11 @@
 # is ever modified in place.
 #
 # Two stages. The first compiles the agent and every tool the way `task build`
-# does, and fetches the one binary that is not built here. The second carries
+# does, and fetches the two binaries that are not built here. The second carries
 # them, the interface, the skills, and the userland the tools need — a shell,
-# because tools/bash execs /bin/sh; git and gh, because the agent proposes
-# changes to itself by opening a pull request; chromium, because reading most of
+# because tools/bash execs /bin/sh; git, gh and glab, because the agent proposes
+# changes — to itself, and to whatever other repository it is asked to work on —
+# by opening a pull request; chromium, because reading most of
 # the web means running it; curl, wget, python3 and perl, because a shell is
 # only as useful as the programs it can call, and these are the ones reached for
 # first. The sandbox needs nothing here: Landlock is the kernel's, and the agent
@@ -65,6 +66,23 @@ RUN set -eu; \
     echo "${sha}  ${tarball}" | sha256sum -c -; \
     tar -xzf "$tarball" --strip-components=2 -C /out "gh_${GH_VERSION}_linux_${TARGETARCH}/bin/gh"
 
+# glab, for the same reason and from its own release. GitLab publishes both
+# digests in the release's checksums file; bump the version and both together.
+ARG GLAB_VERSION=1.118.0
+ARG GLAB_SHA256_amd64=f3782ddb62b6ab20d0031699ea7b43f345dc6f63e991883660e21343b9524931
+ARG GLAB_SHA256_arm64=0f6171766dd7f8246b7ce85bab18bd99d57ce2538e0ec9121c48fe004308eac4
+RUN set -eu; \
+    tarball="glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz"; \
+    case "$TARGETARCH" in \
+      amd64) sha="$GLAB_SHA256_amd64" ;; \
+      arm64) sha="$GLAB_SHA256_arm64" ;; \
+      *) echo "no pinned digest for $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSLo "$tarball" \
+      "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/${tarball}"; \
+    echo "${sha}  ${tarball}" | sha256sum -c -; \
+    tar -xzf "$tarball" --strip-components=1 -C /out bin/glab
+
 FROM debian:bookworm-slim
 # git for the clone and the push. ca-certificates is what makes every outbound
 # call verifiable, the model gateway included. The sandbox adds nothing to this
@@ -88,6 +106,7 @@ RUN useradd --create-home --uid 10001 agent
 WORKDIR /app
 COPY --from=build /out/agent /app/agent
 COPY --from=build /out/gh /usr/local/bin/gh
+COPY --from=build /out/glab /usr/local/bin/glab
 COPY --from=build /out/tools /app/tools
 COPY web /app/web
 COPY skills /app/skills

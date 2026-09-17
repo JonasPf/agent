@@ -285,7 +285,12 @@ there is no code for it.</p>
 
 <p>That is the whole of it. No package in the agent knows this capability exists: no tool, no route on
 the API, no branch in the loop. It is composition &mdash; a shell, a network, and a document &mdash;
-and the same three parts would let the agent work on any other repository just as well.</p>
+and the same three parts let the agent work on any other repository just as well. That is what
+<code>skills/working-on-a-repository.md</code> is: the same composition pointed at someone else's code,
+with <code>glab</code> beside <code>gh</code> in the image and <code>GITLAB_TOKEN</code> beside
+<code>GH_TOKEN</code> among the names a session can be granted
+(<a href="adrs.html#adr-052">ADR-052</a>). Neither client is logged in, because nothing here can write
+the file a login would leave.</p>
 
 <p><strong>Nothing in the agent enforces the procedure.</strong> A skill is advice to a model that
 already has a shell; it shapes what the agent does and constrains nothing. Every control that makes

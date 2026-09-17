@@ -75,5 +75,21 @@ jobs:
       - name: Report the browser
         run: /usr/bin/chromium --version
 
+      # gh and glab come from their own releases, the way the runtime image
+      # fetches them rather than the way apt would. The userland test proves the
+      # shell can run what the image ships, and it can only prove that where
+      # they are. These versions are the ones Dockerfile pins, and
+      # testenv/Dockerfile carries the same two lines; the three move together.
+      - name: Install the forge clients
+        env:
+          GH_VERSION: 2.100.0
+          GLAB_VERSION: 1.118.0
+        run: |
+          arch="$(dpkg --print-architecture)"
+          curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" \
+            | tar -xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_${arch}/bin/gh"
+          curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/glab_${GLAB_VERSION}_linux_${arch}.tar.gz" \
+            | tar -xz --strip-components=1 -C /usr/local/bin bin/glab
+
       - name: task check
         run: task check
