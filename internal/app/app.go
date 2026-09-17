@@ -21,8 +21,15 @@ type Config struct {
 	Workspace string
 	ToolsDir  string
 	SkillsDir string
-	WebDir    string
-	EnvFile   string
+	// UserSkillsDir and PersonasDir hold what the operator writes through the
+	// interface. They sit beside the data rather than beside the image, because
+	// the image is replaced on every deployment and the data directory is the
+	// one thing a deployment keeps. They are outside every path the sandbox
+	// makes writable, so a tool cannot reach them (ADR-053).
+	UserSkillsDir string
+	PersonasDir   string
+	WebDir        string
+	EnvFile       string
 	// ChangelogPath is the file the version screen reads. It ships with the
 	// app rather than being derived: the container has no repository.
 	ChangelogPath string
@@ -143,6 +150,8 @@ func LoadConfig() Config {
 		Workspace:     filepath.Join(state, "workspace"),
 		ToolsDir:      filepath.Join(home, "tools"),
 		SkillsDir:     filepath.Join(home, "skills"),
+		UserSkillsDir: filepath.Join(state, "skills"),
+		PersonasDir:   filepath.Join(state, "personas"),
 		WebDir:        filepath.Join(home, "web"),
 		ChangelogPath: filepath.Join(home, "CHANGELOG.md"),
 		ReadPaths:     os.Getenv("AGENT_READ_PATHS"),
@@ -161,14 +170,15 @@ func LoadConfig() Config {
 }
 
 type App struct {
-	cfg     Config
-	sandbox *Sandbox
-	store   *Store
-	tools   *Registry
-	skills  *Skills
-	or      *OpenRouter
-	hub     *Hub
-	sched   *Scheduler
+	cfg      Config
+	sandbox  *Sandbox
+	store    *Store
+	tools    *Registry
+	skills   *Skills
+	personas *Personas
+	or       *OpenRouter
+	hub      *Hub
+	sched    *Scheduler
 
 	// calls are the tool calls running now, which the tool API answers; toolAddr
 	// is where it listens.
@@ -189,7 +199,8 @@ func Run() error {
 	if cfg.APIKey == "" {
 		log.Println("warning: OPENROUTER_API_KEY is not set; model calls will fail")
 	}
-	for _, d := range []string{cfg.DataDir, cfg.Workspace, cfg.ToolsDir, cfg.SkillsDir} {
+	for _, d := range []string{cfg.DataDir, cfg.Workspace, cfg.ToolsDir, cfg.SkillsDir,
+		cfg.UserSkillsDir, cfg.PersonasDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
@@ -209,14 +220,15 @@ func Run() error {
 	}
 	sandbox := NewSandbox(cfg)
 	a := &App{
-		cfg:     cfg,
-		sandbox: sandbox,
-		store:   st,
-		tools:   NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
-		skills:  NewSkills(cfg.SkillsDir),
-		or:      NewOpenRouter(cfg.APIKey),
-		hub:     NewHub(),
-		queues:  map[string]chan func(){},
+		cfg:      cfg,
+		sandbox:  sandbox,
+		store:    st,
+		tools:    NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
+		skills:   NewSkills(cfg.SkillsDir, cfg.UserSkillsDir),
+		personas: NewPersonas(cfg.PersonasDir),
+		or:       NewOpenRouter(cfg.APIKey),
+		hub:      NewHub(),
+		queues:   map[string]chan func(){},
 	}
 	// Before any tool can run, and before the sandbox is described: the tool
 	// API's port is part of the policy.

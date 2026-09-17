@@ -15,13 +15,20 @@ import (
 // so in its own frontmatter, and a session that did not choose its skills gets
 // every skill except those.
 
+// writeSkill puts a skill in the root that ships with the image, which is where
+// every skill came from before the operator could write one.
 func writeSkill(t *testing.T, a *App, name, extra string) {
 	t.Helper()
-	if err := os.MkdirAll(a.skills.dir, 0o755); err != nil {
+	writeSkillIn(t, a.skills.shipped, name, extra)
+}
+
+func writeSkillIn(t *testing.T, dir, name, extra string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	body := "---\nname: " + name + "\ndescription: The " + name + " skill.\n" + extra + "---\nBody.\n"
-	if err := os.WriteFile(filepath.Join(a.skills.dir, name+".md"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, name+".md"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -138,7 +145,7 @@ func TestTheSkillListSaysWhichSkillsShipOff(t *testing.T) {
 // has to be granted, and neither belongs in the index of a conversation about
 // the weather. Every other shipped skill is on.
 func TestTheSkillsThatChangeCodeShipOff(t *testing.T) {
-	shipped := NewSkills(filepath.Join("..", "..", "skills"))
+	shipped := NewSkills(filepath.Join("..", "..", "skills"), "")
 	if len(shipped.Failures()) > 0 {
 		t.Fatalf("a shipped skill does not load: %+v", shipped.Failures())
 	}

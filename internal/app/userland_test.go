@@ -24,7 +24,7 @@ func TestTheShellRunsTheProgramsTheImageShips(t *testing.T) {
 	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"), ToolsDir: "../../tools"}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
-		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
+		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {

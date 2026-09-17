@@ -31,9 +31,11 @@ func newTestAppAt(t *testing.T, dir string) *App {
 		cfg:     cfg,
 		store:   st,
 		tools:   NewRegistry(filepath.Join(dir, "tools"), DBPath(dir), st.DB()),
-		skills:  NewSkills(filepath.Join(dir, "skills")),
-		hub:     NewHub(),
-		queues:  map[string]chan func(){},
+		skills: NewSkills(filepath.Join(dir, "skills"),
+			filepath.Join(dir, "user-skills")),
+		personas: NewPersonas(filepath.Join(dir, "personas")),
+		hub:      NewHub(),
+		queues:   map[string]chan func(){},
 	}
 	a.registerBuiltins()
 	return a

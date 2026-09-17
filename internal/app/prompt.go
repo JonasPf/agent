@@ -74,14 +74,25 @@ what you are sent, by a written summary of them. Nothing is deleted — what is 
 away stays on disk and session_search still finds it, so look there rather than
 assuming something earlier in this conversation is lost.`,
 		sess.ID, sess.Model, a.sessionWorkspace(sess.ID), sess.CompactAtTokens)
-
-	secs := []Section{
-		{Name: "persona", Text: persona},
-		{Name: "memory", Text: strings.TrimRight(memText.String(), "\n"), Editable: true},
-		{Name: "skills_index", Text: strings.TrimRight(skillText.String(), "\n")},
-		{Name: "platform", Text: platform},
-		{Name: "tool_schemas", Text: string(schemas)},
+	if sess.MemoryOff {
+		platform += "\nMemory is off for this conversation. You have no memory section and no memory " +
+			"tool, and nothing said here is carried into another conversation. Say so if asked to " +
+			"remember something, rather than agreeing to."
 	}
+
+	secs := []Section{{Name: "persona", Text: a.personas.Text(sess.Persona)}}
+	// A conversation with memory off has no memory section rather than an empty
+	// one: an empty section says "you remember nothing yet", and this session
+	// remembers nothing ever. The platform section says which it is.
+	if !sess.MemoryOff {
+		secs = append(secs, Section{Name: "memory",
+			Text: strings.TrimRight(memText.String(), "\n"), Editable: true})
+	}
+	secs = append(secs,
+		Section{Name: "skills_index", Text: strings.TrimRight(skillText.String(), "\n")},
+		Section{Name: "platform", Text: platform},
+		Section{Name: "tool_schemas", Text: string(schemas)},
+	)
 	for i := range secs {
 		secs[i].Tokens = estTokens(secs[i].Text)
 	}

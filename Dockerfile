@@ -119,7 +119,8 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 # other — and is not a boundary: Landlock is, and it holds whether or not the
 # two share a mount. Both are created here so a fresh named volume inherits an
 # owner before anything runs.
-RUN mkdir -p /app/state/data /app/state/workspace && chown -R agent:agent /app
+RUN mkdir -p /app/state/data /app/state/workspace /app/state/skills /app/state/personas \
+    && chown -R agent:agent /app
 
 USER agent
 # Two roots and nothing else. /app/state is what outlives the container and is

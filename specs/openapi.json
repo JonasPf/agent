@@ -844,6 +844,187 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Write a skill.",
+        "description": "The operator writes skills; the agent cannot. The file is stored outside the image, so it survives a deployment. A name that collides with a skill shipping in the image is refused.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored."
+          },
+          "409": {
+            "description": "Refused: the name collides with a shipped skill, or a required field is missing."
+          }
+        }
+      }
+    },
+    "/skills/{name}": {
+      "get": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Read a skill's full text.",
+        "responses": {
+          "200": {
+            "description": "The skill."
+          },
+          "404": {
+            "description": "No such skill."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Replace a skill the operator wrote.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkillWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored."
+          },
+          "409": {
+            "description": "Refused: the skill ships in the image, or a required field is missing."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Delete a skill the operator wrote.",
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "409": {
+            "description": "Refused: the skill ships in the image, or there is no such skill."
+          }
+        }
+      }
+    },
+    "/personas": {
+      "get": {
+        "tags": [
+          "personas"
+        ],
+        "summary": "List personas. The built-in one is always among them.",
+        "responses": {
+          "200": {
+            "description": "Personas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Persona"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "personas"
+        ],
+        "summary": "Write a persona.",
+        "description": "A persona is the opening section of the system prompt. A session that chooses one gets it in place of the built-in persona entirely.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored."
+          },
+          "409": {
+            "description": "Refused: the name is the built-in persona's, or a required field is missing."
+          }
+        }
+      }
+    },
+    "/personas/{name}": {
+      "get": {
+        "tags": [
+          "personas"
+        ],
+        "summary": "Read a persona's full text.",
+        "responses": {
+          "200": {
+            "description": "The persona."
+          },
+          "404": {
+            "description": "No such persona."
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "personas"
+        ],
+        "summary": "Replace a persona the operator wrote.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored."
+          },
+          "409": {
+            "description": "Refused: the persona is the built-in one, or a required field is missing."
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "personas"
+        ],
+        "summary": "Delete a persona the operator wrote.",
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "409": {
+            "description": "Refused: the persona is the built-in one, or there is no such persona."
+          }
+        }
       }
     },
     "/uploads": {
@@ -1712,6 +1893,76 @@
           "enabled": {
             "type": "boolean",
             "description": "With ?session_id=, whether that session has it; otherwise the default."
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "Whether the operator wrote this one. A skill that ships in the image is read-only."
+          }
+        }
+      },
+      "SkillWrite": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "body"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Letters, digits, hyphens, and underscores. It is the identifier and the file name."
+          },
+          "description": {
+            "type": "string",
+            "description": "One line. This and the name are all that reach the system prompt."
+          },
+          "body": {
+            "type": "string",
+            "description": "The prose the agent reads when it opens the skill."
+          },
+          "default_enabled": {
+            "type": "boolean",
+            "description": "Whether a session that did not choose its skills has this one. Defaults to true."
+          }
+        }
+      },
+      "Persona": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "One line, so personas can be told apart when a conversation is configured."
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "editable": {
+            "type": "boolean",
+            "description": "Whether the operator wrote this one. The built-in persona is read-only."
+          }
+        }
+      },
+      "PersonaWrite": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "body"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "description": "One line."
+          },
+          "body": {
+            "type": "string",
+            "description": "The whole opening section of the system prompt for a session that chooses this persona."
           }
         }
       }

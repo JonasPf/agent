@@ -2,6 +2,30 @@
 
 ## 2026-09-17
 
+- You can now write **skills** yourself, from the interface, without a shell.
+  **Panels → Skills** lists what is there and opens each one: the skills that
+  ship with the agent are read-only, and the ones you write can be created,
+  edited, given a one-line description, switched between on-by-default and
+  off-unless-chosen, and deleted. A skill you add is indexed in the
+  conversations you start after it, not the ones already running.
+- **Personas** are new, and have a panel of their own beside Skills. A persona
+  is the opening section of the system prompt — who the agent is — and you pick
+  one when you start a conversation, under **Controls → persona**. Choosing one
+  replaces the built-in persona *entirely*, its working rules about scheduling
+  and unattended wakes included, so write in the parts you want kept. The
+  built-in persona is always there and is what every existing conversation runs
+  on.
+- A conversation can now run with **memory off**, chosen under **Controls →
+  memory** before it starts. It gets no memory section and no memory tool, and
+  nothing said in it reaches anywhere else. Nothing already stored is deleted,
+  and every other conversation still has it.
+- Persona and memory join the model, tools, skills, and grants as things fixed
+  for a conversation's life: to change one, fork, and both transcripts say what
+  changed.
+- What you write is stored beside your data rather than inside the image, so it
+  survives an upgrade. Neither directory is writable by a tool — the agent still
+  cannot write its own skills or personas, and the kernel is what stops it.
+
 - The image now carries `glab`, GitLab's command-line client, beside `gh`. A
   conversation can work on a GitLab project the way it already works on a GitHub
   one, and `GITLAB_TOKEN` joins `GH_TOKEN` among the credentials you can grant a

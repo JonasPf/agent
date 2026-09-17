@@ -146,7 +146,7 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
-		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
+		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
@@ -433,7 +433,7 @@ func confinedApp(t *testing.T, toolsDir, skillsDir, readPaths string) (*App, str
 		EnvFile: envFile, ReadPaths: readPaths}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
-		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
+		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
@@ -494,7 +494,7 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
-		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
+		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
@@ -662,7 +662,7 @@ func TestOneVolumeIsStillTwoTrustLevels(t *testing.T) {
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(data), st.DB()),
-		skills: NewSkills(cfg.SkillsDir), hub: NewHub(),
+		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {

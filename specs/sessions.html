@@ -119,8 +119,14 @@ See <a href="memory.html">Memory</a>.
 
 <h2>Configuration</h2>
 
-<p>A session's model, its tools, and its skills are one thing: the configuration. It is chosen before
-the conversation starts and fixed for the session's entire life.</p>
+<p>A session's model, its tools, its skills, its persona, and whether it has memory are one thing: the
+configuration. It is chosen before the conversation starts and fixed for the session's entire life.</p>
+
+<p>Persona and memory are in it for the same reason the rest is: both are sections of the system prompt
+(<a href="adrs.html#adr-054">ADR-054</a>). A <strong>persona</strong> is the opening section &mdash; who
+the agent is &mdash; and choosing one replaces the built-in persona whole, working rules included, rather
+than layering over it. <strong>Memory off</strong> means the prompt carries no memory section and the
+session is offered no memory tool; nothing stored is deleted, and every other conversation still has it.</p>
 
 <p>So the prompt carries exactly what the session can use. The tool definitions in position zero are the
 tools that are callable; the skills index lists the skills that can be read. There is no second,
@@ -152,7 +158,7 @@ configuration it was created under.</p>
 
 <div class="note">
 <strong>What is still mutable.</strong> Title and status. Neither appears in the prompt. Model, tools,
-and skills never change at all.
+skills, grants, persona, and memory never change at all.
 </div>
 
 <p>A new session inherits the configuration of the most recently used one, and a fork inherits its
@@ -164,7 +170,14 @@ screen, reached the same way, and both are answered before the session exists.</
 <ul>
 <li>The prompt defines exactly the session's enabled tools, and indexes exactly its enabled skills.</li>
 <li>A session's configuration is chosen before it is created and cannot be changed afterwards.</li>
-<li>A request to change a session's model, tools, or skills is refused, and names forking as the way.</li>
+<li>A request to change a session's model, tools, skills, persona, or memory setting is refused, and names forking as the way.</li>
+<li>A session that chose no persona runs on the built-in one, and the prompt's opening section is exactly that persona.</li>
+<li>A session that chose a persona has that persona's text as its opening section, and none of the built-in one.</li>
+<li>A session naming a persona that no longer exists falls back to the built-in one and says so where it is read.</li>
+<li>A session with memory off has no memory section in its prompt, is not offered the memory tool, and no stored item reaches any section of its prompt.</li>
+<li>A session with memory off is told so, so it declines to remember rather than agreeing to.</li>
+<li>Turning memory off deletes nothing, and every other session still has what is stored.</li>
+<li>A session stored before the persona and memory settings existed reads back on the built-in persona with memory on.</li>
 <li>Every session has a prompt entry from the moment it exists.</li>
 <li>Forking accepts a configuration; anything not given is inherited from the origin.</li>
 <li>A fork that changes the configuration names what changed, in both sessions' transcripts.</li>

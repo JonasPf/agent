@@ -96,6 +96,16 @@ type SessionConfig struct {
 	Model         string   `json:"model"`
 	EnabledTools  []string `json:"enabled_tools"`  // nil means every tool
 	EnabledSkills []string `json:"enabled_skills"` // nil means every skill that is on by default
+	// Persona names the opening section of the system prompt. Empty is the
+	// built-in one, which is what every session had before there was a choice.
+	Persona string `json:"persona,omitempty"`
+	// MemoryOff withholds memory from this conversation: no memory section in
+	// the prompt, and no memory tool to write one with.
+	//
+	// Stated as the exception rather than as an Enabled flag, because the zero
+	// value is what every session already stored: a session written before this
+	// field existed reads back with memory on, which is what it had.
+	MemoryOff bool `json:"memory_off,omitempty"`
 	// GrantedEnv names the environment variables this conversation's tools
 	// receive beyond the ones every tool is promised. Names, never values: the
 	// value stays wherever the agent's own environment gets it, so a grant can
@@ -144,7 +154,19 @@ type Session struct {
 	WorkingSeconds *float64 `json:"working_seconds,omitempty"`
 }
 
-func (s *Session) toolEnabled(name string) bool { return inSet(s.EnabledTools, name) }
+// memoryTool is the tool that writes what the prompt's memory section shows.
+const memoryTool = "memory"
+
+func (s *Session) toolEnabled(name string) bool {
+	// A conversation with memory off is not offered the tool that writes it.
+	// The prompt carries no memory section, so an item written here would be
+	// invisible to the conversation that wrote it and to every one after —
+	// stored, unreadable, and not obviously either.
+	if s.MemoryOff && name == memoryTool {
+		return false
+	}
+	return inSet(s.EnabledTools, name)
+}
 
 // skillEnabled is asked of a skill rather than a name, because a session that
 // did not choose its skills has the ones that are on by default, and only the
@@ -159,7 +181,8 @@ func (s *Session) skillEnabled(sk *Skill) bool {
 // sameAs reports whether two configurations would produce the same prompt.
 func (c SessionConfig) sameAs(o SessionConfig) bool {
 	return c.Model == o.Model && sameSet(c.EnabledTools, o.EnabledTools) &&
-		sameSet(c.EnabledSkills, o.EnabledSkills)
+		sameSet(c.EnabledSkills, o.EnabledSkills) &&
+		c.Persona == o.Persona && c.MemoryOff == o.MemoryOff
 }
 
 func sameSet(a, b []string) bool {

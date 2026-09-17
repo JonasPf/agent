@@ -391,11 +391,12 @@ func RunEvals(model string, only []string, w io.Writer) error {
 	dbPath := DBPath(cfg.DataDir)
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
-		skills: NewSkills(cfg.SkillsDir),
-		or:     NewOpenRouter(cfg.APIKey),
-		hub:    NewHub(),
-		queues: map[string]chan func(){}}
+		tools:    NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
+		skills:   NewSkills(cfg.SkillsDir, cfg.UserSkillsDir),
+		personas: NewPersonas(cfg.PersonasDir),
+		or:       NewOpenRouter(cfg.APIKey),
+		hub:      NewHub(),
+		queues:   map[string]chan func(){}}
 	// Tools reach the system over the tool API, so the eval serves its own,
 	// against this store, on a port of its own.
 	stopTools, err := a.listenTools()
