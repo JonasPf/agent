@@ -65,7 +65,6 @@ func TestTheConversationSizesAreConstantsAndNotSettings(t *testing.T) {
 	t.Setenv("AGENT_COMPACT_TOKENS", "1")
 	t.Setenv("AGENT_KEEP_TOKENS", "2")
 	t.Setenv("AGENT_SUMMARY_EVERY", "3")
-	t.Setenv("AGENT_MEMORY_CAPACITY", "4")
 
 	cfg := LoadConfig()
 	for _, c := range []struct {
@@ -76,7 +75,6 @@ func TestTheConversationSizesAreConstantsAndNotSettings(t *testing.T) {
 		{"compact at", cfg.CompactAtTokens, defaultCompactAtTokens},
 		{"keep verbatim", cfg.KeepVerbatimTokens, defaultKeepVerbatimTokens},
 		{"summary every", cfg.SummaryEvery, defaultSummaryEvery},
-		{"memory capacity", cfg.MemoryCapacity, defaultMemoryCapacity},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %d, want the constant %d — the environment must not decide this",

@@ -43,7 +43,6 @@ type Config struct {
 	CompactAtTokens    int
 	KeepVerbatimTokens int
 	SummaryEvery       int
-	MemoryCapacity     int
 	APIKey             string
 }
 
@@ -164,7 +163,6 @@ func LoadConfig() Config {
 		CompactAtTokens:    defaultCompactAtTokens,
 		KeepVerbatimTokens: defaultKeepVerbatimTokens,
 		SummaryEvery:       defaultSummaryEvery,
-		MemoryCapacity:     defaultMemoryCapacity,
 		APIKey:             os.Getenv("OPENROUTER_API_KEY"),
 	}
 }
@@ -253,7 +251,7 @@ func Run() error {
 
 // ReloadTools validates and registers tools from disk. A newly registered tool is
 // not in the prompt of any session already running, so it takes effect in the
-// sessions started after it, the way a written memory does. The calling session
+// sessions started after it. The calling session
 // gets an entry saying so, which is a visible record rather than something the
 // model is told.
 func (a *App) ReloadTools(sessionID string) ([]string, []LoadFailure) {

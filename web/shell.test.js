@@ -792,7 +792,7 @@ test('a conversation granted nothing says nothing about grants', async () => {
     'a conversation with no grants still claims it may read something: ' + summary);
 });
 
-// ---------- persona and memory, chosen before a conversation starts ----------
+// ---------- the persona, chosen before a conversation starts ----------
 
 const PERSONAS = {
   personas: [
@@ -804,18 +804,15 @@ const PERSONAS = {
 // A pill carrying one of these names is the persona chooser; the tool and skill
 // pickers above it draw pills of their own.
 const personaPills = v => findAll(v, 'pill').filter(p => ['default', 'terse'].includes(p.textContent));
-const memoryPills = v => findAll(v, 'pill').filter(p => ['on', 'off'].includes(p.textContent));
 
-test('a new conversation starts on the built-in persona with memory on', async () => {
+test('a new conversation starts on the built-in persona', async () => {
   const ctx = newScreen({ '/personas': PERSONAS });
   const v = node('div');
   await ctx.viewNew(v);
   const chosen = personaPills(v).filter(isOn).map(p => p.textContent);
   assert.deepStrictEqual(chosen, ['default'], 'the built-in persona is not the one preselected');
-  assert.deepStrictEqual(memoryPills(v).filter(isOn).map(p => p.textContent), ['on']);
   const body = await startConversation(ctx, v);
   assert.strictEqual(body.persona, '', 'an unchosen persona should be the built-in one');
-  assert.strictEqual(body.memory_off, false);
 });
 
 test('choosing a persona sends it, and the screen says it replaces the built-in one', async () => {
@@ -828,17 +825,6 @@ test('choosing a persona sends it, and the screen says it replaces the built-in 
   personaPills(v).find(p => p.textContent === 'terse').onclick();
   assert.ok(isOn(personaPills(v).find(p => p.textContent === 'terse')), 'the persona pill did not turn on');
   assert.strictEqual((await startConversation(ctx, v)).persona, 'terse');
-});
-
-test('turning memory off sends it, and says nothing stored is deleted', async () => {
-  const ctx = newScreen({ '/personas': PERSONAS });
-  const v = node('div');
-  await ctx.viewNew(v);
-  const said = findAll(v, 'note').map(n => n.textContent).join(' ');
-  assert.ok(/no memory section and no memory/.test(said) && /already stored is untouched/.test(said),
-    'the screen does not say what memory off means: ' + said);
-  memoryPills(v).find(p => p.textContent === 'off').onclick();
-  assert.strictEqual((await startConversation(ctx, v)).memory_off, true);
 });
 
 // ---------- writing skills and personas ----------

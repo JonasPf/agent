@@ -19,9 +19,6 @@ window.OPENAPI_SPEC = {
       "name": "jobs"
     },
     {
-      "name": "memory"
-    },
-    {
       "name": "tools"
     },
     {
@@ -581,134 +578,6 @@ window.OPENAPI_SPEC = {
           "jobs"
         ],
         "summary": "Delete a job. Its run log goes with it.",
-        "responses": {
-          "204": {
-            "description": "Deleted."
-          }
-        }
-      }
-    },
-    "/memory": {
-      "get": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "List memory items and capacity usage.",
-        "responses": {
-          "200": {
-            "description": "Memory.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/MemoryItem"
-                      }
-                    },
-                    "used": {
-                      "type": "integer"
-                    },
-                    "capacity": {
-                      "type": "integer"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "Add an item.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "text"
-                ],
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Stored."
-          },
-          "409": {
-            "description": "Capacity exceeded. Nothing was stored; the body lists current items so they can be consolidated.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/MemoryItem"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/memory/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/Id"
-        }
-      ],
-      "patch": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "Edit an item.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "text": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Updated."
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "memory"
-        ],
-        "summary": "Delete an item.",
         "responses": {
           "204": {
             "description": "Deleted."
@@ -1506,7 +1375,6 @@ window.OPENAPI_SPEC = {
               "summary",
               "rotation",
               "carried_over",
-              "memory_write",
               "model_change",
               "breaker"
             ]
@@ -1547,7 +1415,6 @@ window.OPENAPI_SPEC = {
                   "type": "string",
                   "enum": [
                     "persona",
-                    "memory",
                     "skills_index",
                     "tool_schemas",
                     "platform"
@@ -1558,10 +1425,6 @@ window.OPENAPI_SPEC = {
                 },
                 "tokens": {
                   "type": "integer"
-                },
-                "editable": {
-                  "type": "boolean",
-                  "description": "True only for memory."
                 }
               }
             }
@@ -1699,24 +1562,6 @@ window.OPENAPI_SPEC = {
               "open",
               "closed"
             ]
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        }
-      },
-      "MemoryItem": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "text": {
-            "type": "string"
-          },
-          "source_session": {
-            "type": "string"
           },
           "created_at": {
             "type": "string",

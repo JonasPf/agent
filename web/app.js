@@ -11,7 +11,6 @@ const api = async (path, opts) => {
   return json;
 };
 const post = (p, b) => api(p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) });
-const patch = (p, b) => api(p, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const put = (p, b) => api(p, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const del = p => api(p, { method: 'DELETE' });
 
@@ -84,7 +83,7 @@ $('back').onclick = () => history.length > 1 ? history.back() : (location.hash =
 // A view's own actions are one list rendered twice: along the header where
 // there is room for them, and behind a single button where there is not. CSS
 // decides which of the two is on screen, so neither can disagree with the other.
-const PANELS = [['jobs', 'Jobs'], ['memory', 'Memory'], ['tools', 'Tools'], ['skills', 'Skills'], ['panels', 'More']];
+const PANELS = [['jobs', 'Jobs'], ['tools', 'Tools'], ['skills', 'Skills'], ['personas', 'Personas'], ['panels', 'More']];
 
 let folded = null;
 function closeMenu() {
@@ -254,7 +253,7 @@ function renderSideFoot() {
 
 // A transcript is read in a column; a list of jobs, tools, or files is read
 // across the room a laptop actually has.
-const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'personas', 'files', 'panels', 'memory', 'search', 'toolpanel'];
+const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel'];
 
 function render() {
   $('foot').innerHTML = '';
@@ -266,7 +265,6 @@ function render() {
     case 'session': return viewSession(v);
     case 'panels': return viewPanels(v);
     case 'jobs': return viewJobs(v);
-    case 'memory': return viewMemory(v);
     case 'tools': return viewTools(v);
     case 'skills': return viewSkills(v);
     case 'personas': return viewPersonas(v);
@@ -720,19 +718,11 @@ function promptEntry(e) {
   for (const s of (e.sections || [])) {
     const sec = el('div', 'sec');
     const row = el('div', 'row');
-    const label = s.name === 'memory'
-      ? `memory · ${s.text === '(empty)' ? 0 : s.text.split('\n').length} items`
-      : s.name.replace(/_/g, ' ');
-    row.append(el('div', 'n', label), el('div', 'tok', s.tokens.toLocaleString()));
+    row.append(el('div', 'n', s.name.replace(/_/g, ' ')), el('div', 'tok', s.tokens.toLocaleString()));
     const key = e.seq + ':' + s.name;
     const open = !!state.collapsed[key];
     const toggle = el('button', null, open ? 'collapse' : 'expand');
     toggle.onclick = () => { state.collapsed[key] = !open; renderTranscript(); };
-    if (s.editable) {
-      const ed = el('button', null, 'edit');
-      ed.onclick = () => location.hash = '#memory';
-      row.append(ed);
-    }
     row.append(toggle);
     sec.append(row);
     if (open) { const pre = el('pre'); pre.append(sessionLinks(s.text)); sec.append(pre); }
@@ -741,9 +731,9 @@ function promptEntry(e) {
   return box;
 }
 
-// Compacting on request is how a memory written a moment ago takes effect
-// without waiting for the threshold. The summary it writes is editable where it
-// lands, in the transcript, rather than on a screen of its own.
+// Compacting on request folds the conversation now rather than at the threshold.
+// The summary it writes is editable where it lands, in the transcript, rather
+// than on a screen of its own.
 async function compactNow(id) {
   if (!confirm('Fold the older turns of this conversation into a summary? ' +
                'Nothing is deleted — what is folded stays on disk and stays searchable.')) return;
@@ -970,7 +960,6 @@ async function configEditor(v, current) {
     enabled_skills: current.enabled_skills == null ? null : current.enabled_skills.slice(),
     granted_env: (current.granted_env || []).slice(),
     persona: current.persona || '',
-    memory_off: !!current.memory_off,
   };
 
   // The model is one line on the screen and a dialog to change it: the facts
@@ -1048,24 +1037,6 @@ async function configEditor(v, current) {
   };
   v.append(pwrap);
   drawPersonas();
-
-  // Memory crosses the boundary between conversations, so turning it off is a
-  // property of the conversation rather than of the store: nothing is deleted,
-  // and this one neither reads it nor writes it.
-  v.append(el('h2', null, 'memory'));
-  v.append(el('p', 'note', 'With memory off this conversation gets no memory section and no memory ' +
-    'tool, and nothing said in it is carried anywhere else. What is already stored is untouched.'));
-  const mwrap = el('div');
-  const drawMemory = () => {
-    mwrap.innerHTML = '';
-    for (const [label, off] of [['on', false], ['off', true]]) {
-      const b = el('button', 'pill' + (cfg.memory_off === off ? ' on' : ''), label);
-      b.onclick = () => { cfg.memory_off = off; drawMemory(); };
-      mwrap.append(b);
-    }
-  };
-  v.append(mwrap);
-  drawMemory();
 
   // Names, not values. The agent already holds the values; what a conversation
   // is given is permission to see one, and a name is safe to show, export, and
@@ -1229,7 +1200,6 @@ async function viewPanels(v) {
   setHeader('Panels', true);
   const items = [
     ['jobs', 'Jobs', 'Schedules attached to conversations'],
-    ['memory', 'Memory', 'What survives a conversation'],
     ['tools', 'Tools', 'Loaded tools and failures'],
     ['skills', 'Skills', 'What the agent knows how to do'],
     ['personas', 'Personas', 'Who the agent is when a conversation starts'],
@@ -1392,31 +1362,6 @@ function renderRuns(into, runs) {
 }
 
 
-
-async function viewMemory(v) {
-  setHeader('Memory', true);
-  const data = await api('/memory');
-  v.append(el('div', 's', `${data.used} of ${data.capacity} characters used`));
-  for (const m of (data.items || [])) {
-    const row = el('div', 'row-item');
-    const wrap = el('div', 'm');
-    const inp = el('input', 'text'); inp.value = m.text;
-    inp.onchange = async () => { await patch('/memory/' + m.id, { text: inp.value }); };
-    wrap.append(inp);
-    wrap.append(el('div', 's', `from ${m.source_session ? m.source_session.slice(-6) : 'the interface'} · ${ago(m.created_at)}`));
-    const rm = el('button', 'btn danger', 'Delete');
-    rm.onclick = async () => { await del('/memory/' + m.id); render(); };
-    wrap.append(rm);
-    row.append(wrap);
-    v.append(row);
-  }
-  const add = el('input', 'text'); add.placeholder = 'Remember one fact…';
-  add.onchange = async () => {
-    try { await post('/memory', { text: add.value }); render(); }
-    catch (e) { toast({ title: 'Memory is full', body: String(e.message) }); }
-  };
-  v.append(el('h2', null, 'add'), add);
-}
 
 async function viewTools(v) {
   setHeader('Tools', true);

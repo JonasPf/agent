@@ -152,9 +152,6 @@ func describeConfigChange(from, to SessionConfig) string {
 	if from.Persona != to.Persona {
 		parts = append(parts, "persona "+personaLabel(from.Persona)+" → "+personaLabel(to.Persona))
 	}
-	if from.MemoryOff != to.MemoryOff {
-		parts = append(parts, "memory "+memoryLabel(from.MemoryOff)+" → "+memoryLabel(to.MemoryOff))
-	}
 	return strings.Join(parts, "; ")
 }
 
@@ -165,13 +162,6 @@ func personaLabel(name string) string {
 		return defaultPersona
 	}
 	return name
-}
-
-func memoryLabel(off bool) string {
-	if off {
-		return "off"
-	}
-	return "on"
 }
 
 // describeSet names a set for a transcript line. What an unchosen set means

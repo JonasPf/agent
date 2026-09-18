@@ -17,9 +17,9 @@ import (
 // jobs and their run logs that belong to the session, and the working directory
 // under files/ — so it can be read without this program.
 //
-// Memory is deliberately not in it. Memory is durable across every conversation
-// rather than owned by one, and importing an archive would otherwise change what
-// every later session is told.
+// A session owns everything it carries, so the archive is the whole of it: there
+// is nothing outside the zip for an import to reach for, and nothing wider that
+// importing one could change.
 
 const (
 	exportMeta       = "meta.json"

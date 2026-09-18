@@ -10,7 +10,7 @@ import (
 )
 
 // A tool reaches the agent on an API of its own, not the one the interface
-// uses. It offers what the shipped tools actually call — memory, the calling
+// uses. It offers what the shipped tools actually call — the calling
 // conversation's jobs, the skills it has, and search — and nothing that makes,
 // changes, or drives a conversation. Every request names the call it belongs
 // to, and the call decides which conversation that is.
@@ -50,18 +50,18 @@ func TestTheToolAPIAnswersOnlyACallThatIsRunning(t *testing.T) {
 	base := toolAPI(t, a)
 	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 
-	if code, _ := toolRequest(t, base, "", "GET", "/memory", ""); code != 401 {
+	if code, _ := toolRequest(t, base, "", "GET", "/jobs", ""); code != 401 {
 		t.Errorf("a request naming no call got %d, want 401", code)
 	}
-	if code, _ := toolRequest(t, base, "made-up", "GET", "/memory", ""); code != 401 {
+	if code, _ := toolRequest(t, base, "made-up", "GET", "/jobs", ""); code != 401 {
 		t.Errorf("a request naming an invented call got %d, want 401", code)
 	}
 	token, done := a.calls.issue(s.ID, "")
-	if code, body := toolRequest(t, base, token, "GET", "/memory", ""); code != 200 {
+	if code, body := toolRequest(t, base, token, "GET", "/jobs", ""); code != 200 {
 		t.Errorf("a running call was refused: %d %s", code, body)
 	}
 	done()
-	if code, _ := toolRequest(t, base, token, "GET", "/memory", ""); code != 401 {
+	if code, _ := toolRequest(t, base, token, "GET", "/jobs", ""); code != 401 {
 		t.Errorf("a call's token still works after the call ended: %d", code)
 	}
 }
@@ -162,31 +162,11 @@ func TestAToolReadsOnlyTheSkillsItsConversationHas(t *testing.T) {
 	}
 }
 
-func TestAToolsMemoryIsAttributedToItsOwnConversation(t *testing.T) {
-	a := newTestApp(t)
-	a.cfg.MemoryCapacity = defaultMemoryCapacity
-	base := toolAPI(t, a)
-	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-	token, done := a.calls.issue(s.ID, "")
-	defer done()
-
-	code, body := toolRequest(t, base, token, "POST", "/memory", `{"text":"likes tea","source_session":"SOMEONE-ELSE"}`)
-	if code != 201 {
-		t.Fatalf("adding memory = %d %s", code, body)
-	}
-	var m MemoryItem
-	_ = json.Unmarshal([]byte(body), &m)
-	if m.SourceSession != s.ID {
-		t.Errorf("memory attributed to %q, want the calling conversation %q", m.SourceSession, s.ID)
-	}
-}
-
 // End to end: the shipped tools, run as subprocesses through the registry, do
 // their work over the tool API and nothing else.
 func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
 	dir := t.TempDir()
 	a := newTestAppAt(t, dir)
-	a.cfg.MemoryCapacity = defaultMemoryCapacity
 	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")
 	a.tools = NewRegistry(a.cfg.ToolsDir, DBPath(dir), a.store.DB())
 	a.skills = NewSkills(filepath.Join("..", "..", "skills"), "")
@@ -203,8 +183,8 @@ func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
 		return a.tools.Call(t.Context(), &ToolCtx{App: a, SessionID: s.ID}, name, json.RawMessage(args))
 	}
 	for _, c := range []struct{ tool, args string }{
-		{"memory", `{"action":"add","text":"prefers metric units"}`},
-		{"memory", `{"action":"list"}`},
+		{"notes", `{"action":"add","text":"prefers metric units"}`},
+		{"notes", `{"action":"list"}`},
 		{"schedule", `{"action":"create","schedule":"10m","prompt":"stretch","after_acting":"stop"}`},
 		{"schedule", `{"action":"list"}`},
 		{"skill_read", `{"name":"scheduling"}`},

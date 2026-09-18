@@ -1,13 +1,14 @@
 # Agent — Agent Guide
 
 A single-user autonomous agent in Go: one process, one container, one user. It holds long-lived
-conversations, schedules work inside them, and remembers what you tell it. It cannot modify the copy
+conversations and schedules work inside them. Nothing crosses from one conversation to another on its
+own: what one holds, another reaches by searching for it (ADR-055). It cannot modify the copy
 of itself that is running: a tool reads and writes only its own session's working directory, and the
 tool and skill directories are outside it. What it can do is propose a change — a branch, a pull
 request, a pipeline — which a person reviews and merges.
 
 The guiding constraint is **no surprises**, in two halves. Nothing happens that the user cannot see:
-every scheduled action, memory, and check leaves a visible row or transcript line. And nothing about
+every scheduled action and check leaves a visible row or transcript line. And nothing about
 the agent changes that the user did not approve: the agent they talk to tomorrow is the one they
 merged today. Prototype, not hardened.
 See [`specs/index.html`](specs/index.html).
@@ -28,7 +29,7 @@ file too.
 | **Test** | `task test` | Go tests across the agent and every tool; the browser's pure helpers (`web/transcript.js`) under node's built-in runner. Sub-tasks: `test:go`, `test:web`. `test:go` builds the tools first, because the registry will not load one whose `run` is missing. |
 | **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
 | **Test in a container** | `task check:container` | `task check` on Linux in `testenv/Dockerfile` (CI's environment: Debian, chromium, Landlock), with the working tree copied in. A test that cannot run there fails instead of skipping. `task eval:container -- [tool...]` runs the evals the same way. Docker where installed, Podman otherwise. |
-| **Reset** | `task db:clear` | Moves sessions, jobs, memory, and per-session files to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
+| **Reset** | `task db:clear` | Moves sessions, jobs, and per-session files to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
 | **Inspect** | `task db:status` | What the running agent currently holds. |
 
 ### Before committing
@@ -130,7 +131,7 @@ The specification in [`specs/`](specs/index.html) and the code are two views of
 the same system and must not diverge. **Every change to behavior must be
 reflected in the specs in the same change** — update the relevant spec
 document(s) alongside the code. The specs are HTML: `architecture.html`,
-`sessions.html`, `jobs.html`, `tools.html`, `skills.html`, `memory.html`,
+`sessions.html`, `jobs.html`, `tools.html`, `skills.html`,
 `webui.html`, `api.html`, and `adrs.html` for decision records.
 
 **The spec has priority unless explicitly stated otherwise.** When the code and

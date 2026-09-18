@@ -46,11 +46,6 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("DELETE /jobs/{id}", a.hDeleteJob)
 	mux.HandleFunc("DELETE /jobs", a.hClearJobs)
 
-	mux.HandleFunc("GET /memory", a.hMemory)
-	mux.HandleFunc("POST /memory", a.hAddMemory)
-	mux.HandleFunc("PATCH /memory/{id}", a.hPatchMemory)
-	mux.HandleFunc("DELETE /memory/{id}", a.hDeleteMemory)
-
 	mux.HandleFunc("GET /tools", a.hTools)
 	mux.HandleFunc("POST /tools/reload", a.hReload)
 	mux.HandleFunc("GET /tools/{name}/panel.js", a.hPanel)
@@ -155,11 +150,10 @@ type configRequest struct {
 	EnabledTools  optionalSet `json:"enabled_tools"`
 	EnabledSkills optionalSet `json:"enabled_skills"`
 	GrantedEnv    optionalSet `json:"granted_env"`
-	// Persona and MemoryOff are pointers for the same reason the sets carry a
-	// presence flag: absent means inherit, and the zero value of each is a
-	// choice somebody may have made.
-	Persona   *string `json:"persona"`
-	MemoryOff *bool   `json:"memory_off"`
+	// Persona is a pointer for the same reason the sets carry a presence flag:
+	// absent means inherit, and the zero value is a choice somebody may have
+	// made.
+	Persona *string `json:"persona"`
 }
 
 func (c configRequest) applyTo(base SessionConfig) SessionConfig {
@@ -168,9 +162,6 @@ func (c configRequest) applyTo(base SessionConfig) SessionConfig {
 	}
 	if c.Persona != nil {
 		base.Persona = *c.Persona
-	}
-	if c.MemoryOff != nil {
-		base.MemoryOff = *c.MemoryOff
 	}
 	if c.EnabledTools.present {
 		base.EnabledTools = c.EnabledTools.set
@@ -236,7 +227,6 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		EnabledSkills optionalSet `json:"enabled_skills"`
 		GrantedEnv    optionalSet `json:"granted_env"`
 		Persona       *string     `json:"persona"`
-		MemoryOff     *bool       `json:"memory_off"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
@@ -246,13 +236,13 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		s.Title = *in.Title
 	}
 	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present ||
-		in.Persona != nil || in.MemoryOff != nil {
+		in.Persona != nil {
 		// A configuration is chosen before the session exists and fixed once it
 		// does. There is one answer here, not two. Grants are part of it: a
 		// conversation that could be handed a credential halfway through is one
-		// whose reach cannot be read from how it started. So is the persona, and
-		// so is whether memory is in force: both are sections of the prompt.
-		fail(w, 409, "a session's model, tools, skills, grants, persona, and memory setting are fixed for its life; "+
+		// whose reach cannot be read from how it started. So is the persona: it
+		// is a section of the prompt, and the prompt is written once.
+		fail(w, 409, "a session's model, tools, skills, grants, and persona are fixed for its life; "+
 			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
 		return
 	}
@@ -332,8 +322,8 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, a.enrich(fork))
 }
 
-// hCompact folds a session now rather than at its threshold. It is how a memory
-// written a moment ago is made to take effect without waiting.
+// hCompact folds a session now rather than at its threshold, for a conversation
+// that has grown expensive before it would have folded on its own.
 func (a *App) hCompact(w http.ResponseWriter, r *http.Request) {
 	s := a.store.Session(r.PathValue("id"))
 	if s == nil {
@@ -581,59 +571,6 @@ func (a *App) hClearJobs(w http.ResponseWriter, r *http.Request) {
 		a.hub.Broadcast(wsEvent{Kind: "jobs"})
 	}
 	writeJSON(w, 200, map[string]int{"deleted": n})
-}
-
-func (a *App) hMemory(w http.ResponseWriter, r *http.Request) {
-	items, err := a.store.Memory()
-	if err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	writeJSON(w, 200, map[string]any{"items": items, "used": memoryUsage(items),
-		"capacity": a.cfg.MemoryCapacity})
-}
-
-func (a *App) hAddMemory(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Text, SourceSession string }
-	if err := readJSON(r, &in); err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	m, err := a.AddMemory(in.Text, in.SourceSession)
-	if err != nil {
-		fail(w, 409, "%v", err)
-		return
-	}
-	writeJSON(w, 201, m)
-}
-
-func (a *App) hPatchMemory(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Text string }
-	if err := readJSON(r, &in); err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	items, _ := a.store.Memory()
-	for _, m := range items {
-		if m.ID == r.PathValue("id") {
-			m.Text = in.Text
-			if err := a.store.PutMemory(m); err != nil {
-				fail(w, 500, "%v", err)
-				return
-			}
-			writeJSON(w, 200, m)
-			return
-		}
-	}
-	fail(w, 404, "no such item")
-}
-
-func (a *App) hDeleteMemory(w http.ResponseWriter, r *http.Request) {
-	if err := a.store.DeleteMemory(r.PathValue("id")); err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	w.WriteHeader(204)
 }
 
 func (a *App) hTools(w http.ResponseWriter, r *http.Request) {

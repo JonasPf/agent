@@ -103,13 +103,14 @@ func TestProjectionIsStillPure(t *testing.T) {
 	}
 }
 
-// Rule 1: the newest prompt entry is the system message and the earlier ones
-// are dropped. A compaction writes a fresh one, so a session has several.
+// Rule 1: the newest prompt entry is the system message and any earlier one is
+// dropped. A session written today has exactly one (ADR-055); the rule still
+// holds over a transcript recorded before that, which is what this pins.
 func TestNewestPromptWins(t *testing.T) {
 	entries := []Entry{
-		{Seq: 1, Type: "prompt", Sections: []Section{{Name: "memory", Text: "OLD MEMORY"}}},
+		{Seq: 1, Type: "prompt", Sections: []Section{{Name: "persona", Text: "OLD PERSONA"}}},
 		msg(2, "user", "a"),
-		{Seq: 3, Type: "prompt", Sections: []Section{{Name: "memory", Text: "NEW MEMORY"}}},
+		{Seq: 3, Type: "prompt", Sections: []Section{{Name: "persona", Text: "NEW PERSONA"}}},
 		compactionAt(4, 2, "summary"),
 		msg(5, "user", "b"),
 	}
@@ -124,7 +125,7 @@ func TestNewestPromptWins(t *testing.T) {
 
 func TestNewestPromptOnASessionThatNeverCompacted(t *testing.T) {
 	entries := []Entry{
-		{Seq: 1, Type: "prompt", Sections: []Section{{Name: "memory", Text: "M"}}},
+		{Seq: 1, Type: "prompt", Sections: []Section{{Name: "persona", Text: "P"}}},
 		msg(2, "user", "a"),
 	}
 	if got := NewestPrompt(entries); got == nil || got.Seq != 1 {

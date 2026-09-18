@@ -12,7 +12,6 @@
 <a href="jobs.html">Jobs</a>
 <a class="here" href="tools.html">Tools</a>
 <a href="skills.html">Skills</a>
-<a href="memory.html">Memory</a>
 <a href="webui.html">Web UI</a>
 <a href="api.html">API</a>
 <a href="adrs.html">ADRs</a>
@@ -49,7 +48,6 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 <tr><td><a href="tool-bash.html"><code>bash</code></a></td><td>Run a shell command in the session's working directory.</td></tr>
 <tr><td><a href="tool-clock.html"><code>clock</code></a></td><td>The current date and time, in UTC and in the operator's zone.</td></tr>
 <tr><td><a href="tool-edit.html"><code>edit</code></a></td><td>Replace an exact string in a workspace file.</td></tr>
-<tr><td><a href="tool-memory.html"><code>memory</code></a></td><td>Write, revise, or remove what the agent carries between conversations.</td></tr>
 <tr><td><a href="tool-notes.html"><code>notes</code></a></td><td>Short freeform notes that outlive a conversation.</td></tr>
 <tr><td><a href="tool-read.html"><code>read</code></a></td><td>Read a file from the session's working directory.</td></tr>
 <tr><td><a href="tool-schedule.html"><code>schedule</code></a></td><td>Create, list, edit, and delete the jobs that make future work visible.</td></tr>
@@ -160,7 +158,7 @@ granted is absent, and a granted variable that is not set stays absent rather th
 <tr><th>Variable</th><th>Holds</th></tr>
 <tr><td><code>AGENT_DB</code></td><td>Path to the SQLite database.</td></tr>
 <tr><td><code>AGENT_DB_PREFIX</code></td><td>The tool's table prefix.</td></tr>
-<tr><td><code>AGENT_URL</code></td><td>Base URL of the tool API: memory, the calling conversation's jobs, the skills it has, and search. Not the operator's API (<a href="adrs.html#adr-051">ADR-051</a>).</td></tr>
+<tr><td><code>AGENT_URL</code></td><td>Base URL of the tool API: the calling conversation's jobs, the skills it has, and search. Not the operator's API (<a href="adrs.html#adr-051">ADR-051</a>).</td></tr>
 <tr><td><code>AGENT_TOKEN</code></td><td>Names this call to the tool API. Issued when the call starts and revoked when it ends; the call decides which conversation a request acts in.</td></tr>
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
@@ -187,7 +185,7 @@ turn rather than the process.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A tool exceeding its timeout is killed and reported as an error result.</li>
-<li>A tool reaches memory, its own conversation's jobs, that conversation's skills, and search through <code>AGENT_URL</code>, naming its call with <code>AGENT_TOKEN</code>, without a private hook into the process; nothing it can reach creates or drives a conversation.</li>
+<li>A tool reaches its own conversation's jobs, that conversation's skills, and search through <code>AGENT_URL</code>, naming its call with <code>AGENT_TOKEN</code>, without a private hook into the process; nothing it can reach creates or drives a conversation.</li>
 <li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
 <li>Standard error is captured and stored with the result, not shown to the model, and readable by the operator beside the call that wrote it.</li>
 <li>A tool subprocess receives only the variables above and the ones its calling session was granted; the model API key and every other variable of the agent's environment are absent.</li>
@@ -208,9 +206,10 @@ tools it had, and a session's tools are fixed for its life. A tool installed now
 <em>new</em> session has. An existing conversation reaches it by forking, which copies the conversation
 into a session built with the new tool in it.</p>
 
-<p>This is unlike memory, which a compaction refreshes into the running conversation. Memory is text
-the model reads; a tool is a definition the model programmes against, and changing the callable set
-mid-conversation is the thing <a href="adrs.html#adr-019">ADR-019</a> removed.</p>
+<p>Nothing reaches a running conversation this way, and since <a href="adrs.html#adr-055">ADR-055</a>
+nothing reaches one any other way either: no section of the prompt is rewritten once a session exists. A
+tool is a definition the model programmes against, and changing the callable set mid-conversation is the
+thing <a href="adrs.html#adr-019">ADR-019</a> removed. Forking is the route for all of it.</p>
 
 <p>Loading validates before registering. A tool is registered only if its manifest parses, its schema is
 valid, its executable is executable, its database prefix is unused, and a trial invocation returns
@@ -317,8 +316,8 @@ never the constraint.</p>
 <h2>Interface plugins</h2>
 
 <p>A tool that stores data may ship a panel to display it. The panel is a JavaScript module the web
-interface loads and mounts under that tool's name. A memory tool shows what it remembers; a scheduler
-tool shows its jobs.</p>
+interface loads and mounts under that tool's name. <a href="tool-notes.html"><code>notes</code></a> shows
+what has been noted; a scheduler tool shows its jobs.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -342,7 +341,6 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 <tr><td><code>clock</code></td><td>The current date and time, with an optional offset. An autonomous agent cannot read a clock from a prompt written once at the session's creation, so it asks.</td></tr>
 <tr><td><code>web_search</code>, <code>web_browse</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. The first two render the page in a headless browser, so what they read is what a person would see; <code>web_fetch</code> reads what the server sent, and says when that was not enough.</td></tr>
 <tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
-<tr><td><code>memory</code></td><td>Write and revise durable memory.</td></tr>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
 <tr><td><code>skill_read</code></td><td>Load the full text of a skill.</td></tr>
 </table>

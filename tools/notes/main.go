@@ -14,8 +14,9 @@ import (
 )
 
 type args struct {
-	Action string `json:"action"`
-	Text   string `json:"text"`
+	Action  string `json:"action"`
+	Text    string `json:"text"`
+	Session string `json:"session"`
 }
 
 func main() {
@@ -42,7 +43,25 @@ func main() {
 		tool.OK("noted")
 	}
 
-	rows, err := db.Query("select id, text, created_at from notes_items order by id desc limit 50")
+	// The default scope is this conversation. A note outlives the conversation
+	// that wrote it, which is why it is not simply a file in the working
+	// directory — but outliving one is not belonging to every one, so reading
+	// another conversation's notes is something the model has to ask for, and
+	// asking appears in the transcript as the call it is.
+	scope := strings.TrimSpace(a.Session)
+	if scope == "" {
+		scope = tool.Session
+	}
+	if scope == "all" {
+		scope = ""
+	}
+	query := "select id, text, created_at from notes_items order by id desc limit 50"
+	var params []any
+	if scope != "" {
+		query = "select id, text, created_at from notes_items where session = ? order by id desc limit 50"
+		params = append(params, scope)
+	}
+	rows, err := db.Query(query, params...)
 	if err != nil {
 		tool.Failf("cannot read the notes: %v", err)
 	}
@@ -60,6 +79,9 @@ func main() {
 		tool.Failf("cannot read the notes: %v", err)
 	}
 	if len(lines) == 0 {
+		if scope != "" {
+			tool.OKf("no notes in this conversation. Pass session:%q to list every conversation's.", "all")
+		}
 		tool.OK("no notes")
 	}
 	tool.OK(strings.Join(lines, "\n"))

@@ -30,7 +30,6 @@ Working rules:
   command whenever a command could decide it; a check costs nothing until it fires, while a
   repeating job without one calls the model on every tick.
 - Read a skill before doing work it covers.
-- Write a memory item only for what stays true across conversations.
 - A turn that opens with a job marker is a wake, and the operator is not there to answer. Say what the
   wake is for and leave it in the transcript; that is where they will read it. Do not ask a question
   you need answered to finish, and do not wait for one.`
@@ -38,15 +37,6 @@ Working rules:
 // systemSections builds the prompt as sent, split for display. Tool definitions
 // are shown here exactly as the model receives them; they travel in the tools array.
 func (a *App) systemSections(sess *Session) []Section {
-	mem, _ := a.store.Memory()
-	var memText strings.Builder
-	if len(mem) == 0 {
-		memText.WriteString("(empty)")
-	}
-	for _, m := range mem {
-		fmt.Fprintf(&memText, "- %s\n", m.Text)
-	}
-
 	var skillText strings.Builder
 	var skills []*Skill
 	for _, sk := range a.skills.All() {
@@ -74,20 +64,8 @@ what you are sent, by a written summary of them. Nothing is deleted — what is 
 away stays on disk and session_search still finds it, so look there rather than
 assuming something earlier in this conversation is lost.`,
 		sess.ID, sess.Model, a.sessionWorkspace(sess.ID), sess.CompactAtTokens)
-	if sess.MemoryOff {
-		platform += "\nMemory is off for this conversation. You have no memory section and no memory " +
-			"tool, and nothing said here is carried into another conversation. Say so if asked to " +
-			"remember something, rather than agreeing to."
-	}
 
 	secs := []Section{{Name: "persona", Text: a.personas.Text(sess.Persona)}}
-	// A conversation with memory off has no memory section rather than an empty
-	// one: an empty section says "you remember nothing yet", and this session
-	// remembers nothing ever. The platform section says which it is.
-	if !sess.MemoryOff {
-		secs = append(secs, Section{Name: "memory",
-			Text: strings.TrimRight(memText.String(), "\n"), Editable: true})
-	}
 	secs = append(secs,
 		Section{Name: "skills_index", Text: strings.TrimRight(skillText.String(), "\n")},
 		Section{Name: "platform", Text: platform},
@@ -121,9 +99,8 @@ func sectionsTotal(sections []Section) int {
 }
 
 // promptEntry returns the session's prompt entry, written when it was created.
-// promptEntry returns the prompt in force: the newest one. A session has one at
-// creation and gains another at every compaction, which is the only moment its
-// prompt is allowed to change.
+// There is exactly one, for the session's whole life: nothing rewrites it, and a
+// compaction writes no new one (ADR-055).
 func (a *App) promptEntry(sessionID string) (Entry, bool) {
 	if p := NewestPrompt(a.store.Entries(sessionID)); p != nil {
 		return *p, true

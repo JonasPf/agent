@@ -15,12 +15,10 @@ import (
 const (
 	defaultCompactAtTokens    = 40000
 	defaultKeepVerbatimTokens = 10000
-	// How often, in tokens of growth, the running summary is rewritten, and how
-	// many characters of durable memory ride in every prompt. Constants rather
-	// than settings: nothing ever set them, and a number nobody tunes is a
-	// number that belongs in the code that depends on it.
-	defaultSummaryEvery   = 4000
-	defaultMemoryCapacity = 8000
+	// How often, in tokens of growth, the running summary is rewritten. A
+	// constant rather than a setting: nothing ever set it, and a number nobody
+	// tunes is a number that belongs in the code that depends on it.
+	defaultSummaryEvery = 4000
 )
 
 // The summariser is asked to edit rather than to re-summarise. Material that has
@@ -146,12 +144,11 @@ func buildCompactionInput(previous string, head []Entry) string {
 
 // Compact folds the oldest turns of a session into a written summary, in place.
 // The session keeps its identifier, its jobs, and its files; the transcript
-// gains two entries and loses none.
+// gains one entry and loses none.
 //
-// The prompt is refreshed here and only here. A compaction rewrites the head of
-// the message list and so discards the cached prefix regardless, which makes it
-// the one moment a session's prompt can change for nothing — and the only way
-// memory written during a long conversation ever reaches it.
+// The prompt is not touched. A session's prompt entry is written when the
+// session is created and is what every turn sends for the rest of its life, so
+// there is nothing for a compaction to re-photograph (ADR-055).
 func (a *App) Compact(ctx context.Context, s *Session) error {
 	entries := a.store.Entries(s.ID)
 	before := projectedTokens(entries)
@@ -197,15 +194,6 @@ func (a *App) Compact(ctx context.Context, s *Session) error {
 	}
 
 	s.Cost += res.Usage.Cost
-
-	// The prompt first, so it is in force for the turn that follows. Its memory
-	// section is read now, which is what makes a memory written during this
-	// conversation finally reach it.
-	items, _ := a.store.Memory()
-	sections := a.systemSections(s)
-	a.append(s.ID, Entry{Type: "prompt", Sections: sections,
-		Text: fmt.Sprintf("system prompt · %d tokens · memory refreshed, %d items",
-			sectionsTotal(sections), len(items))})
 
 	// The figures are stored rather than recomputed later, so the banner cannot
 	// drift if the estimator changes. TokensAfter is measured on the list this

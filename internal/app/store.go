@@ -37,13 +37,14 @@ create table if not exists job_runs (
   id text primary key, job_id text not null, session_id text,
   at text not null, due_at text, outcome text not null, message text);
 create index if not exists job_runs_by_job on job_runs(job_id, at);
-create table if not exists memory (
-  id text primary key, text text not null, source_session text, created_at text not null);
 -- Web push went with the notification stack (ADR-026); dead letters and job
 -- expiry went with the run log (ADR-028). Dropping the tables is how a removal
 -- reaches a database that already exists.
 drop table if exists push_subscriptions;
 drop table if exists dead_letters;
+-- Memory went with ADR-055: nothing crosses a session boundary on its own any
+-- more, so the store that did is dropped rather than left behind unread.
+drop table if exists memory;
 create virtual table if not exists entry_fts using fts5(session_id, seq unindexed, body);
 `
 
@@ -458,40 +459,6 @@ func (s *Store) DeleteJobsByStatus(status, sessionID string) (int, error) {
 
 func (s *Store) MoveJobs(from, to string) error {
 	_, err := s.db.Exec(`update jobs set session_id=? where session_id=?`, to, from)
-	return err
-}
-
-// ---- memory ----
-
-func (s *Store) Memory() ([]MemoryItem, error) {
-	rows, err := s.db.Query(`select id,text,source_session,created_at from memory order by created_at`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []MemoryItem
-	for rows.Next() {
-		var m MemoryItem
-		var created string
-		var src sql.NullString
-		if err := rows.Scan(&m.ID, &m.Text, &src, &created); err != nil {
-			return nil, err
-		}
-		m.SourceSession = src.String
-		m.CreatedAt, _ = time.Parse(time.RFC3339, created)
-		out = append(out, m)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) PutMemory(m MemoryItem) error {
-	_, err := s.db.Exec(`insert or replace into memory(id,text,source_session,created_at) values(?,?,?,?)`,
-		m.ID, m.Text, m.SourceSession, m.CreatedAt.Format(time.RFC3339))
-	return err
-}
-
-func (s *Store) DeleteMemory(id string) error {
-	_, err := s.db.Exec(`delete from memory where id=?`, id)
 	return err
 }
 
