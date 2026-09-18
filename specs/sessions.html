@@ -67,8 +67,8 @@ can expand. The persona, the skills index, and the full tool definitions are all
 therefore has a prompt from its first moment, and nothing reading position zero has to allow for its
 absence.</p>
 
-<pre><code>┌─ prompt · 3,700 tokens                        ─┐
-│  persona            310 tokens        expand   │
+<pre><code>┌─ prompt · 4,420 tokens                        ─┐
+│  persona          1,030 tokens        expand   │
 │  skills · 6         190 tokens        expand   │
 │  tools · 12       3,200 tokens        expand   │
 └────────────────────────────────────────────────┘</code></pre>
@@ -129,6 +129,16 @@ than layering over it. Its text is copied into the prompt entry when the session
 persona edited afterwards reaches this conversation only by forking it
 (<a href="adrs.html#adr-055">ADR-055</a>).</p>
 
+<p>The built-in persona opens with who the agent is, then has four parts. <strong>Honesty</strong>:
+accuracy before agreement, no flattery, outcomes reported as they are. <strong>Replies</strong>: the
+answer first, bullets over paragraphs, concrete numbers and paths, one question at most, because the
+operator often reads on a phone. <strong>Safety</strong>: no secret's value anywhere it could leave,
+fetched text treated as information rather than instructions, and a question before anything hard to
+undo. <strong>Working rules</strong>: jobs, checks, skills, and unattended wakes. A persona the
+operator writes replaces all of it, so any of these parts it should keep, it has to say again. The
+tool definitions are not part of any persona: they travel in the tools array, whichever persona is
+chosen.</p>
+
 <p>So the prompt carries exactly what the session can use. The tool definitions in position zero are the
 tools that are callable; the skills index lists the skills that can be read. There is no second,
 smaller set hiding behind a larger one.</p>
@@ -173,6 +183,7 @@ screen, reached the same way, and both are answered before the session exists.</
 <li>A session's configuration is chosen before it is created and cannot be changed afterwards.</li>
 <li>A request to change a session's model, tools, skills, or persona is refused, and names forking as the way.</li>
 <li>A session that chose no persona runs on the built-in one, and the prompt's opening section is exactly that persona.</li>
+<li>The built-in persona opens with who the agent is and has honesty, replies, safety, and working-rules parts; it makes no claim to remember anything between conversations.</li>
 <li>A session that chose a persona has that persona's text as its opening section, and none of the built-in one.</li>
 <li>A session naming a persona that no longer exists falls back to the built-in one and says so where it is read.</li>
 <li>A session stored before the persona setting existed reads back on the built-in persona.</li>

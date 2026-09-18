@@ -31,7 +31,7 @@ type Persona struct {
 // persona runs on it, which is every session that existed before personas did.
 const defaultPersona = "default"
 
-const defaultPersonaDescription = "The agent as it ships: long-lived conversations, scheduled work, and memory."
+const defaultPersonaDescription = "The agent as it ships: long-lived conversations, scheduled work, and plain, bulleted replies."
 
 type Personas struct {
 	dir      string
