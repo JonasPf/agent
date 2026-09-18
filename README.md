@@ -36,7 +36,7 @@ nothing here is required.
 | `task check:container` | The same check in the test container (`testenv/Dockerfile`) — Linux, chromium, Landlock — where a test that cannot run fails instead of skipping |
 | `task eval -- schedule` | Put one tool's `eval.json` cases to a real model; omit the name for all |
 | `task eval:container -- web_browse` | The same evals in the test container, where the browser tools have a browser |
-| `task db:clear` | Move sessions, jobs, memory, and session files to `.backups/<stamp>` and start fresh |
+| `task db:clear` | Move sessions, jobs, and session files to `.backups/<stamp>` and start fresh |
 | `task db:restore` | Put the newest backup back |
 | `task db:status` | What the running agent holds |
 | `task tools:reload` | Reload tools from disk without a restart |
@@ -106,7 +106,7 @@ skills/            prose the agent loads on demand — the ones that ship, read-
 internal/tool      the package every tool is built on (subprocess contract, API, browser)
 tools/<name>/      one Go package per capability, each with manifest.json,
                    main.go, eval.json, and a `run` built from it: bash read write
-                   edit clock web_fetch web_browse web_search schedule memory session_search
+                   edit clock web_fetch web_browse web_search schedule session_search
                    skill_read notes — written by you, not by the agent
 data/sessions/<id>/{meta.json,transcript.jsonl}
 data/db/agent.db   the database and its journals, alone in a directory of their
@@ -140,7 +140,7 @@ container's health check, so it depends on nothing but the agent.
 ### The volume
 
 Everything that outlives the container is under `/app/state`. Mount one volume
-there and a redeploy keeps every conversation, job, memory item, and file.
+there and a redeploy keeps every conversation, job, and file.
 
 ```
 /app/state/data       transcripts, the database and its journals, the search index

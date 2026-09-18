@@ -15,7 +15,7 @@ import (
 // which can create a conversation holding a credential and then send it the
 // message that spends it; a tool that could reach that could hand itself
 // anything the operator had ever set. The tool API offers what the shipped
-// tools call — memory, the calling conversation's jobs, the skills it has, and
+// tools call — the calling conversation's jobs, the skills it has, and
 // search — and the sandbox keeps a tool off the operator's port.
 //
 // Every request names the call it belongs to with a token issued for that call
@@ -86,10 +86,6 @@ func (a *App) toolURL() string {
 
 func (a *App) toolRoutes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /memory", a.hMemory)
-	mux.HandleFunc("POST /memory", a.tAddMemory)
-	mux.HandleFunc("PATCH /memory/{id}", a.hPatchMemory)
-	mux.HandleFunc("DELETE /memory/{id}", a.hDeleteMemory)
 	mux.HandleFunc("GET /jobs", a.tJobs)
 	mux.HandleFunc("POST /jobs", a.tCreateJob)
 	mux.HandleFunc("PATCH /jobs/{id}", a.ownJob(a.hPatchJob))
@@ -105,24 +101,6 @@ func (a *App) toolRoutes() http.Handler {
 		}
 		mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, g)))
 	})
-}
-
-// tAddMemory records who remembered something as the calling conversation,
-// whatever the request says.
-func (a *App) tAddMemory(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Text string `json:"text"`
-	}
-	if err := readJSON(r, &in); err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	m, err := a.AddMemory(in.Text, caller(r).SessionID)
-	if err != nil {
-		fail(w, 409, "%v", err)
-		return
-	}
-	writeJSON(w, 201, m)
 }
 
 func (a *App) tJobs(w http.ResponseWriter, r *http.Request) {

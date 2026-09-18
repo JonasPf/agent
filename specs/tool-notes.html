@@ -12,7 +12,6 @@
 <a href="jobs.html">Jobs</a>
 <a class="here" href="tools.html">Tools</a>
 <a href="skills.html">Skills</a>
-<a href="memory.html">Memory</a>
 <a href="webui.html">Web UI</a>
 <a href="api.html">API</a>
 <a href="adrs.html">ADRs</a>
@@ -23,13 +22,19 @@
 <p class="lede">Short freeform notes that outlive a conversation.</p>
 
 <h2>What it does</h2>
-<p>Keeps a list of short texts, added one at a time and listed newest first. Notes are not memory: they
-are never loaded into a prompt, and they influence nothing unless asked for.</p>
+<p>Keeps a list of short texts, added one at a time and listed newest first. A note is never loaded into
+a prompt, and influences nothing unless it is asked for.</p>
 
 <table>
 <tr><th>Action</th><th>Does</th></tr>
 <tr><td><code>add</code></td><td>Appends one note. Requires <code>text</code>.</td></tr>
-<tr><td><code>list</code></td><td>Returns recent notes, newest first.</td></tr>
+<tr><td><code>list</code></td><td>Returns recent notes, newest first. This conversation's, unless <code>session</code> says otherwise.</td></tr>
+</table>
+
+<table>
+<tr><th>Parameter</th><th>Means</th></tr>
+<tr><td><code>text</code></td><td>The note, when adding.</td></tr>
+<tr><td><code>session</code></td><td>Where to look, when listing. Omitted is this conversation; <code>"all"</code> is every conversation; a session id is that one.</td></tr>
 </table>
 
 <h2>What it is for</h2>
@@ -38,12 +43,17 @@ its tables from a <code>schema.sql</code> applied at load, and ships a panel tha
 through the API — the full shape of a tool with state, in the smallest thing that needs one.</p>
 
 <div class="note">
-<strong>Notes are not memory, and the distinction is load-bearing.</strong> <a href="tool-memory.html"><code>memory</code></a> is capped, curated, and in every prompt; a note is uncapped, unreviewed, and in none. So a note costs nothing until it is read, and never changes an answer the agent gives without being asked. Anything that should shape behaviour belongs in memory.
+<strong>A note is scoped the way a search is.</strong> Listing returns the calling conversation's notes
+unless it asks to widen, which is the shape
+<a href="tool-session_search.html"><code>session_search</code></a> already has and is there for the same
+reason: reading another conversation is something the operator should be able to watch being decided, so
+it appears in the transcript as the call it is (<a href="adrs.html#adr-055">ADR-055</a>).
 </div>
 
-<p>A note records which session wrote it, and listing is not filtered by session: notes outlive the
-conversation that wrote them, which is the whole reason they are not simply written to a file in the
-session's working directory.</p>
+<p>A note records which session wrote it, and that is what the scope is read from. Notes still outlive
+the conversation that wrote them, which is the whole reason they are not simply written to a file in the
+session's working directory — but outliving a conversation is not the same as belonging to every one, so
+a note written elsewhere is reached by asking for it.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -53,13 +63,15 @@ session's working directory.</p>
 <li><code>list</code> returns notes newest first.</li>
 <li><code>list</code> on an empty store says it is empty rather than returning nothing.</li>
 <li>A note records the session that wrote it.</li>
-<li>Listing is not scoped to a session; a note written in one conversation is listed in another.</li>
+<li><code>list</code> with no <code>session</code> returns the calling conversation's notes and no others.</li>
+<li><code>list</code> with <code>session:"all"</code> returns every conversation's notes, and with a session id returns that conversation's.</li>
+<li>A listing that found nothing in this conversation says how to widen it.</li>
 <li>Notes never appear in any system prompt.</li>
 <li>The tool's tables all begin with its declared prefix.</li>
 <li>The interface panel reads the tool's own tables through the API rather than the database directly.</li>
 </ul>
 </div>
 
-<footer><a href="tools.html">← Tools</a> · <a href="tool-memory.html">← memory</a> · <a href="tool-read.html">read →</a></footer>
+<footer><a href="tools.html">← Tools</a> · <a href="tool-edit.html">← edit</a> · <a href="tool-read.html">read →</a></footer>
 </div>
 </body></html>

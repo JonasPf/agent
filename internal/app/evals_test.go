@@ -91,7 +91,7 @@ func TestExpectCheck(t *testing.T) {
 	}{
 		{"empty expectation passes", Expect{}, rec, true},
 		{"tool called", Expect{Tool: "schedule"}, rec, true},
-		{"tool not called", Expect{Tool: "memory"}, rec, false},
+		{"tool not called", Expect{Tool: "notes"}, rec, false},
 		{"exact arg", Expect{Tool: "schedule", Args: map[string]any{"action": "create"}}, rec, true},
 		{"wrong arg", Expect{Tool: "schedule", Args: map[string]any{"action": "delete"}}, rec, false},
 		{"bool arg", Expect{Tool: "schedule", Args: map[string]any{"repeat": false}}, rec, true},

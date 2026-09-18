@@ -12,7 +12,6 @@
 <a href="jobs.html">Jobs</a>
 <a href="tools.html">Tools</a>
 <a href="skills.html">Skills</a>
-<a href="memory.html">Memory</a>
 <a href="webui.html">Web UI</a>
 <a href="api.html">API</a>
 <a class="here" href="adrs.html">ADRs</a>
@@ -1207,8 +1206,8 @@ conversation running, over threshold and visibly so, and tries again after the n
 smaller than what it covers is rejected, so a summariser that restates cannot grow the conversation.</p>
 </div>
 
-<div class="adr" id="adr-041">
-<div class="meta">ADR-041 · accepted</div>
+<div class="adr superseded" id="adr-041">
+<div class="meta">ADR-041 · superseded by <a href="#adr-055">ADR-055</a></div>
 <h3>Memory refreshes at a compaction, and only there</h3>
 <h4>Context</h4>
 <p>Memory reached a conversation by being read into its prompt when the session was created, and a
@@ -1656,7 +1655,7 @@ session's skills are fixed from its first turn (<a href="#adr-019">ADR-019</a>),
 </div>
 
 <div class="adr" id="adr-054">
-<div class="meta">ADR-054 · accepted</div>
+<div class="meta">ADR-054 · accepted · superseded in part by <a href="#adr-055">ADR-055</a></div>
 <h3>A session chooses its persona, and whether it has memory at all</h3>
 <h4>Context</h4>
 <p>The persona was one constant in the source: every conversation opened with the same paragraphs,
@@ -1688,6 +1687,57 @@ which is the state it was actually in: the persona is empty-means-built-in, and 
 exception rather than as a flag that would default to off.</p>
 <p>A session naming a persona that has since been deleted falls back to the built-in one and says so in
 the prompt, rather than running with no persona at all.</p>
+</div>
+
+<div class="adr" id="adr-055">
+<div class="meta">ADR-055 · accepted · supersedes <a href="#adr-041">ADR-041</a>, supersedes in part <a href="#adr-054">ADR-054</a></div>
+<h3>Memory is removed; what crosses a conversation is search</h3>
+<h4>Context</h4>
+<p>Memory was the one thing in the system that crossed a session boundary on its own.
+<a href="#adr-010">ADR-010</a> put it in the prompt so recall would not depend on the agent thinking to
+look, <a href="#adr-041">ADR-041</a> built the machinery that refreshed it into a running conversation,
+and <a href="#adr-054">ADR-054</a> added a way to hold one conversation outside it. Every part of that
+was paid for: a store loaded into every prompt, consolidated by hand when it filled, and rendered item
+by item so its influence could be traced.</p>
+<p>What accumulated in it was not what it was designed for. The <code>keeping-records</code> skill
+instructed an item pointing at files in one session's working directory; <code>memory-discipline</code>
+forbade exactly that, and required every item to read correctly with no surrounding context. Two shipped
+skills disagreed, the one being followed won, and the result was an item phrased &ldquo;this session's
+workspace&rdquo; — loaded into every conversation, actionable in none of them, and costing a twentieth
+of the store to say so.</p>
+<p>Meanwhile the two mechanisms that were meant to be memory's complement had grown up.
+<a href="#adr-040">ADR-040</a> keeps a conversation's own history in front of it, and
+<code>session_search</code> reaches every transcript when it is asked to.</p>
+<h4>Decision</h4>
+<p>Remove memory entirely: the store, the tool, the prompt section, the endpoints, the panel, the
+<code>memory-discipline</code> skill, and the per-session setting ADR-054 added. A conversation learns
+what another holds by searching it — <code>session_search</code> with <code>session:"all"</code>, an
+explicit widening that appears in the transcript as the call it is.</p>
+<p>With memory gone, no section of the prompt can change while a session runs. Persona text and skill
+descriptions are therefore read once, when the prompt entry is written at the session's creation, and
+never again. The entry at position zero is the prompt for the session's whole life, and a compaction
+writes no prompt entry.</p>
+<p><code>notes</code> was the other store that crossed the boundary, listing every conversation's notes
+by default. It takes the shape <code>session_search</code> already has: the calling conversation unless
+asked to widen.</p>
+<h4>Consequences</h4>
+<p>Recall becomes deliberate, and that is the loss. A standing preference — all times in UTC, a
+threshold that means act — is no longer carried into a conversation that never thought to ask for it.
+What replaces it is not search but the persona: a standing instruction now lives in the section chosen
+before a conversation starts, written by the operator, visible at position zero. An agent that has to
+be told twice is the price of not having a store that steers every answer from outside the conversation
+it steers.</p>
+<p>The cached prefix never changes within a session. ADR-041's machinery goes with it — no refresh, no
+&ldquo;memory refreshed&rdquo; line, and asking for a compaction is a size operation and nothing else. A
+fork still writes its own prompt entry from the persona and skills as they stand at that moment, so an
+edited persona reaches a running conversation by forking it: one cache miss, at a moment the operator
+chose, in a new session that says what changed.</p>
+<p>Three things get simpler by subtraction. An export (<a href="#adr-025">ADR-025</a>) no longer has to
+explain what it leaves out, because a session now owns everything it carries. The interface loses a
+panel and a prompt section that was editable in place. And the claim in
+<a href="#adr-003">ADR-003</a> — that curated memory carries the weight semantic search would otherwise
+carry — is withdrawn rather than quietly left standing: nothing carries that weight now, and a question
+about what was said in another conversation is answered by searching for it.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

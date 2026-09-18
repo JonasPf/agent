@@ -1,13 +1,14 @@
 # Agent — Agent Guide
 
 A single-user autonomous agent in Go: one process, one container, one user. It holds long-lived
-conversations, schedules work inside them, and remembers what you tell it. It cannot modify the copy
+conversations and schedules work inside them. Nothing crosses from one conversation to another on its
+own: what one holds, another reaches by searching for it (ADR-055). It cannot modify the copy
 of itself that is running: a tool reads and writes only its own session's working directory, and the
 tool and skill directories are outside it. What it can do is propose a change — a branch, a pull
 request, a pipeline — which a person reviews and merges.
 
 The guiding constraint is **no surprises**, in two halves. Nothing happens that the user cannot see:
-every scheduled action, memory, and check leaves a visible row or transcript line. And nothing about
+every scheduled action and check leaves a visible row or transcript line. And nothing about
 the agent changes that the user did not approve: the agent they talk to tomorrow is the one they
 merged today. Prototype, not hardened.
 See [`specs/index.html`](specs/index.html).

@@ -30,6 +30,21 @@
         },
         "clean": true
       }
+    },
+    {
+      "name": "widens the scope when asked about other conversations",
+      "prompt": "Have you noted anything about the kiln in any of our other conversations?",
+      "tools": [
+        "notes"
+      ],
+      "expect": {
+        "tool": "notes",
+        "args": {
+          "action": "list",
+          "session": "all"
+        },
+        "clean": true
+      }
     }
   ]
 }

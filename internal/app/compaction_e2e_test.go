@@ -88,8 +88,8 @@ func TestCompactionDeletesNothingAndStaysSearchable(t *testing.T) {
 	}
 
 	entries := a.store.Entries(s.ID)
-	if len(entries) != countBefore+2 {
-		t.Fatalf("entry count %d → %d; want exactly two appended (prompt, compaction)",
+	if len(entries) != countBefore+1 {
+		t.Fatalf("entry count %d → %d; want exactly one appended (the compaction)",
 			countBefore, len(entries))
 	}
 	found := false
@@ -119,45 +119,8 @@ func TestCompactionDeletesNothingAndStaysSearchable(t *testing.T) {
 	}
 }
 
-// A compaction refreshes memory, which is the only way a memory written during
-// a long conversation ever reaches it.
-func TestCompactionRefreshesMemory(t *testing.T) {
-	a := newTestApp(t)
-	srv, _ := recordingModel(t, "## Decisions\n- summary")
-	a.or = NewOpenRouter("test-key")
-	a.or.base = srv.URL
-
-	a.cfg.MemoryCapacity = 8000
-
-	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-	s.CompactAtTokens = 3000
-	s.KeepVerbatimTokens = 500
-	_ = a.store.PutSession(s)
-	growWithToolResults(t, a, s, 6)
-
-	if _, err := a.AddMemory("the operator prefers all times in UTC", s.ID); err != nil {
-		t.Fatal(err)
-	}
-	// Before compacting, the prompt in force cannot know about it.
-	if p, _ := a.promptEntry(s.ID); strings.Contains(systemMessage(p.Sections), "UTC") {
-		t.Fatal("memory reached the prompt without a compaction")
-	}
-
-	if err := a.Compact(context.Background(), s); err != nil {
-		t.Fatal(err)
-	}
-
-	p, ok := a.promptEntry(s.ID)
-	if !ok {
-		t.Fatal("no prompt entry after compacting")
-	}
-	if !strings.Contains(systemMessage(p.Sections), "UTC") {
-		t.Fatal("the compaction did not refresh memory into the prompt")
-	}
-}
-
-// Compaction can be asked for, which is how a memory written a moment ago takes
-// effect without waiting for the threshold. Driven over HTTP.
+// Compaction can be asked for, which folds the conversation now rather than at
+// the threshold. Driven over HTTP.
 func TestCompactionCanBeRequested(t *testing.T) {
 	a := newTestApp(t)
 	srv, _ := recordingModel(t, "## Decisions\n- asked for")
