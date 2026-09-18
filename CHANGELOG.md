@@ -31,6 +31,12 @@
   what it reads on the web as information rather than orders, and asks before
   anything hard to undo. It no longer claims to remember things between
   conversations, which stopped being true when memory went.
+- A new skill, **researching**, is on in every conversation. When you ask the
+  agent to find something out, it plans a few narrow searches, reads the pages
+  rather than the search snippets, and tells you which facts come from an
+  official source and which are unverified. It gives every claim a link and a
+  date. Long research is written to a file as it goes, so it survives the
+  conversation being compacted.
 
 ## 2026-09-17
 

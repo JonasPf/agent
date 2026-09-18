@@ -165,3 +165,19 @@ func TestTheSkillsThatChangeCodeShipOff(t *testing.T) {
 		}
 	}
 }
+
+// The skills the spec requires are shipped, load, and are in the index of a
+// conversation that did not choose its skills.
+func TestTheRequiredSkillsShipOn(t *testing.T) {
+	shipped := NewSkills(filepath.Join("..", "..", "skills"), "")
+	for _, name := range []string{"scheduling", "keeping-records", "researching"} {
+		sk := shipped.Get(name)
+		if sk == nil {
+			t.Errorf("%s is not shipped", name)
+			continue
+		}
+		if !sk.DefaultEnabled {
+			t.Errorf("%s ships off", name)
+		}
+	}
+}
