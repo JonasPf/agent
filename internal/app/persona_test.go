@@ -52,6 +52,43 @@ func TestAChosenPersonaReplacesTheBuiltInOneWhole(t *testing.T) {
 	}
 }
 
+// The built-in persona is what every conversation gets unless the operator
+// chooses otherwise, so it carries the parts any persona should: who the agent
+// is, that it does not agree to please, how it writes, and what it keeps secret
+// — beside the working rules. Tool definitions are not among them: they travel
+// in the tools array whatever the persona.
+func TestTheBuiltInPersonaSaysWhoItIsHowItWritesAndWhatItKeeps(t *testing.T) {
+	a := newTestApp(t)
+	s, err := a.NewSession(SessionConfig{Model: "test/model"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := promptSection(t, a, s, "persona")
+	if !strings.HasPrefix(text, "You are ") {
+		t.Errorf("the persona does not open with who the agent is:\n%s", text)
+	}
+	for _, part := range []string{"Honesty:", "Replies:", "Safety:", "Working rules:"} {
+		if !strings.Contains(text, "\n"+part+"\n") {
+			t.Errorf("the built-in persona has no %q part:\n%s", part, text)
+		}
+	}
+	for _, claim := range []string{"flatter", "secret", "instructions"} {
+		if !strings.Contains(text, claim) {
+			t.Errorf("the built-in persona never mentions %q:\n%s", claim, text)
+		}
+	}
+
+	// Memory is gone (ADR-055); neither the persona nor its description may
+	// still promise it.
+	if strings.Contains(strings.ToLower(text), "remember") {
+		t.Errorf("the built-in persona still claims to remember:\n%s", text)
+	}
+	w := callAPI(t, a, "GET", "/personas", nil)
+	if strings.Contains(strings.ToLower(w.Body.String()), "memory") {
+		t.Errorf("the built-in persona's description still mentions memory: %s", w.Body.String())
+	}
+}
+
 // A persona named in a session that no longer exists on disk must not leave the
 // agent with no persona at all.
 func TestAPersonaThatIsGoneFallsBackToTheBuiltInAndSaysSo(t *testing.T) {

@@ -23,6 +23,14 @@
   as they were — they take it up when you fork them. A compaction no longer
   writes a second prompt, and the cache behind a long conversation stops being
   thrown away at every fold.
+- **The built-in persona writes for a phone.** Replies lead with the answer,
+  use short bullets and numbered steps, name concrete paths and times, and end
+  with the one next thing to do rather than a pleasantry. It also no longer
+  agrees just to please: it says when you are wrong, reports a failure as a
+  failure, and skips the praise. It never writes out a secret's value, treats
+  what it reads on the web as information rather than orders, and asks before
+  anything hard to undo. It no longer claims to remember things between
+  conversations, which stopped being true when memory went.
 
 ## 2026-09-17
 
