@@ -66,6 +66,8 @@ tasks:
       # started in the container survives it and is the same one `task run`
       # sees, which wants them at the repository root.
       - '{{.CONTAINER}} build -t agent:dev --build-arg VERSION="{{.VERSION}}" --build-arg BUILT_AT="{{.BUILT_AT}}" .'
+      # Docker creates a missing bind-mount source; Podman refuses to.
+      - mkdir -p data workspace
       - |
         {{.CONTAINER}} run --rm -it \
           -p {{trimPrefix ":" .ADDR}}:7770 \
