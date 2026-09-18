@@ -68,7 +68,7 @@ tasks:
       - '{{.CONTAINER}} build -t agent:dev --build-arg VERSION="{{.VERSION}}" --build-arg BUILT_AT="{{.BUILT_AT}}" .'
       - |
         {{.CONTAINER}} run --rm -it \
-          -p {{.ADDR}}:7770 \
+          -p {{trimPrefix ":" .ADDR}}:7770 \
           -v "$PWD/data:/app/state/data" \
           -v "$PWD/workspace:/app/state/workspace" \
           --env-file .env \
