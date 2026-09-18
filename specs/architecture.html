@@ -12,7 +12,6 @@
 <a href="jobs.html">Jobs</a>
 <a href="tools.html">Tools</a>
 <a href="skills.html">Skills</a>
-<a href="memory.html">Memory</a>
 <a href="webui.html">Web UI</a>
 <a href="api.html">API</a>
 <a href="adrs.html">ADRs</a>
@@ -75,7 +74,7 @@ toolchain, by the operator and by the agent.
 <p>Transcripts are JSONL files on disk, one per session, appended to and never rewritten. They are the
 source of truth.</p>
 
-<p>SQLite holds everything else: sessions metadata, jobs and their run logs, memory, tool state,
+<p>SQLite holds everything else: sessions metadata, jobs and their run logs, tool state,
 and a full-text index over transcript entries. Both the metadata and the index are
 derived from the JSONL files and can be rebuilt from them.</p>
 
@@ -259,7 +258,7 @@ must be on the tailnet to learn anything at all.</p>
 <li>The container exposes no port of its own; everything reaching it arrives through the proxy in front of it.</li>
 <li>Nothing reaches the interface without either being on the tailnet or presenting the credential the proxy requires.</li>
 <li>The web UI is served over HTTPS with a certificate the browser trusts without exception.</li>
-<li>A redeploy replaces the process and keeps every session, job, memory item, and uploaded file.</li>
+<li>A redeploy replaces the process and keeps every session, job, and uploaded file.</li>
 <li>Everything that outlives the container is under a single mounted directory, and a tool confined to one session still reaches nothing else under it.</li>
 <li>The container reports whether the process inside it is answering, using the agent's own binary rather than a second program carried for the purpose.</li>
 <li>A confinement mechanism is claimed only after it has been shown to run on this machine; one that is installed but refused reports as not enforced, with the refusal as its reason.</li>
@@ -382,14 +381,14 @@ older kernel files stay confined, the network is not, and that is said at startu
 <code>/status</code>, and on the Tools screen.</p>
 
 <p><strong>A tool reaches the agent on an API of its own.</strong> <code>AGENT_URL</code> is the tool API,
-not the operator's: memory, the calling conversation's jobs, the skills that conversation has, and
+not the operator's: the calling conversation's jobs, the skills that conversation has, and
 search. Every request carries <code>AGENT_TOKEN</code>, issued for one call and revoked when it ends, and
 the call &mdash; not the request &mdash; says which conversation it is. Nothing on it creates, forks,
 messages, or configures a conversation, and a tool cannot schedule a job into, or read a skill outside,
 the conversation it was called from.</p>
 
 <p>What this is not: a tool still holds the agent's other privileges on that API. It is given
-<code>AGENT_DB</code>, it may read and change memory, and it may search every transcript when it asks to.
+<code>AGENT_DB</code>, and it may search every transcript when it asks to.
 On a platform with no Landlock none of the network half holds either, and nothing keeps a tool off the
 operator's port there.</p>
 

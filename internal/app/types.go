@@ -81,10 +81,9 @@ type Usage struct {
 }
 
 type Section struct {
-	Name     string `json:"name"`
-	Text     string `json:"text"`
-	Tokens   int    `json:"tokens"`
-	Editable bool   `json:"editable"`
+	Name   string `json:"name"`
+	Text   string `json:"text"`
+	Tokens int    `json:"tokens"`
 }
 
 // SessionConfig is everything about a session that shapes its system prompt: the
@@ -99,13 +98,6 @@ type SessionConfig struct {
 	// Persona names the opening section of the system prompt. Empty is the
 	// built-in one, which is what every session had before there was a choice.
 	Persona string `json:"persona,omitempty"`
-	// MemoryOff withholds memory from this conversation: no memory section in
-	// the prompt, and no memory tool to write one with.
-	//
-	// Stated as the exception rather than as an Enabled flag, because the zero
-	// value is what every session already stored: a session written before this
-	// field existed reads back with memory on, which is what it had.
-	MemoryOff bool `json:"memory_off,omitempty"`
 	// GrantedEnv names the environment variables this conversation's tools
 	// receive beyond the ones every tool is promised. Names, never values: the
 	// value stays wherever the agent's own environment gets it, so a grant can
@@ -154,17 +146,7 @@ type Session struct {
 	WorkingSeconds *float64 `json:"working_seconds,omitempty"`
 }
 
-// memoryTool is the tool that writes what the prompt's memory section shows.
-const memoryTool = "memory"
-
 func (s *Session) toolEnabled(name string) bool {
-	// A conversation with memory off is not offered the tool that writes it.
-	// The prompt carries no memory section, so an item written here would be
-	// invisible to the conversation that wrote it and to every one after —
-	// stored, unreadable, and not obviously either.
-	if s.MemoryOff && name == memoryTool {
-		return false
-	}
 	return inSet(s.EnabledTools, name)
 }
 
@@ -182,7 +164,7 @@ func (s *Session) skillEnabled(sk *Skill) bool {
 func (c SessionConfig) sameAs(o SessionConfig) bool {
 	return c.Model == o.Model && sameSet(c.EnabledTools, o.EnabledTools) &&
 		sameSet(c.EnabledSkills, o.EnabledSkills) &&
-		c.Persona == o.Persona && c.MemoryOff == o.MemoryOff
+		c.Persona == o.Persona
 }
 
 func sameSet(a, b []string) bool {
@@ -243,12 +225,5 @@ const (
 	afterStop     = "stop"
 	afterContinue = "continue"
 )
-
-type MemoryItem struct {
-	ID            string    `json:"id"`
-	Text          string    `json:"text"`
-	SourceSession string    `json:"source_session"`
-	CreatedAt     time.Time `json:"created_at"`
-}
 
 func estTokens(s string) int { return (len(s) + 3) / 4 }

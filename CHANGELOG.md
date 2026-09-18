@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-09-18
+
+- **Memory is gone.** The agent no longer carries anything between
+  conversations on its own: there is no memory section at the top of a
+  conversation, no memory tool to write one with, and no Memory panel. What one
+  conversation holds, another now reaches by searching for it — the agent can
+  search every transcript when you ask it to, and the asking is a visible line
+  in the conversation. Anything that was stored is deleted with the feature.
+- A standing instruction — always use UTC, never touch the production database
+  — now belongs in a **persona**. You write it once, you can read exactly what
+  it says, and you choose it when you start a conversation. That is where the
+  agent reads it on every single turn, rather than from a store that quietly
+  steered answers you never connected to it.
+- **Notes now belong to the conversation that wrote them.** Listing notes shows
+  this conversation's; to see every conversation's the agent has to ask, and
+  that ask appears in the transcript as the call it is. The Notes panel still
+  shows all of them, because the panel is yours rather than a conversation's.
+- **A conversation's prompt never changes now.** It is written when the
+  conversation starts and is what every turn sends for the rest of its life, so
+  editing a persona or a skill leaves the conversations already running exactly
+  as they were — they take it up when you fork them. A compaction no longer
+  writes a second prompt, and the cache behind a long conversation stops being
+  thrown away at every fold.
+
 ## 2026-09-17
 
 - You can now write **skills** yourself, from the interface, without a shell.

@@ -154,7 +154,7 @@ tasks:
             --exclude=./.env --exclude="./tools/*/run" . | tar -C /src -xf - && {{.CMD}}'
 
   db:clear:
-    desc: Move sessions, jobs, memory, and session files to a timestamped backup and start fresh
+    desc: Move sessions, jobs, and session files to a timestamped backup and start fresh
     silent: true
     cmds:
       - |
@@ -207,8 +207,6 @@ tasks:
           curl -sf "$base/$r" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d) if d else 0)' \
             || echo "(agent not running)"
         done
-        printf '%-14s ' memory
-        curl -sf "$base/memory" | python3 -c 'import sys,json;print(len(json.load(sys.stdin).get("items") or []))' 2>/dev/null || echo "-"
         printf '%-14s ' tools
         curl -sf "$base/tools" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(len(d["tools"]),"loaded, failures:",d.get("failures"))' 2>/dev/null || echo "-"
 

@@ -12,7 +12,6 @@
 <a href="jobs.html">Jobs</a>
 <a class="here" href="tools.html">Tools</a>
 <a href="skills.html">Skills</a>
-<a href="memory.html">Memory</a>
 <a href="webui.html">Web UI</a>
 <a href="api.html">API</a>
 <a href="adrs.html">ADRs</a>
@@ -42,7 +41,7 @@ still has its whole history one deliberate call away.</p>
 alongside compaction. An entry a compaction covers is still returned by a search of its own session.</p>
 
 <div class="note">
-<strong>The default scope is this session.</strong> Searching one's own history is ordinary. Reading another conversation is a thing the operator should be able to watch being decided, so it is a scope the agent has to ask for, and asking appears in the transcript as the tool call it is. Memory is the only thing that crosses a session boundary without being asked, and it is visible in the prompt where it lands.
+<strong>The default scope is this session.</strong> Searching one's own history is ordinary. Reading another conversation is a thing the operator should be able to watch being decided, so it is a scope the agent has to ask for, and asking appears in the transcript as the tool call it is. Since <a href="adrs.html#adr-055">ADR-055</a> nothing crosses a session boundary unasked at all, which makes this the whole of the route between conversations &mdash; <a href="tool-notes.html"><code>notes</code></a> takes the same shape, for the same reason.
 </div>
 
 <h2>Results</h2>

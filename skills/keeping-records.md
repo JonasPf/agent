@@ -1,12 +1,13 @@
 ---
 name: keeping-records
-description: How to keep a record that accumulates over time — measurements, appointments, incidents — as files rather than as memory.
+description: How to keep a record that accumulates over time — measurements, appointments, incidents — as appended files in this session's working directory.
 ---
 
 Some things are not a fact but a series: a weight, a test result, a symptom, a bill, a mood, a
-reading from a meter. What matters is the history, and the history only grows. Memory is the wrong
-place for it — memory is small, loaded into every prompt, and consolidated by deletion, so a dated
-observation there is either dropped or crowding out the standing facts. Keep a series in files.
+reading from a meter. What matters is the history, and the history only grows. The conversation is the
+wrong place for it — a transcript is folded away by compaction, and a number you have to go back and
+search for is a number you will get wrong. Keep a series in files, where it can be read with one
+command however long it becomes.
 
 ## Layout
 
@@ -63,15 +64,23 @@ window; a `bash` pipeline does not care how long it has grown.
 Answer from the file, every time. Do not answer a question about the record from what you remember of
 the conversation — that is the reading that is most likely to be wrong, and the file is right there.
 
-## What memory is still for
+## Finding the record again
 
-One item, so a conversation can find its way back: that records are kept here, which session holds
-them, and which streams matter. Plus the handful of facts that are genuinely always true and would
-change an answer — a standing constraint, a diagnosis, a threshold that means "act". Nothing dated.
+The record says what it is. `INDEX.md` at the top of the working directory names every stream, so
+`cat INDEX.md` is the way back into it — one call, never out of date, and unaffected by how much of
+this conversation has been folded away.
+
+Nothing about the record is carried anywhere else. There is no store that follows you between
+conversations: what one conversation holds, another reaches only by `session_search`, and only by
+asking for it.
 
 ## The one limit to say out loud
 
 These files live in **this session's working directory**. Another conversation cannot see them; it has
 its own. So a record belongs to one long-running conversation, and starting a second one for the same
-subject splits the history in two. Say this the first time you create a stream, so the operator is
-choosing it rather than discovering it later.
+subject splits the history in two — the second one will not find the first by accident, because nothing
+crosses on its own.
+
+Say this the first time you create a stream, so the operator is choosing it rather than discovering it
+later. If a record for this subject might already exist somewhere else, `session_search` with
+`session:"all"` is how to find out before starting a second one.

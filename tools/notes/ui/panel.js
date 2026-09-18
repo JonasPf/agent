@@ -7,11 +7,14 @@ export default async function ({ root, api, el }) {
   inp.onchange = async () => { await call('add', inp.value); inp.value = ''; refresh(); };
   root.append(inp, out);
 
+  // The panel is the operator's, not a conversation's, so it widens the scope
+  // deliberately: a tool call arriving from here names no session, and the
+  // default scope is the calling conversation.
   async function call(action, text) {
     return api('/tools/notes/call', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, text })
+      body: JSON.stringify({ action, text, session: 'all' })
     });
   }
   async function refresh() {

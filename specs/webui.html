@@ -12,7 +12,6 @@
 <a href="jobs.html">Jobs</a>
 <a href="tools.html">Tools</a>
 <a href="skills.html">Skills</a>
-<a href="memory.html">Memory</a>
 <a class="here" href="webui.html">Web UI</a>
 <a href="api.html">API</a>
 <a href="adrs.html">ADRs</a>
@@ -81,7 +80,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 
 <table>
 <tr><th>Element</th><th>Shows</th></tr>
-<tr><td>Prompt entry</td><td>Persona, memory, skills index, and full tool definitions, each collapsible with a token count. Memory is editable. The first is at position zero; a compaction writes another, and the newest is the one in force.</td></tr>
+<tr><td>Prompt entry</td><td>Persona, skills index, and full tool definitions, each collapsible with a token count. It sits at position zero and is the prompt for the session's whole life; nothing rewrites it and no section is editable.</td></tr>
 <tr><td>Messages</td><td>User and assistant turns, tool calls with their results. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links. What the operator typed is shown as they typed it.</td></tr>
 <tr><td>Events</td><td>Job checks, forks, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
 <tr><td>Compaction</td><td>A banner standing where the folded turns were. Says how many turns it replaced and the token count before and after, states that the agent no longer sees them, shows the summary, and offers to reveal them. Editable.</td></tr>
@@ -116,7 +115,6 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>The banner names itself a compaction, says the agent can no longer see what is above it, and shows the turn count and the tokens before and after.</li>
 <li>The entries a compaction covers can be revealed in place, and when revealed are visually distinct from live context so they cannot be read as something the agent can see.</li>
 <li>The compaction summary is editable, and an edit changes what the next turn sends.</li>
-<li>A compaction that refreshed memory says so, and links to the prompt entry it wrote.</li>
 <li>A compaction says that it reset the cache.</li>
 <li>The status line shows the live cache size and counts down to its expiry, and shows it as expired when it is.</li>
 <li>Each assistant message shows the cached proportion of the call that produced it, from what the provider reported, and says so plainly when there was no hit.</li>
@@ -156,9 +154,8 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The controls screen shows the session's model, tools, skills, grants, persona, and memory setting, and offers a new configuration, which takes effect by forking.</li>
+<li>The controls screen shows the session's model, tools, skills, grants, and persona, and offers a new configuration, which takes effect by forking.</li>
 <li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
-<li>Memory is turned on or off for the conversation being configured, and the screen says that off means no memory section and no memory tool, and that nothing stored is deleted.</li>
 <li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
 <li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
@@ -261,7 +258,7 @@ popup of its own instead.</p>
 
 <h2>Panels</h2>
 
-<p>Jobs, memory, tools, skills, and personas each have a management panel. Tools that ship their own
+<p>Jobs, tools, skills, and personas each have a management panel. Tools that ship their own
 panel appear alongside them.</p>
 
 <p>Skills and personas are the same kind of thing on disk &mdash; a Markdown file with frontmatter that
@@ -271,7 +268,7 @@ wording differs.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every job, memory item, tool, skill, and persona is viewable without the agent.</li>
+<li>Every job, tool, skill, and persona is viewable without the agent.</li>
 <li>A skill or persona the operator wrote is created, edited, and deleted in the interface, with its name, its one-line description, and its body.</li>
 <li>One that ships in the image is shown read-only, and says so rather than offering an edit that would fail.</li>
 <li>A save that is refused says why and leaves what is on disk unchanged.</li>
@@ -315,6 +312,6 @@ stays folded until it is asked for, and neither is ever shown over a conversatio
 </ul>
 </div>
 
-<footer><a href="memory.html">← Memory</a> · <a href="mock.html">UI mock →</a></footer>
+<footer><a href="skills.html">← Skills</a> · <a href="mock.html">UI mock →</a></footer>
 </div>
 </body></html>

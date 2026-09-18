@@ -12,7 +12,6 @@
 <a href="jobs.html">Jobs</a>
 <a href="tools.html">Tools</a>
 <a href="skills.html">Skills</a>
-<a href="memory.html">Memory</a>
 <a href="webui.html">Web UI</a>
 <a href="api.html">API</a>
 <a href="adrs.html">ADRs</a>
@@ -62,15 +61,14 @@ private one of its own, so a session is always something a person started and ca
 <h2>Position zero</h2>
 
 <p>Every session opens with a prompt entry: the complete system prompt as sent, split into sections you
-can expand. Persona, memory, the skills index, and the full tool definitions are all there.</p>
+can expand. The persona, the skills index, and the full tool definitions are all there.</p>
 
 <p>It is written when the session is created, from the configuration chosen before it existed. A session
 therefore has a prompt from its first moment, and nothing reading position zero has to allow for its
 absence.</p>
 
-<pre><code>┌─ prompt · 4,180 tokens                        ─┐
+<pre><code>┌─ prompt · 3,700 tokens                        ─┐
 │  persona            310 tokens        expand   │
-│  memory · 12 items  480 tokens   edit expand   │
 │  skills · 6         190 tokens        expand   │
 │  tools · 12       3,200 tokens        expand   │
 └────────────────────────────────────────────────┘</code></pre>
@@ -81,52 +79,55 @@ shows exactly what it was told, including every tool definition it can see.</p>
 <p>The entry is a record of what was sent, so it is not sent again and costs nothing. Sections are
 collapsed by default, because tool definitions are long and are usually not what you came to read.</p>
 
-<h3>The prompt changes only at a compaction</h3>
+<h3>The prompt never changes</h3>
 
-<p>Between compactions the prompt is frozen. Nothing that shapes behaviour moves underneath a
-conversation mid-flight, because everything that shapes it is chosen before the conversation starts and
-every later change waits for a moment that is announced.</p>
+<p>A session has one prompt entry, written when it is created, and that entry is the prompt for the rest
+of the session's life. Nothing that shapes behaviour moves underneath a conversation: not mid-turn, not
+at a compaction, not ever.</p>
 
-<p>That moment is a compaction, and it is the only one. A compaction rewrites the head of the
-message list and therefore discards the cached prefix already — so re-photographing the prompt at the
-same instant costs nothing that was not already being spent. At any other moment it would cost a full
-cache write.</p>
+<p>This follows from what the prompt is made of. Model, tools, skills, and persona are chosen before the
+session exists and fixed for its life, and since <a href="adrs.html#adr-055">ADR-055</a> there is no
+memory section — so nothing is left that could differ from one turn to the next. The persona's text and
+the skills' descriptions are read once, when the entry is written, and the entry is what every later
+turn sends. A persona edited on disk afterwards leaves every running conversation exactly as it was.</p>
 
-<p>A compaction appends a new prompt entry rather than editing the old one. The transcript is
-append-only, so every prompt a session has ever been sent stays readable in the position it was sent
-from. The rule for what is <em>current</em> is simply the newest one.</p>
+<p>The caching follows from it too. The head of the message list is byte-identical on every turn, so it
+is written to the cache once and read from it thereafter, for the whole life of the conversation. A
+compaction rewrites what comes after the prompt and never the prompt itself.</p>
 
 <div class="note">
-<strong>Memory is why this exists.</strong> Memory written during a conversation has to reach that
-conversation eventually, or the agent writes things it can never read. A compaction is where it lands.
-See <a href="memory.html">Memory</a>.
+<strong>A fork is where an edited persona lands.</strong> A fork is a new session, so it writes its own
+prompt entry from the persona and skills as they stand at that moment. That costs one cache write, in a
+conversation the operator chose to start, whose first entry says what changed.
 </div>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every session's first entry, once it has taken a turn, is the system prompt as sent, sectioned and expandable.</li>
+<li>Every session's first entry is the system prompt as sent, sectioned and expandable.</li>
 <li>Tool definitions are shown in full, exactly as the model receives them.</li>
 <li>Each section shows its token count, and the entry shows the total.</li>
-<li>The memory section is editable in place; no other section is.</li>
-<li>A prompt entry is not sent to the model as a message; the newest one is sent as the system message.</li>
-<li>A session that has not taken a turn has no prompt entry, and its configuration is still editable.</li>
-<li>A session that has never compacted has exactly one prompt entry.</li>
-<li>The prompt a session is sent is identical on every turn between two compactions.</li>
-<li>A prompt entry written by a compaction records which entry superseded which.</li>
+<li>No section of a prompt entry is editable.</li>
+<li>A prompt entry is not sent to the model as a message; it is sent as the system message.</li>
+<li>A session has exactly one prompt entry for its whole life, written when it is created.</li>
+<li>A compaction writes no prompt entry.</li>
+<li>The prompt a session is sent is identical on every turn it takes.</li>
+<li>A prompt entry's persona text and skill descriptions are the ones in force when it was written; editing either afterwards changes no existing session's prompt.</li>
+<li>A fork writes its own prompt entry, from the persona and skills in force when the fork is created.</li>
 </ul>
 </div>
 
 <h2>Configuration</h2>
 
-<p>A session's model, its tools, its skills, its persona, and whether it has memory are one thing: the
-configuration. It is chosen before the conversation starts and fixed for the session's entire life.</p>
+<p>A session's model, its tools, its skills, and its persona are one thing: the configuration. It is
+chosen before the conversation starts and fixed for the session's entire life.</p>
 
-<p>Persona and memory are in it for the same reason the rest is: both are sections of the system prompt
+<p>The persona is in it for the same reason the rest is: it is a section of the system prompt
 (<a href="adrs.html#adr-054">ADR-054</a>). A <strong>persona</strong> is the opening section &mdash; who
 the agent is &mdash; and choosing one replaces the built-in persona whole, working rules included, rather
-than layering over it. <strong>Memory off</strong> means the prompt carries no memory section and the
-session is offered no memory tool; nothing stored is deleted, and every other conversation still has it.</p>
+than layering over it. Its text is copied into the prompt entry when the session is created, so a
+persona edited afterwards reaches this conversation only by forking it
+(<a href="adrs.html#adr-055">ADR-055</a>).</p>
 
 <p>So the prompt carries exactly what the session can use. The tool definitions in position zero are the
 tools that are callable; the skills index lists the skills that can be read. There is no second,
@@ -158,7 +159,7 @@ configuration it was created under.</p>
 
 <div class="note">
 <strong>What is still mutable.</strong> Title and status. Neither appears in the prompt. Model, tools,
-skills, grants, persona, and memory never change at all.
+skills, grants, and persona never change at all.
 </div>
 
 <p>A new session inherits the configuration of the most recently used one, and a fork inherits its
@@ -170,14 +171,11 @@ screen, reached the same way, and both are answered before the session exists.</
 <ul>
 <li>The prompt defines exactly the session's enabled tools, and indexes exactly its enabled skills.</li>
 <li>A session's configuration is chosen before it is created and cannot be changed afterwards.</li>
-<li>A request to change a session's model, tools, skills, persona, or memory setting is refused, and names forking as the way.</li>
+<li>A request to change a session's model, tools, skills, or persona is refused, and names forking as the way.</li>
 <li>A session that chose no persona runs on the built-in one, and the prompt's opening section is exactly that persona.</li>
 <li>A session that chose a persona has that persona's text as its opening section, and none of the built-in one.</li>
 <li>A session naming a persona that no longer exists falls back to the built-in one and says so where it is read.</li>
-<li>A session with memory off has no memory section in its prompt, is not offered the memory tool, and no stored item reaches any section of its prompt.</li>
-<li>A session with memory off is told so, so it declines to remember rather than agreeing to.</li>
-<li>Turning memory off deletes nothing, and every other session still has what is stored.</li>
-<li>A session stored before the persona and memory settings existed reads back on the built-in persona with memory on.</li>
+<li>A session stored before the persona setting existed reads back on the built-in persona.</li>
 <li>Every session has a prompt entry from the moment it exists.</li>
 <li>Forking accepts a configuration; anything not given is inherited from the origin.</li>
 <li>A fork that changes the configuration names what changed, in both sessions' transcripts.</li>
@@ -432,18 +430,14 @@ retrievable by <code>session_search</code> — including by the session that com
 the context; it does not leave the system. That is what makes compaction safe rather than lossy: the
 agent can go back and look, deliberately, when it needs to.</p>
 
-<h3>Memory is refreshed here</h3>
+<h3>The prompt is not rewritten here</h3>
 
-<p>A compaction writes a new prompt entry before it writes the compaction, carrying memory as it stands
-now. This is the only moment a session's prompt changes.</p>
+<p>A compaction appends one entry: the summary. It writes no prompt entry, because a new one would have
+nothing to say &mdash; a session's prompt is written when the session is created and is identical on
+every turn it ever takes (<a href="adrs.html#adr-055">ADR-055</a>).</p>
 
-<p>It has to happen somewhere. A session has no end, so memory written during a conversation would
-otherwise never reach it, and the agent would write items it could never read. A compaction is the right
-place because it is the only moment where the prompt can change for free: the cached prefix is being
-discarded regardless.</p>
-
-<p>A compaction can also be asked for, which is how a memory written a moment ago is made to take effect
-now rather than in thirty thousand tokens.</p>
+<p>A compaction can be asked for rather than waited for, which folds the conversation now rather than in
+thirty thousand tokens.</p>
 
 <h3>When it fails</h3>
 
@@ -461,7 +455,7 @@ screen — and it does not stop, lose anything, or fail a turn.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Passing the size threshold compacts the session in place; no new session is created and the identifier does not change.</li>
-<li>A compaction appends a refreshed prompt entry and a compaction entry, and modifies no existing entry.</li>
+<li>A compaction appends exactly one entry, the compaction, and modifies no existing entry.</li>
 <li>The entries a compaction covers remain on disk and remain findable by search, including from the session that compacted them.</li>
 <li>The tail left verbatim fits <code>keep_verbatim_tokens</code>, and a turn is covered whole or not at all, including its tool results.</li>
 <li>A second compaction reads the first compaction's text and the entries since, never the entries the first one covered.</li>
@@ -470,7 +464,7 @@ screen — and it does not stop, lose anything, or fail a turn.</p>
 <li>A summary not smaller than what it covers is rejected and nothing is appended.</li>
 <li>A failed compaction writes an <code>error</code> event, leaves the transcript otherwise untouched, and the next turn still runs.</li>
 <li>The compaction text is editable, and an edit changes what the next turn sends.</li>
-<li>The prompt entry a compaction writes carries memory as it stands at that moment.</li>
+<li>A compacted session still has exactly one prompt entry, the one written when it was created.</li>
 <li>Compaction can be requested, and takes effect immediately rather than at the threshold.</li>
 <li>Compaction happens only between turns, never during one.</li>
 <li>Both thresholds are configurable, are fixed per session at creation, and default to forty thousand and ten thousand projected tokens.</li>
@@ -629,9 +623,9 @@ the one it was rather than a copy of it, and its links, its jobs, and its files 
 identifier already present is therefore a conflict and the import is refused rather than merged.</p>
 
 <div class="note">
-<strong>Memory is not in it.</strong> Memory is durable across every conversation rather than owned by
-one, so an archive that carried it would change what every later session is told, silently, on import.
-An export is a session and nothing wider.
+<strong>An archive is the whole of a conversation.</strong> A session owns everything it carries, so
+there is nothing outside the zip that an import would have to reach for and nothing wider that importing
+one could change.
 </div>
 
 <div class="ac">
@@ -642,7 +636,6 @@ An export is a session and nothing wider.
 <li>An imported transcript is searchable and its jobs run.</li>
 <li>An import naming a session already present is refused, and says which.</li>
 <li>An archive that is not a session is refused and nothing is altered.</li>
-<li>Memory is not exported.</li>
 </ul>
 </div>
 
@@ -656,9 +649,10 @@ but not out of the index. What the agent can no longer see it can still look up,
 has compacted ten times has its whole history a deliberate call away. This is what makes compaction a
 compression rather than a loss.</p>
 
-<p><strong>Reaching into another conversation.</strong> Sessions are otherwise sealed from one another:
-nothing from one appears in another by default, and the only thing that crosses on its own is
-<a href="memory.html">memory</a>, which is visible in the prompt where it lands.</p>
+<p><strong>Reaching into another conversation.</strong> Sessions are sealed from one another: nothing from
+one appears in another by default, and since <a href="adrs.html#adr-055">ADR-055</a> nothing crosses on
+its own at all. Search is the whole of the route between conversations, and taking it is a call in the
+transcript.</p>
 
 <div class="note">
 <strong>The default scope is this session.</strong> Searching one's own history is ordinary and expected;
