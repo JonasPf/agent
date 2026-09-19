@@ -102,7 +102,23 @@ function load(routes) {
       return { ok: true, status: 200, text: async () => JSON.stringify(body == null ? [] : body) };
     },
     confirm: () => ctx._confirm !== false,
-    WebSocket: function () { return {}; }
+    WebSocket: function () { return {}; },
+    // An upload is the one request that reports its progress, which fetch
+    // cannot, so it goes by XMLHttpRequest. Each one waits here for the test to
+    // move it along, answer it, or drop it.
+    FormData: function () { this.parts = []; this.append = (k, v) => this.parts.push([k, v]); },
+    XMLHttpRequest: function () {
+      const x = this;
+      x.upload = {};
+      x.open = (method, url) => { x.method = method; x.url = url; };
+      x.send = body => { x.body = body; (ctx._xhrs = ctx._xhrs || []).push(x); };
+      x.progress = (loaded, total) => x.upload.onprogress({ lengthComputable: true, loaded, total });
+      x.respond = (status, body) => {
+        x.status = status; x.responseText = typeof body === 'string' ? body : JSON.stringify(body);
+        x.onload();
+      };
+      x.drop = () => x.onerror();
+    }
   };
   ctx.Notification = function () {};
   ctx.Notification.permission = 'default';
@@ -539,6 +555,179 @@ test('the whole conversation copies to the clipboard from its header', async () 
   assert.ok(copied && copied.includes('How warm is it?') && copied.includes('21.5 degrees.'),
     'the clipboard does not hold the conversation: ' + copied);
   assert.ok(copied.includes('Greenhouse sensors'), 'the copy does not carry the title');
+});
+
+// ---------- attaching a file ----------
+
+const composerOf = ctx => findAll(ctx._id('foot'), 'composer')[0];
+const fileInputOf = ctx => composerOf(ctx).children.find(c => c.tagName === 'input');
+const chipsOf = ctx => findAll(ctx._id('foot'), 'chip');
+const settle = () => new Promise(r => setImmediate(r));
+const MB = 1 << 20;
+
+function attach(ctx, ...files) {
+  const input = fileInputOf(ctx);
+  input.files = files;
+  input.onchange();
+}
+
+// A file on a phone takes seconds to leave it. Until it has, the composer says
+// which file is going and how much of it has gone.
+test('an attached file shows its progress until it is uploaded', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  attach(ctx, { name: 'report.pdf', size: 4 * MB });
+  const x = ctx._xhrs[0];
+  assert.strictEqual(x.method + ' ' + x.url, 'POST /sessions/S1/files');
+  x.progress(1 * MB, 4 * MB);
+  assert.match(textOf(chipsOf(ctx)[0]), /report\.pdf[\s\S]*25%/, 'the chip does not say how far the upload has got');
+  x.respond(201, { path: 'report.pdf', bytes: 4 * MB });
+  await settle();
+  const chip = textOf(chipsOf(ctx)[0]);
+  assert.match(chip, /report\.pdf/);
+  assert.ok(!/%/.test(chip), 'a finished upload still shows progress: ' + chip);
+});
+
+// An upload writes nothing into the conversation. The message it goes with
+// names it, so the agent knows it is there without being told separately.
+test('sending names the attached files, and the chips go with the message', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  attach(ctx, { name: 'report.pdf', size: 10 }, { name: 'photo.jpg', size: 10 });
+  ctx._xhrs[0].respond(201, { path: 'report.pdf', bytes: 10 });
+  ctx._xhrs[1].respond(201, { path: 'photo.jpg', bytes: 10 });
+  await settle();
+  const form = composerOf(ctx);
+  form.children.find(c => c.tagName === 'textarea').value = 'Summarise these';
+  await form.onsubmit({ preventDefault() {} });
+  const sent = ctx._calls.filter(c => c.path === '/sessions/S1/messages');
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(JSON.parse(sent[0].body).text, 'Summarise these\n\nAttached: report.pdf, photo.jpg');
+  assert.strictEqual(chipsOf(ctx).length, 0, 'the chips stayed after the message went');
+});
+
+test('a file can be sent with no words', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  attach(ctx, { name: 'report.pdf', size: 10 });
+  ctx._xhrs[0].respond(201, { path: 'report.pdf', bytes: 10 });
+  await settle();
+  await composerOf(ctx).onsubmit({ preventDefault() {} });
+  const sent = ctx._calls.filter(c => c.path === '/sessions/S1/messages');
+  assert.strictEqual(sent.length, 1, 'an attachment with no words was not sent');
+  assert.strictEqual(JSON.parse(sent[0].body).text, 'Attached: report.pdf');
+});
+
+// Sending before the file has arrived would name a file the agent cannot open.
+test('a message is not sent while its files are still uploading', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  attach(ctx, { name: 'report.pdf', size: 10 });
+  const form = composerOf(ctx);
+  const ta = form.children.find(c => c.tagName === 'textarea');
+  ta.value = 'Summarise this';
+  await form.onsubmit({ preventDefault() {} });
+  assert.strictEqual(ctx._calls.filter(c => c.path === '/sessions/S1/messages').length, 0,
+    'the message left before its file had');
+  assert.strictEqual(ta.value, 'Summarise this', 'the words were lost while the file was still going');
+});
+
+test('a failed upload says why, and tapping it tries again', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  attach(ctx, { name: 'report.pdf', size: 10 });
+  ctx._xhrs[0].respond(413, '<html><title>413 Request Entity Too Large</title></html>');
+  await settle();
+  let chip = chipsOf(ctx)[0];
+  assert.match(textOf(chip), /failed/i, 'a failed upload does not say so');
+  assert.match(textOf(chip), /retry/i, 'a failed upload does not offer to try again');
+  chip.onclick();
+  assert.strictEqual(ctx._xhrs.length, 2, 'tapping a failed upload did not try again');
+  ctx._xhrs[1].respond(201, { path: 'report.pdf', bytes: 10 });
+  await settle();
+  chip = chipsOf(ctx)[0];
+  assert.ok(!/failed/i.test(textOf(chip)), 'the retry succeeded and the chip still says it failed');
+
+  attach(ctx, { name: 'photo.jpg', size: 10 });
+  ctx._xhrs[2].drop();
+  await settle();
+  assert.match(textOf(chipsOf(ctx)[1]), /failed/i, 'a dropped connection is not a failed upload');
+});
+
+// The server refuses anything over 100 MB. Sending it all first, only to be
+// told so, costs a phone minutes of data for nothing.
+test('a file over 100 MB is refused before any of it is sent', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  attach(ctx, { name: 'video.mov', size: 101 * MB });
+  await settle();
+  assert.strictEqual((ctx._xhrs || []).length, 0, 'an oversized file was sent');
+  assert.match(textOf(chipsOf(ctx)[0]), /100 MB/, 'the refusal does not say why');
+});
+
+test('a chip can be taken off the message', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  attach(ctx, { name: 'report.pdf', size: 10 });
+  ctx._xhrs[0].respond(201, { path: 'report.pdf', bytes: 10 });
+  await settle();
+  find(chipsOf(ctx)[0], 'x').onclick({ stopPropagation() {} });
+  assert.strictEqual(chipsOf(ctx).length, 0);
+  const form = composerOf(ctx);
+  form.children.find(c => c.tagName === 'textarea').value = 'hello';
+  await form.onsubmit({ preventDefault() {} });
+  const sent = ctx._calls.filter(c => c.path === '/sessions/S1/messages');
+  assert.strictEqual(JSON.parse(sent[0].body).text, 'hello', 'a removed attachment was still named');
+});
+
+// ---------- the files screen ----------
+
+const FILE = (path, over) => Object.assign({ path, bytes: 2, modified_at: '2026-09-19T10:00:00Z' }, over);
+const DIR = path => ({ path, dir: true, bytes: 0, modified_at: '2026-09-19T10:00:00Z' });
+
+function filesScreen(files) {
+  const ctx = load({ '/sessions/S1/files': files, '/sessions/S1': { session: session({ id: 'S1', disk_bytes: 5000 }) } });
+  vm.runInContext("state.view = 'files'; state.arg = 'S1';", ctx);
+  return ctx;
+}
+const rowsOf = v => findAll(v, 'row-item').map(r => find(r, 'n').textContent);
+
+// The working directory is a tree — a cloned repository, an unpacked archive —
+// and the files screen draws it as one, directories first, empty ones included.
+test('the files screen shows the working directory as a tree', async () => {
+  const ctx = filesScreen([
+    FILE('notes.txt', { bytes: 5 }), DIR('src'), FILE('src/main.go', { bytes: 3 }), DIR('src/empty'),
+  ]);
+  const v = node('div');
+  await ctx.viewFiles(v);
+  assert.deepStrictEqual(rowsOf(v), ['src/', 'empty/', 'main.go', 'notes.txt']);
+  const rows = findAll(v, 'row-item');
+  assert.deepStrictEqual(rows.map(r => r.dataset.depth), ['0', '1', '1', '0'], 'the rows are not nested');
+  assert.match(textOf(rows[0]), /2 items/, 'a directory does not say what it holds');
+  assert.match(textOf(rows[1]), /empty/, 'an empty directory does not say so');
+  assert.match(textOf(v), /2 files/, 'directories were counted as files');
+});
+
+test('a directory folds and unfolds when tapped', async () => {
+  const ctx = filesScreen([DIR('src'), FILE('src/main.go'), FILE('notes.txt')]);
+  const v = node('div');
+  await ctx.viewFiles(v);
+  const src = () => findAll(v, 'row-item').find(r => find(r, 'n').textContent === 'src/');
+  src().onclick();
+  assert.deepStrictEqual(rowsOf(v), ['src/', 'notes.txt']);
+  src().onclick();
+  assert.deepStrictEqual(rowsOf(v), ['src/', 'main.go', 'notes.txt']);
+});
+
+// A cloned repository holds thousands of files. Opened in full it buries
+// everything else, so a large tree opens with its directories folded.
+test('a large tree opens folded', async () => {
+  const many = [DIR('repo'), FILE('notes.txt')];
+  for (let i = 0; i < 150; i++) many.push(FILE('repo/f' + i));
+  const ctx = filesScreen(many);
+  const v = node('div');
+  await ctx.viewFiles(v);
+  assert.deepStrictEqual(rowsOf(v), ['repo/', 'notes.txt']);
 });
 
 // ---------- what a tool may reach ----------
