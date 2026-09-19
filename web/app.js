@@ -56,6 +56,10 @@ const state = { view: null, session: null, entries: [], streaming: '', sessions:
 function route() {
   const h = location.hash.slice(1) || 'sessions';
   const [name, arg] = h.split('/');
+  // Where this screen was reached from, so a screen that finishes — an editor
+  // that saved — can go back to it rather than push a second copy of it.
+  state.from = state.here || '';
+  state.here = '#' + h;
   state.view = name;
   state.arg = arg;
   drawer(false);
@@ -83,7 +87,9 @@ $('back').onclick = () => history.length > 1 ? history.back() : (location.hash =
 // A view's own actions are one list rendered twice: along the header where
 // there is room for them, and behind a single button where there is not. CSS
 // decides which of the two is on screen, so neither can disagree with the other.
-const PANELS = [['jobs', 'Jobs'], ['tools', 'Tools'], ['skills', 'Skills'], ['personas', 'Personas'], ['panels', 'More']];
+// Personas are chosen when a conversation starts and written rarely, so they are
+// reached from More rather than from the rail.
+const PANELS = [['jobs', 'Jobs'], ['tools', 'Tools'], ['skills', 'Skills'], ['panels', 'More']];
 
 let folded = null;
 function closeMenu() {
@@ -1023,7 +1029,7 @@ async function configEditor(v, current) {
   const personas = ((await api('/personas').catch(() => null)) || {}).personas || [];
   v.append(el('h2', null, 'persona'));
   v.append(el('p', 'note', 'Who the agent is. Choosing one replaces the built-in persona entirely, ' +
-    'working rules included. Write and edit them under Panels → Personas.'));
+    'working rules included. Write and edit them under More → Personas.'));
   const pwrap = el('div');
   const drawPersonas = () => {
     pwrap.innerHTML = '';
@@ -1462,7 +1468,10 @@ const AUTHORED = {
 async function viewAuthored(v, kind) {
   const spec = AUTHORED[kind];
   const title = kind === 'skills' ? 'Skills' : 'Personas';
-  setHeader(title, true, [{ label: 'New ' + spec.one, fn: () => editAuthored(kind, null) }]);
+  // Each document, and a new one, has an address of its own, so the back button
+  // returns to this list. A name holds no '+', so '+new' is never a document.
+  if (state.arg) return editAuthored(kind, state.arg === '+new' ? null : decodeURIComponent(state.arg));
+  setHeader(title, true, [{ label: 'New ' + spec.one, fn: () => location.hash = '#' + kind + '/+new' }]);
   const data = await api(spec.path);
   v.append(el('p', 'note', spec.blurb));
   const grid = el('div', 'cards');
@@ -1485,7 +1494,7 @@ async function viewAuthored(v, kind) {
     if (kind === 'skills' && s.default_enabled === false) tags.append(el('span', 'tag', 'off unless chosen'));
     m.append(tags);
     row.append(m);
-    row.onclick = () => editAuthored(kind, s.name);
+    row.onclick = () => location.hash = '#' + kind + '/' + encodeURIComponent(s.name);
     grid.append(row);
   }
 }
@@ -1517,7 +1526,7 @@ async function editAuthored(kind, name) {
 
   setHeader(doc ? doc.name : 'New ' + spec.one, true, doc ? [{
     label: 'Delete', danger: true, fn: async () => {
-      try { await del(spec.path + '/' + encodeURIComponent(doc.name)); render(); }
+      try { await del(spec.path + '/' + encodeURIComponent(doc.name)); backToList(kind); }
       catch (e) { toast({ title: 'Not deleted', body: String(e.message) }); }
     }
   }] : null);
@@ -1569,13 +1578,22 @@ async function editAuthored(kind, name) {
       } else {
         await post(spec.path, payload);
       }
-      render();
+      backToList(kind);
     } catch (e) {
       toast({ title: 'Not saved', body: String(e.message) });
     }
   };
   const done = el('div', 'finish'); done.append(save);
   v.append(done);
+}
+
+// backToList leaves an editor for its list: back, when the list is where the
+// editor was opened from, and otherwise the list in the editor's place, so the
+// history never holds the list twice or an editor for something just saved.
+function backToList(kind) {
+  const list = '#' + kind;
+  if (state.from === list) history.back();
+  else location.replace(list);
 }
 
 async function viewSearch(v) {

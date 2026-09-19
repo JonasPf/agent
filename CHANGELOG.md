@@ -37,6 +37,11 @@
   official source and which are unverified. It gives every claim a link and a
   date. Long research is written to a file as it goes, so it survives the
   conversation being compacted.
+- **Personas** have moved off the side rail and into **More**, next to Search.
+  The rail keeps Jobs, Tools, and Skills.
+- Opening a skill or persona, or starting a new one, now has its own address.
+  The **back button** returns to the list instead of leaving it, and saving
+  takes you back to that list too.
 
 ## 2026-09-17
 
