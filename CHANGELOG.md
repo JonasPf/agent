@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-09-19
+
+- **Attaching a file shows it.** A file picked with ＋ now waits above the
+  message as a chip showing how much has uploaded. If it fails, the chip says
+  why, and tapping it tries again. You can pick several files at once, and take
+  one off with ×.
+- **The agent is told what you attached.** Sending adds a line naming each
+  file, so you no longer have to say you uploaded something. A message can be
+  only files. It will not send while a file is still uploading.
+- A file over 100 MB is refused straight away, rather than after it has all
+  been sent.
+- **The Files screen is a tree.** Directories are listed, empty ones too, each
+  with what it holds, and fold and unfold when tapped. A large tree, like a
+  cloned repository, opens folded.
+
 ## 2026-09-18
 
 - **Memory is gone.** The agent no longer carries anything between
