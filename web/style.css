@@ -535,6 +535,26 @@ form.composer .attach {
   display: inline-flex; align-items: center; justify-content: center; font-size: 18px; flex: none;
 }
 form.composer .attach:hover { border-color: var(--accent); color: var(--accent); }
+/* Files attached to the message being written, each with how far it has got. */
+.chips {
+  display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px 0;
+  max-width: var(--column); margin: 0 auto;
+}
+.chip {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%;
+  padding: 5px 6px 5px 11px; border: 1px solid var(--line-2); border-radius: 99px;
+  background: var(--bg); font-size: 12.5px; color: inherit; text-align: left;
+}
+.chip .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chip .s { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip.going .s { color: var(--accent); }
+.chip.failed { border-color: var(--bad); cursor: pointer; }
+.chip.failed .s { color: var(--bad); white-space: normal; }
+.chip .x {
+  width: 22px; height: 22px; border-radius: 50%; flex: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; color: var(--muted);
+}
+.chip .x:hover { background: var(--line); color: inherit; }
 .hint {
   max-width: var(--column); margin: 0 auto; padding: 0 16px 6px; font-size: 10.5px; color: var(--muted);
   display: none;
@@ -553,6 +573,9 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
 .row-item .s { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
 .row-item .s .sep { opacity: .45; margin: 0 6px; }
 .row-item .s + .s { font-size: 11.5px; opacity: .8; margin-top: 1px; }
+/* A directory in a session's file tree: the twisty says whether it is open. */
+.tree .twisty { width: 1em; flex: none; color: var(--muted); line-height: 1.45; }
+.tree .row-item:not(.dir) .m { margin-left: calc(1em + 12px); }
 .badge {
   background: var(--accent); color: var(--on-accent); border-radius: 99px; font-size: 10.5px;
   padding: 2px 7px; font-weight: 600; flex: none;

@@ -197,6 +197,50 @@ func TestSessionFilesAreListedAndReadable(t *testing.T) {
 	}
 }
 
+// A tool that clones a repository or unpacks an archive leaves directories, some
+// of them empty. The listing names each one, so the files screen can show the
+// tree the agent is actually working in rather than a flat pile of paths.
+func TestSessionFilesNameTheirDirectories(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	dir := t.TempDir()
+	writeTool(t, dir, "maker", "#!/bin/sh\nmkdir -p src/empty && printf hi > src/main.go && "+
+		"printf '{\"ok\":true,\"content\":\"made\"}'\n")
+	a.tools.dir = dir
+	if _, f := a.tools.Load(a); len(f) > 0 {
+		t.Fatalf("load failures: %v", f)
+	}
+	if res := callTool(t, a, s.ID, "maker"); res.Content != "made" {
+		t.Fatalf("maker said %q", res.Content)
+	}
+
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, httptest.NewRequest("GET", "/sessions/"+s.ID+"/files", nil))
+	if w.Code != 200 {
+		t.Fatalf("list status = %d: %s", w.Code, w.Body.String())
+	}
+	var files []SessionFile
+	if err := json.Unmarshal(w.Body.Bytes(), &files); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, f := range files {
+		got[f.Path] = f.Dir
+	}
+	// .tmp is where the tool's scratch files went: listed like anything else the
+	// session wrote, and not what this test is about.
+	delete(got, ".tmp")
+	want := map[string]bool{"src": true, "src/empty": true, "src/main.go": false}
+	if len(got) != len(want) {
+		t.Fatalf("listing = %+v, want %v", files, want)
+	}
+	for p, isDir := range want {
+		if d, ok := got[p]; !ok || d != isDir {
+			t.Errorf("%s: listed %v (dir %v), want dir %v", p, ok, d, isDir)
+		}
+	}
+}
+
 // A path is confined to the session's own directory.
 func TestFileRequestsCannotEscapeTheSession(t *testing.T) {
 	a := newTestApp(t)
