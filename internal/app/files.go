@@ -153,7 +153,7 @@ func (a *App) writeWorkspaceFile(id, rel string, r io.Reader) (string, int64, er
 	if n > maxUpload {
 		f.Close()
 		_ = os.Remove(full)
-		return "", 0, fmt.Errorf("files larger than 100 MB are refused")
+		return "", 0, fmt.Errorf("files larger than 250 MB are refused")
 	}
 	rel, _ = filepath.Rel(a.sessionWorkspace(id), full)
 	return filepath.ToSlash(rel), n, nil

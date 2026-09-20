@@ -16,7 +16,7 @@ const del = p => api(p, { method: 'DELETE' });
 
 // The server refuses a file over this, so the interface refuses it first: on a
 // phone, sending it all only to be told so costs minutes of data.
-const MAX_UPLOAD = 100 << 20;
+const MAX_UPLOAD = 250 << 20;
 
 // uploadFile puts one file into a session's working directory, reporting how
 // much of it has gone. It is the one request made by XMLHttpRequest, because
@@ -25,7 +25,7 @@ const MAX_UPLOAD = 100 << 20;
 function uploadFile(sessionId, f, onProgress) {
   return new Promise((resolve, reject) => {
     if (f.size > MAX_UPLOAD) {
-      const e = new Error('over 100 MB, which is refused'); e.final = true;
+      const e = new Error('over 250 MB, which is refused'); e.final = true;
       return reject(e);
     }
     const x = new XMLHttpRequest();

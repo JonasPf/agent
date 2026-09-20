@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-20
+
+- **Uploads can be 250 MB.** The limit was 100 MB, which a saved web page with
+  its images inside can pass on its own. Anything larger is still refused
+  before it is sent.
+
 ## 2026-09-19
 
 - **Attaching a file shows it.** A file picked with ＋ now waits above the

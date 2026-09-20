@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const maxUpload = 100 << 20
+const maxUpload = 250 << 20
 
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -771,7 +771,7 @@ func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.ContentLength > maxUpload {
-		fail(w, 413, "files larger than 100 MB are refused")
+		fail(w, 413, "files larger than 250 MB are refused")
 		return
 	}
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
@@ -858,7 +858,7 @@ func (a *App) hExportSession(w http.ResponseWriter, r *http.Request) {
 // archive carries.
 func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength > maxUpload {
-		fail(w, 413, "archives larger than 100 MB are refused")
+		fail(w, 413, "archives larger than 250 MB are refused")
 		return
 	}
 	var body io.Reader = io.LimitReader(r.Body, maxUpload)

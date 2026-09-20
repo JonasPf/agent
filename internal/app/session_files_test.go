@@ -290,3 +290,33 @@ func TestSessionReportsWhatItHoldsOnDisk(t *testing.T) {
 		t.Errorf("after a 20 kB upload the session reports %d bytes, was %d", after.DiskBytes, before.DiskBytes)
 	}
 }
+
+// declaredUpload states a size in the request without sending it, which is how
+// the gateway learns a file is too large before any of it arrives.
+func declaredUpload(t *testing.T, a *App, sessionID string, bytes int64) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/sessions/"+sessionID+"/files", strings.NewReader(""))
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
+	req.ContentLength = bytes
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, req)
+	return w
+}
+
+// An upload is refused above 250 MB, and refused on what the request declares,
+// so a phone is told before it spends minutes sending one.
+func TestUploadsAreRefusedAboveTheLimit(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+
+	w := declaredUpload(t, a, s.ID, 250<<20+1)
+	if w.Code != 413 {
+		t.Fatalf("a 250 MB + 1 upload got status %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "250 MB") {
+		t.Errorf("the refusal reads %q and does not say the limit", w.Body.String())
+	}
+	if w := declaredUpload(t, a, s.ID, 200<<20); w.Code == 413 {
+		t.Errorf("a 200 MB upload was refused as too large: %s", w.Body.String())
+	}
+}
