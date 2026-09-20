@@ -33,6 +33,14 @@ twice. Below 900&nbsp;pixels the rail is a drawer over the pane, opened from the
 going anywhere; at or above it the rail is a column of the layout and the pane loses its back button,
 because the rail is the way back.</p>
 
+<p>The rail links the panels used every day &mdash; Jobs, Tools, Skills &mdash; and More, which leads to
+the rest. Personas are chosen when a conversation starts and written rarely, so they are behind More.</p>
+
+<p>Every screen has an address of its own, and reaching a screen changes it. A skill or persona being
+read or written is a screen, so the browser's back button leaves it for the list it was opened from.
+Saving or deleting leaves the same way: back to that list when it is behind the editor, and otherwise
+the list in the editor's place, so the history never holds a list twice.</p>
+
 <p>A view's own actions &mdash; a conversation's jobs, files, summary, fork, controls &mdash; belong to
 the header. They are one list rendered in two shapes: laid along the header where there is room for
 them, folded behind a single button where there is not. Which is on screen is the stylesheet's
@@ -50,6 +58,9 @@ middle.</p>
 <li>With the rail pinned open the pane offers no back button and the drawer no handle.</li>
 <li>The rail names every conversation, marks the one being read, carries its unread count, and separates archived conversations from active ones.</li>
 <li>The rail states the credit remaining and whether tools are sandboxed, without opening a screen to ask.</li>
+<li>The rail links Jobs, Tools, Skills, and More; personas are reached from More.</li>
+<li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
+<li>Saving or deleting a skill or persona returns to the list it was opened from without adding the list to the history a second time.</li>
 <li>A view's actions are one list, whether laid along the header or folded behind one button.</li>
 <li>A transcript is held to a reading column; a list of jobs, tools, files, or skills takes the full width available.</li>
 <li>Nothing in the interface is laid out at a fixed page width.</li>

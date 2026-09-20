@@ -85,7 +85,10 @@ function load(routes) {
       getElementById: id => ids[id] || (ids[id] = node('div')),
       body: node('body'), addEventListener() {}, hidden: false
     },
-    location: { hash: '', protocol: 'http:', host: 'x' },
+    location: {
+      hash: '', protocol: 'http:', host: 'x',
+      replace(h) { (ctx._replaced = ctx._replaced || []).push(h); this.hash = h; }
+    },
     history: { length: 1 },
     navigator: {},
     fetch: async (p, opts) => {
@@ -169,6 +172,19 @@ test('a rail row carries the unread count and opens its conversation', async () 
   assert.strictEqual(find(row, 'badge').textContent, '3');
   row.onclick();
   assert.strictEqual(ctx.location.hash, '#session/S9');
+});
+
+// The rail carries the panels opened every day. Personas are chosen when a
+// conversation starts and written rarely, so they sit behind More.
+test('the rail links the daily panels, and personas are behind More', async () => {
+  const ctx = load({ '/sessions': [] });
+  await ctx.renderSidebar();
+  const links = ctx._id('side-nav').children.map(b => b.textContent);
+  assert.deepStrictEqual(links, ['Jobs', 'Tools', 'Skills', 'More']);
+  const v = ctx._id('view');
+  await ctx.viewPanels(v);
+  const panels = findAll(v, 'row-item').map(r => find(r, 'n').textContent);
+  assert.ok(panels.includes('Personas'), 'More does not lead to personas: ' + panels.join(', '));
 });
 
 test('the rail says so when there is nothing to list', async () => {
@@ -1086,6 +1102,70 @@ test('a skill you wrote can be turned off by default, and deleted', async () => 
   await remove.onclick();
   assert.ok(ctx._calls.some(c => c.method === 'DELETE' && c.path === '/skills/watering'),
     'the skill was not deleted');
+});
+
+// Opening a document, or starting a new one, is a screen of its own, so it has
+// an address of its own and the back button returns to the list.
+test('opening a skill, or starting one, changes the address', async () => {
+  const ctx = load({ '/skills': SKILL_LIST });
+  vm.runInContext("state.view = 'skills';", ctx);
+  const v = ctx._id('view');
+  await ctx.viewAuthored(v, 'skills');
+  findAll(v, 'row-item').find(r => find(r, 'n').textContent === 'watering').onclick();
+  assert.strictEqual(ctx.location.hash, '#skills/watering');
+  ctx._id('head-acts').children.find(b => /New skill/.test(b.textContent)).onclick();
+  assert.strictEqual(ctx.location.hash, '#skills/+new');
+});
+
+test('the address of a skill, or of a new persona, opens it', async () => {
+  const ctx = load({
+    '/skills': SKILL_LIST,
+    '/skills/watering': { name: 'watering', description: 'When to water.', body: 'Twice a week.', editable: true, default_enabled: true },
+    '/personas': PERSONAS,
+  });
+  vm.runInContext("state.view = 'skills'; state.arg = 'watering';", ctx);
+  await ctx.viewAuthored(ctx._id('view'), 'skills');
+  const body = findAll(ctx._id('view'), 'text').find(n => n.tagName === 'textarea');
+  assert.ok(body, 'the address of a skill did not open it');
+  assert.strictEqual(body.value, 'Twice a week.');
+
+  vm.runInContext("state.view = 'personas'; state.arg = '+new';", ctx);
+  await ctx.viewAuthored(ctx._id('view'), 'personas');
+  const name = findAll(ctx._id('view'), 'text').find(n => n.tagName === 'input');
+  assert.ok(name && !name.disabled && name.value === '', 'the address of a new persona did not open an empty one');
+});
+
+// Saving leaves the editor the way back would: to the list it was opened from,
+// without adding a second copy of that list to the history.
+test('saving goes back to the list the editor was opened from', async () => {
+  const ctx = load({ '/skills': { skills: [] } });
+  let backs = 0;
+  ctx.history.back = () => { backs++; };
+  vm.runInContext("state.view = 'skills'; state.from = '#skills';", ctx);
+  await ctx.editAuthored('skills', null);
+  const v = ctx._id('view');
+  const [name, desc] = findAll(v, 'text').filter(n => n.tagName === 'input');
+  name.value = 'watering'; desc.value = 'When to water.';
+  findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Twice a week.';
+  await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
+  assert.strictEqual(backs, 1, 'saving did not go back to the list');
+});
+
+// Arriving at an editor from outside — a bookmark, a pasted link — there is no
+// list behind it to go back to, so saving replaces the editor with the list.
+test('saving an editor opened directly lands on the list in its place', async () => {
+  const ctx = load({ '/skills': { skills: [] } });
+  ctx.history.back = () => assert.fail('went back out of the app');
+  vm.runInContext("state.view = 'skills'; state.from = '';", ctx);
+  ctx.location.hash = '#skills/+new';
+  await ctx.editAuthored('skills', null);
+  const v = ctx._id('view');
+  const [name, desc] = findAll(v, 'text').filter(n => n.tagName === 'input');
+  name.value = 'watering'; desc.value = 'When to water.';
+  findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Twice a week.';
+  await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
+  assert.strictEqual(ctx.location.hash, '#skills');
+  assert.deepStrictEqual(ctx._replaced, ['#skills'], 'the list was pushed, not put in the editor\'s place');
 });
 
 test('a persona is written through the same screen, in its own words', async () => {
