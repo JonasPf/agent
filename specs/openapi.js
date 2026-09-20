@@ -940,10 +940,10 @@ window.OPENAPI_SPEC = {
             }
           },
           "413": {
-            "description": "File exceeds 100 MB."
+            "description": "File exceeds 250 MB."
           }
         },
-        "description": "Maximum 100 MB per file. Uploads belong to the workspace and are deleted with the session that referenced them."
+        "description": "Maximum 250 MB per file. Uploads belong to the workspace and are deleted with the session that referenced them."
       }
     },
     "/models": {

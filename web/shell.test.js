@@ -670,15 +670,15 @@ test('a failed upload says why, and tapping it tries again', async () => {
   assert.match(textOf(chipsOf(ctx)[1]), /failed/i, 'a dropped connection is not a failed upload');
 });
 
-// The server refuses anything over 100 MB. Sending it all first, only to be
+// The server refuses anything over 250 MB. Sending it all first, only to be
 // told so, costs a phone minutes of data for nothing.
-test('a file over 100 MB is refused before any of it is sent', async () => {
+test('a file over 250 MB is refused before any of it is sent', async () => {
   const ctx = conversationScreen(session({ id: 'S1' }));
   await ctx.viewSession(node('div'));
-  attach(ctx, { name: 'video.mov', size: 101 * MB });
+  attach(ctx, { name: 'video.mov', size: 251 * MB });
   await settle();
   assert.strictEqual((ctx._xhrs || []).length, 0, 'an oversized file was sent');
-  assert.match(textOf(chipsOf(ctx)[0]), /100 MB/, 'the refusal does not say why');
+  assert.match(textOf(chipsOf(ctx)[0]), /250 MB/, 'the refusal does not say why');
 });
 
 test('a chip can be taken off the message', async () => {
