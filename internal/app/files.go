@@ -50,19 +50,22 @@ func validSessionID(id string) bool {
 	return true
 }
 
-// SessionFile is one file in a session's working directory.
+// SessionFile is one entry in a session's working directory: a file, or a
+// directory, which carries no size of its own.
 type SessionFile struct {
 	Path       string    `json:"path"`
 	Bytes      int64     `json:"bytes"`
 	ModifiedAt time.Time `json:"modified_at"`
+	Dir        bool      `json:"dir,omitempty"`
 }
 
-// sessionFiles lists a session's working directory, newest first.
+// sessionFiles lists a session's working directory, newest first. Directories
+// are listed too, empty ones included, so the tree can be drawn as it is.
 func (a *App) sessionFiles(id string) ([]SessionFile, error) {
 	root := a.sessionWorkspace(id)
 	out := []SessionFile{}
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+		if err != nil || p == root {
 			return nil
 		}
 		info, err := d.Info()
@@ -73,8 +76,11 @@ func (a *App) sessionFiles(id string) ([]SessionFile, error) {
 		if err != nil {
 			return nil
 		}
-		out = append(out, SessionFile{Path: filepath.ToSlash(rel), Bytes: info.Size(),
-			ModifiedAt: info.ModTime()})
+		f := SessionFile{Path: filepath.ToSlash(rel), ModifiedAt: info.ModTime(), Dir: d.IsDir()}
+		if !f.Dir {
+			f.Bytes = info.Size()
+		}
+		out = append(out, f)
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {

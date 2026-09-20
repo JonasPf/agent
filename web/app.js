@@ -14,6 +14,38 @@ const post = (p, b) => api(p, { method: 'POST', headers: { 'content-type': 'appl
 const put = (p, b) => api(p, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const del = p => api(p, { method: 'DELETE' });
 
+// The server refuses a file over this, so the interface refuses it first: on a
+// phone, sending it all only to be told so costs minutes of data.
+const MAX_UPLOAD = 100 << 20;
+
+// uploadFile puts one file into a session's working directory, reporting how
+// much of it has gone. It is the one request made by XMLHttpRequest, because
+// fetch cannot say how far along a body it is sending has got. A refusal that
+// trying again cannot change is marked final.
+function uploadFile(sessionId, f, onProgress) {
+  return new Promise((resolve, reject) => {
+    if (f.size > MAX_UPLOAD) {
+      const e = new Error('over 100 MB, which is refused'); e.final = true;
+      return reject(e);
+    }
+    const x = new XMLHttpRequest();
+    x.open('POST', '/sessions/' + sessionId + '/files');
+    x.upload.onprogress = e => { if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let json = null; try { json = JSON.parse(x.responseText); } catch (e) {}
+      if (x.status >= 200 && x.status < 300) return resolve(json);
+      // A proxy in front of the agent answers in HTML of its own, which is no
+      // use in a line of text; its status says as much.
+      reject(new Error((json && json.error) ||
+        (x.status === 413 ? 'too large for the server' : 'the server answered ' + x.status)));
+    };
+    x.onerror = () => reject(new Error('the connection dropped'));
+    const fd = new FormData();
+    fd.append('file', f);
+    x.send(fd);
+  });
+}
+
 // Wherever one session names another, the identifier is the only route between
 // them. Rendered as text it is 21 characters to copy by hand, so every occurrence
 // becomes a link. Built from split parts, so nothing but text and anchors is ever
@@ -49,7 +81,7 @@ const until = t => {
 
 // working holds, per session, when this page learned the agent started on it,
 // in this browser's clock.
-const state = { view: null, session: null, entries: [], streaming: '', sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent', working: {} };
+const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent', working: {} };
 
 // ---------- routing ----------
 
@@ -410,23 +442,64 @@ async function viewSession(v) {
     e.preventDefault();
     form.requestSubmit();
   };
+  // A file uploads the moment it is picked and waits above the composer as a
+  // chip until the message goes. An upload writes nothing into the conversation,
+  // so the message names what it carries, and the agent learns of it there.
+  const sessionId = state.session.id;
+  const attached = [];
+  const chips = el('div', 'chips');
+  const drawChips = () => {
+    chips.innerHTML = '';
+    chips.hidden = !attached.length;
+    for (const a of attached) {
+      const c = el('button', 'chip' + (a.error ? ' failed' : a.path ? '' : ' going')); c.type = 'button';
+      const how = a.error ? 'failed: ' + a.error + (a.final ? '' : ' · tap to retry')
+        : a.path ? fmtBytes(a.size) : Math.round(a.progress * 100) + '%';
+      c.append(el('span', 'name', a.name), el('span', 's', how));
+      const x = el('span', 'x', '×'); x.title = 'Take off this message';
+      x.onclick = e => { e.stopPropagation(); attached.splice(attached.indexOf(a), 1); drawChips(); };
+      c.append(x);
+      c.onclick = a.error && !a.final ? () => startUpload(a) : null;
+      chips.append(c);
+    }
+  };
+  const startUpload = a => {
+    a.error = null; a.progress = 0;
+    drawChips();
+    uploadFile(sessionId, a.file, p => { a.progress = p; drawChips(); })
+      .then(r => { a.path = r.path; drawChips(); })
+      .catch(e => { a.error = e.message; a.final = !!e.final; drawChips(); });
+  };
+  drawChips();
   const up = el('button', 'attach', '＋'); up.type = 'button'; up.title = 'Attach a file';
-  const file = el('input'); file.type = 'file'; file.hidden = true;
+  const file = el('input'); file.type = 'file'; file.multiple = true; file.hidden = true;
   up.onclick = () => file.click();
-  file.onchange = async () => {
-    if (!file.files.length) return;
-    const fd = new FormData();
-    fd.append('file', file.files[0]);
-    try { const r = await api('/sessions/' + state.session.id + '/files', { method: 'POST', body: fd }); toast({ title: 'Uploaded', body: r.path }); }
-    catch (e) { toast({ title: 'Upload failed', body: String(e.message) }); }
+  file.onchange = () => {
+    for (const f of Array.from(file.files || [])) {
+      const a = { name: f.name, size: f.size, file: f, progress: 0 };
+      attached.push(a);
+      startUpload(a);
+    }
     file.value = '';
   };
   const send = el('button', 'send', '↑'); send.type = 'submit'; send.title = 'Send'; send.setAttribute && send.setAttribute('aria-label', 'Send');
   form.append(up, file, ta, send);
   form.onsubmit = async e => {
     e.preventDefault();
-    const text = ta.value.trim();
+    // A message that named a file still on its way, or one that never arrived,
+    // would send the agent looking for something that is not there.
+    const pending = attached.find(a => !a.path);
+    if (pending) {
+      toast(pending.error
+        ? { title: 'Not sent', body: pending.name + ' did not upload. Retry it or take it off.' }
+        : { title: 'Still uploading', body: 'Send once ' + pending.name + ' has arrived.' });
+      return;
+    }
+    // Plain names: a message you wrote is shown as written, not as markdown.
+    const names = attached.map(a => a.path).join(', ');
+    const text = [ta.value.trim(), names && 'Attached: ' + names].filter(Boolean).join('\n\n');
     if (!text) return;
+    attached.length = 0; drawChips();
     ta.value = ''; ta.style.height = 'auto';
     // The wait starts when the message leaves, not when the server first says
     // so: that gap is part of what the operator is waiting through.
@@ -441,7 +514,7 @@ async function viewSession(v) {
     }
   };
   const hint = el('div', 'hint', 'Enter sends · Shift+Enter for a new line');
-  foot.append(status, form, hint);
+  foot.append(status, chips, form, hint);
   renderStatus();
   scrollDown();
 }
@@ -1100,12 +1173,11 @@ async function viewFiles(v) {
   const file = el('input'); file.type = 'file'; file.multiple = true; file.hidden = true;
   up.onclick = () => file.click();
   file.onchange = async () => {
-    for (const f of file.files) {
+    for (const f of Array.from(file.files || [])) {
       up.textContent = 'uploading ' + f.name + '…';
-      const fd = new FormData();
-      fd.append('file', f);
-      try { await api('/sessions/' + id + '/files', { method: 'POST', body: fd }); }
-      catch (e) { toast({ title: 'Upload failed', body: f.name + ': ' + e.message }); }
+      try {
+        await uploadFile(id, f, p => { up.textContent = 'uploading ' + f.name + ' · ' + Math.round(p * 100) + '%'; });
+      } catch (e) { toast({ title: 'Upload failed', body: f.name + ': ' + e.message }); }
     }
     file.value = '';
     render();
@@ -1115,27 +1187,95 @@ async function viewFiles(v) {
   bar.append(up, file, exp);
   v.append(bar);
 
-  const files = await api('/sessions/' + id + '/files');
+  const entries = await api('/sessions/' + id + '/files');
+  const files = entries.filter(f => !f.dir);
   const inFiles = files.reduce((n, f) => n + f.bytes, 0);
   const total = (await api('/sessions/' + id)).session.disk_bytes;
   v.append(el('div', 'status', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
-  if (!files.length) { v.append(el('div', 'empty', 'No files yet.')); return; }
-  for (const f of files) {
-    const row = el('button', 'row-item');
-    const m = el('div', 'm');
-    m.append(el('div', 'n', f.path), el('div', 's', `${fmtBytes(f.bytes)} · ${ago(f.modified_at)}`));
-    row.append(m);
-    const rm = el('span', 'tag', 'delete');
-    rm.onclick = async e => {
-      e.stopPropagation();
-      if (!confirm('Delete ' + f.path + '?')) return;
-      await del('/sessions/' + id + '/files/' + f.path.split('/').map(encodeURIComponent).join('/'));
-      render();
+  if (!entries.length) { v.append(el('div', 'empty', 'No files yet.')); return; }
+
+  // Which directories are folded outlives a redraw — an upload, a delete — so
+  // it is kept per session. A large tree starts folded and a small one open;
+  // what the operator toggles is kept as the difference from that.
+  const fold = state.fileFolds[id] || (state.fileFolds[id] = { folded: entries.length > OPEN_TREE_MAX, flipped: new Set() });
+  const isFolded = p => fold.folded !== fold.flipped.has(p);
+  const tree = el('div', 'tree');
+  const fileURL = p => '/sessions/' + id + '/files/' + p.split('/').map(encodeURIComponent).join('/');
+  const draw = () => {
+    tree.innerHTML = '';
+    const walk = (dir, depth) => {
+      for (const n of dir.children) {
+        const row = el('button', 'row-item' + (n.dir ? ' dir' : ''));
+        row.dataset.depth = String(depth);
+        row.style.paddingLeft = `calc(4px + ${depth} * 1.25rem)`;
+        row.title = n.path;
+        const m = el('div', 'm');
+        if (n.dir) {
+          const folded = isFolded(n.path);
+          row.append(el('span', 'twisty', folded ? '▸' : '▾'));
+          m.append(el('div', 'n', n.name + '/'), el('div', 's', !n.children.length ? 'empty'
+            : `${n.children.length} item${n.children.length === 1 ? '' : 's'} · ${fmtBytes(n.bytes)}`));
+          row.append(m);
+          row.onclick = () => {
+            if (fold.flipped.has(n.path)) fold.flipped.delete(n.path); else fold.flipped.add(n.path);
+            draw();
+          };
+          tree.append(row);
+          if (!folded) walk(n, depth + 1);
+          continue;
+        }
+        m.append(el('div', 'n', n.name), el('div', 's', `${fmtBytes(n.bytes)} · ${ago(n.modified_at)}`));
+        row.append(m);
+        const rm = el('span', 'tag', 'delete');
+        rm.onclick = async e => {
+          e.stopPropagation();
+          if (!confirm('Delete ' + n.path + '?')) return;
+          await del(fileURL(n.path));
+          render();
+        };
+        row.append(rm);
+        row.onclick = () => window.open(fileURL(n.path), '_blank');
+        tree.append(row);
+      }
     };
-    row.append(rm);
-    row.onclick = () => window.open('/sessions/' + id + '/files/' + f.path.split('/').map(encodeURIComponent).join('/'), '_blank');
-    v.append(row);
+    walk(fileTree(entries), 0);
+  };
+  draw();
+  v.append(tree);
+}
+
+// A tree with more entries than this opens with its directories folded, so a
+// cloned repository does not bury everything beside it.
+const OPEN_TREE_MAX = 100;
+
+// fileTree turns the flat listing into nested directories. Within each one,
+// directories come first by name, then files newest first, as the flat list
+// had them. A directory's size is everything beneath it.
+function fileTree(entries) {
+  const root = { path: '', dir: true, children: [] };
+  const dirs = new Map([['', root]]);
+  const dirOf = p => {
+    if (dirs.has(p)) return dirs.get(p);
+    const i = p.lastIndexOf('/');
+    const d = { path: p, name: p.slice(i + 1), dir: true, bytes: 0, children: [] };
+    dirs.set(p, d);
+    dirOf(i < 0 ? '' : p.slice(0, i)).children.push(d);
+    return d;
+  };
+  for (const f of entries) {
+    if (f.dir) { dirOf(f.path); continue; }
+    const i = f.path.lastIndexOf('/');
+    dirOf(i < 0 ? '' : f.path.slice(0, i)).children.push(Object.assign({ name: f.path.slice(i + 1) }, f));
   }
+  const settle = d => {
+    d.children.sort((a, b) => a.dir !== b.dir ? (a.dir ? -1 : 1)
+      : a.dir ? a.name.localeCompare(b.name) : String(b.modified_at).localeCompare(String(a.modified_at)));
+    d.bytes = 0;
+    for (const c of d.children) d.bytes += c.dir ? settle(c) : c.bytes;
+    return d.bytes;
+  };
+  settle(root);
+  return root;
 }
 
 // Forking is the same act as starting a conversation: choose the configuration,

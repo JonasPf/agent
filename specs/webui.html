@@ -184,17 +184,28 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <h2>Files</h2>
 
 <p>Every conversation has a files screen: what its working directory holds, what to add to it, and the
-archive of the whole session.</p>
+archive of the whole session. The directory is drawn as the tree it is &mdash; a cloned repository, an
+unpacked archive &mdash; with directories first and each one folding in a tap. A tree of more than a
+hundred entries opens folded, so one large directory does not bury everything beside it.</p>
+
+<p>A file is also attached from the composer. It uploads the moment it is picked and waits above the
+message as a chip that shows its progress, until the message is sent. An upload writes nothing into
+the conversation, so the message names the files it carries, and that line is how the agent learns
+they are there.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A file can be uploaded from a phone, including from the camera and the photo library.</li>
 <li>An uploaded file is written to the session's working directory and appears in its file list.</li>
-<li>The file list shows every file the session holds with its size and age, and any of them can be downloaded or deleted.</li>
+<li>The file list shows every file and directory the session holds as a tree, empty directories included. A file shows its size and age and can be downloaded or deleted; a directory shows what it holds and folds and unfolds when tapped.</li>
+<li>A tree of more than a hundred entries opens with its directories folded; a smaller one opens in full.</li>
+<li>A file attached from the composer shows as a chip with its upload progress, and stays until the message is sent or it is taken off.</li>
+<li>A message sent with attachments names each one, as a path in the working directory; a message may be only its attachments.</li>
+<li>A message is not sent while one of its files is still uploading or has failed to.</li>
 <li>The files screen states what the session occupies on disk, split between its files and its transcript.</li>
 <li>Images are passed to models that accept them; other files are made available to the agent's file tools.</li>
-<li>Upload progress is shown and a failed upload can be retried.</li>
+<li>Upload progress is shown and a failed upload can be retried: in the composer, by tapping its chip.</li>
 <li>Files larger than 100 MB are refused before transfer begins.</li>
 <li>Uploads are deleted with the session that holds them.</li>
 <li>A session is exported to a zip from its files screen, and an archive is imported from the session list.</li>
