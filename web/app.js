@@ -97,8 +97,9 @@ function route() {
   drawer(false);
   closeMenu();
   closeDialog();
-  render();
+  const drawn = render();
   renderSidebar();
+  return drawn;
 }
 window.addEventListener('hashchange', route);
 
@@ -293,7 +294,15 @@ function renderSideFoot() {
 // across the room a laptop actually has.
 const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel'];
 
+// A screen is drawn from requests that answer in their own time, so two screens
+// asked for in quick succession can answer in the wrong order. Each draw keeps
+// the number it started as, and a draw that is no longer the newest stops where
+// it stands rather than painting over the screen that replaced it.
+let drawing = 0;
+const stale = gen => gen !== drawing;
+
 function render() {
+  drawing++;
   $('foot').innerHTML = '';
   closeMenu();
   const v = $('view');
@@ -329,6 +338,7 @@ function sortSessions(list, by) {
 }
 
 async function viewSessions(v) {
+  const gen = drawing;
   setHeader('Conversations', false);
   const bar = el('div', 'toolbar');
   const nw = el('button', 'btn primary only-narrow', 'New conversation');
@@ -355,6 +365,7 @@ async function viewSessions(v) {
   v.append(bar);
 
   const list = await api('/sessions');
+  if (stale(gen)) return;
   state.sessions = list;
   const active = list.filter(s => s.status === 'active');
   const archived = list.filter(s => s.status !== 'active');
@@ -401,14 +412,18 @@ function sessionRow(s) {
 // ---------- conversation ----------
 
 async function viewSession(v) {
+  const gen = drawing;
   const res = await api('/sessions/' + state.arg);
+  if (stale(gen)) return;
   if (res.redirected_to) {
     toast({ title: 'Archived conversation', body: 'Opened the live session of this chain instead.' });
     location.hash = '#session/' + res.redirected_to;
     return;
   }
+  const entries = await api('/sessions/' + state.arg + '/transcript');
+  if (stale(gen)) return;
   state.session = res.session;
-  state.entries = await api('/sessions/' + state.arg + '/transcript');
+  state.entries = entries;
   const id = state.session.id;
   // Opened mid-turn, the wait counts from when the agent started, not from now.
   if (res.session.working_seconds != null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
@@ -424,6 +439,7 @@ async function viewSession(v) {
     { label: 'Controls', fn: () => location.hash = '#settings/' + id },
   ]);
   await post('/sessions/' + state.arg + '/read', {});
+  if (stale(gen)) return;
 
   const t = el('div'); t.id = 'transcript';
   v.append(t);
@@ -1153,11 +1169,13 @@ async function configEditor(v, current) {
 }
 
 async function viewNew(v) {
+  const gen = drawing;
   setHeader('New conversation', true);
   const recent = state.sessions[0] || (await api('/sessions').catch(() => []) || [])[0] || {};
   // Tools, skills, and grants come from the most recent conversation. The model
   // is the one last chosen, which the most recent conversation need not be on.
   const prefs = await api('/preferences').catch(() => null) || {};
+  if (stale(gen)) return;
   const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }));
   const start = el('button', 'btn primary', 'Start conversation');
   start.onclick = async () => {
@@ -1173,6 +1191,7 @@ async function viewNew(v) {
 // A session's files are its working directory: what its tools see, what an
 // upload lands in, and what an export carries.
 async function viewFiles(v) {
+  const gen = drawing;
   const id = state.arg;
   setHeader('Files', true);
   v.append(el('p', 'note',
@@ -1202,6 +1221,7 @@ async function viewFiles(v) {
   const files = entries.filter(f => !f.dir);
   const inFiles = files.reduce((n, f) => n + f.bytes, 0);
   const total = (await api('/sessions/' + id)).session.disk_bytes;
+  if (stale(gen)) return;
   v.append(el('div', 'status', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
   if (!entries.length) { v.append(el('div', 'empty', 'No files yet.')); return; }
 
@@ -1292,8 +1312,10 @@ function fileTree(entries) {
 // Forking is the same act as starting a conversation: choose the configuration,
 // then create the session. The origin's settings are the starting point.
 async function viewFork(v) {
+  const gen = drawing;
   const id = state.arg;
   const res = await api('/sessions/' + id);
+  if (stale(gen)) return;
   setHeader('Fork', true);
   v.append(el('p', 'note',
     'A fork copies this whole conversation into a new session. This one stays where it is, stays ' +
@@ -1309,8 +1331,10 @@ async function viewFork(v) {
 }
 
 async function viewSettings(v) {
+  const gen = drawing;
   const id = state.arg;
   const res = await api('/sessions/' + id);
+  if (stale(gen)) return;
   const s = res.session;
   setHeader('Controls', true);
 
@@ -1344,9 +1368,11 @@ async function viewSettings(v) {
 // ---------- panels ----------
 
 async function viewToolPanel(v) {
+  const gen = drawing;
   setHeader(state.arg, true);
   try {
     const mod = await import('/tools/' + state.arg + '/panel.js');
+    if (stale(gen)) return;
     await mod.default({ root: v, api, el });
   } catch (e) {
     v.append(el('div', 'empty', 'Panel failed to load: ' + e.message));
@@ -1354,6 +1380,7 @@ async function viewToolPanel(v) {
 }
 
 async function viewPanels(v) {
+  const gen = drawing;
   setHeader('Panels', true);
   const items = [
     ['jobs', 'Jobs', 'Schedules attached to conversations'],
@@ -1374,6 +1401,7 @@ async function viewPanels(v) {
   v.append(grid);
   try {
     const data = await api('/tools');
+    if (stale(gen)) return;
     const withPanel = data.tools.filter(t => t.has_panel);
     if (withPanel.length) v.append(el('h2', null, 'tool panels'));
     const own = el('div', 'cards');
@@ -1430,9 +1458,11 @@ async function versionSection(v) {
 }
 
 async function viewJobs(v) {
+  const gen = drawing;
   setHeader('Jobs', true);
   const scope = state.arg ? '&session_id=' + state.arg : '';
   const jobs = await api('/jobs' + (state.arg ? '?session_id=' + state.arg : ''));
+  if (stale(gen)) return;
   if (!jobs || !jobs.length) {
     v.append(el('div', 'empty', 'No jobs scheduled. The agent schedules its own from inside a conversation.'));
     return;
@@ -1521,8 +1551,10 @@ function renderRuns(into, runs) {
 
 
 async function viewTools(v) {
+  const gen = drawing;
   setHeader('Tools', true);
   const data = await api('/tools');
+  if (stale(gen)) return;
   const rl = el('button', 'btn primary', 'Reload from disk');
   rl.onclick = async () => { const r = await post('/tools/reload', {}); toast({ title: 'Reloaded', body: (r.loaded || []).join(', ') }); render(); };
   const bar = el('div', 'toolbar'); bar.append(rl);
@@ -1617,6 +1649,7 @@ const AUTHORED = {
 };
 
 async function viewAuthored(v, kind) {
+  const gen = drawing;
   const spec = AUTHORED[kind];
   const title = kind === 'skills' ? 'Skills' : 'Personas';
   // Each document, and a new one, has an address of its own, so the back button
@@ -1624,6 +1657,7 @@ async function viewAuthored(v, kind) {
   if (state.arg) return editAuthored(kind, state.arg === '+new' ? null : decodeURIComponent(state.arg));
   setHeader(title, true, [{ label: 'New ' + spec.one, fn: () => location.hash = '#' + kind + '/+new' }]);
   const data = await api(spec.path);
+  if (stale(gen)) return;
   v.append(el('p', 'note', spec.blurb));
   const grid = el('div', 'cards');
   v.append(grid);
