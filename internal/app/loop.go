@@ -17,8 +17,6 @@ type turnOpts struct {
 	DueAt time.Time
 }
 
-const maxToolRounds = 12
-
 // runTurn assembles a request from the session, calls the model, dispatches tool
 // calls, appends results, and repeats until the model stops calling tools.
 func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
@@ -50,7 +48,13 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 
 	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID}
 
-	for round := 0; round < maxToolRounds; round++ {
+	// A turn runs until the model stops calling tools. It was bounded at twelve
+	// rounds, which a task of any size passes in a minute or two; the turn then
+	// ended having written nothing, and the conversation went quiet with no
+	// reason given. A runaway loop is the risk that bound was against, and it is
+	// one to answer when it is seen, rather than by cutting every long task
+	// short.
+	for {
 		req := ChatRequest{Model: s.Model, Messages: msgs, Tools: a.tools.SchemasFor(s)}
 		a.hub.Broadcast(wsEvent{Kind: "turn_start", SessionID: s.ID})
 		res, err := a.or.Chat(ctx, req, func(d string) {
