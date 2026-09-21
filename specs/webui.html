@@ -41,6 +41,11 @@ read or written is a screen, so the browser's back button leaves it for the list
 Saving or deleting leaves the same way: back to that list when it is behind the editor, and otherwise
 the list in the editor's place, so the history never holds a list twice.</p>
 
+<p>A screen is drawn from requests that answer in their own time, so two screens opened one after the
+other can answer in the wrong order. The screen on the address bar is the one on the pane: a draw that
+is no longer the current one stops where it stands rather than painting its conversation, or a second
+composer, over the screen that replaced it.</p>
+
 <p>A view's own actions &mdash; a conversation's jobs, files, summary, fork, controls &mdash; belong to
 the header. They are one list rendered in two shapes: laid along the header where there is room for
 them, folded behind a single button where there is not. Which is on screen is the stylesheet's
@@ -61,6 +66,7 @@ middle.</p>
 <li>The rail links Jobs, Tools, Skills, and More; personas are reached from More.</li>
 <li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
 <li>Saving or deleting a skill or persona returns to the list it was opened from without adding the list to the history a second time.</li>
+<li>A screen still loading when another is opened paints nothing: the pane shows the conversation the address names, with one composer under it.</li>
 <li>A view's actions are one list, whether laid along the header or folded behind one button.</li>
 <li>A transcript is held to a reading column; a list of jobs, tools, files, or skills takes the full width available.</li>
 <li>Nothing in the interface is laid out at a fixed page width.</li>

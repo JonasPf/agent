@@ -367,6 +367,38 @@ test('a list view takes the room a transcript does not', () => {
   assert.ok(!/roomy/.test(ctx._id('view').className), 'a transcript was given the wide layout');
 });
 
+// Two conversations opened one after the other race each other: the first is
+// still being fetched when the second is asked for. Whichever answered last
+// used to paint the pane, so the screen could show one conversation while the
+// address bar named the other, and the composer could be laid down twice.
+test('a conversation still loading never paints over the one opened after it', async () => {
+  const ctx = load({
+    '/sessions/A': { session: session({ id: 'A', title: 'First' }) },
+    '/sessions/A/transcript': [],
+    '/sessions/B': { session: session({ id: 'B', title: 'Second' }) },
+    '/sessions/B/transcript': [],
+  });
+  const answer = ctx.fetch;
+  let release;
+  const held = new Promise(r => { release = r; });
+  ctx.fetch = async (p, opts) => {
+    if (String(p).startsWith('/sessions/A')) await held;
+    return answer(p, opts);
+  };
+  ctx.location.hash = '#session/A';
+  const first = ctx.route();
+  ctx.location.hash = '#session/B';
+  await ctx.route();
+  release();
+  await first;
+  assert.strictEqual(vm.runInContext('state.session.id', ctx), 'B',
+    'the conversation left behind took the screen back');
+  assert.strictEqual(findAll(ctx._id('foot'), 'composer').length, 1,
+    'the composer was laid down more than once');
+  assert.strictEqual(ctx._id('view').children.length, 1,
+    'the pane holds more than one transcript');
+});
+
 // ---------- the stylesheet ----------
 
 const CSS = fs.readFileSync(path.join(WEB, 'style.css'), 'utf8');

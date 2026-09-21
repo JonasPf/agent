@@ -2,6 +2,11 @@
 
 ## 2026-09-21
 
+- **Opening one conversation after another no longer mixes the two.** Tapping a
+  conversation while a previous one was still loading could leave the older one
+  on screen while the address bar named the newer, and lay a second message box
+  under it. The conversation on screen is now the one you asked for, with one
+  message box.
 - **A turn can be stopped.** While a conversation is working, the status line
   now carries a stop next to the count. It ends the turn where it is — the
   model call and whatever tool is running under it — and the transcript says
