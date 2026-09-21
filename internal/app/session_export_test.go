@@ -198,3 +198,33 @@ func TestImportRejectsSomethingThatIsNotASessionArchive(t *testing.T) {
 		t.Errorf("import of rubbish = %d, want 400", w.Code)
 	}
 }
+
+// declaredImport states an archive's size in the request without sending it,
+// which is how an oversized one is refused before it arrives.
+func declaredImport(t *testing.T, a *App, bytes int64) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest("POST", "/sessions/import", strings.NewReader(""))
+	req.Header.Set("Content-Type", "application/zip")
+	req.ContentLength = bytes
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, req)
+	return w
+}
+
+// An archive carries a whole working directory, so it has to be allowed to be
+// larger than the largest single file a session can hold: otherwise a session
+// exported from this screen could never be imported back.
+func TestAnArchiveMayBeLargerThanTheFilesItCarries(t *testing.T) {
+	a := newTestApp(t)
+
+	if w := declaredImport(t, a, maxUpload+64<<20); w.Code == 413 {
+		t.Errorf("an archive holding one file of the limit was refused: %s", w.Body.String())
+	}
+	w := declaredImport(t, a, maxArchive+uploadEnvelope+1)
+	if w.Code != 413 {
+		t.Fatalf("an archive over the limit got status %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "500 MB") {
+		t.Errorf("the refusal reads %q and does not say the limit", w.Body.String())
+	}
+}

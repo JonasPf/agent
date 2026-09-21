@@ -4,7 +4,10 @@
 
 - **Uploads can be 250 MB.** The limit was 100 MB, which a saved web page with
   its images inside can pass on its own. Anything larger is still refused
-  before it is sent.
+  before it is sent, and a file of exactly 250 MB now goes through.
+- **A session archive may be 500 MB**, so a session holding a large file can be
+  exported and imported back. An archive being imported is read from disk
+  rather than held in memory, which it no longer has room for.
 
 ## 2026-09-19
 

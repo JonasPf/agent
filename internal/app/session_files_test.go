@@ -309,14 +309,26 @@ func TestUploadsAreRefusedAboveTheLimit(t *testing.T) {
 	a := newTestApp(t)
 	s := newSession(t, a)
 
-	w := declaredUpload(t, a, s.ID, 250<<20+1)
+	w := declaredUpload(t, a, s.ID, maxUpload+uploadEnvelope+1)
 	if w.Code != 413 {
-		t.Fatalf("a 250 MB + 1 upload got status %d: %s", w.Code, w.Body.String())
+		t.Fatalf("an upload past the limit got status %d: %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), "250 MB") {
 		t.Errorf("the refusal reads %q and does not say the limit", w.Body.String())
 	}
 	if w := declaredUpload(t, a, s.ID, 200<<20); w.Code == 413 {
 		t.Errorf("a 200 MB upload was refused as too large: %s", w.Body.String())
+	}
+}
+
+// The interface refuses a file on its own size, while the request that carries
+// it adds a boundary and part headers around it. A file of exactly the limit
+// must not be refused for that envelope, or the limit the screen states is one
+// the operator cannot reach.
+func TestAFileOfExactlyTheLimitIsNotRefusedForItsEnvelope(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	if w := declaredUpload(t, a, s.ID, maxUpload+512); w.Code == 413 {
+		t.Errorf("a file of exactly the limit was refused: %s", w.Body.String())
 	}
 }

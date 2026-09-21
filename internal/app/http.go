@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,7 +13,18 @@ import (
 	"time"
 )
 
-const maxUpload = 250 << 20
+// maxUpload is the largest file a session may hold. An archive carries a whole
+// working directory and its transcript, so maxArchive has to be larger than
+// that, or a session exported from the files screen could not be imported back.
+// A request adds a multipart boundary and part headers around what it carries;
+// uploadEnvelope is room for those, so that a file of exactly the limit is not
+// refused for its wrapping. What the file itself weighs is still counted as it
+// is written.
+const (
+	maxUpload      = 250 << 20
+	maxArchive     = 2 * maxUpload
+	uploadEnvelope = 64 << 10
+)
 
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -770,7 +780,7 @@ func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	if r.ContentLength > maxUpload {
+	if r.ContentLength > maxUpload+uploadEnvelope {
 		fail(w, 413, "files larger than 250 MB are refused")
 		return
 	}
@@ -857,11 +867,11 @@ func (a *App) hExportSession(w http.ResponseWriter, r *http.Request) {
 // hImportSession restores a session from an archive, under the identifier the
 // archive carries.
 func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
-	if r.ContentLength > maxUpload {
-		fail(w, 413, "archives larger than 250 MB are refused")
+	if r.ContentLength > maxArchive+uploadEnvelope {
+		fail(w, 413, "archives larger than 500 MB are refused")
 		return
 	}
-	var body io.Reader = io.LimitReader(r.Body, maxUpload)
+	var body io.Reader = io.LimitReader(r.Body, maxArchive+1)
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			fail(w, 400, "%v", err)
@@ -875,12 +885,25 @@ func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
 		defer file.Close()
 		body = file
 	}
-	blob, err := io.ReadAll(body)
+	// An archive is spilled to a file rather than held in memory: at this size
+	// reading one in would cost the container more than it has.
+	tmp, err := os.CreateTemp(a.cfg.DataDir, "import-*.zip")
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	n, err := io.Copy(tmp, body)
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
-	s, err := a.ImportSession(bytes.NewReader(blob), int64(len(blob)))
+	if n > maxArchive {
+		fail(w, 413, "archives larger than 500 MB are refused")
+		return
+	}
+	s, err := a.ImportSession(tmp, n)
 	if err != nil {
 		code := 400
 		if strings.Contains(err.Error(), "already here") {
