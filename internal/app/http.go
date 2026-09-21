@@ -36,6 +36,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("DELETE /sessions/{id}", a.hDeleteSession)
 	mux.HandleFunc("GET /sessions/{id}/transcript", a.hTranscript)
 	mux.HandleFunc("POST /sessions/{id}/messages", a.hSendMessage)
+	mux.HandleFunc("POST /sessions/{id}/cancel", a.hCancel)
 	mux.HandleFunc("POST /sessions/{id}/fork", a.hFork)
 	mux.HandleFunc("POST /sessions/{id}/compact", a.hCompact)
 	mux.HandleFunc("PUT /sessions/{id}/compaction", a.hEditCompaction)
@@ -306,6 +307,21 @@ func (a *App) hSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(202)
+}
+
+// hCancel stops the turn a session is running. A turn runs for as long as its
+// work takes, so this is how one that is going nowhere is ended.
+func (a *App) hCancel(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if a.store.Session(id) == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	if !a.StopTurn(id) {
+		fail(w, 409, "this conversation is not working on anything")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"stopped": true})
 }
 
 // hFork copies a conversation into a new session. Any configuration field left

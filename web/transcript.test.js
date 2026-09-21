@@ -173,7 +173,8 @@ test('only failures are marked bad', () => {
   for (const k of ['job_error', 'error']) {
     assert.strictEqual(isFailure({ event_kind: k }), true, k);
   }
-  for (const k of ['job_check', 'rotation', 'carried_over']) {
+  // A turn the operator stopped is not a fault of the agent's.
+  for (const k of ['job_check', 'rotation', 'carried_over', 'cancelled']) {
     assert.strictEqual(isFailure({ event_kind: k }), false, k);
   }
   assert.strictEqual(isFailure({ event_kind: 'job_check', status: 'not_fired' }), false);

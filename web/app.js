@@ -551,6 +551,17 @@ function renderStatus() {
   const since = state.working[s.id];
   if (since != null) {
     line.append(el('span', 'gen working', 'working ' + waitingLabel((Date.now() - since) / 1000)));
+    // A turn runs for as long as its work takes, so while one is running the
+    // way to end it belongs next to the count of how long it has been.
+    const stop = el('button', 'stop', 'stop');
+    stop.type = 'button'; stop.title = 'Stop this turn';
+    stop.onclick = async e => {
+      e && e.stopPropagation && e.stopPropagation();
+      stop.disabled = true;
+      try { await post('/sessions/' + s.id + '/cancel'); }
+      catch (err) { toast({ title: 'Nothing to stop', body: String(err.message) }); }
+    };
+    line.append(stop);
     tickWorking();
   }
   add('', s.model.split('/').pop());

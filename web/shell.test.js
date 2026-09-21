@@ -542,6 +542,22 @@ test('the status line counts how long the agent has been working', async () => {
   assert.match(textOf(ctx._id('statusline')), /working\s+0s/, 'a turn that starts on screen does not show at once');
 });
 
+// A turn runs for as long as its work takes, so the one thing the operator
+// needs while it does is a way to end it.
+test('a working conversation can be stopped from the status line', async () => {
+  const ctx = conversationScreen(session({ id: 'S1', working_seconds: 7 }));
+  await ctx.viewSession(node('div'));
+  const stop = find(ctx._id('statusline'), 'stop');
+  assert.ok(stop, 'a working conversation offers no way to stop it');
+  await stop.onclick({ stopPropagation() {} });
+  assert.ok(ctx._calls.some(c => c.method === 'POST' && c.path === '/sessions/S1/cancel'),
+    'the button stopped nothing: ' + JSON.stringify(ctx._calls));
+
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  assert.ok(!find(ctx._id('statusline'), 'stop'),
+    'the button stayed after the conversation finished');
+});
+
 test('an idle conversation shows no indicator', async () => {
   const ctx = conversationScreen(session({ id: 'S1' }));
   await ctx.viewSession(node('div'));

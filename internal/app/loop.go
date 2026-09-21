@@ -184,13 +184,23 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 		return fmt.Errorf("no session %s", sessionID)
 	}
 	a.enqueue(s.ID, func() {
-		ctx := context.Background()
+		ctx, done := a.turnContext(context.Background(), s.ID)
+		defer done()
 		live := a.store.Session(s.ID)
 		if live == nil {
 			return
 		}
 		first := a.lastUserTurn(live.ID).IsZero()
 		if err := a.runTurn(ctx, live, turnOpts{UserText: text}); err != nil {
+			// A turn the operator stopped did not fail: it ended where they
+			// said. The transcript has to tell the two apart, or a stop reads
+			// as the agent breaking.
+			if ctx.Err() != nil {
+				a.appendEvent(live.ID, Entry{EventKind: "cancelled",
+					Text: "stopped, part way through"})
+				a.hub.Broadcast(wsEvent{Kind: "sessions"})
+				return
+			}
 			a.appendEvent(live.ID, Entry{EventKind: "error", Text: "turn failed: " + err.Error()})
 			return
 		}

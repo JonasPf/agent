@@ -190,6 +190,46 @@ type App struct {
 	// waiting on it.
 	pending map[string]int
 	since   map[string]time.Time
+	// running cancels the turn a session has in flight, so the operator can
+	// stop one. A turn runs for as long as its work takes, which makes this
+	// the only way to end one that is going nowhere.
+	running map[string]context.CancelFunc
+}
+
+// turnContext derives the context one turn runs under and registers it as the
+// session's, so a stop reaches the model call and the tool subprocess under it.
+// The returned function releases it, and must be called when the turn ends.
+func (a *App) turnContext(ctx context.Context, sessionID string) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	a.qmu.Lock()
+	if a.running == nil {
+		a.running = map[string]context.CancelFunc{}
+	}
+	a.running[sessionID] = cancel
+	a.qmu.Unlock()
+	return ctx, func() {
+		a.qmu.Lock()
+		if a.running[sessionID] != nil {
+			delete(a.running, sessionID)
+		}
+		a.qmu.Unlock()
+		cancel()
+	}
+}
+
+// StopTurn ends the turn a session is running. It reports whether there was
+// one: a session that has already finished has nothing to stop, and saying so
+// is not the same as having stopped it.
+func (a *App) StopTurn(sessionID string) bool {
+	a.qmu.Lock()
+	cancel := a.running[sessionID]
+	delete(a.running, sessionID)
+	a.qmu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel()
+	return true
 }
 
 func Run() error {

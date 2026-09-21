@@ -282,6 +282,30 @@
         }
       }
     },
+    "/sessions/{id}/cancel": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Stop the turn this session is running. A turn runs for as long as its work takes; this ends one where it is, and the transcript says it was stopped.",
+        "responses": {
+          "200": {
+            "description": "The turn was stopped."
+          },
+          "404": {
+            "description": "No such session."
+          },
+          "409": {
+            "description": "This session is not working on anything."
+          }
+        }
+      }
+    },
     "/sessions/{id}/messages": {
       "parameters": [
         {

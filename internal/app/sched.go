@@ -134,6 +134,10 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 
 	// The wake it was due at, not the moment it got to run.
 	before := len(a.store.Entries(sess.ID))
+	// A wake runs as the session's turn, so the operator can stop one of these
+	// the same way they stop their own.
+	ctx, done := a.turnContext(ctx, sess.ID)
+	defer done()
 	if err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, DueAt: due}); err != nil {
 		s.jobFailed(j, err)
 		return
