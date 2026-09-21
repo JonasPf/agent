@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-09-21
+
+- **A turn can be stopped.** While a conversation is working, the status line
+  now carries a stop next to the count. It ends the turn where it is — the
+  model call and whatever tool is running under it — and the transcript says
+  it was stopped, so it does not read as the agent breaking. A scheduled wake
+  stops the same way.
+- **A long task no longer stops halfway.** A turn was cut off after twelve
+  rounds of tool calls, and cut off silently: the conversation simply went
+  quiet, with nothing said about why. A turn now runs until the agent is
+  finished. If you set one going on something large, watch what it costs.
+
 ## 2026-09-20
 
 - **Uploads can be 250 MB.** The limit was 100 MB, which a saved web page with

@@ -162,6 +162,24 @@ and can be changed mid-session.</p>
 <tr><td><code>/chat/completions</code></td><td>Inference, streamed.</td></tr>
 </table>
 
+<h3>How long a turn runs</h3>
+
+<p>A turn is a loop: the model is called, the tools it asks for are run, their results go back, and it
+is called again. The loop ends when the model stops asking for tools. It is not bounded by a number of
+rounds. A research task passes any such number in a minute or two, and a turn that stopped on one
+stopped having written nothing &mdash; the conversation went quiet, mid-task, with no entry saying
+why, which is the one thing that may not happen here. A model that calls tools forever is a real risk
+and is answered when it is seen, by the operator reading what it is doing and by the cost the session
+reports, not by cutting every long task short.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A turn runs as many rounds of tool calls as the model asks for, and ends on what the model said.</li>
+<li>A turn never ends without writing an entry: an answer, or a failure that says what went wrong.</li>
+</ul>
+</div>
+
 <h3>Retrying a model call</h3>
 
 <p>A call can fail because the upstream was briefly unreachable or because the account cannot make it

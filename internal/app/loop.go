@@ -17,8 +17,6 @@ type turnOpts struct {
 	DueAt time.Time
 }
 
-const maxToolRounds = 12
-
 // runTurn assembles a request from the session, calls the model, dispatches tool
 // calls, appends results, and repeats until the model stops calling tools.
 func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
@@ -50,7 +48,13 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 
 	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID}
 
-	for round := 0; round < maxToolRounds; round++ {
+	// A turn runs until the model stops calling tools. It was bounded at twelve
+	// rounds, which a task of any size passes in a minute or two; the turn then
+	// ended having written nothing, and the conversation went quiet with no
+	// reason given. A runaway loop is the risk that bound was against, and it is
+	// one to answer when it is seen, rather than by cutting every long task
+	// short.
+	for {
 		req := ChatRequest{Model: s.Model, Messages: msgs, Tools: a.tools.SchemasFor(s)}
 		a.hub.Broadcast(wsEvent{Kind: "turn_start", SessionID: s.ID})
 		res, err := a.or.Chat(ctx, req, func(d string) {
@@ -180,13 +184,23 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 		return fmt.Errorf("no session %s", sessionID)
 	}
 	a.enqueue(s.ID, func() {
-		ctx := context.Background()
+		ctx, done := a.turnContext(context.Background(), s.ID)
+		defer done()
 		live := a.store.Session(s.ID)
 		if live == nil {
 			return
 		}
 		first := a.lastUserTurn(live.ID).IsZero()
 		if err := a.runTurn(ctx, live, turnOpts{UserText: text}); err != nil {
+			// A turn the operator stopped did not fail: it ended where they
+			// said. The transcript has to tell the two apart, or a stop reads
+			// as the agent breaking.
+			if ctx.Err() != nil {
+				a.appendEvent(live.ID, Entry{EventKind: "cancelled",
+					Text: "stopped, part way through"})
+				a.hub.Broadcast(wsEvent{Kind: "sessions"})
+				return
+			}
 			a.appendEvent(live.ID, Entry{EventKind: "error", Text: "turn failed: " + err.Error()})
 			return
 		}
