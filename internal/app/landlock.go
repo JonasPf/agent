@@ -1,5 +1,3 @@
-//go:build linux
-
 package app
 
 import (
@@ -10,6 +8,14 @@ import (
 	"unsafe"
 )
 
+// This file carries no build tag and has no counterpart for another platform.
+// The agent is a Linux program: Landlock is the only confinement it has, the
+// container is the only place it runs, and every check is proved there
+// (ADR-056). A `!linux` stub used to exist so the package would still build on a
+// laptop, and what it bought was a second environment that confined nothing and
+// a test suite that skipped the parts which would have said so. Off Linux this
+// package does not compile, which is the intended answer.
+//
 // Landlock: a kernel boundary an unprivileged process can ask for. It needs no
 // namespace, no capability, and no cooperation from the host — which is what
 // bubblewrap needed and could not get inside a container on a distribution that

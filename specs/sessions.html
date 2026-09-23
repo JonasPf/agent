@@ -224,7 +224,7 @@ justification, and it is the test every event has to pass.</p>
 <tr><td><code>job_check</code></td><td>A check ran and what it decided. Nothing else records a tick that did not fire.</td></tr>
 <tr><td><code>job_error</code></td><td>A job failed. Failing is not something the model says.</td></tr>
 <tr><td><code>error</code></td><td>A turn failed, or a compaction failed and the conversation continued uncompacted.</td></tr>
-<tr><td><code>cancelled</code></td><td>The operator stopped a turn part way through. Nothing else tells a conversation that was stopped from one that failed, or from one that simply had nothing more to say.</td></tr>
+<tr><td><code>cancelled</code></td><td>The operator stopped a turn, and where it had got to: part way through, or before the agent began. Nothing else tells a conversation that was stopped from one that failed, or from one that simply had nothing more to say.</td></tr>
 <tr><td><code>fork</code></td><td>This conversation was copied into a new session. Written in the origin, which is otherwise unchanged and would show no trace.</td></tr>
 <tr><td><code>forked_from</code></td><td>This session began as a copy of another, at a named point in it.</td></tr>
 </table>
@@ -252,6 +252,7 @@ screen. A transcript is read by a person; its budget is attention, not tokens.
 <li>The job attribution appears once, on the wake, and not on the replies it produced.</li>
 <li>Every message carries the time it was written, with the date shown once it is not today's.</li>
 <li>A turn the operator stopped is written as stopped, not as a failure, and the answer it was working on does not arrive afterwards.</li>
+<li>A stopped turn says where it got to, and a turn that was stopped before it reached the model does not claim to have been part way through.</li>
 </ul>
 </div>
 
@@ -597,6 +598,8 @@ that session, and a job never interleaves with a turn in progress.</p>
 <li>A job firing while a user turn is running waits and then runs.</li>
 <li>A user message queued behind a job run is not reordered ahead of it or dropped.</li>
 <li>Different sessions run concurrently without blocking each other.</li>
+<li>A turn is stoppable from the moment its session says it is working, including while it is still queued, and a turn stopped before it started never runs.</li>
+<li>Stopping takes the turns in the order they were queued, and is refused only when the session has nothing queued or running.</li>
 </ul>
 </div>
 

@@ -190,46 +190,50 @@ type App struct {
 	// waiting on it.
 	pending map[string]int
 	since   map[string]time.Time
-	// running cancels the turn a session has in flight, so the operator can
-	// stop one. A turn runs for as long as its work takes, which makes this
-	// the only way to end one that is going nowhere.
-	running map[string]context.CancelFunc
+	// running holds the turns a session has queued or in flight, oldest first,
+	// each with the cancel that ends it. A turn is registered when it is queued
+	// rather than when it starts: the conversation says it is working from that
+	// moment, the interface offers a stop from that moment, and a stop that
+	// arrived in between used to be answered "not working on anything" while the
+	// turn went on to run.
+	running map[string][]*turnHandle
 }
 
-// turnContext derives the context one turn runs under and registers it as the
-// session's, so a stop reaches the model call and the tool subprocess under it.
-// The returned function releases it, and must be called when the turn ends.
-func (a *App) turnContext(ctx context.Context, sessionID string) (context.Context, func()) {
-	ctx, cancel := context.WithCancel(ctx)
-	a.qmu.Lock()
-	if a.running == nil {
-		a.running = map[string]context.CancelFunc{}
-	}
-	a.running[sessionID] = cancel
-	a.qmu.Unlock()
-	return ctx, func() {
-		a.qmu.Lock()
-		if a.running[sessionID] != nil {
-			delete(a.running, sessionID)
-		}
-		a.qmu.Unlock()
-		cancel()
-	}
-}
+// turnHandle is one queued or running turn, identified by its address so that
+// whoever ends it — the operator or the turn itself — can take it off the list
+// without ambiguity.
+type turnHandle struct{ cancel context.CancelFunc }
 
-// StopTurn ends the turn a session is running. It reports whether there was
-// one: a session that has already finished has nothing to stop, and saying so
-// is not the same as having stopped it.
+// StopTurn ends the oldest turn a session has queued or in flight, which is the
+// one the operator is waiting on. It reports whether there was one: a session
+// with nothing outstanding has nothing to stop, and saying so is not the same as
+// having stopped it.
 func (a *App) StopTurn(sessionID string) bool {
 	a.qmu.Lock()
-	cancel := a.running[sessionID]
-	delete(a.running, sessionID)
-	a.qmu.Unlock()
-	if cancel == nil {
+	list := a.running[sessionID]
+	if len(list) == 0 {
+		a.qmu.Unlock()
 		return false
 	}
-	cancel()
+	h := list[0]
+	a.dropTurn(sessionID, h)
+	a.qmu.Unlock()
+	h.cancel()
 	return true
+}
+
+// dropTurn takes a turn off its session's list. The caller holds qmu.
+func (a *App) dropTurn(sessionID string, h *turnHandle) {
+	list := a.running[sessionID]
+	for i, x := range list {
+		if x == h {
+			a.running[sessionID] = append(list[:i:i], list[i+1:]...)
+			break
+		}
+	}
+	if len(a.running[sessionID]) == 0 {
+		delete(a.running, sessionID)
+	}
 }
 
 func Run() error {
@@ -318,12 +322,22 @@ func (a *App) ReloadTools(sessionID string) ([]string, []LoadFailure) {
 // A session is working from the moment its first turn is queued until its last
 // one finishes, and says so once each way. A turn queued behind another does
 // not end the wait: the operator is waiting on both.
-func (a *App) enqueue(sessionID string, fn func()) {
+//
+// The context fn runs under is made here, before this returns, so the turn is
+// stoppable from the moment the conversation says it is working — including
+// while it is still waiting for the queue.
+func (a *App) enqueue(sessionID string, fn func(context.Context)) {
+	ctx, cancel := context.WithCancel(context.Background())
+	h := &turnHandle{cancel: cancel}
 	a.qmu.Lock()
 	if a.pending == nil {
 		a.pending = map[string]int{}
 		a.since = map[string]time.Time{}
 	}
+	if a.running == nil {
+		a.running = map[string][]*turnHandle{}
+	}
+	a.running[sessionID] = append(a.running[sessionID], h)
 	a.pending[sessionID]++
 	began := a.pending[sessionID] == 1
 	if began {
@@ -356,7 +370,15 @@ func (a *App) enqueue(sessionID string, fn func()) {
 	if began && a.hub != nil {
 		a.hub.Broadcast(wsEvent{Kind: "working", SessionID: sessionID})
 	}
-	q <- fn
+	q <- func() {
+		defer func() {
+			a.qmu.Lock()
+			a.dropTurn(sessionID, h)
+			a.qmu.Unlock()
+			cancel()
+		}()
+		fn(ctx)
+	}
 }
 
 // Busy reports whether a turn is running or queued for this session.

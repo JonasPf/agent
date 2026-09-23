@@ -15,20 +15,26 @@ See [`specs/index.html`](specs/index.html).
 
 ## Build, run, lint, test
 
-Workflows live in [`Taskfile.yml`](Taskfile.yml); run `task` to list them. The
-underlying commands are plain `go` and `node` and still work on their
-own. `OPENROUTER_API_KEY` must be set to run the agent or the evals (not needed
-to build, lint, or test); the agent reads it from `.env`, and `task` loads that
+Workflows live in [`Taskfile.yml`](Taskfile.yml); run `task` to list them.
+`OPENROUTER_API_KEY` must be set to run the agent or the evals (not needed to
+build, lint, or test); the agent reads it from `.env`, and `task` loads that
 file too.
+
+**There is one environment: Linux, in the container** ([ADR-056](specs/adrs.html#adr-056)).
+Every task that compiles, tests, or runs the agent goes through `on:linux`,
+which does the work directly where the host is already Linux — CI, a Linux
+desktop, the test container itself — and otherwise builds `testenv/` and runs it
+in there. Off Linux the Go package does not compile: `internal/app` binds
+Landlock and prctl directly and has no fallback, so `go test ./...` on a Mac is
+not a faster version of the check, it is a compile error. Use the tasks.
 
 | Task | Command | Notes |
 |------|---------|-------|
 | **Build** | `task build` | Compiles all packages and every tool. Agent entry point is `./cmd/agent`; each `tools/<name>` builds to its own `run`. |
-| **Run** | `task run` | Serves http://localhost:7770. See the README table for `AGENT_*` env vars. |
+| **Run** | `task dev` | Builds the runtime image and serves http://localhost:7770, tools confined. The only way to run the agent. See the README table for `AGENT_*` env vars. |
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
-| **Test** | `task test` | Go tests across the agent and every tool; the browser's pure helpers (`web/transcript.js`) under node's built-in runner. Sub-tasks: `test:go`, `test:web`. `test:go` builds the tools first, because the registry will not load one whose `run` is missing. |
+| **Test** | `task test` | Go tests across the agent and every tool; the browser's pure helpers (`web/transcript.js`) under node's built-in runner. The Go side builds the tools first, because the registry will not load one whose `run` is missing. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
 | **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
-| **Test in a container** | `task check:container` | `task check` on Linux in `testenv/Dockerfile` (CI's environment: Debian, chromium, Landlock), with the working tree copied in. A test that cannot run there fails instead of skipping. `task eval:container -- [tool...]` runs the evals the same way. Docker where installed, Podman otherwise. |
 | **Reset** | `task db:clear` | Moves sessions, jobs, memory, and per-session files to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
 | **Inspect** | `task db:status` | What the running agent currently holds. |
 
@@ -40,20 +46,16 @@ After every change, and **before committing**, these must all run successfully:
 task check
 ```
 
-That runs lint, build, and every test suite.
+That runs lint, build, and every test suite — in `testenv/Dockerfile` (Debian,
+chromium, Landlock, `AGENT_TEST_FULL=1`) unless the host is already Linux. It is
+the environment CI uses, so a green run here is a green run there, and a test
+that cannot run fails rather than saying NOT RUN. The first run of the day
+builds the image; after that the image and the Go caches are reused.
 
-Off Linux, `task check` skips the browser and sandbox tests (each says NOT
-RUN), so a green run there has not proved them. On a Mac, also run:
+`task eval -- <tool>` goes to the same place, which is how the browser tools'
+evals get a browser.
 
-```sh
-task check:container
-```
-
-Evals of the browser tools need a browser too: run them with
-`task eval:container -- <tool>`.
-
-Do not commit if any of them fail. Fix the change (or the tests) until all
-of them pass.
+Do not commit if it fails. Fix the change (or the tests) until it passes.
 
 **Never skip, disable, or exit tests early to make a run pass.** Do not add
 skips, `t.Skip`, `xfail`, `.only`/`.skip`, early returns, commented-out

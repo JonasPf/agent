@@ -29,8 +29,9 @@ jobs:
     # against it would be testing something the agent never runs. This container
     # shares the runner's kernel, so Landlock is still the host's.
     #
-    # testenv/Dockerfile describes this same environment for `task
-    # check:container` on a laptop. A change to one belongs in the other.
+    # testenv/Dockerfile describes this same environment, which is where `task
+    # check` runs when the host is not Linux. A change to one belongs in the
+    # other.
     container:
       image: golang:1.25-bookworm
     steps:

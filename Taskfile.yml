@@ -2,6 +2,13 @@ version: '3'
 
 # Every workflow in the repo. `task` on its own lists them.
 #
+# The agent is a Linux program and has one environment: the container. Anything
+# that compiles, tests, or runs it goes through `on:linux`, which runs the work
+# directly when the host is already Linux — CI, a Linux desktop, the test
+# container itself — and otherwise builds testenv/ and runs it in there. So a
+# laptop that is not Linux proves exactly what CI proves, rather than a subset
+# of it with the parts it cannot reach quietly skipped.
+#
 # OPENROUTER_API_KEY is read from .env by the agent itself; the eval command
 # needs it in the environment too, and dotenv puts it there.
 
@@ -24,6 +31,10 @@ vars:
   CONTAINER:
     sh: 'command -v docker >/dev/null 2>&1 && echo docker || echo podman'
 
+# A task named `x:here` is the work itself, run where the work belongs; `x` is
+# what you type, and puts `x:here` on Linux. They carry no description, so the
+# list above stays the set of things worth typing. build:tools, test:go, and
+# test:web are the same: steps of a suite, not entry points.
 tasks:
   default:
     desc: List the available tasks
@@ -33,11 +44,15 @@ tasks:
   build:
     desc: Compile the agent and every tool
     cmds:
+      - task: on:linux
+        vars: {CMD: 'task build:here'}
+
+  build:here:
+    cmds:
       - go build -ldflags '{{.STAMP}}' ./...
       - task: build:tools
 
   build:tools:
-    desc: Compile each tool directory to its own `run` executable
     silent: true
     cmds:
       - |
@@ -48,23 +63,19 @@ tasks:
         done
         echo "tools built"
 
-  run:
-    desc: Run the agent from source, serving http://localhost{{.ADDR}} (unconfined off Linux)
-    deps: [build]
-    cmds:
-      - go run -ldflags '{{.STAMP}}' ./cmd/agent
-
   dev:
-    desc: Run the agent in its container, the way it runs in production — tools confined
+    desc: Run the agent, serving http://localhost{{.ADDR}} — the one way to run it
     cmds:
       # The sandbox is Landlock, which is the kernel's: a tool is confined where
-      # the agent runs on Linux, and nowhere else. On a laptop that means the
-      # container, built from the same Dockerfile that CI publishes.
+      # the agent runs on Linux, and nowhere else. There is no second way to
+      # start the agent, because there was no second environment worth
+      # supporting — one that confined nothing, answered `-confine` with an
+      # error, and skipped the tests that would have said so.
       #
       # The image keeps both under /app/state, which is the single volume a
       # deployment mounts. Here they are bound separately so a conversation
-      # started in the container survives it and is the same one `task run`
-      # sees, which wants them at the repository root.
+      # started in the container outlives it, at the repository root where the
+      # db: tasks back it up and restore it.
       - '{{.CONTAINER}} build -t agent:dev --build-arg VERSION="{{.VERSION}}" --build-arg BUILT_AT="{{.BUILT_AT}}" .'
       # Docker creates a missing bind-mount source; Podman refuses to.
       - mkdir -p data workspace
@@ -83,6 +94,11 @@ tasks:
 
   lint:
     desc: Report unformatted files and vet problems
+    cmds:
+      - task: on:linux
+        vars: {CMD: 'task lint:here'}
+
+  lint:here:
     silent: true
     cmds:
       - |
@@ -95,58 +111,67 @@ tasks:
   test:
     desc: Run every test suite — Go (agent and tools) and the browser helpers
     cmds:
+      - task: on:linux
+        vars: {CMD: 'task test:here'}
+
+  test:here:
+    cmds:
       - task: test:go
       - task: test:web
 
   test:go:
-    desc: Go tests, including every tool's own
     deps: [build:tools]
     cmds:
       - go test ./...
 
   test:web:
-    desc: Browser helper tests (node's built-in runner)
     cmds:
       - node --test web/*.test.js
 
   check:
     desc: Everything that must pass before committing
     cmds:
-      - task: lint
-      - task: build
-      - task: test
+      - task: on:linux
+        vars: {CMD: 'task check:here'}
+
+  check:here:
+    cmds:
+      - task: lint:here
+      - task: build:here
+      - task: test:here
 
   eval:
     desc: Put each tool's eval.json cases to a real model (costs money; CLI={{.CLI_ARGS}})
+    cmds:
+      - task: on:linux
+        vars: {CMD: 'task eval:here -- {{.CLI_ARGS}}', ENV_FILE: '--env-file .env'}
+
+  eval:here:
     # A case runs the tool it calls, and the registry will not load a tool whose
     # run is missing.
     deps: [build:tools]
     cmds:
       - go run ./cmd/eval {{.CLI_ARGS}}
 
-  check:container:
-    desc: Run `task check` on Linux in the test container, where the browser and sandbox tests run instead of skipping
-    cmds:
-      - task: container:run
-        vars: {CMD: 'task check'}
-
-  eval:container:
-    desc: Run the evals in the test container, where the browser tools have a browser (costs money; CLI={{.CLI_ARGS}})
-    cmds:
-      - task: container:run
-        vars: {CMD: 'task eval -- {{.CLI_ARGS}}', ENV_FILE: '--env-file .env'}
-
-  container:run:
+  on:linux:
     internal: true
     cmds:
-      # The environment is built once and holds no source. The working tree is
-      # mounted read-only and copied in, so the Linux executables a build writes
-      # to tools/*/run never land in the tree a host `task run` loads. The Go
-      # caches outlive the container, so a second run does not recompile
-      # everything. .env stays out of the copy and out of the image; the evals
-      # are handed it at run time.
-      - '{{.CONTAINER}} build -q -t agent:test testenv'
+      # Already Linux — CI, a Linux desktop, or the test container running its
+      # own tasks — so the work runs here. Nothing is gained by putting a Linux
+      # kernel inside a Linux kernel, and CI has no container runtime to do it
+      # with.
+      #
+      # Otherwise: the environment is built once and holds no source. The working
+      # tree is mounted read-only and copied in, so the Linux executables a build
+      # writes to tools/*/run never land in the tree. The Go caches outlive the
+      # container, so a second run does not recompile everything. .env stays out
+      # of the copy and out of the image; the evals are handed it at run time.
       - |
+        if [ "$(uname -s)" = "Linux" ]; then
+          exec sh -c '{{.CMD}}'
+        fi
+        set -e
+        {{.CONTAINER}} build -q -t agent:test testenv
         {{.CONTAINER}} run --rm {{.ENV_FILE}} \
           -v "$PWD:/repo:ro" \
           -v agent-test-gomod:/go/pkg/mod \
