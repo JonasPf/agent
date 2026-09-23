@@ -115,7 +115,7 @@ func confinementOrSkip(t *testing.T, s *Sandbox) {
 	t.Helper()
 	if !s.Enforcing() {
 		notRun(t, "nothing confines a tool here (%s). This test is proved on Linux — "+
-			"in CI, and in the test container with `task check:container`.", s.Reason)
+			"in CI, and in the test container that `task check` uses.", s.Reason)
 	}
 }
 

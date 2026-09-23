@@ -32,7 +32,7 @@ func browserOrSkip(t *testing.T) {
 	t.Helper()
 	if _, err := tool.Browser(); err != nil {
 		notRun(t, "%v. This test is proved where the browser is installed — "+
-			"in CI, and in the test container with `task check:container`.", err)
+			"in CI, and in the test container that `task check` uses.", err)
 	}
 }
 

@@ -8,17 +8,17 @@ Implements [specs/](specs/index.html); prototype, not hardened.
 ```sh
 cp .env.example .env      # then put your key in it
 chmod 600 .env
-task run
+task dev
 ```
 
 Open http://localhost:7770. Add it to the home screen for a full-screen app with its own icon.
 
-`task run` builds and runs from source, which is the fastest loop and confines nothing off Linux: the
-sandbox is Landlock, a kernel facility, and a laptop has no equivalent worth keeping a second policy
-for. The agent says so at startup. `task dev` runs the same code in the container it ships in, where a
-tool is confined exactly as it is in production. For the same reason `task check` on a Mac skips the
-browser and sandbox tests, saying NOT RUN; `task check:container` runs the whole suite on Linux, where
-nothing skips. Docker is used where it is installed, Podman otherwise.
+The agent is a Linux program and has one environment: the container it ships in, where a tool is
+confined by Landlock exactly as it is in production. `task dev` is the only way to run it, and
+`task check` runs the whole suite in `testenv/Dockerfile` — the same Debian, chromium, and kernel CI
+uses — so a laptop proves what CI proves rather than a subset of it. On Linux both run directly.
+Docker is used where it is installed, Podman otherwise. Off Linux the Go package does not compile
+at all, which is deliberate: see [ADR-056](specs/adrs.html#adr-056).
 Enable notifications on the settings screen to get a banner when the agent says something you
 are not reading; it works while the browser is open, and there is no push.
 
@@ -29,19 +29,18 @@ nothing here is required.
 
 | | |
 | --- | --- |
-| `task run` | Serve the agent from source. Off Linux nothing confines a tool, and it says so |
 | `task dev` | Serve the agent in its container, the way production runs it, with tools confined |
 | `task check` | Lint, build, and every test suite — run this before committing |
-| `task test` | Tests only (`test:go`, `test:web` individually) |
-| `task check:container` | The same check in the test container (`testenv/Dockerfile`) — Linux, chromium, Landlock — where a test that cannot run fails instead of skipping |
+| `task test` | The test suites only |
 | `task eval -- schedule` | Put one tool's `eval.json` cases to a real model; omit the name for all |
-| `task eval:container -- web_browse` | The same evals in the test container, where the browser tools have a browser |
 | `task db:clear` | Move sessions, jobs, and session files to `.backups/<stamp>` and start fresh |
 | `task db:restore` | Put the newest backup back |
 | `task db:status` | What the running agent holds |
 | `task tools:reload` | Reload tools from disk without a restart |
 
-`db:clear` refuses while the agent is running.
+`db:clear` refuses while the agent is running. Everything above the `db:` rows runs in the test
+container when the host is not Linux, so the first run of the day builds it; after that the image and
+the Go caches are reused.
 
 ## Configuration
 
@@ -52,7 +51,7 @@ is tolerated, and a value may be quoted. A variable already set in the environme
 so a one-off override still works:
 
 ```sh
-AGENT_ADDR=:9090 task run
+AGENT_ADDR=:9090 task dev
 ```
 
 `.env` holds a credential: keep it mode 600, and out of git. It is already in `.gitignore`, and the

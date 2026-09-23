@@ -1740,6 +1740,47 @@ carry — is withdrawn rather than quietly left standing: nothing carries that w
 about what was said in another conversation is answered by searching for it.</p>
 </div>
 
+<div class="adr" id="adr-056">
+<div class="meta">ADR-056 · accepted · supersedes in part <a href="#adr-039">ADR-039</a>, <a href="#adr-047">ADR-047</a></div>
+<h3>One environment: the container, or Linux, and nothing else</h3>
+<h4>Context</h4>
+<p><a href="#adr-039">ADR-039</a> made Landlock the only confinement and kept a <code>!linux</code>
+stub so the package would still build on a laptop: &ldquo;a laptop runs the tests and the
+interface&rdquo;. <a href="#adr-047">ADR-047</a> then built the test container, because a green
+<code>task check</code> on that laptop was proving less than CI &mdash; every test that needs a
+browser or a boundary skipped. Both were honest about the gap and both left it open, guarded by a
+second command the operator had to remember: <code>task check:container</code>.</p>
+<p>The gap was not theoretical. A stop pressed between a turn being queued and the turn starting was
+answered &ldquo;this conversation is not working on anything&rdquo; while the turn went on to run. On
+macOS the window was too narrow to hit; in the container it failed every time. <code>task check</code>
+was green, the change looked finished, and the defect was one command away from being seen.</p>
+<h4>Decision</h4>
+<p>There is one environment: Linux. Every task that compiles, tests, or runs the agent goes through
+<code>on:linux</code>, which does the work directly when the host is already Linux &mdash; CI, a Linux
+desktop, the test container running its own tasks &mdash; and otherwise builds <code>testenv/</code>
+and runs it in there. <code>task check</code> is therefore the container check; there is no second
+command, and no first one that proves less.</p>
+<p>The <code>!linux</code> stubs are deleted. <code>internal/app</code> binds Landlock and
+<code>prctl</code> directly, so off Linux it does not compile at all. That is the point: a stub is an
+invitation to run the suite somewhere the agent never runs, and the invitation was being accepted.
+<code>task run</code> goes with them &mdash; it served the agent from source with nothing confining a
+tool, which is not the program this repository ships. <code>task dev</code> is how the agent runs.</p>
+<h4>Consequences</h4>
+<p>The laptop is an editing machine. <code>go build</code>, <code>go test</code>, and a language
+server pointed at <code>internal/app</code> all fail there, and the failure names Landlock rather than
+pretending a platform exists. The browser helpers are pure node and still run on the host directly
+(<code>node --test web/*.test.js</code>), because nothing about them is the agent.</p>
+<p>Every check costs a container start, and the first of the day costs an image build. That is the
+price of the guarantee, and it was accepted deliberately: a check that is slower and true beats one
+that is quick and proves a subset. The Go module and build caches are kept in volumes, so a second run
+compiles only what changed.</p>
+<p>CI is unchanged, because CI was already Linux: it runs <code>task check</code>, which now finds
+itself on Linux and runs the work directly. The two descriptions of the one environment &mdash; the
+workflow and <code>testenv/Dockerfile</code> &mdash; still name each other, and CI still does not set
+<code>AGENT_TEST_FULL</code>, so a test that cannot run there still says so rather than failing the
+pipeline over a runner's kernel.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

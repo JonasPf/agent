@@ -1,13 +1,13 @@
 # The environment the test suite and the evals run in, and nothing else. There
-# is no source here: `task check:container` copies the working tree in when it
-# runs, so this is built once and a change to the code never rebuilds it.
+# is no source here: `task check` copies the working tree in when it runs, so
+# this is built once and a change to the code never rebuilds it.
 #
 # It is CI's environment written down (.github/workflows/check.yml), and a
 # change to one belongs in the other: Debian bookworm, the Go the image builds
 # with, the Debian chromium package the runtime image installs, node 22 for
-# web/*.test.js, and Task. On a Mac the kernel is the container VM's, which is
-# Linux with Landlock, so the browser and sandbox tests that skip on the host
-# run here.
+# web/*.test.js, and Task. Off Linux the kernel is the container VM's, which is
+# Linux with Landlock, so this is where the whole suite runs — the agent does not
+# build on the host at all (ADR-056).
 FROM docker.io/library/golang:1.25-bookworm
 
 RUN apt-get update \
