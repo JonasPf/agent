@@ -56,8 +56,8 @@ function sessionLinks(text) {
   for (const p of splitSessionIds(text)) {
     if (!p.id) { frag.append(document.createTextNode(p.text)); continue; }
     const a = el('a', 'sid', p.text);
-    a.href = '#session/' + p.id;
-    a.title = 'open session ' + p.id;
+    a.href = (p.kind === 'comparison' ? '#compared/' : '#session/') + p.id;
+    a.title = p.kind === 'comparison' ? 'open comparison ' + p.id : 'open session ' + p.id;
     frag.append(a);
   }
   return frag;
@@ -409,7 +409,13 @@ function sessionRow(s) {
   cfg.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.compact_at_tokens.toLocaleString()} tok`;
   m.append(sub, cfg);
   if (s.job_count) { const t = el('span', 'tag on', s.job_count + ' job' + (s.job_count > 1 ? 's' : '')); m.append(t); }
-  if (s.comparison) m.append(el('span', 'tag on', 'comparing'));
+  if (s.comparison) {
+    // The mark is also the way back: a comparison screen left behind is found
+    // again through the candidates it left in the list.
+    const t = el('span', 'tag on', 'comparing');
+    t.onclick = e => { e.stopPropagation(); location.hash = '#compared/' + s.comparison; };
+    m.append(t);
+  }
   else if (s.forked_from) m.append(el('span', 'tag', 'fork'));
   row.append(m);
   if (s.unread) row.append(el('span', 'badge', String(s.unread)));
@@ -449,6 +455,11 @@ async function viewSession(v) {
   // What you do to a conversation belongs in its header, not on top of its
   // first message: the transcript starts at the top of the screen.
   setHeader(state.session.title || 'Conversation', true, [
+    // First, and only while the comparison is undecided: it is the screen this
+    // conversation was opened from, and the one it is judged on.
+    ...(state.session.comparison
+      ? [{ label: 'Comparison', fn: () => location.hash = '#compared/' + state.session.comparison }]
+      : []),
     { label: 'Jobs', fn: () => location.hash = '#jobs/' + id },
     { label: 'Files', fn: () => location.hash = '#files/' + id },
     { label: 'Copy', fn: () => copyConversation() },
@@ -1412,8 +1423,21 @@ async function viewCompare(v) {
 
   compareSetup = { session: s, models: [s.model], chosen, ta, price, go };
   go.onclick = async () => {
-    const out = await post('/sessions/' + s.id + '/compare',
-      { text: compareSetup.ta.value.trim(), models: compareSetup.models.slice() });
+    // Every press forks the conversation once per model and re-sends the whole
+    // transcript, so a second press is not a retry: it is a second comparison,
+    // paid for twice, answering a question already asked.
+    if (go.disabled) return;
+    go.disabled = true;
+    go.textContent = 'Asking…';
+    let out;
+    try {
+      out = await post('/sessions/' + s.id + '/compare',
+        { text: compareSetup.ta.value.trim(), models: compareSetup.models.slice() });
+    } catch (e) {
+      toast({ title: 'Not asked', body: String(e.message) });
+      renderCompareSetup();
+      return;
+    }
     location.hash = '#compared/' + out.comparison;
   };
   renderCompareSetup();

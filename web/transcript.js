@@ -195,7 +195,13 @@ function splitSessionIds(text) {
   let at = 0;
   for (const m of s.matchAll(SESSION_ID)) {
     if (m.index > at) parts.push({ text: s.slice(at, m.index) });
-    parts.push({ text: m[0], id: m[0] });
+    // A comparison's identifier has the shape of a session's and is not one:
+    // the word before it is what tells them apart, and linked as a session it
+    // would lead to a conversation that does not exist.
+    const before = s.slice(at, m.index);
+    const part = { text: m[0], id: m[0] };
+    if (/comparison\s+$/i.test(before)) part.kind = 'comparison';
+    parts.push(part);
     at = m.index + m[0].length;
   }
   if (at < s.length) parts.push({ text: s.slice(at) });
