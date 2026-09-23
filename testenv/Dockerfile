@@ -12,6 +12,9 @@ FROM docker.io/library/golang:1.25-bookworm
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium curl wget python3 perl \
+      poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
+      python3-pip python3-venv python3-numpy python3-pil \
+      unzip jq \
  && rm -rf /var/lib/apt/lists/*
 
 # gh and glab, which the runtime image fetches from their own releases rather

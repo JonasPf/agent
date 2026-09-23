@@ -25,7 +25,14 @@ type Tool struct {
 	// gets. A browser reads /proc and /sys before it renders anything; a tool
 	// that edits a file does not, and granting the union of what any tool might
 	// need would hand every tool the widest boundary any of them asks for.
-	Reads    []string  `json:"reads,omitempty"`
+	Reads []string `json:"reads,omitempty"`
+	// Env names variables from the agent's own environment that this tool is
+	// given, because the service it talks to needs a credential and there is
+	// nowhere else for one to come from. It is declared per tool for the reason
+	// Reads is: web_search needs a search key, and bash — which runs commands
+	// the model wrote — must never be handed one. The value is never shown
+	// anywhere; the name is, on the tool's own card.
+	Env      []string  `json:"env,omitempty"`
 	HasPanel bool      `json:"has_panel"`
 	LoadedAt time.Time `json:"loaded_at"`
 	Builtin  bool      `json:"builtin"`
@@ -278,6 +285,10 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// because an interpreter reaches for it before any tool code runs.
 	tmp := tc.App.sandbox.TempDir(workspace)
 	_ = os.MkdirAll(tmp, 0o755)
+	// The same for the home directory: the container user's is granted nothing,
+	// and a program that keeps state there fails on a path it never names.
+	home := tc.App.sandbox.HomeDir(workspace)
+	_ = os.MkdirAll(home, 0o755)
 	cmd.Stdin = strings.NewReader(string(args))
 	// The token is this call's, and dies with it: the tool API answers a
 	// request only for a call that is running, as the conversation it runs in.
@@ -291,7 +302,9 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 		"AGENT_WORKSPACE="+workspace,
 		"AGENT_SESSION="+tc.SessionID,
 		"AGENT_JOB="+tc.JobID,
-		"TMPDIR="+tmp)
+		"TMPDIR="+tmp,
+		"HOME="+home)
+	cmd.Env = append(cmd.Env, declaredEnv(t.Env)...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
@@ -316,8 +329,11 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 // toolPassthrough is what a subprocess needs to start at all: where to find its
 // interpreter and its libraries, where its user's home is, how to talk about
 // text, and which certificates to trust. Nothing here is a credential.
+// HOME is not among them: the agent's own home directory is granted to no
+// tool, so passing it through hands every program a path it cannot use. It is
+// set per call, beside TMPDIR, to a directory inside the session's own.
 var toolPassthrough = []string{
-	"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+	"PATH", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
 	"SSL_CERT_FILE", "SSL_CERT_DIR", "TERM",
 }
 
@@ -349,6 +365,25 @@ func toolBaseEnv(granted []string) []string {
 			continue
 		}
 		if v, ok := os.LookupEnv(name); ok {
+			out = append(out, name+"="+v)
+		}
+	}
+	return out
+}
+
+// declaredEnv is what a tool's manifest asked for, from the agent's own
+// environment. A name that is not set is absent rather than empty, the way a
+// grant is: a tool asks whether it has a credential by asking whether the
+// variable is there. The model key is refused however it is asked for — a
+// manifest is reviewed by a person before it ships, but the one variable the
+// whole allow-list exists to keep out is not opened by review.
+func declaredEnv(names []string) []string {
+	var out []string
+	for _, name := range names {
+		if neverGranted[name] || toolContractEnv[name] {
+			continue
+		}
+		if v, ok := os.LookupEnv(name); ok && v != "" {
 			out = append(out, name+"="+v)
 		}
 	}

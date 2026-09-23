@@ -2,6 +2,32 @@
 
 ## 2026-09-23
 
+- **Search works again, through a search API.** It used to read a search
+  engine's own results page in a browser, which is the one page a search
+  company will not serve a robot. It now asks an API and gets an answer to the
+  question it asked. This needs a key: put `TAVILY_API_KEY` in the agent's
+  `.env` — a free account covers a thousand searches a month and takes no card
+  — and restart. Without one, a search fails and says exactly that, rather than
+  looking broken. The key goes to `web_search` and to nothing else; the Tools
+  screen names it on that tool's card, and the shell never sees it.
+- **Search no longer hands back somebody else's results.** Bing has been
+  answering automated queries with pages that look right — the query in the
+  title, ten results below it — and are filled with unrelated pages, a
+  different set every time: gift card retailers and Manhattan attractions in
+  reply to a question about OCR. Nothing on the page said so, so the agent read
+  them as the answer. A search whose results bear no relation to what was asked
+  now fails and says that is what happened, rather than showing them.
+- **The shell can now read documents without building its own tools first.**
+  Asked to go through a folder of scans, the agent used to spend a dozen turns
+  assembling a PDF reader and an OCR engine by hand before it could read the
+  first page. It now has them: `pdftotext`, `tesseract` in English and German,
+  `pip`, `numpy`, `pillow`, `jq`, and `unzip`, beside the `curl`, `wget`,
+  `python3` and `perl` that were already there.
+- **Installing a Python package works.** `pip install --user` failed on a home
+  directory nothing was allowed to write, with an error that pointed at a path
+  no one had chosen. Each conversation now has its own home directory, inside
+  its own files, so a package it installs stays with it and is invisible to
+  every other conversation.
 - **Stop now works the moment a conversation says it is working.** Pressing stop
   just after sending could answer "this conversation is not working on
   anything" while the turn went ahead and ran. A turn is now stoppable from the

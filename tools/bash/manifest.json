@@ -1,6 +1,6 @@
 {
   "name": "bash",
-  "description": "Run a shell command in the workspace. The shell is sandboxed: only the workspace is writable, so put scratch files under $TMPDIR rather than /tmp, and /proc cannot be read, so a browser will not start here. To read a web page, use web_fetch or web_browse instead of running a browser from the shell. curl, wget, python3, and perl are installed.",
+  "description": "Run a shell command in the workspace. The shell is sandboxed: only the workspace is writable, so put scratch files under $TMPDIR rather than /tmp, and /proc cannot be read, so a browser will not start here. To read a web page, use web_fetch or web_browse instead of running a browser from the shell. Installed: curl, wget, python3, perl, jq, unzip, pdftotext and pdftoppm (poppler-utils), tesseract with English and German, and python3 with pip, numpy and pillow. $HOME is inside the workspace and writable, so `pip install --user <package>` works and stays in this session; there is no root and no apt, so install a missing Python package that way rather than by hand.",
   "db_prefix": "bash_",
   "timeout_seconds": 150,
   "parameters": {

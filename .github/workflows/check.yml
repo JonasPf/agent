@@ -70,8 +70,13 @@ jobs:
       # bundle would not start under bubblewrap; Landlock replaced bubblewrap and
       # builds no mount namespace, so the bundle starts — and the cache, the
       # override variable, and the search that went with them are gone.
-      - name: Install the browser
-        run: apt-get update && apt-get install -y --no-install-recommends chromium curl wget python3 perl
+      - name: Install the browser and the rest of the userland
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            chromium curl wget python3 perl \
+            poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
+            python3-pip python3-venv python3-numpy python3-pil \
+            unzip jq
 
       - name: Report the browser
         run: /usr/bin/chromium --version

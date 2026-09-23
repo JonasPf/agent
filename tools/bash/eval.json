@@ -44,6 +44,35 @@
           "bash"
         ]
       }
+    },
+    {
+      "name": "reads a PDF with the reader the image ships",
+      "prompt": "The file report.pdf is in the workspace. Get the text out of it and tell me what it says.",
+      "tools": [
+        "bash"
+      ],
+      "expect": {
+        "tool": "bash",
+        "args_match": {
+          "command": "pdftotext"
+        }
+      },
+      "files": {
+        "report.pdf": "%PDF-1.4\n1 0 obj\n<</Type/Catalog/Pages 2 0 R>>\nendobj\n2 0 obj\n<</Type/Pages/Kids[3 0 R]/Count 1>>\nendobj\n3 0 obj\n<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 120]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>\nendobj\n4 0 obj\n<</Length 47>>stream\nBT /F1 14 Tf 30 60 Td (Ferritin 88 ug/L) Tj ET\nendstream\nendobj\n5 0 obj\n<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>\nendobj\nxref\n0 6\n0000000000 65535 f \n0000000009 00000 n \n0000000054 00000 n \n0000000105 00000 n \n0000000217 00000 n \n0000000310 00000 n \ntrailer\n<</Size 6/Root 1 0 R>>\nstartxref\n373\n%%EOF\n"
+      }
+    },
+    {
+      "name": "installs a missing Python package rather than building one by hand",
+      "prompt": "I want to use the Python package pdfplumber on a file here. Set it up so I can import it.",
+      "tools": [
+        "bash"
+      ],
+      "expect": {
+        "tool": "bash",
+        "args_match": {
+          "command": "pip install(.|\\n)*--user|--user(.|\\n)*pip install"
+        }
+      }
     }
   ]
 }

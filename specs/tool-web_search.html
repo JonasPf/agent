@@ -22,44 +22,65 @@
 <p class="lede">Search the web and return titles, URLs, and snippets.</p>
 
 <h2>What it does</h2>
-<p>Puts the query to a search engine in a headless browser and reads the results out of the rendered
-page. The browser introduces itself as an ordinary Chrome at the installed version, without the
-<em>Headless</em> in chromium's own user agent (<a href="adrs.html#adr-046">ADR-046</a>).</p>
+<p>Puts the query to a search API over HTTPS with the agent's own key, and returns what it answered.
+There is no browser in this tool any more, and no results page to read
+(<a href="adrs.html#adr-059">ADR-059</a>): a search engine's own page is the one surface that will not
+be read by an automated client, and the engines that decline say so while the one that does not
+answers with results belonging to somebody else's query.</p>
 
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
 <tr><td><code>query</code></td><td>The search terms. Required.</td></tr>
-<tr><td><code>limit</code></td><td>Maximum results. Optional; ten by default.</td></tr>
+<tr><td><code>limit</code></td><td>Maximum results. Optional; ten by default. It is what the API is asked for, not a cut made afterwards — fetching ten to show three costs three times as much for the same three.</td></tr>
 </table>
 
-<h2>Why a browser and not a request</h2>
-<p>A results page is assembled by scripts. Fetching its HTML returns a shell with no results in it, so
-unlike <a href="tool-web_browse.html"><code>web_browse</code></a> there is no useful unrendered path here:
-without a browser this tool cannot do its job, and says so rather than returning an empty list that
-reads like a query with no matches.</p>
+<h2>The key is the agent's, not a conversation's</h2>
+<p>Every other credential reaches a tool because the conversation it runs in was granted it by name
+(<a href="adrs.html#adr-045">ADR-045</a>). Search is not like that. A grant is for a credential that
+belongs to a piece of work — this repository, this forge, this conversation — and search belongs to
+the agent the way the model does: a conversation that had to be granted it would be a conversation
+that cannot look anything up until somebody notices.</p>
 
-<h2>Three outcomes, told apart</h2>
+<p>So the tool's manifest names <code>TAVILY_API_KEY</code>, and the registry gives it that variable
+from the agent's own environment on every call. A manifest that names a variable is the only way a
+tool receives one outside a grant, it is declared per tool for the reason read paths are, and the
+Tools screen prints the names on that tool's card — the name, never the value.
+<code>bash</code> declares nothing, so the search key is not in the environment of the tool that runs
+commands the model wrote.</p>
+
+<p>Where the key is not set the tool fails saying which variable is missing and where it goes. That
+failure is the operator's to fix and a model cannot fix it, so the message says so rather than
+inviting a retry.</p>
+
+<h2>Outcomes, told apart</h2>
 <table>
 <tr><th>Outcome</th><th>Answer</th></tr>
-<tr><td>Results found</td><td>Title, URL, and snippet for each, up to the limit.</td></tr>
-<tr><td>The engine served a page with no results</td><td>Says there were no results for the query.</td></tr>
-<tr><td>The engine declined — a rate limit, a challenge, a block</td><td>Fails, names the refusal, and suggests fetching a specific page instead.</td></tr>
+<tr><td>Results found</td><td>Title, URL, and snippet for each, numbered.</td></tr>
+<tr><td>The API had no matches</td><td>Says there were no results for the query.</td></tr>
+<tr><td>The API refused — a rejected key, a spent allowance, a rate limit</td><td>Fails, carrying the status and what the API said about it.</td></tr>
+<tr><td>No key configured</td><td>Fails, naming <code>TAVILY_API_KEY</code> and where the operator sets it.</td></tr>
 </table>
 
-<p>The middle and the last look identical in the parsed output — both yield nothing — and conflating
-them is the failure that matters. "No results" invites the agent to conclude the thing does not exist;
-a refusal means it did not get to look. The rendered text is inspected for the signature of a refusal
-precisely so the two can be told apart.</p>
+<p>Conflating the first two is the failure that matters, and it is why a refusal is never reported as
+an absence: <em>no results</em> invites the agent to conclude the thing does not exist, where a refusal
+means it did not get to look. A status code alone does not tell a rejected key from a spent
+allowance, so whatever the API said about the refusal is carried through — those ask different things
+of the operator.</p>
+
+<p>A result without a URL is dropped rather than shown. The model's next move is to fetch one, and a
+hit it cannot follow is a line of text pretending to be a source.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A query with results returns a title, a URL, and a snippet for each.</li>
-<li>The number of results respects the limit, and defaults to ten.</li>
-<li>A query with no matches says so, naming the query.</li>
-<li>A refusal by the search engine fails, names what happened, and is never reported as an absence of results.</li>
+<li>The limit is what the API is asked for, and defaults to ten.</li>
+<li>The key travels in the request and comes from the agent's environment, not from a session's grants.</li>
+<li>A tool that does not name the key in its manifest never receives it, <code>bash</code> included.</li>
+<li>A query with no matches says so, naming the query, and is not a failure.</li>
+<li>A refusal by the API fails and carries what the API said, and is never reported as an absence of results.</li>
+<li>A search with no key configured fails, names the variable, and says where it is set.</li>
 <li>An empty query is refused.</li>
-<li>Where no browser is available the tool fails and says why, rather than returning an empty result set.</li>
 </ul>
 </div>
 

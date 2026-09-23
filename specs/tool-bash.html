@@ -39,6 +39,23 @@ Web pages are for <code>web_fetch</code> and <code>web_browse</code>. Without th
 <code>chromium</code> in the shell, meets a permission error that names neither cause, and concludes
 the browser is broken.</p>
 
+<h2>What the shell can call</h2>
+<p>A shell is only as useful as the programs it can call, and nothing in the container can install
+one: there is no root and no package manager state. So the image ships the userland rather than
+leaving a session to assemble it (<a href="adrs.html#adr-058">ADR-058</a>) &mdash;
+<code>curl</code>, <code>wget</code>, <code>python3</code>, <code>perl</code>, <code>jq</code>,
+<code>unzip</code>, <code>pdftotext</code> and <code>pdftoppm</code>, <code>tesseract</code> with
+English and German, and <code>python3</code> carrying <code>pip</code>, <code>numpy</code> and
+<code>pillow</code>. The description lists them, so they are reached for rather than rebuilt.</p>
+
+<p><code>$HOME</code> is a directory inside the session's own, created for each call beside
+<code>$TMPDIR</code>. The container user's home is granted to no tool, so a program that keeps state
+there &mdash; <code>pip</code> with <code>--user</code>, <code>npm</code>, <code>git</code> &mdash;
+used to fail on a path it never named. It is now writable, which makes
+<code>pip install --user</code> the way to get a package the image does not ship. What it installs
+belongs to that conversation and no other: two sessions installing the same package each download it,
+because a cache they could both write is exactly the channel the sandbox exists to close.</p>
+
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
 <tr><td><code>command</code></td><td>The shell command. Required.</td></tr>
@@ -82,6 +99,9 @@ from as though it were the whole answer.</p>
 <li>The command runs in the session's working directory, and a relative path resolves inside it.</li>
 <li>A command reaching outside the session's directory is refused by the sandbox, not by the tool.</li>
 <li><code>curl</code>, <code>wget</code>, <code>python3</code>, and <code>perl</code> are installed and run in the shell under the sandbox, and the description says they are there.</li>
+<li><code>pdftotext</code>, <code>tesseract</code> with both its languages, <code>pip</code>, <code>numpy</code>, <code>pillow</code>, <code>jq</code>, and <code>unzip</code> run in the shell under the sandbox too, and the description says they are there.</li>
+<li><code>$HOME</code> is inside the session's own working directory and is writable, so what one session keeps there is invisible to every other.</li>
+<li><code>pip install --user</code> resolves to a path inside the session's working directory, rather than to a home directory no tool can write.</li>
 </ul>
 </div>
 

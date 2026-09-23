@@ -615,7 +615,7 @@ func (a *App) hTools(w http.ResponseWriter, r *http.Request) {
 		// A builtin runs inside the agent, not in a subprocess, so no sandbox
 		// applies and none is claimed.
 		if !t.Builtin {
-			entry["reach"] = a.sandbox.Reach(a.tools.dir, t.Reads)
+			entry["reach"] = a.sandbox.Reach(a.tools.dir, t.Reads, t.Env)
 		}
 		out = append(out, entry)
 	}

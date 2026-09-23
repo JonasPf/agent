@@ -1625,8 +1625,12 @@ function reachList(t) {
   if (r.enforced && !r.network_enforced) net = `NOT ENFORCED (${r.network_reason || 'no network rules'}); would be ${net}`;
   field('network', net);
   const mine = group('reach-own', 'This tool only');
+  const env = r.tool_env || [];
   if (own.length) mine('read', own.join(', '));
-  else mine('adds', 'nothing beyond what every tool gets');
+  // The name of a credential, never its value: what the card is for is saying
+  // which tool holds one, so that a tool holding one cannot do so quietly.
+  if (env.length) mine('environment', env.join(', '));
+  if (!own.length && !env.length) mine('adds', 'nothing beyond what every tool gets');
   return box;
 }
 

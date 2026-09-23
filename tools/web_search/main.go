@@ -1,11 +1,12 @@
-// web_search puts a query to a search engine in a headless browser and reads
-// the results out of the rendered page — a results page is assembled by
-// scripts, so fetching its HTML returns a shell with no results in it.
+// web_search puts a query to a search API and returns the hits. It used to
+// drive a headless browser against a search engine's own results page; that
+// engine now answers an automated client with a page of unrelated results
+// rather than declining, and every other engine reachable from here refuses
+// outright (ADR-059). An API answers the query it was asked.
 package main
 
 import (
-	"fmt"
-	"net/url"
+	"os"
 	"strings"
 
 	"agent/internal/tool"
@@ -28,30 +29,22 @@ func main() {
 		limit = 10
 	}
 
-	page := tool.Render("https://www.bing.com/search?q="+url.QueryEscape(q), 15)
-	results := ParseResults(page)
+	// The key is the operator's and is set once for the agent. A model cannot
+	// set it, so the message is addressed to the person who can, and says where
+	// it goes rather than only that it is missing.
+	key := strings.TrimSpace(os.Getenv(KeyName))
+	if key == "" {
+		tool.Failf("no search key: %s is not set, so this agent cannot search. "+
+			"The operator sets it in the agent's .env and restarts; until then, fetch a page "+
+			"you can name with web_fetch or web_browse.", KeyName)
+	}
 
+	results, err := Search(key, q, limit)
+	if err != nil {
+		tool.Failf("%v", err)
+	}
 	if len(results) == 0 {
-		text := TextOf(page)
-		if len(text) > 4000 {
-			text = text[:4000]
-		}
-		if why := Refusal(text); why != "" {
-			tool.Failf("the search engine declined this query (%s). Try again later, or "+
-				"fetch a specific page with web_browse.", why)
-		}
 		tool.OKf("no results for %q", q)
 	}
-
-	if len(results) > limit {
-		results = results[:limit]
-	}
-	var lines []string
-	for i, r := range results {
-		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, r.Title, r.URL))
-		if r.Snippet != "" {
-			lines = append(lines, "   "+r.Snippet)
-		}
-	}
-	tool.OK(strings.Join(lines, "\n"))
+	tool.OK(Format(results))
 }

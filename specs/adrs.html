@@ -1781,6 +1781,107 @@ workflow and <code>testenv/Dockerfile</code> &mdash; still name each other, and 
 pipeline over a runner's kernel.</p>
 </div>
 
+<div class="adr" id="adr-058">
+<div class="meta">ADR-058 · accepted · builds on <a href="#adr-034">ADR-034</a>, <a href="#adr-052">ADR-052</a></div>
+<h3>The image ships the userland, and a tool&rsquo;s home directory is inside its own session</h3>
+<h4>Context</h4>
+<p>A session was handed a folder of scanned medical records and asked to read them. It spent some
+thirty calls before the first page: no <code>pdftotext</code>, so it fetched a PyMuPDF wheel by hand;
+no <code>pip</code>, so it bootstrapped one; no OCR, so it downloaded six Debian packages and resolved
+<code>libgomp</code>, <code>libgif</code> and <code>libwebpmux</code> one at a time. Each step
+succeeded, which is the point: the boundary was never the obstacle, the empty userland was.</p>
+<p>Two things made it worse than a missing package. There is no root and no apt state in the image
+(<a href="#adr-036">ADR-036</a>), so a program that is not shipped cannot be installed the ordinary
+way. And <code>pip install --user</code>, the way that does not need root, wrote to
+<code>~/.local</code> under the home directory of the container user, which Landlock grants a tool
+neither read nor write (<a href="#adr-034">ADR-034</a>). It failed as <em>Permission denied</em> on a
+path the model had not chosen and had never seen mentioned &mdash; the same failure
+<a href="#adr-052">ADR-052</a> found in <code>glab</code>, and fixed there for one client with
+<code>GLAB_CONFIG_DIR</code>.</p>
+<h4>Decision</h4>
+<p>The image ships what a conversation about documents reaches for: <code>poppler-utils</code>,
+<code>tesseract</code> with English and German, <code>pip</code>, <code>numpy</code>,
+<code>pillow</code>, <code>jq</code> and <code>unzip</code>, beside the <code>curl</code>,
+<code>wget</code>, <code>python3</code> and <code>perl</code> already there. All of it lands under
+<code>/usr</code>, which every tool already reads and no tool can write, so nothing here is shared
+state between sessions: what one conversation runs, another cannot change.</p>
+<p><code>HOME</code> is no longer passed through from the agent&rsquo;s environment. It is set per
+call, beside <code>TMPDIR</code>, to <code>.home</code> inside the session&rsquo;s own working
+directory &mdash; writable, confined by the boundary that already holds, and not shared with any other
+conversation. <code>pip install --user</code> then works and what it installs belongs to that
+conversation. The tool description says all of this, because the kernel&rsquo;s refusals do not.</p>
+<h4>Consequences</h4>
+<p>The long tail is one command rather than an afternoon, and what it installs is as confined and as
+visible as anything else the session wrote. Two sessions that install the same package each download
+it: the alternative is a cache they both write, which is the cross-session channel this whole boundary
+exists to prevent.</p>
+<p>The <code>GLAB_CONFIG_DIR</code> of <a href="#adr-052">ADR-052</a> is no longer required &mdash; the
+default under <code>$HOME</code> is now writable &mdash; but it is left in the skill and the test,
+because it is harmless and naming the directory is clearer than relying on where a client decides to
+put one. A credential still reaches a forge client from the environment and never from a file: a home
+directory a tool can write is not an invitation to run <code>gh auth login</code>, whose token would
+live and die with that one session.</p>
+<p>The package list is now in three places that must agree &mdash; the image,
+<code>testenv/Dockerfile</code>, and CI &mdash; which is the arrangement chromium already has, and the
+userland test is what catches a disagreement. The image grows by roughly eighty megabytes on one that
+already carries a browser.</p>
+</div>
+
+<div class="adr" id="adr-059">
+<div class="meta">ADR-059 · accepted · supersedes part of <a href="#adr-046">ADR-046</a> · builds on <a href="#adr-045">ADR-045</a></div>
+<h3>Search is an API call with the agent's own key</h3>
+<h4>Context</h4>
+<p><code>web_search</code> drove a headless browser against Bing's results page. Bing has stopped
+serving that page to an automated client and started serving something worse than a refusal: a page
+carrying the query in its own title, ten well-formed organic results on it, and every one of them
+about something else — gift card retailers, Manhattan attractions, Amazon storefronts — with a
+different set on each request. Five runs of one query gave five unrelated result sets. There is no
+challenge anywhere on the page for the refusal check to find, so the tool reported filler as an
+answer and the model reasoned from it.</p>
+<p>It was not the parser, which reads the page correctly, and not the user agent: the filler is the
+same with chromium's own string and with the ordinary Chrome one. It is not one engine's bad week
+either. DuckDuckGo, Mojeek, Brave and Startpage all decline outright from here, honestly and in
+words the tool already reports. DuckDuckGo has no search API — its Instant Answer API returns an
+encyclopedia paragraph for an entity and nothing at all for the queries anyone actually makes — and
+its web results are Bing's index regardless.</p>
+<p>Reading a results page was always the fragile part. It is the one surface a search company does
+not want read, it changes without notice, and the failure it now produces is invisible.</p>
+<h4>Decision</h4>
+<p>The tool calls a search API over HTTPS and returns what it answered. The browser, the results
+page parser, the click-tracking unwrapper, the refusal phrases and the relevance guard that caught
+the filler all go with it, and so does the tool's read grant on <code>/proc</code>,
+<code>/sys</code> and <code>/var</code>: it no longer starts a browser, so it no longer needs the one
+tree where a read grant is also a leak.</p>
+<p>The key is the agent's, not a conversation's. Every other credential reaches a tool because the
+session was granted it by name (<a href="#adr-045">ADR-045</a>), which is right for a credential
+belonging to a piece of work — this repository, this forge. Search belongs to the agent the way the
+model does, and a conversation that had to be granted it would be one that cannot look anything up
+until somebody notices. So a manifest may name variables in an <code>env</code> field, and the
+registry gives that tool those variables from the agent's own environment on every call. It is
+declared per tool for the reason <code>reads</code> is: <code>bash</code> declares nothing, so the
+search key is never in the environment of the tool that runs commands the model wrote. The model key
+is refused however a manifest asks for it. The Tools screen prints the names a tool is given, never
+the values, so a tool holding a credential cannot do so quietly.</p>
+<h4>Consequences</h4>
+<p>Search now costs money, or runs out. A free account covers a thousand searches a month, which is
+more than this agent makes, and when it is spent the API says so and the tool reports what it said —
+a legible failure, which is the whole difference from what it replaces. An agent with no key
+configured cannot search at all and says which variable is missing and where it goes; that is the
+operator's to fix, and the message is addressed to them rather than inviting a model to retry.</p>
+<p>The provider is named in the tool and nowhere else. Nothing in the agent knows what
+<code>web_search</code> talks to, the way nothing in it knows <code>gh</code> exists
+(<a href="#adr-052">ADR-052</a>), so replacing the provider is a change to one tool and two variable
+names.</p>
+<p>A second way for a credential to reach a tool now exists beside grants, and it is the weaker
+boundary of the two: a manifest is reviewed by a person before it ships, where a grant is chosen by
+the operator per conversation. That is acceptable because a tool directory is not writable by the
+agent (<a href="#adr-033">ADR-033</a>) and a manifest naming a variable is a reviewable line in a
+pull request. It would not be acceptable if tools could be written from a conversation.</p>
+<p>The endpoint can be pointed elsewhere with <code>TAVILY_URL</code>, which exists so the suite can
+substitute the API — the one thing R5 allows to be substituted, alongside the model provider — and
+so the whole tool is covered end to end as a subprocess rather than in pure functions alone.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

@@ -244,7 +244,7 @@ func TestTheOperatorsRootsAreOutsideEveryPathAToolCanWrite(t *testing.T) {
 		UserSkillsDir: filepath.Join("/srv/state", "skills"),
 		PersonasDir:   filepath.Join("/srv/state", "personas"),
 	}
-	reach := NewSandbox(cfg).Reach("", nil)
+	reach := NewSandbox(cfg).Reach("", nil, nil)
 	for _, dir := range []string{cfg.UserSkillsDir, cfg.PersonasDir, cfg.SkillsDir} {
 		for _, w := range reach.ReadWrite {
 			if w == dir || strings.HasPrefix(dir, strings.TrimSuffix(w, "/")+"/") {

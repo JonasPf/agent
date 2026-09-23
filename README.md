@@ -61,6 +61,7 @@ moves the file with it.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Required for model calls. |
+| `TAVILY_API_KEY` | — | Required by `web_search`, and by nothing else: a tool's manifest names the variables it is given, and no other tool receives this one. Without it a search fails saying so. |
 | `AGENT_ADDR` | `:7770` | Listen address. |
 | `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, `skills/`, `personas/`, and `.env` beneath it. The one directory a deployment mounts. |
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. The skills here are read-only; the ones you write live under `AGENT_STATE`. |
@@ -168,11 +169,12 @@ docker run -d --name agent \
 | Variable | Is |
 | --- | --- |
 | `OPENROUTER_API_KEY` | Required for model calls. |
+| `TAVILY_API_KEY` | Required for `web_search`. A free account gives 1,000 searches a month and takes no card. Unlike the rest of this table it is not granted per conversation: `web_search` names it in its manifest and is given it on every call, in every session, and no other tool is. |
 | `GH_TOKEN` | Optional. Fine-grained, one repository, contents + pull requests write, no workflow scope — what the agent needs to propose changes to itself. The most it can do with this is open a pull request nobody has merged yet. |
 | `AGENT_REPO` | Optional. The repository the agent clones when it changes itself. |
 | `GITLAB_TOKEN` | Optional. A personal or project access token, `api` + `write_repository`, for the GitLab projects the agent works on. Read by `glab`, and by `git` when it is in the clone URL. |
 
-Setting any of these in the deployment does not by itself let the agent use it. A tool receives a variable only in a session **granted** it by name,
+Setting any of these in the deployment does not by itself let the agent use it — `TAVILY_API_KEY` excepted, which `web_search` asks for by name in its manifest and gets. A tool receives any other variable only in a session **granted** it by name,
 under **Controls → granted environment**, and a grant is fixed for that session's
 life. That is deliberate: the credential reaches the one conversation doing the
 work, not every conversation forever. `OPENROUTER_API_KEY` can never be granted.

@@ -116,6 +116,7 @@ means rebuilding or restarting the agent, which is the property
   "db_prefix": "deploys_",
   "timeout_seconds": 30,
   "reads": ["/proc"],
+  "env": ["DEPLOY_TOKEN"],
   "parameters": {
     "type": "object",
     "properties": {
@@ -132,6 +133,7 @@ means rebuilding or restarting the agent, which is the property
 <li><code>description</code> is a single sentence.</li>
 <li><code>db_prefix</code> is unique across tools and every table the tool creates begins with it.</li>
 <li><code>reads</code> is optional and names the paths this tool may read beyond the runtime every tool gets. A tool that asks for nothing reads the runtime, its own directory, and its session's working directory. Granting the union of what any tool might need would give every tool the widest boundary any of them asks for. The Tools screen shows these apart from what every tool gets.</li>
+<li><code>env</code> is optional and names variables from the agent's own environment this tool is given on every call, in every session. It is for a credential the tool's own service needs and nothing else can supply, and it is declared per tool for the reason <code>reads</code> is: <code>bash</code> runs commands the model wrote, and must not be handed a key because another tool needed one. The model key is refused however a manifest asks for it. The Tools screen prints the names on that tool's card, and never the values.</li>
 <li><code>parameters</code> is a valid JSON Schema object and is exposed verbatim to the model.</li>
 <li>A tool directory without <code>eval.json</code> is reported by the test run, so a capability cannot be added without evidence that a model can use it.</li>
 <li>A manifest missing a required field prevents that tool from loading and does not affect other tools.</li>
@@ -163,10 +165,11 @@ granted is absent, and a granted variable that is not set stays absent rather th
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
+<tr><td><code>HOME</code></td><td>Another directory inside it, for the same reason. The container user's home is granted to no tool, so a program that keeps state there &mdash; <code>pip</code>, <code>npm</code>, <code>git</code> &mdash; would fail on a path it never names (<a href="adrs.html#adr-058">ADR-058</a>).</td></tr>
 </table>
 
 <p>Beyond that list, and the handful any program needs to start at all &mdash; <code>PATH</code>,
-<code>HOME</code>, the locale, the certificate paths &mdash; a tool receives a variable only because the
+the locale, the certificate paths &mdash; a tool receives a variable only because the
 conversation it is running in was granted it by name
 (<a href="adrs.html#adr-045">ADR-045</a>). A grant belongs to a session, not to a tool: a credential is
 something an operator hands to one conversation, where a manifest could only say every session or none
@@ -339,7 +342,7 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 <tr><th>Tool</th><th>Purpose</th></tr>
 <tr><td><code>bash</code>, <code>read</code>, <code>write</code>, <code>edit</code></td><td>Filesystem and shell access within the workspace.</td></tr>
 <tr><td><code>clock</code></td><td>The current date and time, with an optional offset. An autonomous agent cannot read a clock from a prompt written once at the session's creation, so it asks.</td></tr>
-<tr><td><code>web_search</code>, <code>web_browse</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. The first two render the page in a headless browser, so what they read is what a person would see; <code>web_fetch</code> reads what the server sent, and says when that was not enough.</td></tr>
+<tr><td><code>web_search</code>, <code>web_browse</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. <code>web_search</code> calls a search API with the agent's own key (<a href="adrs.html#adr-059">ADR-059</a>); <code>web_browse</code> renders a page in a headless browser, so what it reads is what a person would see; <code>web_fetch</code> reads what the server sent, and says when that was not enough.</td></tr>
 <tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
 <tr><td><code>skill_read</code></td><td>Load the full text of a skill.</td></tr>
@@ -347,30 +350,32 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 
 <h3>Searching the web</h3>
 
-<p>A search results page is assembled by scripts, so fetching its HTML returns a shell with no results
-in it. <code>web_search</code> therefore drives the headless browser the image installs, at the one path it
-installs it to, and reads the results out of the rendered DOM.</p>
+<p><code>web_search</code> calls a search API with the agent's own key and returns what it answered
+(<a href="adrs.html#adr-059">ADR-059</a>). It used to read a search engine's own results page in the
+headless browser, which is the one surface a search company will not serve an automated client: the
+engines that decline say so, and the one that does not answers with results belonging to somebody
+else's query — a page that looks exactly like an answer and is not.</p>
 
-<p>The browser is used as it is delivered, except that it introduces itself as an ordinary Chrome of
-the installed version rather than a headless one (<a href="adrs.html#adr-046">ADR-046</a>). Nothing
-else disguises the request, and an engine that declines to serve an automated query is reported as having declined — naming the phrase it used — rather than
-worked around or reported as a query that found nothing. The two are different answers and only one of
-them means the query was wrong.</p>
+<p>The key comes from the agent's environment rather than from a session's grant, because search
+belongs to the agent the way the model does. A tool's manifest names the variables it is given, so
+the key reaches <code>web_search</code> and no other tool — <code>bash</code>, which runs commands
+the model wrote, declares nothing and receives nothing. <a href="tool-web_search.html">The tool's own
+page</a> has the rest.</p>
 
 <div class="note">
-<strong>The dependency sits in the tool.</strong> A browser is a large thing to install for one
-capability. Because the capability is a directory rather than compiled in, the cost falls on whoever
-wants search: delete the directory and the dependency is gone, with no rebuild. This is the shape
+<strong>The dependency sits in the tool.</strong> Nothing in the agent knows which search provider
+this is; the name appears in one tool directory and in two variable names. Changing providers is a
+change to that directory, with no rebuild and no restart. This is the shape
 <a href="index.html">R4</a> is for.
 </div>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A search returns result titles, absolute URLs, and snippets, with click-tracking redirects resolved to the page they point at.</li>
-<li>An engine declining to serve the query is reported as a refusal, distinct from a query with no results.</li>
-<li>The request carries an ordinary Chrome user agent at the installed version, and no bot check is answered or evaded.</li>
-<li>With no browser at the path the image installs it, the tool fails naming that path, and every other tool keeps working.</li>
+<li>A search returns result titles, absolute URLs, and snippets.</li>
+<li>The API refusing the query is reported as a refusal carrying what it said, distinct from a query with no results.</li>
+<li>The key reaches the tool that declares it in its manifest and no other tool.</li>
+<li>With no key configured the tool fails naming the variable and where it is set, and every other tool keeps working.</li>
 </ul>
 </div>
 
@@ -378,8 +383,8 @@ wants search: delete the directory and the dependency is gone, with no rebuild. 
 
 <p>Most of the web arrives empty. The HTML a server sends is a shell, and the text a person reads is
 written into it by scripts once the page is running. Retrieving the bytes therefore answers a
-different question from the one the model asked. <code>web_browse</code> loads the URL in the same
-headless browser <code>web_search</code> uses — the one the image installs, at one path — lets
+different question from the one the model asked. <code>web_browse</code> loads the URL in the
+headless browser the image installs — at one path, and it is the only tool that starts one — lets
 the scripts run, and reads the settled DOM.</p>
 
 <p>Text is recovered from that DOM rather than from the source, because a rendered DOM has had its
