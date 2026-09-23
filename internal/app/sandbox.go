@@ -61,7 +61,8 @@ type Sandbox struct {
 // suite proved that by passing without it — and /proc is the one tree where a
 // read grant is also a leak: /proc/<pid>/environ of any process this user owns
 // is readable through it, the agent's included. A tool that needs it says so in
-// its manifest, and only the two browser tools do.
+// its manifest, and only web_browse does — web_search no longer starts a
+// browser, so it no longer asks for the tree (ADR-059).
 var linuxReads = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt"}
 
 // linuxDevices is what a program opens before any of its own code runs. They are
@@ -269,7 +270,11 @@ type ToolReach struct {
 	Read      []string `json:"read"`
 	// ToolRead is the part of Read this tool's manifest asked for. The rest is
 	// what every tool gets, and the screen says which is which.
-	ToolRead        []string `json:"tool_read"`
+	ToolRead []string `json:"tool_read"`
+	// ToolEnv names the variables from the agent's environment this tool is
+	// given, and never their values. A credential that reaches one tool and not
+	// the others is a boundary like any other, so it is on the screen.
+	ToolEnv         []string `json:"tool_env,omitempty"`
 	Files           []string `json:"files"`
 	NetworkEnforced bool     `json:"network_enforced"`
 	NetworkReason   string   `json:"network_reason,omitempty"`
@@ -281,14 +286,14 @@ type ToolReach struct {
 // Reach describes the policy a tool runs under. Where nothing is enforced it
 // still says what the policy is — the one the container applies — beside the
 // reason it does not apply here.
-func (s *Sandbox) Reach(toolRoot string, reads []string) *ToolReach {
+func (s *Sandbox) Reach(toolRoot string, reads, env []string) *ToolReach {
 	tools := s.toolsDir
 	if toolRoot != "" {
 		tools = absOr(toolRoot)
 	}
 	p := s.policyFor(sessionDirLabel, tools, reads)
 	r := &ToolReach{Enforced: s.Enforcing(), Reason: s.Reason, ReadWrite: p.Write, Read: p.Read,
-		ToolRead: append([]string{}, reads...), Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
+		ToolRead: append([]string{}, reads...), ToolEnv: append([]string{}, env...), Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
 		Ports: s.connectPorts(), ToolAPIPort: s.ToolAPIPort, OperatorPort: s.OperatorPort}
 	if !r.NetworkEnforced {
 		r.NetworkReason = s.NetworkReason

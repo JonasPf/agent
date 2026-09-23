@@ -25,7 +25,14 @@ type Tool struct {
 	// gets. A browser reads /proc and /sys before it renders anything; a tool
 	// that edits a file does not, and granting the union of what any tool might
 	// need would hand every tool the widest boundary any of them asks for.
-	Reads    []string  `json:"reads,omitempty"`
+	Reads []string `json:"reads,omitempty"`
+	// Env names variables from the agent's own environment that this tool is
+	// given, because the service it talks to needs a credential and there is
+	// nowhere else for one to come from. It is declared per tool for the reason
+	// Reads is: web_search needs a search key, and bash — which runs commands
+	// the model wrote — must never be handed one. The value is never shown
+	// anywhere; the name is, on the tool's own card.
+	Env      []string  `json:"env,omitempty"`
 	HasPanel bool      `json:"has_panel"`
 	LoadedAt time.Time `json:"loaded_at"`
 	Builtin  bool      `json:"builtin"`
@@ -297,6 +304,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 		"AGENT_JOB="+tc.JobID,
 		"TMPDIR="+tmp,
 		"HOME="+home)
+	cmd.Env = append(cmd.Env, declaredEnv(t.Env)...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
@@ -357,6 +365,25 @@ func toolBaseEnv(granted []string) []string {
 			continue
 		}
 		if v, ok := os.LookupEnv(name); ok {
+			out = append(out, name+"="+v)
+		}
+	}
+	return out
+}
+
+// declaredEnv is what a tool's manifest asked for, from the agent's own
+// environment. A name that is not set is absent rather than empty, the way a
+// grant is: a tool asks whether it has a credential by asking whether the
+// variable is there. The model key is refused however it is asked for — a
+// manifest is reviewed by a person before it ships, but the one variable the
+// whole allow-list exists to keep out is not opened by review.
+func declaredEnv(names []string) []string {
+	var out []string
+	for _, name := range names {
+		if neverGranted[name] || toolContractEnv[name] {
+			continue
+		}
+		if v, ok := os.LookupEnv(name); ok && v != "" {
 			out = append(out, name+"="+v)
 		}
 	}

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -18,6 +19,39 @@ import (
 // So the file is checked against the source rather than maintained by memory.
 
 var envRead = regexp.MustCompile(`(?:envOr|envInt|os\.Getenv|os\.LookupEnv)\("([A-Z][A-Z0-9_]*)"`)
+
+// A tool may also be given a variable by naming it in its manifest, which is
+// the declaration the registry acts on — the tool's own source may reach for it
+// through a constant, where the scan above would not see it. The manifest is
+// where the agent looks, so it is where this looks too.
+func manifestEnvNames(t *testing.T) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	dirs, err := os.ReadDir(filepath.Join("..", "..", "tools"))
+	if err != nil {
+		t.Fatalf("the tool directory is missing: %v", err)
+	}
+	for _, d := range dirs {
+		if !d.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join("..", "..", "tools", d.Name(), "manifest.json"))
+		if err != nil {
+			continue
+		}
+		var m struct {
+			Env []string `json:"env"`
+		}
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Errorf("%s has an unreadable manifest: %v", d.Name(), err)
+			continue
+		}
+		for _, name := range m.Env {
+			out[name] = true
+		}
+	}
+	return out
+}
 
 // toolContract is set by the agent for each tool subprocess rather than read
 // from configuration. Naming one of these in .env.example would invite an
@@ -64,6 +98,9 @@ func TestEverySettingIsInTheExampleEnvironment(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for name := range manifestEnvNames(t) {
+		found[name] = true
+	}
 	if len(found) == 0 {
 		t.Fatal("no environment variables found in the source; the scan is broken")
 	}
@@ -109,6 +146,10 @@ func TestTheExampleEnvironmentNamesNothingThatIsNotRead(t *testing.T) {
 			}
 			return nil
 		})
+	}
+
+	for name := range manifestEnvNames(t) {
+		read[name] = true
 	}
 
 	// An assignment in the file, commented out or not: NAME=value at line start.

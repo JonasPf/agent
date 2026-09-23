@@ -1,12 +1,7 @@
 {
   "name": "web_search",
-  "description": "Search the web in a headless browser and return result titles, URLs, and snippets.",
+  "description": "Search the web and return result titles, URLs, and snippets. It calls a search API with the agent's own key, so there is nothing to sign in to; a search when no key is configured fails saying so, and is the operator's to fix. Follow a result with web_fetch, or web_browse if the page needs its scripts to run.",
   "db_prefix": "web_search_",
-  "reads": [
-    "/proc",
-    "/sys",
-    "/var"
-  ],
   "timeout_seconds": 60,
   "parameters": {
     "type": "object",
@@ -17,11 +12,15 @@
       },
       "limit": {
         "type": "integer",
-        "description": "Maximum results, default 10."
+        "description": "Maximum results, default 10. It is what the API is asked for, so ask for what you will read."
       }
     },
     "required": [
       "query"
     ]
-  }
+  },
+  "env": [
+    "TAVILY_API_KEY",
+    "TAVILY_URL"
+  ]
 }

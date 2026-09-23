@@ -2,6 +2,14 @@
 
 ## 2026-09-23
 
+- **Search works again, through a search API.** It used to read a search
+  engine's own results page in a browser, which is the one page a search
+  company will not serve a robot. It now asks an API and gets an answer to the
+  question it asked. This needs a key: put `TAVILY_API_KEY` in the agent's
+  `.env` — a free account covers a thousand searches a month and takes no card
+  — and restart. Without one, a search fails and says exactly that, rather than
+  looking broken. The key goes to `web_search` and to nothing else; the Tools
+  screen names it on that tool's card, and the shell never sees it.
 - **Search no longer hands back somebody else's results.** Bing has been
   answering automated queries with pages that look right — the query in the
   title, ten results below it — and are filled with unrelated pages, a

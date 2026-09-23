@@ -1,209 +1,167 @@
 package main
 
 import (
-	"encoding/base64"
-	"html"
-	"net/url"
-	"regexp"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"strings"
+	"time"
 )
 
-// Reading results out of a rendered search page. Pure functions, so the parsing
-// can be tested against a saved page without a browser or a network.
+// Talking to the search API. Building the request and reading the answer are
+// separate from making the call, so both can be tested without a network.
 
-// Bing marks an organic result <li class="b_algo">; ads and sidebars carry
-// other classes, so matching the class is what keeps paid placements out.
-var (
-	itemRE    = regexp.MustCompile(`(?i)<li[^>]*>`)
-	algoRE    = regexp.MustCompile(`(?i)<li[^>]*\bclass="[^"]*\bb_algo\b[^"]*"[^>]*>`)
-	linkRE    = regexp.MustCompile(`(?si)<h2[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>`)
-	captionRE = regexp.MustCompile(`(?si)<(?:p|div)[^>]*\bclass="[^"]*b_caption[^"]*"[^>]*>(.*?)</(?:p|div)>`)
-	paraRE    = regexp.MustCompile(`(?si)<p[^>]*>(.*?)</p>`)
-	tagRE     = regexp.MustCompile(`(?si)<(script|style)[^>]*>.*?</(?:script|style)>|<[^>]+>`)
-	spaceRE   = regexp.MustCompile(`\s+`)
+// tavilyURL is where the search goes. It is a constant with an override rather
+// than configuration: the operator sets a key and nothing else, and the name
+// exists so the suite can put a server of its own in the way — the one
+// substitution R5 allows, alongside the model provider.
+const tavilyURL = "https://api.tavily.com/search"
+
+// KeyName and URLName are the variables this tool's manifest declares. They
+// come from the agent's own environment, not from a session's grants: search is
+// something the agent either has or has not, like the model it runs on.
+const (
+	KeyName = "TAVILY_API_KEY"
+	URLName = "TAVILY_URL"
 )
 
-// refusals are the phrases a search engine uses to say it will not serve an
-// automated query. The tool reports these; it never tries to get past one.
-var refusals = []string{
-	"challenge", "captcha", "unusual traffic", "are you a robot",
-	"verify you", "automated queries", "access denied",
-	"sending automated", "not a bot",
-}
-
-// Result is one organic hit.
+// Result is one hit, in the shape the tool prints.
 type Result struct {
 	Title   string
 	URL     string
 	Snippet string
 }
 
-// TextOf flattens a fragment of HTML to its readable text.
-func TextOf(fragment string) string {
-	return strings.TrimSpace(html.UnescapeString(
-		spaceRE.ReplaceAllString(tagRE.ReplaceAllString(fragment, " "), " ")))
+// request is what the API is asked. The limit is passed through rather than
+// applied to the answer: fetching ten to show three costs three times as much
+// for the same three.
+type request struct {
+	Query      string `json:"query"`
+	MaxResults int    `json:"max_results"`
 }
 
-// organicBlocks returns the inner HTML of each organic result. A result runs
-// until the next list item or the end of the list; Go's regexp has no lookahead,
-// and a pattern that consumed the boundary would eat every second result.
-func organicBlocks(page string) []string {
-	items := itemRE.FindAllStringIndex(page, -1)
-	var out []string
-	for i, loc := range items {
-		if !algoRE.MatchString(page[loc[0]:loc[1]]) {
-			continue
-		}
-		end := len(page)
-		if i+1 < len(items) {
-			end = items[i+1][0]
-		}
-		if j := strings.Index(page[loc[1]:end], "</ol>"); j >= 0 {
-			end = loc[1] + j
-		}
-		out = append(out, page[loc[1]:end])
+// answer is the part of the API's reply this tool reads. Everything else it
+// sends — scores, timings, follow-up questions — is ignored rather than
+// forwarded: a field nobody asked for is a field the model has to discount.
+type answer struct {
+	Results []struct {
+		Title   string `json:"title"`
+		URL     string `json:"url"`
+		Content string `json:"content"`
+	} `json:"results"`
+}
+
+// apiError is the shape the API reports a refusal in. It is nested and it is
+// sometimes a bare string, so both are read; what matters is that the reason
+// reaches the model rather than a status code on its own.
+type apiError struct {
+	Detail json.RawMessage `json:"detail"`
+}
+
+// Endpoint is where a search goes: the constant, unless the environment names
+// somewhere else.
+func Endpoint() string {
+	if u := strings.TrimSpace(os.Getenv(URLName)); u != "" {
+		return u
 	}
-	return out
+	return tavilyURL
 }
 
-// ParseResults returns the organic results on the page, in order.
-func ParseResults(page string) []Result {
+// Search puts the query to the API and returns what it answered.
+func Search(key, query string, limit int) ([]Result, error) {
+	body, err := json.Marshal(request{Query: query, MaxResults: limit})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest("POST", Endpoint(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("the search API could not be reached: %w", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("the search API's answer could not be read: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("the search API answered %d: %s", resp.StatusCode, Reason(raw))
+	}
+	return ParseAnswer(raw)
+}
+
+// Reason is what an unsuccessful reply said, in as few words as carry the
+// meaning. A status code alone does not distinguish a rejected key from a
+// spent allowance, and those call for different things from the operator.
+func Reason(raw []byte) string {
+	var e apiError
+	if err := json.Unmarshal(raw, &e); err == nil && len(e.Detail) > 0 {
+		var s string
+		if json.Unmarshal(e.Detail, &s) == nil && s != "" {
+			return s
+		}
+		var obj struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(e.Detail, &obj) == nil && obj.Error != "" {
+			return obj.Error
+		}
+	}
+	return Clip(strings.TrimSpace(string(raw)), 300)
+}
+
+// ParseAnswer reads the results out of a successful reply. A result without a
+// URL is dropped: the model's next move is to fetch one, and a hit it cannot
+// follow is a line of text pretending to be a source.
+func ParseAnswer(raw []byte) ([]Result, error) {
+	var a answer
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return nil, fmt.Errorf("the search API's answer was not the shape this tool reads: %w", err)
+	}
 	var out []Result
-	for _, block := range organicBlocks(page) {
-		link := linkRE.FindStringSubmatch(block)
-		if link == nil {
+	for _, r := range a.Results {
+		if strings.TrimSpace(r.URL) == "" {
 			continue
 		}
-		title := TextOf(link[2])
-		if title == "" {
-			continue
-		}
-		snippet := ""
-		if cap := captionRE.FindStringSubmatch(block); cap != nil {
-			snippet = TextOf(cap[1])
-		}
-		if snippet == "" {
-			for _, p := range paraRE.FindAllStringSubmatch(block, -1) {
-				if t := TextOf(p[1]); t != "" {
-					snippet = t
-					break
-				}
-			}
-		}
-		out = append(out, Result{Title: title, URL: CleanURL(link[1]), Snippet: snippet})
+		out = append(out, Result{
+			Title:   strings.TrimSpace(r.Title),
+			URL:     strings.TrimSpace(r.URL),
+			Snippet: strings.TrimSpace(r.Content),
+		})
 	}
-	return out
+	return out, nil
 }
 
-// CleanURL unwraps a Bing click-tracking redirect back to the page it points
-// at. The real URL rides in the u parameter, prefixed "a1" and base64url
-// encoded. A wrapper that will not decode is returned untouched: a link that
-// works is better than no link.
-func CleanURL(raw string) string {
-	raw = html.UnescapeString(raw)
-	if !strings.Contains(raw, "bing.com/ck/a") {
-		return raw
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return raw
-	}
-	enc := u.Query().Get("u")
-	if !strings.HasPrefix(enc, "a1") {
-		return raw
-	}
-	enc = enc[2:]
-	if pad := len(enc) % 4; pad != 0 {
-		enc += strings.Repeat("=", 4-pad)
-	}
-	decoded, err := base64.URLEncoding.DecodeString(enc)
-	if err != nil {
-		return raw
-	}
-	s := string(decoded)
-	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+// Clip caps a body without pretending it was whole.
+func Clip(s string, n int) string {
+	if len(s) <= n {
 		return s
 	}
-	return raw
+	return s[:n] + "…"
 }
 
-// Refusal names the phrase by which the engine declined, or the empty string if
-// it served us. An engine that will not answer and a query with no answers are
-// different results, and only one of them is worth changing the query over.
-func Refusal(text string) string {
-	low := strings.ToLower(text)
-	for _, phrase := range refusals {
-		if strings.Contains(low, phrase) {
-			return phrase
+// Format is the answer as the model reads it: numbered, each hit a title, a URL
+// it can pass straight to web_fetch, and whatever the API said about it.
+func Format(results []Result) string {
+	var lines []string
+	for i, r := range results {
+		title := r.Title
+		if title == "" {
+			title = r.URL
+		}
+		lines = append(lines, fmt.Sprintf("%d. %s\n   %s", i+1, title, r.URL))
+		if r.Snippet != "" {
+			lines = append(lines, "   "+Clip(r.Snippet, 500))
 		}
 	}
-	return ""
-}
-
-// A search engine that will not serve an automated client usually says so, and
-// Refusal above is how that is told from a query with no matches. Bing does
-// something else: it answers. The page carries the query in its title, holds
-// ten well-formed organic results, and every one of them is about something
-// unrelated — gift cards, hospital listings, Manhattan attractions — with a
-// different set on each request. Nothing in the parsed output distinguishes
-// that from a real answer, so the model reasons from it as though it were one.
-//
-// The test is the weakest one that catches it: across every result, does any
-// part of the query appear anywhere at all. A genuine result set clears that
-// bar on its first hit; a page of filler clears it on none.
-
-// searchStopWords are the words a query can be full of and a result would not
-// be expected to repeat. A query that has nothing else in it cannot judge an
-// answer, and says so by yielding no terms.
-var searchStopWords = map[string]bool{
-	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
-	"of": true, "for": true, "to": true, "in": true, "on": true, "at": true,
-	"by": true, "is": true, "are": true, "was": true, "were": true, "be": true,
-	"how": true, "what": true, "why": true, "when": true, "where": true,
-	"which": true, "who": true, "with": true, "from": true, "into": true,
-	"not": true, "no": true, "do": true, "does": true, "did": true,
-	"can": true, "could": true, "should": true, "would": true, "will": true,
-	"it": true, "its": true, "my": true, "me": true, "you": true, "your": true,
-	"this": true, "that": true, "these": true, "those": true, "there": true,
-	"any": true, "all": true, "get": true, "have": true, "has": true,
-	"about": true, "best": true, "new": true, "use": true, "using": true,
-}
-
-var wordRE = regexp.MustCompile(`[\p{L}\p{N}]+`)
-
-// QueryTerms are the words of a query worth looking for in an answer:
-// lower-cased, without punctuation and quoting, without the words any page
-// might carry, and without the very short ones a substring test would match by
-// accident.
-func QueryTerms(query string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, w := range wordRE.FindAllString(strings.ToLower(query), -1) {
-		if len(w) < 3 || searchStopWords[w] || seen[w] {
-			continue
-		}
-		seen[w] = true
-		out = append(out, w)
-	}
-	return out
-}
-
-// Unrelated reports that a set of results answers some other question. It is
-// deliberately hard to trigger: one term, in one title, URL or snippet, out of
-// every result on the page, is enough to call the answer genuine. With nothing
-// to look for, or nothing to look in, it judges nothing.
-func Unrelated(query string, results []Result) bool {
-	terms := QueryTerms(query)
-	if len(terms) == 0 || len(results) == 0 {
-		return false
-	}
-	for _, r := range results {
-		hay := strings.ToLower(r.Title + " " + r.URL + " " + r.Snippet)
-		for _, t := range terms {
-			if strings.Contains(hay, t) {
-				return false
-			}
-		}
-	}
-	return true
+	return strings.Join(lines, "\n")
 }

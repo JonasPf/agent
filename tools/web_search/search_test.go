@@ -1,139 +1,151 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+)
 
-const page = `
-<html><body>
-<ol id="b_results">
-  <li class="b_algo"><h2><a href="https://go.dev/doc">The Go Programming Language</a></h2>
-    <div class="b_caption"><p>Get started with Go, the language.</p></div></li>
-  <li class="b_algo"><h2><a href="https://sqlite.org/wal.html">SQLite WAL mode</a></h2>
-    <div class="b_caption"><p>Write-ahead logging &amp; its tradeoffs.</p></div></li>
-  <li class="b_ad"><h2><a href="https://ad.example/x">Buy Go</a></h2></li>
-</ol>
-</body></html>
-`
+const reply = `{"query":"landlock go","results":[
+  {"title":"Landlock for Go","url":"https://pkg.go.dev/landlock","content":"Bindings for the kernel's LSM.","score":0.97},
+  {"title":"The kernel's docs","url":"https://docs.kernel.org/landlock.html","content":"A process restricts itself.","score":0.9}
+]}`
 
-func TestParseResults(t *testing.T) {
-	got := ParseResults(page)
-	if len(got) != 2 {
-		t.Fatalf("got %d results, want 2 (a paid placement is not a result): %+v", len(got), got)
+func TestParseAnswer(t *testing.T) {
+	got, err := ParseAnswer([]byte(reply))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got[0].Title != "The Go Programming Language" || got[0].URL != "https://go.dev/doc" {
+	if len(got) != 2 {
+		t.Fatalf("got %d results, want 2: %+v", len(got), got)
+	}
+	if got[0].Title != "Landlock for Go" || got[0].URL != "https://pkg.go.dev/landlock" {
 		t.Errorf("first result = %+v", got[0])
 	}
-	if got[0].Snippet != "Get started with Go, the language." {
+	if got[0].Snippet != "Bindings for the kernel's LSM." {
 		t.Errorf("snippet = %q", got[0].Snippet)
-	}
-	if got[1].Snippet != "Write-ahead logging & its tradeoffs." {
-		t.Errorf("entities were not decoded: %q", got[1].Snippet)
 	}
 }
 
-func TestAResultWithoutASnippetStillCounts(t *testing.T) {
-	got := ParseResults(`<li class="b_algo"><h2><a href="https://x.test/">Bare</a></h2></li>`)
-	if len(got) != 1 || got[0].Snippet != "" {
-		t.Errorf("got %+v, want one result with no snippet", got)
+// A hit the model cannot follow is a line of text pretending to be a source.
+func TestAResultWithoutAURLIsDropped(t *testing.T) {
+	got, err := ParseAnswer([]byte(`{"results":[{"title":"Nowhere","url":"","content":"x"},
+		{"title":"Somewhere","url":"https://x.test/","content":"y"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].URL != "https://x.test/" {
+		t.Errorf("got %+v, want only the hit with a URL", got)
 	}
 }
 
 func TestNoResultsIsEmptyNotAnError(t *testing.T) {
-	if got := ParseResults("<html><body>nothing here</body></html>"); len(got) != 0 {
-		t.Errorf("got %+v, want nothing", got)
+	got, err := ParseAnswer([]byte(`{"query":"x","results":[]}`))
+	if err != nil || len(got) != 0 {
+		t.Errorf("got %+v, %v; want nothing and no error", got, err)
 	}
 }
 
-// Bing wraps every result in a click-tracking redirect that carries the real URL
-// base64'd in its u parameter. A wrapper is useless to the model: it cannot be
-// read, and web_browse on it just bounces.
-func TestCleanURL(t *testing.T) {
-	for _, c := range []struct{ name, in, want string }{
-		{"unwraps a redirect",
-			"https://www.bing.com/ck/a?!&&p=04&ptn=3&u=a1aHR0cHM6Ly9nby5kZXYv&ntb=1",
-			"https://go.dev/"},
-		{"unwraps when entities are still encoded",
-			"https://www.bing.com/ck/a?p=04&amp;u=a1aHR0cHM6Ly9nby5kZXYv&amp;ntb=1",
-			"https://go.dev/"},
-		{"leaves a plain URL alone",
-			"https://sqlite.org/wal.html", "https://sqlite.org/wal.html"},
-		{"keeps the wrapper when it cannot be decoded",
-			"https://www.bing.com/ck/a?u=a1not-valid-base64!!",
-			"https://www.bing.com/ck/a?u=a1not-valid-base64!!"},
+func TestAnAnswerOfTheWrongShapeIsAnError(t *testing.T) {
+	if _, err := ParseAnswer([]byte(`<html>not json</html>`)); err == nil {
+		t.Error("HTML was read as an answer")
+	}
+}
+
+// A status code alone does not tell a rejected key from a spent allowance, and
+// those ask different things of the operator.
+func TestReasonCarriesWhatTheAPISaid(t *testing.T) {
+	for _, c := range []struct{ name, raw, want string }{
+		{"nested object", `{"detail":{"error":"Unauthorized: invalid API key"}}`, "Unauthorized: invalid API key"},
+		{"bare string", `{"detail":"Your account has run out of credits"}`, "run out of credits"},
+		{"neither", `something went wrong`, "something went wrong"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if got := CleanURL(c.in); got != c.want {
-				t.Errorf("CleanURL(%q) = %q, want %q", c.in, got, c.want)
+			if got := Reason([]byte(c.raw)); !strings.Contains(got, c.want) {
+				t.Errorf("Reason(%s) = %q, want it to carry %q", c.raw, got, c.want)
 			}
 		})
 	}
 }
 
-// A search engine that declines to serve an automated query must be reported as
-// exactly that. Never dress a block up as an empty result, and never try to get
-// around it.
-func TestRefusal(t *testing.T) {
-	for _, in := range []string{
-		"Please complete the following challenge",
-		"Verifying you're not a bot",
-		"your network appears to be sending automated queries",
-		"UNUSUAL TRAFFIC from your computer network",
-	} {
-		if Refusal(in) == "" {
-			t.Errorf("Refusal(%q) found nothing", in)
-		}
+func TestEndpointPrefersTheEnvironment(t *testing.T) {
+	t.Setenv(URLName, "")
+	if got := Endpoint(); got != tavilyURL {
+		t.Errorf("Endpoint() = %q, want the constant %q", got, tavilyURL)
 	}
-	if got := Refusal("golang sqlite wal - Search. About 40,400 results"); got != "" {
-		t.Errorf("an ordinary page was read as a refusal: %q", got)
+	t.Setenv(URLName, "http://127.0.0.1:1/search")
+	if got := Endpoint(); got != "http://127.0.0.1:1/search" {
+		t.Errorf("Endpoint() = %q, want what the environment named", got)
 	}
 }
 
-// The failure that is worse than a refusal: the engine answers, the page looks
-// like a results page and carries the query in its title, and the results on it
-// are about something else entirely — a different set of unrelated pages on
-// every request. Bing does this to an automated client instead of declining,
-// and nothing in the parsed output says so, so the model reads gift cards and
-// hospital listings as the answer to a question about OCR binaries.
-func TestResultsAboutSomethingElseAreNotAnAnswer(t *testing.T) {
-	junk := []Result{
-		{Title: "Which stores accept the One4all Gift Card?", URL: "https://faqs.one4all.ie/article/150", Snippet: "The One4all Gift Card is issued by GVS Prepaid."},
-		{Title: "THE 10 BEST Things to Do in Manhattan", URL: "https://tripadvisor.com/manhattan", Snippet: "Must-see attractions in New York City."},
-	}
-	if !Unrelated("tesseract static binary linux", junk) {
-		t.Error("a page of results about something else was accepted as an answer")
-	}
+// The key rides in a header, and the limit is what the API is asked for rather
+// than something trimmed off the answer.
+func TestSearchSendsTheKeyAndTheLimit(t *testing.T) {
+	var auth, body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth = r.Header.Get("Authorization")
+		raw, _ := io.ReadAll(r.Body)
+		body = string(raw)
+		_, _ = w.Write([]byte(reply))
+	}))
+	defer srv.Close()
+	os.Setenv(URLName, srv.URL)
+	defer os.Unsetenv(URLName)
 
-	real := []Result{
-		{Title: "Install Tesseract OCR on Debian", URL: "https://example.test/a", Snippet: "apt-get install tesseract-ocr."},
-		{Title: "Something about nothing", URL: "https://example.test/b", Snippet: "No relation at all."},
+	got, err := Search("tvly-key", "landlock go", 4)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if Unrelated("tesseract static binary linux", real) {
-		t.Error("a genuine result set was rejected: one hit anywhere is enough")
+	if len(got) != 2 {
+		t.Errorf("got %d results, want 2", len(got))
 	}
-
-	// The term may be in the URL or the snippet rather than the title.
-	if Unrelated("landlock go", []Result{{Title: "Confinement", URL: "https://pkg.go.dev/landlock", Snippet: ""}}) {
-		t.Error("a term in the URL did not count")
+	if auth != "Bearer tvly-key" {
+		t.Errorf("Authorization = %q", auth)
 	}
-
-	// A query with nothing to match on cannot judge anything, and must not turn
-	// a working search into a failure.
-	if Unrelated("why is it so", []Result{{Title: "Anything", URL: "https://example.test/"}}) {
-		t.Error("a query of stop words was used to reject results")
+	var sent request
+	if err := json.Unmarshal([]byte(body), &sent); err != nil {
+		t.Fatalf("the request was not JSON: %s", body)
 	}
-	if Unrelated("tesseract", nil) {
-		t.Error("no results at all is an absence, not an unrelated answer")
+	if sent.Query != "landlock go" || sent.MaxResults != 4 {
+		t.Errorf("sent %+v, want the query and the limit", sent)
 	}
 }
 
-func TestQueryTermsDropsWhatCannotBeLookedFor(t *testing.T) {
-	got := QueryTerms(`"How do I install Tesseract on Linux?"`)
-	want := map[string]bool{"install": true, "tesseract": true, "linux": true}
-	if len(got) != len(want) {
-		t.Fatalf("terms = %v, want %v", got, want)
+func TestSearchReportsAnUnsuccessfulReply(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(432)
+		_, _ = w.Write([]byte(`{"detail":{"error":"Your account has run out of credits"}}`))
+	}))
+	defer srv.Close()
+	os.Setenv(URLName, srv.URL)
+	defer os.Unsetenv(URLName)
+
+	_, err := Search("tvly-key", "anything", 5)
+	if err == nil {
+		t.Fatal("a refusal was read as an answer")
 	}
-	for _, term := range got {
-		if !want[term] {
-			t.Errorf("unexpected term %q in %v", term, got)
+	for _, want := range []string{"432", "run out of credits"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not carry %q", err, want)
 		}
+	}
+}
+
+func TestFormatIsOneHitPerNumberedLine(t *testing.T) {
+	got := Format([]Result{
+		{Title: "First", URL: "https://a.test/", Snippet: "about the first"},
+		{Title: "", URL: "https://b.test/"},
+	})
+	if !strings.Contains(got, "1. First\n   https://a.test/\n   about the first") {
+		t.Errorf("a hit is not laid out as expected:\n%s", got)
+	}
+	// A hit with no title still has to be followable.
+	if !strings.Contains(got, "2. https://b.test/") {
+		t.Errorf("a result without a title lost its URL:\n%s", got)
 	}
 }

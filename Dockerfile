@@ -90,10 +90,9 @@ FROM debian:bookworm-slim
 # list — Landlock is a kernel facility the agent asks for directly, which is why
 # it works in an unprivileged container where bubblewrap did not.
 #
-# chromium is the browser web_browse and web_search drive, and installing it here
-# is what lets them stop searching for one: /usr/bin/chromium is a path the
-# sandbox already grants, the same package CI installs, and the only one either
-# tool will look at. It roughly doubles the image, which is the price of the
+# chromium is the browser web_browse drives, and installing it here is what lets
+# it stop searching for one: /usr/bin/chromium is a path the sandbox already
+# grants, the same package CI installs, and the only one that tool will look at. It roughly doubles the image, which is the price of the
 # tools working the same way everywhere they run.
 #
 # The rest is what a conversation about documents reaches for, and the reason it
