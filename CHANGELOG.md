@@ -52,9 +52,11 @@
   filling in as they go. Keep one and that conversation carries on; the other
   candidates are deleted, transcripts and files with them. The conversation you
   started from is never sent the message: it stays where it is, keeps its jobs,
-  and records what was asked and who was asked it. Asking five models sends the
-  conversation five times over, none of it from cache, and the screen says what
-  that comes to before you spend it.
+  and records what was asked and who was asked it — and that record is a link
+  back to the comparison, as is the *comparing* mark on any candidate in the
+  list and the header of any candidate you open, so leaving the screen does not
+  lose it. Asking five models sends the conversation five times over, none of it
+  from cache, and the screen says what that comes to before you spend it.
 
 ## 2026-09-21
 
