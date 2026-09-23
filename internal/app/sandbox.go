@@ -306,6 +306,17 @@ func (s *Sandbox) TempDir(workspace string) string {
 	return filepath.Join(workspace, ".tmp")
 }
 
+// HomeDir is the home directory a tool is given, for the same reason and in the
+// same place. The home directory of the user the container runs as is granted
+// neither read nor write, so a program that keeps state there — pip with
+// --user, npm, git, glab — fails on a path it never mentions, which reads as
+// the program being broken rather than as a refusal. Pointed inside the
+// session's own directory it works, and what it keeps is confined and visible
+// like everything else the session wrote.
+func (s *Sandbox) HomeDir(workspace string) string {
+	return filepath.Join(workspace, ".home")
+}
+
 // readPaths resolves the operator's additions and drops what is not there, so a
 // stale entry cannot make a profile that refuses to compile.
 func readPaths(raw string) []string {

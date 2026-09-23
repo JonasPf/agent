@@ -2,6 +2,17 @@
 
 ## 2026-09-23
 
+- **The shell can now read documents without building its own tools first.**
+  Asked to go through a folder of scans, the agent used to spend a dozen turns
+  assembling a PDF reader and an OCR engine by hand before it could read the
+  first page. It now has them: `pdftotext`, `tesseract` in English and German,
+  `pip`, `numpy`, `pillow`, `jq`, and `unzip`, beside the `curl`, `wget`,
+  `python3` and `perl` that were already there.
+- **Installing a Python package works.** `pip install --user` failed on a home
+  directory nothing was allowed to write, with an error that pointed at a path
+  no one had chosen. Each conversation now has its own home directory, inside
+  its own files, so a package it installs stays with it and is invisible to
+  every other conversation.
 - **Stop now works the moment a conversation says it is working.** Pressing stop
   just after sending could answer "this conversation is not working on
   anything" while the turn went ahead and ran. A turn is now stoppable from the

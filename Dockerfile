@@ -9,9 +9,10 @@
 # because tools/bash execs /bin/sh; git, gh and glab, because the agent proposes
 # changes — to itself, and to whatever other repository it is asked to work on —
 # by opening a pull request; chromium, because reading most of
-# the web means running it; curl, wget, python3 and perl, because a shell is
-# only as useful as the programs it can call, and these are the ones reached for
-# first. The sandbox needs nothing here: Landlock is the kernel's, and the agent
+# the web means running it; curl, wget, python3, perl, and the document and
+# imaging programs listed below, because a shell is only as useful as the
+# programs it can call and nothing in the container can install one. The sandbox
+# needs nothing here: Landlock is the kernel's, and the agent
 # asks for it itself. Nothing else: no package manager state.
 
 FROM golang:1.25-bookworm AS build
@@ -94,9 +95,24 @@ FROM debian:bookworm-slim
 # sandbox already grants, the same package CI installs, and the only one either
 # tool will look at. It roughly doubles the image, which is the price of the
 # tools working the same way everywhere they run.
+#
+# The rest is what a conversation about documents reaches for, and the reason it
+# is here rather than left to the shell: nothing in the container can install a
+# package. There is no root and no apt state, so a session that needs a program
+# rebuilds it by hand — one handed a folder of scanned medical records spent
+# some thirty calls bootstrapping pip into a temporary directory and resolving
+# tesseract's shared libraries one .deb at a time. poppler-utils reads a PDF;
+# tesseract reads the scans that are not text, in English and German because
+# that is what the records are in; pip, numpy and pillow are the floor anything
+# numerical starts from, and pip makes the long tail one command rather than an
+# afternoon. All of it lands under /usr, which the sandbox already grants every
+# tool read-only, so no session can change what another session's shell finds.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates git chromium \
       curl wget python3 perl \
+      poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
+      python3-pip python3-venv python3-numpy python3-pil \
+      unzip jq \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent runs as one user, and it is not root. The data and workspace

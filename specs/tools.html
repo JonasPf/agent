@@ -163,10 +163,11 @@ granted is absent, and a granted variable that is not set stays absent rather th
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
+<tr><td><code>HOME</code></td><td>Another directory inside it, for the same reason. The container user's home is granted to no tool, so a program that keeps state there &mdash; <code>pip</code>, <code>npm</code>, <code>git</code> &mdash; would fail on a path it never names (<a href="adrs.html#adr-058">ADR-058</a>).</td></tr>
 </table>
 
 <p>Beyond that list, and the handful any program needs to start at all &mdash; <code>PATH</code>,
-<code>HOME</code>, the locale, the certificate paths &mdash; a tool receives a variable only because the
+the locale, the certificate paths &mdash; a tool receives a variable only because the
 conversation it is running in was granted it by name
 (<a href="adrs.html#adr-045">ADR-045</a>). A grant belongs to a session, not to a tool: a credential is
 something an operator hands to one conversation, where a manifest could only say every session or none

@@ -227,9 +227,11 @@ func TestSessionFilesNameTheirDirectories(t *testing.T) {
 	for _, f := range files {
 		got[f.Path] = f.Dir
 	}
-	// .tmp is where the tool's scratch files went: listed like anything else the
-	// session wrote, and not what this test is about.
+	// .tmp is where the tool's scratch files went and .home is its home
+	// directory: both listed like anything else the session wrote, and neither
+	// is what this test is about.
 	delete(got, ".tmp")
+	delete(got, ".home")
 	want := map[string]bool{"src": true, "src/empty": true, "src/main.go": false}
 	if len(got) != len(want) {
 		t.Fatalf("listing = %+v, want %v", files, want)

@@ -278,6 +278,10 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// because an interpreter reaches for it before any tool code runs.
 	tmp := tc.App.sandbox.TempDir(workspace)
 	_ = os.MkdirAll(tmp, 0o755)
+	// The same for the home directory: the container user's is granted nothing,
+	// and a program that keeps state there fails on a path it never names.
+	home := tc.App.sandbox.HomeDir(workspace)
+	_ = os.MkdirAll(home, 0o755)
 	cmd.Stdin = strings.NewReader(string(args))
 	// The token is this call's, and dies with it: the tool API answers a
 	// request only for a call that is running, as the conversation it runs in.
@@ -291,7 +295,8 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 		"AGENT_WORKSPACE="+workspace,
 		"AGENT_SESSION="+tc.SessionID,
 		"AGENT_JOB="+tc.JobID,
-		"TMPDIR="+tmp)
+		"TMPDIR="+tmp,
+		"HOME="+home)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
@@ -316,8 +321,11 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 // toolPassthrough is what a subprocess needs to start at all: where to find its
 // interpreter and its libraries, where its user's home is, how to talk about
 // text, and which certificates to trust. Nothing here is a credential.
+// HOME is not among them: the agent's own home directory is granted to no
+// tool, so passing it through hands every program a path it cannot use. It is
+// set per call, beside TMPDIR, to a directory inside the session's own.
 var toolPassthrough = []string{
-	"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
+	"PATH", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TZ",
 	"SSL_CERT_FILE", "SSL_CERT_DIR", "TERM",
 }
 

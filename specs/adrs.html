@@ -1781,6 +1781,52 @@ workflow and <code>testenv/Dockerfile</code> &mdash; still name each other, and 
 pipeline over a runner's kernel.</p>
 </div>
 
+<div class="adr" id="adr-058">
+<div class="meta">ADR-058 · accepted · builds on <a href="#adr-034">ADR-034</a>, <a href="#adr-052">ADR-052</a></div>
+<h3>The image ships the userland, and a tool&rsquo;s home directory is inside its own session</h3>
+<h4>Context</h4>
+<p>A session was handed a folder of scanned medical records and asked to read them. It spent some
+thirty calls before the first page: no <code>pdftotext</code>, so it fetched a PyMuPDF wheel by hand;
+no <code>pip</code>, so it bootstrapped one; no OCR, so it downloaded six Debian packages and resolved
+<code>libgomp</code>, <code>libgif</code> and <code>libwebpmux</code> one at a time. Each step
+succeeded, which is the point: the boundary was never the obstacle, the empty userland was.</p>
+<p>Two things made it worse than a missing package. There is no root and no apt state in the image
+(<a href="#adr-036">ADR-036</a>), so a program that is not shipped cannot be installed the ordinary
+way. And <code>pip install --user</code>, the way that does not need root, wrote to
+<code>~/.local</code> under the home directory of the container user, which Landlock grants a tool
+neither read nor write (<a href="#adr-034">ADR-034</a>). It failed as <em>Permission denied</em> on a
+path the model had not chosen and had never seen mentioned &mdash; the same failure
+<a href="#adr-052">ADR-052</a> found in <code>glab</code>, and fixed there for one client with
+<code>GLAB_CONFIG_DIR</code>.</p>
+<h4>Decision</h4>
+<p>The image ships what a conversation about documents reaches for: <code>poppler-utils</code>,
+<code>tesseract</code> with English and German, <code>pip</code>, <code>numpy</code>,
+<code>pillow</code>, <code>jq</code> and <code>unzip</code>, beside the <code>curl</code>,
+<code>wget</code>, <code>python3</code> and <code>perl</code> already there. All of it lands under
+<code>/usr</code>, which every tool already reads and no tool can write, so nothing here is shared
+state between sessions: what one conversation runs, another cannot change.</p>
+<p><code>HOME</code> is no longer passed through from the agent&rsquo;s environment. It is set per
+call, beside <code>TMPDIR</code>, to <code>.home</code> inside the session&rsquo;s own working
+directory &mdash; writable, confined by the boundary that already holds, and not shared with any other
+conversation. <code>pip install --user</code> then works and what it installs belongs to that
+conversation. The tool description says all of this, because the kernel&rsquo;s refusals do not.</p>
+<h4>Consequences</h4>
+<p>The long tail is one command rather than an afternoon, and what it installs is as confined and as
+visible as anything else the session wrote. Two sessions that install the same package each download
+it: the alternative is a cache they both write, which is the cross-session channel this whole boundary
+exists to prevent.</p>
+<p>The <code>GLAB_CONFIG_DIR</code> of <a href="#adr-052">ADR-052</a> is no longer required &mdash; the
+default under <code>$HOME</code> is now writable &mdash; but it is left in the skill and the test,
+because it is harmless and naming the directory is clearer than relying on where a client decides to
+put one. A credential still reaches a forge client from the environment and never from a file: a home
+directory a tool can write is not an invitation to run <code>gh auth login</code>, whose token would
+live and die with that one session.</p>
+<p>The package list is now in three places that must agree &mdash; the image,
+<code>testenv/Dockerfile</code>, and CI &mdash; which is the arrangement chromium already has, and the
+userland test is what catches a disagreement. The image grows by roughly eighty megabytes on one that
+already carries a browser.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>
