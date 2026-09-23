@@ -12,6 +12,7 @@ const api = async (path, opts) => {
 };
 const post = (p, b) => api(p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) });
 const put = (p, b) => api(p, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
+const patch = (p, b) => api(p, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const del = p => api(p, { method: 'DELETE' });
 
 // The server refuses a file over this, so the interface refuses it first: on a
@@ -1344,6 +1345,28 @@ async function viewSettings(v) {
   v.append(el('p', 'note',
     `This conversation runs on ${runs}, fixed for its life. Changing any of it copies the ` +
     `conversation into a new session, leaving this one as it is.`));
+
+  // The title is the exception to the paragraph above: nothing in the prompt
+  // reads it, so it can be changed in place instead of by forking.
+  v.append(el('h2', null, 'title'));
+  const name = el('input', 'text');
+  name.value = s.title || '';
+  name.placeholder = 'What this conversation is about';
+  v.append(name);
+  const rename = el('button', 'btn', 'Rename');
+  rename.onclick = async () => {
+    const chosen = name.value.trim();
+    // A conversation with no title is harder to find again than one with a
+    // title that has gone stale, so a blank is not a rename.
+    if (!chosen || chosen === (s.title || '')) return;
+    try { await patch('/sessions/' + id, { title: chosen }); }
+    catch (e) { toast({ title: 'Not renamed', body: String(e.message) }); return; }
+    s.title = chosen;
+    if (state.session && state.session.id === id) state.session.title = chosen;
+    renderSidebar();
+    toast({ title: 'Renamed', body: chosen });
+  };
+  v.append(rename);
 
   const read = await configEditor(v, s);
   const go = el('button', 'btn primary', 'Fork into a new session');
