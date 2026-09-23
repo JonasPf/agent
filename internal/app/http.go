@@ -38,6 +38,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/messages", a.hSendMessage)
 	mux.HandleFunc("POST /sessions/{id}/cancel", a.hCancel)
 	mux.HandleFunc("POST /sessions/{id}/fork", a.hFork)
+	mux.HandleFunc("POST /sessions/{id}/compare", a.hCompare)
+	mux.HandleFunc("POST /sessions/{id}/keep", a.hKeep)
 	mux.HandleFunc("POST /sessions/{id}/compact", a.hCompact)
 	mux.HandleFunc("PUT /sessions/{id}/compaction", a.hEditCompaction)
 	mux.HandleFunc("POST /sessions/{id}/read", a.hMarkRead)
@@ -350,6 +352,51 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 
 // hCompact folds a session now rather than at its threshold, for a conversation
 // that has grown expensive before it would have folded on its own.
+// A comparison is started from the conversation it forks, so it is one request
+// naming the models and the message. What comes back is the candidates, so the
+// screen can show them filling in without asking again which they are.
+func (a *App) hCompare(w http.ResponseWriter, r *http.Request) {
+	s := a.store.Session(r.PathValue("id"))
+	if s == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	var in struct {
+		Text   string   `json:"text"`
+		Models []string `json:"models"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	group, cands, err := a.Compare(s, in.Text, in.Models)
+	if err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	out := make([]*Session, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, a.enrich(c))
+	}
+	writeJSON(w, 201, map[string]any{"comparison": group, "candidates": out})
+}
+
+// Keeping is destructive and deliberate, so it is a request of its own rather
+// than a field on the session it decides.
+func (a *App) hKeep(w http.ResponseWriter, r *http.Request) {
+	s := a.store.Session(r.PathValue("id"))
+	if s == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	gone, err := a.Keep(s)
+	if err != nil {
+		fail(w, 409, "%v", err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"session": a.enrich(s), "deleted": gone})
+}
+
 func (a *App) hCompact(w http.ResponseWriter, r *http.Request) {
 	s := a.store.Session(r.PathValue("id"))
 	if s == nil {

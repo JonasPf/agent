@@ -45,6 +45,16 @@
   a failed run, counted against the job, and counted toward the breaker that
   pauses every job in the agent — so stopping three wakes stopped everything.
   A stopped wake is now logged as stopped, and the conversation says so.
+- **Ask several models the same question and keep the answer you like best.**
+  Compare, in a conversation's menu, puts one message to as many models as you
+  choose at once. Each answers in a fork of the conversation — the whole
+  transcript, a copy of the files, its own tools — and they run side by side,
+  filling in as they go. Keep one and that conversation carries on; the other
+  candidates are deleted, transcripts and files with them. The conversation you
+  started from is never sent the message: it stays where it is, keeps its jobs,
+  and records what was asked and who was asked it. Asking five models sends the
+  conversation five times over, none of it from cache, and the screen says what
+  that comes to before you spend it.
 
 ## 2026-09-21
 

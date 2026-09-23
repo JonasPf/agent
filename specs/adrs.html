@@ -1781,6 +1781,41 @@ workflow and <code>testenv/Dockerfile</code> &mdash; still name each other, and 
 pipeline over a runner's kernel.</p>
 </div>
 
+<div class="adr" id="adr-057">
+<div class="meta">ADR-057 · accepted · builds on <a href="#adr-022">ADR-022</a></div>
+<h3>A comparison is a set of forks, and choosing one deletes the rest</h3>
+<h4>Context</h4>
+<p>Asking the same question of several models and keeping the best answer is an operator&rsquo;s
+judgement about a model, and until now it took five deliberate actions: fork, fork again, send the
+same words twice, read both, delete the loser by hand. The question is which model to carry on with,
+so the answer has to be a conversation to carry on in.</p>
+<p>The obvious cheaper design — one session, several completions held in memory, only the chosen one
+appended — breaks on the first tool call. A turn runs until the model stops calling tools, and a tool
+writes into its own session&rsquo;s working directory and nowhere else
+(<a href="#adr-034">ADR-034</a>). Three candidates sharing one directory would overwrite each other,
+and the answer being judged would depend on which of them finished first.</p>
+<h4>Decision</h4>
+<p>A comparison is N forks, one per model, each sent the same message. Forking already copies the
+transcript and the working directory and already leaves the origin untouched, and separate sessions
+already run concurrently, so the feature adds a way to start several forks at once and a way to end
+them — not a second execution path.</p>
+<p>Choosing a winner keeps that session and deletes every other candidate, files and all. It is not an
+archive: a candidate exists to be read once and decided on, and a list filling with rejected copies of
+the same conversation is the cost of keeping what nobody will open again. A candidate still working is
+stopped before it is deleted.</p>
+<p>The origin is not sent the compared message and does not become the winner. Continuing in the kept
+fork is what <a href="#adr-022">ADR-022</a> already requires: the winner usually runs on a different
+model, and a model is part of a configuration that is fixed at creation. Adopting the answer back into
+the origin would be changing a live session&rsquo;s model by another name.</p>
+<h4>Consequences</h4>
+<p>Jobs stay with the origin, as they do for any fork, so a comparison started from a conversation with
+a schedule leaves the schedule behind when the winner is kept. That is the fork rule, not a new one,
+and the screen says so.</p>
+<p>The price is honest and unavoidable: each candidate re-sends the whole conversation to a different
+provider, so none of them reads the origin&rsquo;s cached prefix. An N-way comparison costs N
+uncached prompts, and the screen says what that is before it is spent.</p>
+</div>
+
 <div class="adr" id="adr-058">
 <div class="meta">ADR-058 · accepted · builds on <a href="#adr-034">ADR-034</a>, <a href="#adr-052">ADR-052</a></div>
 <h3>The image ships the userland, and a tool&rsquo;s home directory is inside its own session</h3>
