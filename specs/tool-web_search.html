@@ -44,12 +44,29 @@ reads like a query with no matches.</p>
 <tr><td>Results found</td><td>Title, URL, and snippet for each, up to the limit.</td></tr>
 <tr><td>The engine served a page with no results</td><td>Says there were no results for the query.</td></tr>
 <tr><td>The engine declined — a rate limit, a challenge, a block</td><td>Fails, names the refusal, and suggests fetching a specific page instead.</td></tr>
+<tr><td>The engine answered with somebody else's results</td><td>Fails, says the results bore no relation to the query, and does not show them.</td></tr>
 </table>
 
 <p>The middle and the last look identical in the parsed output — both yield nothing — and conflating
 them is the failure that matters. "No results" invites the agent to conclude the thing does not exist;
 a refusal means it did not get to look. The rendered text is inspected for the signature of a refusal
 precisely so the two can be told apart.</p>
+
+<h2>An answer that is not an answer</h2>
+<p>A refusal is the honest failure: the engine says it will not serve an automated query, and the tool
+reports it. Bing does something else. It answers — a page carrying the query in its own title, ten
+well-formed organic results on it, and every one of them about something unrelated, a different set on
+each request: gift card retailers, hospital listings, Manhattan attractions, in reply to a query about
+OCR binaries. There is no challenge anywhere on the page, so nothing in the parsed output tells it
+apart from a real answer, and the model reasons from it as though it were one. That is worse than a
+refusal and worse than an empty page, because both of those are legible.</p>
+
+<p>So the results are read against the query before they are shown: across every result on the page,
+does any word of the query appear in any title, URL, or snippet. The test is the weakest one that
+catches this — a genuine result set clears it on its first hit, a page of filler clears it on none.
+Where a query is nothing but common words there is nothing to look for, and the tool judges nothing
+rather than guessing. It is not a relevance ranking and it never drops an individual result: either
+the page is an answer to the query or it is not.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -58,6 +75,9 @@ precisely so the two can be told apart.</p>
 <li>The number of results respects the limit, and defaults to ten.</li>
 <li>A query with no matches says so, naming the query.</li>
 <li>A refusal by the search engine fails, names what happened, and is never reported as an absence of results.</li>
+<li>A page of results bearing no relation to the query fails rather than returning them, and says that is what happened.</li>
+<li>One result mentioning one word of the query, anywhere in it, is enough for the page to count as an answer.</li>
+<li>A query made only of common words never triggers that check.</li>
 <li>An empty query is refused.</li>
 <li>Where no browser is available the tool fails and says why, rather than returning an empty result set.</li>
 </ul>

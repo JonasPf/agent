@@ -139,3 +139,71 @@ func Refusal(text string) string {
 	}
 	return ""
 }
+
+// A search engine that will not serve an automated client usually says so, and
+// Refusal above is how that is told from a query with no matches. Bing does
+// something else: it answers. The page carries the query in its title, holds
+// ten well-formed organic results, and every one of them is about something
+// unrelated — gift cards, hospital listings, Manhattan attractions — with a
+// different set on each request. Nothing in the parsed output distinguishes
+// that from a real answer, so the model reasons from it as though it were one.
+//
+// The test is the weakest one that catches it: across every result, does any
+// part of the query appear anywhere at all. A genuine result set clears that
+// bar on its first hit; a page of filler clears it on none.
+
+// searchStopWords are the words a query can be full of and a result would not
+// be expected to repeat. A query that has nothing else in it cannot judge an
+// answer, and says so by yielding no terms.
+var searchStopWords = map[string]bool{
+	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
+	"of": true, "for": true, "to": true, "in": true, "on": true, "at": true,
+	"by": true, "is": true, "are": true, "was": true, "were": true, "be": true,
+	"how": true, "what": true, "why": true, "when": true, "where": true,
+	"which": true, "who": true, "with": true, "from": true, "into": true,
+	"not": true, "no": true, "do": true, "does": true, "did": true,
+	"can": true, "could": true, "should": true, "would": true, "will": true,
+	"it": true, "its": true, "my": true, "me": true, "you": true, "your": true,
+	"this": true, "that": true, "these": true, "those": true, "there": true,
+	"any": true, "all": true, "get": true, "have": true, "has": true,
+	"about": true, "best": true, "new": true, "use": true, "using": true,
+}
+
+var wordRE = regexp.MustCompile(`[\p{L}\p{N}]+`)
+
+// QueryTerms are the words of a query worth looking for in an answer:
+// lower-cased, without punctuation and quoting, without the words any page
+// might carry, and without the very short ones a substring test would match by
+// accident.
+func QueryTerms(query string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, w := range wordRE.FindAllString(strings.ToLower(query), -1) {
+		if len(w) < 3 || searchStopWords[w] || seen[w] {
+			continue
+		}
+		seen[w] = true
+		out = append(out, w)
+	}
+	return out
+}
+
+// Unrelated reports that a set of results answers some other question. It is
+// deliberately hard to trigger: one term, in one title, URL or snippet, out of
+// every result on the page, is enough to call the answer genuine. With nothing
+// to look for, or nothing to look in, it judges nothing.
+func Unrelated(query string, results []Result) bool {
+	terms := QueryTerms(query)
+	if len(terms) == 0 || len(results) == 0 {
+		return false
+	}
+	for _, r := range results {
+		hay := strings.ToLower(r.Title + " " + r.URL + " " + r.Snippet)
+		for _, t := range terms {
+			if strings.Contains(hay, t) {
+				return false
+			}
+		}
+	}
+	return true
+}

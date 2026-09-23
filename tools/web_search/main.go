@@ -43,6 +43,18 @@ func main() {
 		tool.OKf("no results for %q", q)
 	}
 
+	// An engine that answers with somebody else's results has not answered, and
+	// saying so is the whole point: the parsed output of a page of filler looks
+	// exactly like the parsed output of a real one, so nothing downstream can
+	// tell them apart. Checked before the limit, because every result on the
+	// page is evidence.
+	if Unrelated(q, results) {
+		tool.Failf("the search engine returned %d results and not one of them mentions any part of %q. "+
+			"It is serving this client unrelated filler rather than declining outright, so these are not an "+
+			"answer to the query and are not shown. Fetch a page you can name with web_fetch or web_browse.",
+			len(results), q)
+	}
+
 	if len(results) > limit {
 		results = results[:limit]
 	}

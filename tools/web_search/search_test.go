@@ -86,3 +86,54 @@ func TestRefusal(t *testing.T) {
 		t.Errorf("an ordinary page was read as a refusal: %q", got)
 	}
 }
+
+// The failure that is worse than a refusal: the engine answers, the page looks
+// like a results page and carries the query in its title, and the results on it
+// are about something else entirely — a different set of unrelated pages on
+// every request. Bing does this to an automated client instead of declining,
+// and nothing in the parsed output says so, so the model reads gift cards and
+// hospital listings as the answer to a question about OCR binaries.
+func TestResultsAboutSomethingElseAreNotAnAnswer(t *testing.T) {
+	junk := []Result{
+		{Title: "Which stores accept the One4all Gift Card?", URL: "https://faqs.one4all.ie/article/150", Snippet: "The One4all Gift Card is issued by GVS Prepaid."},
+		{Title: "THE 10 BEST Things to Do in Manhattan", URL: "https://tripadvisor.com/manhattan", Snippet: "Must-see attractions in New York City."},
+	}
+	if !Unrelated("tesseract static binary linux", junk) {
+		t.Error("a page of results about something else was accepted as an answer")
+	}
+
+	real := []Result{
+		{Title: "Install Tesseract OCR on Debian", URL: "https://example.test/a", Snippet: "apt-get install tesseract-ocr."},
+		{Title: "Something about nothing", URL: "https://example.test/b", Snippet: "No relation at all."},
+	}
+	if Unrelated("tesseract static binary linux", real) {
+		t.Error("a genuine result set was rejected: one hit anywhere is enough")
+	}
+
+	// The term may be in the URL or the snippet rather than the title.
+	if Unrelated("landlock go", []Result{{Title: "Confinement", URL: "https://pkg.go.dev/landlock", Snippet: ""}}) {
+		t.Error("a term in the URL did not count")
+	}
+
+	// A query with nothing to match on cannot judge anything, and must not turn
+	// a working search into a failure.
+	if Unrelated("why is it so", []Result{{Title: "Anything", URL: "https://example.test/"}}) {
+		t.Error("a query of stop words was used to reject results")
+	}
+	if Unrelated("tesseract", nil) {
+		t.Error("no results at all is an absence, not an unrelated answer")
+	}
+}
+
+func TestQueryTermsDropsWhatCannotBeLookedFor(t *testing.T) {
+	got := QueryTerms(`"How do I install Tesseract on Linux?"`)
+	want := map[string]bool{"install": true, "tesseract": true, "linux": true}
+	if len(got) != len(want) {
+		t.Fatalf("terms = %v, want %v", got, want)
+	}
+	for _, term := range got {
+		if !want[term] {
+			t.Errorf("unexpected term %q in %v", term, got)
+		}
+	}
+}

@@ -2,6 +2,13 @@
 
 ## 2026-09-23
 
+- **Search no longer hands back somebody else's results.** Bing has been
+  answering automated queries with pages that look right — the query in the
+  title, ten results below it — and are filled with unrelated pages, a
+  different set every time: gift card retailers and Manhattan attractions in
+  reply to a question about OCR. Nothing on the page said so, so the agent read
+  them as the answer. A search whose results bear no relation to what was asked
+  now fails and says that is what happened, rather than showing them.
 - **The shell can now read documents without building its own tools first.**
   Asked to go through a folder of scans, the agent used to spend a dozen turns
   assembling a PDF reader and an OCR engine by hand before it could read the
