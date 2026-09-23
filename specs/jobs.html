@@ -289,6 +289,7 @@ evidence. Nothing deletes a job now, so nothing has to be preserved from it.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every wake writes one line to the job's log, whether it acted, skipped, or failed.</li>
+<li>A wake the operator stopped is logged as stopped rather than failed, counts no failure against the job or toward the breaker, and leaves the conversation an entry saying it was stopped.</li>
 <li>A line that acted carries what the agent said; one that failed carries the failure.</li>
 <li>A line records when the wake ran and when it was due, so a late run is visible as one.</li>
 <li>The log belongs to the job and survives every compaction of the session it fires into.</li>

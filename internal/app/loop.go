@@ -177,27 +177,38 @@ func (a *App) lastUserTurn(sessionID string) time.Time {
 	return time.Time{}
 }
 
+// stoppedWhere says where a stopped turn got to, from what it wrote before it
+// was stopped. A turn stopped while it was still queued never reached the model,
+// and "part way through" would be describing work that never began.
+func stoppedWhere(written []Entry) string {
+	for _, e := range written {
+		if e.Type == "message" && e.Role != "user" {
+			return "stopped, part way through"
+		}
+	}
+	return "stopped before the agent began"
+}
+
 // SendUserMessage queues a user turn behind anything already running.
 func (a *App) SendUserMessage(sessionID, text string) error {
 	s := a.store.Session(sessionID)
 	if s == nil {
 		return fmt.Errorf("no session %s", sessionID)
 	}
-	a.enqueue(s.ID, func() {
-		ctx, done := a.turnContext(context.Background(), s.ID)
-		defer done()
+	a.enqueue(s.ID, func(ctx context.Context) {
 		live := a.store.Session(s.ID)
 		if live == nil {
 			return
 		}
 		first := a.lastUserTurn(live.ID).IsZero()
+		before := len(a.store.Entries(live.ID))
 		if err := a.runTurn(ctx, live, turnOpts{UserText: text}); err != nil {
 			// A turn the operator stopped did not fail: it ended where they
 			// said. The transcript has to tell the two apart, or a stop reads
 			// as the agent breaking.
 			if ctx.Err() != nil {
 				a.appendEvent(live.ID, Entry{EventKind: "cancelled",
-					Text: "stopped, part way through"})
+					Text: stoppedWhere(a.store.Entries(live.ID)[before:])})
 				a.hub.Broadcast(wsEvent{Kind: "sessions"})
 				return
 			}

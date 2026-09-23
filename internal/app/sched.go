@@ -102,9 +102,12 @@ func (s *Scheduler) tick(ctx context.Context) {
 		}
 		s.setInflight(j.ID, true)
 		job := j
-		s.app.enqueue(sess.ID, func() {
+		// The wake runs under the context its place in the queue was given, not
+		// under the scheduler's: it is the session's turn, and the operator stops
+		// it the same way they stop one of their own.
+		s.app.enqueue(sess.ID, func(turn context.Context) {
 			defer s.setInflight(job.ID, false)
-			s.runJob(ctx, job, sess)
+			s.runJob(turn, job, sess)
 		})
 		if state.Open {
 			break // one probe per window
@@ -121,6 +124,10 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 	if j.Check != "" {
 		met, out, err := s.runCheck(ctx, j, sess)
 		if err != nil {
+			if ctx.Err() != nil {
+				s.stoppedWake(j, sess, due, nil)
+				return
+			}
 			s.jobFailed(j, err)
 			return
 		}
@@ -134,11 +141,11 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 
 	// The wake it was due at, not the moment it got to run.
 	before := len(a.store.Entries(sess.ID))
-	// A wake runs as the session's turn, so the operator can stop one of these
-	// the same way they stop their own.
-	ctx, done := a.turnContext(ctx, sess.ID)
-	defer done()
 	if err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, DueAt: due}); err != nil {
+		if ctx.Err() != nil {
+			s.stoppedWake(j, sess, due, a.store.Entries(sess.ID)[before:])
+			return
+		}
 		s.jobFailed(j, err)
 		return
 	}
@@ -146,6 +153,18 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 	s.logRun(j, sess.ID, due, jobFired, saidBy(a.store.Entries(sess.ID)[before:]))
 	s.succeeded(j)
 	s.reschedule(j, true)
+}
+
+// stoppedWake records a wake the operator stopped. It did not fail: recorded as
+// a failure it would count against the job and toward the breaker, so stopping
+// three wakes would stop every job in the agent. written is what the turn put in
+// the transcript before it was stopped, which is nothing when the stop came
+// during the check.
+func (s *Scheduler) stoppedWake(j *Job, sess *Session, due time.Time, written []Entry) {
+	s.app.appendEvent(sess.ID, Entry{EventKind: "cancelled", Text: stoppedWhere(written)})
+	j.LastStatus = "not_fired"
+	s.logRun(j, sess.ID, due, jobSkipped, "stopped by the operator")
+	s.reschedule(j, false)
 }
 
 // runCheck runs the job's check command. It reports whether the condition is

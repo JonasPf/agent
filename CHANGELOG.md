@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-09-23
+
+- **Stop now works the moment a conversation says it is working.** Pressing stop
+  just after sending could answer "this conversation is not working on
+  anything" while the turn went ahead and ran. A turn is now stoppable from the
+  moment it joins the queue, and one stopped before it started never runs. A
+  turn waiting behind another can be stopped too, oldest first.
+- **A stopped turn says where it got to.** One stopped before the agent reached
+  the model no longer claims to have been stopped part way through.
+- **Stopping a scheduled wake no longer counts as a failure.** It was logged as
+  a failed run, counted against the job, and counted toward the breaker that
+  pauses every job in the agent — so stopping three wakes stopped everything.
+  A stopped wake is now logged as stopped, and the conversation says so.
+
 ## 2026-09-21
 
 - **Opening one conversation after another no longer mixes the two.** Tapping a

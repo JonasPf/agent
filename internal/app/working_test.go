@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -57,10 +58,10 @@ func TestASessionSaysWhileItIsWorkingAndForHowLong(t *testing.T) {
 
 	release := make(chan struct{})
 	started := make(chan struct{})
-	a.enqueue(s.ID, func() { close(started); <-release })
+	a.enqueue(s.ID, func(context.Context) { close(started); <-release })
 	// A second turn queued behind the first keeps the session working: the
 	// operator is waiting on both.
-	a.enqueue(s.ID, func() {})
+	a.enqueue(s.ID, func(context.Context) {})
 	<-started
 
 	if kinds := kindsUntil(t, events, s.ID, "working"); len(kinds) != 1 {
