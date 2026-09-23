@@ -323,6 +323,17 @@ test('an id inside a word is not linked', () => {
   assert.deepStrictEqual(parts, [{ text: 'x2C41F09B7DA35E86104B7x' }]);
 });
 
+// A comparison carries an identifier of the same shape as a session's, and the
+// origin's record of one names both: the comparison, then the candidate
+// sessions. Linked as a session, the comparison leads nowhere.
+test('the identifier after the word comparison is not a session', () => {
+  const parts = splitSessionIds('comparison 2C41F09B7DA35E86104B7: "which sensor" ' +
+    'put to 2 models — a/one in 8E5D2A70CB1946F3D0A25');
+  const ids = parts.filter(p => p.id);
+  assert.strictEqual(ids[0].kind, 'comparison', 'the comparison was taken for a session');
+  assert.strictEqual(ids[1].kind, undefined, 'a candidate was taken for a comparison');
+});
+
 test('empty text splits into nothing', () => {
   assert.deepStrictEqual(splitSessionIds(''), []);
 });

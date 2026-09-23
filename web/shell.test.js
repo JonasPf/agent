@@ -1414,6 +1414,85 @@ test('a comparison already decided says so rather than showing nothing', async (
   assert.match(textOf(v), /decided|no longer/i, 'a decided comparison drew an empty screen');
 });
 
+// Asking is one action. Each press forks the conversation once per model and
+// re-sends the whole transcript, so a second press is not a retry — it is a
+// second comparison, paid for twice and answering the same question.
+test('asking twice starts one comparison', async () => {
+  const ctx = compareScreen({
+    'POST /sessions/S1/compare': { comparison: 'G1', candidates: [] },
+  });
+  vm.runInContext("state.view = 'compare'; state.arg = 'S1';", ctx);
+  const v = node('div');
+  await ctx.viewCompare(v);
+  await chooseInCompare(ctx, v, 0);
+  findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Which sensor should I replace?';
+  await ctx.renderCompareSetup();
+
+  const button = findAll(v, 'btn').find(b => /Ask/.test(b.textContent));
+  await button.onclick();
+  await button.onclick();
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/sessions/S1/compare');
+  assert.strictEqual(sent.length, 1, 'two presses started ' + sent.length + ' comparisons');
+  assert.ok(button.disabled, 'the button was still offering to ask again');
+});
+
+// A comparison is several conversations, and the screen holding them side by
+// side is not one of them: leaving it has to be undoable, or the answers are
+// only reachable one at a time.
+test('a candidate leads back to the comparison it belongs to', async () => {
+  const ctx = load({
+    '/sessions': [],
+    '/sessions/C1': { session: session({ id: 'C1', comparison: 'G1', title: 'Sensors · one' }) },
+    '/sessions/C1/transcript': [],
+  });
+  vm.runInContext("state.view = 'session'; state.arg = 'C1';", ctx);
+  const v = node('div');
+  await ctx.viewSession(v);
+  const back = ctx._id('head-acts').children.find(b => /comparison/i.test(b.textContent));
+  assert.ok(back, 'a candidate offers no way back: ' +
+    ctx._id('head-acts').children.map(b => b.textContent).join(', '));
+  back.onclick();
+  assert.strictEqual(ctx.location.hash, '#compared/G1');
+});
+
+// A conversation that is not a candidate has no comparison to go back to, so
+// the action is not simply always there.
+test('a conversation that is not a candidate offers no way back to one', async () => {
+  const ctx = load({
+    '/sessions': [],
+    '/sessions/S1': { session: session({ id: 'S1' }) },
+    '/sessions/S1/transcript': [],
+  });
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  await ctx.viewSession(node('div'));
+  assert.ok(!ctx._id('head-acts').children.some(b => /comparison/i.test(b.textContent)),
+    'an ordinary conversation was offered a comparison');
+});
+
+// The row is where a candidate is found again after the screen was left, so the
+// mark on it is the way back rather than a label.
+test('the comparing mark opens the comparison', () => {
+  const ctx = load({});
+  const row = ctx.sessionRow(session({ id: 'C1', comparison: 'G1' }));
+  const tag = findAll(row, 'tag').find(t => t.textContent === 'comparing');
+  tag.onclick({ stopPropagation() {} });
+  assert.strictEqual(ctx.location.hash, '#compared/G1');
+});
+
+// The origin keeps the only record of a comparison it was never sent, so that
+// record is a way back to it and not 21 characters of prose.
+test('the record of a comparison links to the comparison, not to a session', () => {
+  const ctx = load({});
+  const group = '2C41F09B7DA35E86104B7', cand = '8E5D2A70CB1946F3D0A25';
+  const n = ctx.renderEntry({
+    type: 'event', event_kind: 'compare', created_at: '2026-09-23T10:00:00Z',
+    text: 'comparison ' + group + ': "which sensor" put to 2 models — a/one in ' + cand,
+  });
+  const links = findAll(n, 'sid');
+  assert.strictEqual(links[0].href, '#compared/' + group, 'the comparison links to a session that does not exist');
+  assert.strictEqual(links[1].href, '#session/' + cand, 'a candidate no longer links to its conversation');
+});
+
 test('the session list marks a conversation that is still a candidate', () => {
   const ctx = load({});
   const row = ctx.sessionRow(session({ id: 'C1', comparison: 'G1' }));
