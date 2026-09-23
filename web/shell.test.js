@@ -1242,3 +1242,140 @@ test('a persona is written through the same screen, in its own words', async () 
   assert.deepStrictEqual(JSON.parse(sent[0].body),
     { name: 'terse', description: 'Says little.', body: 'You are terse.' });
 });
+
+// ---------- comparing models ----------
+
+// A comparison is set up on one screen: which models to ask, and what to ask
+// them. The price is on the same screen, because asking five models is five
+// times the conversation and nothing else says so.
+function compareScreen(routes) {
+  return load(Object.assign({
+    '/sessions': [],
+    '/sessions/S1': { session: session({ id: 'S1', model: SMALL.id, context_used: 20000 }) },
+    '/models': [SMALL, FABLE],
+  }, routes));
+}
+
+async function chooseInCompare(ctx, v, index) {
+  const add = findAll(v, 'btn').find(b => /Add a model/.test(b.textContent));
+  assert.ok(add, 'the compare screen offers no way to add a model');
+  await add.onclick();
+  const dialog = openDialog(ctx);
+  assert.ok(dialog, 'adding a model opened no dialog');
+  findAll(dialog, 'model-row')[index].onclick();
+}
+
+test('a comparison is set up with its models, its message, and what it costs', async () => {
+  const ctx = compareScreen({});
+  vm.runInContext("state.view = 'compare'; state.arg = 'S1';", ctx);
+  const v = node('div');
+  await ctx.viewCompare(v);
+
+  const go = findAll(v, 'btn').find(b => /Ask/.test(b.textContent));
+  assert.ok(go, 'the compare screen has no way to start');
+  assert.ok(go.disabled, 'a comparison of one model with no message was offered anyway');
+
+  await chooseInCompare(ctx, v, 0);
+  findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Which sensor should I replace?';
+  await ctx.renderCompareSetup();
+  const said = textOf(ctx._id('view')) + ' ' + textOf(v);
+  assert.match(said, /40,000|40000/, 'the screen does not say what asking two models re-sends');
+});
+
+test('comparing asks every model chosen and opens the comparison', async () => {
+  const ctx = compareScreen({
+    'POST /sessions/S1/compare': {
+      comparison: 'G1',
+      candidates: [session({ id: 'C1', model: SMALL.id }), session({ id: 'C2', model: FABLE.id })],
+    },
+  });
+  vm.runInContext("state.view = 'compare'; state.arg = 'S1';", ctx);
+  const v = node('div');
+  await ctx.viewCompare(v);
+  await chooseInCompare(ctx, v, 0);
+  findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Which sensor should I replace?';
+  await ctx.renderCompareSetup();
+
+  const button = findAll(v, 'btn').find(b => /Ask/.test(b.textContent));
+  assert.ok(!button.disabled, 'two models and a message still did not offer the comparison');
+  await button.onclick();
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/sessions/S1/compare');
+  assert.strictEqual(sent.length, 1, 'comparing made ' + sent.length + ' requests');
+  assert.deepStrictEqual(JSON.parse(sent[0].body),
+    { text: 'Which sensor should I replace?', models: [SMALL.id, FABLE.id] });
+  assert.strictEqual(ctx.location.hash, '#compared/G1');
+});
+
+// The answers are read side by side, each headed by the model that wrote it,
+// each filling in while the others are still writing.
+test('a comparison shows one column per candidate, headed by its model', async () => {
+  const ctx = load({
+    '/sessions': [
+      session({ id: 'C1', model: 'a/one', comparison: 'G1', title: 'Sensors · one' }),
+      session({ id: 'C2', model: 'b/two', comparison: 'G1', title: 'Sensors · two' }),
+      session({ id: 'S1', model: 'a/one' }),
+    ],
+    '/sessions/C1/transcript': [
+      { seq: 1, type: 'message', role: 'user', text: 'Which sensor?', created_at: '2026-09-23T10:00:00Z' },
+      { seq: 2, type: 'message', role: 'assistant', text: 'The humidity one.', created_at: '2026-09-23T10:00:01Z' },
+    ],
+    '/sessions/C2/transcript': [
+      { seq: 1, type: 'message', role: 'user', text: 'Which sensor?', created_at: '2026-09-23T10:00:00Z' },
+    ],
+  });
+  vm.runInContext("state.view = 'compared'; state.arg = 'G1';", ctx);
+  const v = node('div');
+  await ctx.viewCompared(v);
+
+  const cols = findAll(v, 'candidate');
+  assert.strictEqual(cols.length, 2, 'a two-way comparison drew ' + cols.length + ' columns');
+  assert.match(textOf(cols[0]), /one/, 'the first column is not headed by its model');
+  assert.match(textOf(cols[1]), /two/, 'the second column is not headed by its model');
+  assert.match(textOf(cols[0]), /The humidity one/, 'an answer already given is not shown');
+
+  // The second model is still writing; its words arrive over the socket and
+  // must land in its own column.
+  ctx.handle({ kind: 'delta', session_id: 'C2', text: 'The soil one.' });
+  assert.match(textOf(findAll(v, 'candidate')[1]), /The soil one/, 'a delta missed its column');
+  assert.ok(!/The soil one/.test(textOf(findAll(v, 'candidate')[0])), 'a delta reached the wrong column');
+});
+
+test('keeping a candidate says the others go, and leaves the comparison in it', async () => {
+  const ctx = load({
+    '/sessions': [
+      session({ id: 'C1', model: 'a/one', comparison: 'G1' }),
+      session({ id: 'C2', model: 'b/two', comparison: 'G1' }),
+    ],
+    '/sessions/C1/transcript': [], '/sessions/C2/transcript': [],
+    'POST /sessions/C2/keep': { session: session({ id: 'C2' }), deleted: ['a/one in C1'] },
+  });
+  vm.runInContext("state.view = 'compared'; state.arg = 'G1';", ctx);
+  const v = node('div');
+  await ctx.viewCompared(v);
+
+  let asked = '';
+  ctx.confirm = q => { asked = q; return true; };
+  const keep = findAll(findAll(v, 'candidate')[1], 'btn').find(b => /Keep/.test(b.textContent));
+  assert.ok(keep, 'a candidate offers no way to keep it');
+  await keep.onclick();
+  assert.match(asked, /delete/i, 'keeping did not say the other candidates are deleted: ' + asked);
+  assert.match(asked, /1 other|one other|1 conversation/i, 'keeping did not say how many go: ' + asked);
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/sessions/C2/keep');
+  assert.strictEqual(sent.length, 1, 'keeping made ' + sent.length + ' requests');
+  assert.strictEqual(ctx.location.hash, '#session/C2');
+});
+
+test('a comparison already decided says so rather than showing nothing', async () => {
+  const ctx = load({ '/sessions': [session({ id: 'S1' })] });
+  vm.runInContext("state.view = 'compared'; state.arg = 'G1';", ctx);
+  const v = node('div');
+  await ctx.viewCompared(v);
+  assert.match(textOf(v), /decided|no longer/i, 'a decided comparison drew an empty screen');
+});
+
+test('the session list marks a conversation that is still a candidate', () => {
+  const ctx = load({});
+  const row = ctx.sessionRow(session({ id: 'C1', comparison: 'G1' }));
+  const tags = findAll(row, 'tag').map(t => t.textContent);
+  assert.ok(tags.includes('comparing'), 'a candidate is not marked as one: ' + tags.join(', '));
+});
