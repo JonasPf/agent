@@ -2,6 +2,12 @@
 
 ## 2026-09-23
 
+- **A conversation can be renamed.** The title the agent writes after your
+  first message is a guess at what the conversation turned out to be about,
+  and it is often wrong by the end. Open a conversation's Controls and the
+  title is now the first thing on the screen, in a box: change it, tap
+  Rename, and the rail and the list follow. Everything else on that screen is
+  still fixed for the conversation's life and still changes only by forking.
 - **Search works again, through a search API.** It used to read a search
   engine's own results page in a browser, which is the one page a search
   company will not serve a robot. It now asks an API and gets an answer to the

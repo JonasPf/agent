@@ -29,7 +29,7 @@ private one of its own, so a session is always something a person started and ca
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste. It addresses the same conversation for as long as the conversation exists.</td></tr>
-<tr><td><code>title</code></td><td>Generated from the first user message. Editable.</td></tr>
+<tr><td><code>title</code></td><td>Generated from the first user message, and editable from the session's controls at any time. A title given by hand is kept: nothing regenerates over it.</td></tr>
 <tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life. A conversation that names none starts on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</td></tr>
 <tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>. Archiving is something a person does when they are finished; nothing archives a session automatically.</td></tr>
 <tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
@@ -45,6 +45,7 @@ private one of its own, so a session is always something a person started and ca
 <ul>
 <li>Every session appears in the session list; none are hidden by kind or origin.</li>
 <li>A session receives a title within one turn of its first user message.</li>
+<li>A title given by hand is not overwritten by the one the model would generate.</li>
 <li>A session's model, tools, skills, and grants cannot be changed once the session exists.</li>
 <li>A tool receives a granted variable only in a session that was granted it, and a session granted nothing reaches no credential another session holds.</li>
 <li>A granted variable that is not set in the agent's environment is absent from the tool rather than empty.</li>

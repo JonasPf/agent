@@ -1045,6 +1045,47 @@ test('a conversation granted nothing says nothing about grants', async () => {
     'a conversation with no grants still claims it may read something: ' + summary);
 });
 
+// The title is the one thing about a conversation that is not fixed once it
+// exists, so the controls screen is where it is changed.
+test('a conversation is renamed from its controls screen', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1', title: 'Greenhouse sensors' }) },
+    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [],
+  });
+  ctx.location.hash = '#settings/S1';
+  ctx.route();
+  const v = node('div');
+  await ctx.viewSettings(v);
+  const input = findAll(v, 'text').find(n => n.value === 'Greenhouse sensors');
+  assert.ok(input, 'the controls screen does not offer the title for editing');
+  input.value = '  Tomato bed telemetry  ';
+  const save = findAll(v, 'btn').find(b => /rename/i.test(b.textContent));
+  assert.ok(save, 'the controls screen offers no way to save a new title');
+  await save.onclick();
+  const wrote = (ctx._calls || []).filter(c => c.method === 'PATCH');
+  assert.deepEqual(wrote.map(c => c.path), ['/sessions/S1'],
+    'renaming did not patch the session exactly once');
+  assert.deepEqual(JSON.parse(wrote[0].body), { title: 'Tomato bed telemetry' },
+    'the rename sent something other than the trimmed title');
+});
+
+// A conversation with no title at all is harder to find than one with a bad
+// one, so a blank is not a rename.
+test('a blank title renames nothing', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1', title: 'Greenhouse sensors' }) },
+    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [],
+  });
+  ctx.location.hash = '#settings/S1';
+  ctx.route();
+  const v = node('div');
+  await ctx.viewSettings(v);
+  findAll(v, 'text').find(n => n.value === 'Greenhouse sensors').value = '   ';
+  await findAll(v, 'btn').find(b => /rename/i.test(b.textContent)).onclick();
+  assert.equal((ctx._calls || []).filter(c => c.method === 'PATCH').length, 0,
+    'a blank title was sent to the server');
+});
+
 // ---------- the persona, chosen before a conversation starts ----------
 
 const PERSONAS = {
