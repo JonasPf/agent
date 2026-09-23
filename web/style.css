@@ -680,3 +680,26 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
   padding-left: .6rem;
   margin-left: .2rem;
 }
+
+/* Comparing models. The candidates sit in one row on a laptop, where two
+   answers can be read against each other without scrolling between them, and
+   stack on a phone, where they cannot. Each column scrolls on its own, so a
+   long answer beside a short one does not stretch the page to its height. */
+.picked { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.candidates { display: grid; gap: 12px; grid-template-columns: 1fr; margin-top: 8px; }
+@media (min-width: 900px) {
+  .candidates { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+  .candidate-body { max-height: 60vh; overflow-y: auto; }
+}
+.candidate {
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--card);
+  display: flex; flex-direction: column; min-width: 0;
+}
+.candidate-head {
+  padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--sunk);
+  border-radius: var(--r) var(--r) 0 0;
+}
+.candidate-head .n { font-weight: 600; }
+.candidate-body { padding: 4px 14px; min-width: 0; }
+.candidate-body .msg { margin: 10px 0; }
+.candidate-acts { padding: 10px 14px 4px; border-top: 1px solid var(--line); }

@@ -1283,6 +1283,120 @@
           }
         }
       }
+    },
+    "/sessions/{id}/compare": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Put one message to several models at once. Each model answers in a fork of this conversation, carrying its transcript and a copy of its working directory. This session is not sent the message and records one compare event naming the candidates.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "text",
+                  "models"
+                ],
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "description": "The message put to every model."
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 2,
+                    "description": "Two or more model identifiers. One candidate is created per entry, in order."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The candidates, in the order the models were given.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "comparison": {
+                      "type": "string",
+                      "description": "Identifies this comparison; every candidate carries it until one is kept."
+                    },
+                    "candidates": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Session"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Fewer than two models, or no message."
+          },
+          "404": {
+            "description": "No such session."
+          }
+        }
+      }
+    },
+    "/sessions/{id}/keep": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Decide a comparison in favour of this candidate. Every other candidate of the same comparison is stopped and deleted, transcript and working directory with it. This session carries on as an ordinary conversation.",
+        "responses": {
+          "200": {
+            "description": "The kept session, and what was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "session": {
+                      "$ref": "#/components/schemas/Session"
+                    },
+                    "deleted": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "The candidates that were deleted, named by model and identifier."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such session."
+          },
+          "409": {
+            "description": "This session is not a candidate of an undecided comparison."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1397,6 +1511,10 @@
             "type": "number",
             "nullable": true,
             "description": "How long a turn has been running or queued in this session, in seconds; absent when none is. Elapsed rather than a start time, so a client clock that disagrees still counts correctly."
+          },
+          "comparison": {
+            "type": "string",
+            "description": "The comparison this session is a candidate of, while that comparison is undecided. Absent on every other session: keeping one candidate clears it and deletes the rest."
           }
         }
       },
