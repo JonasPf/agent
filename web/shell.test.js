@@ -1086,6 +1086,77 @@ test('a blank title renames nothing', async () => {
     'a blank title was sent to the server');
 });
 
+// A conversation's configuration is fixed once it exists, so the screen that
+// describes one shows it and nothing more: the way to a different configuration
+// is Fork, which has a screen of its own. Two screens offering the same editor
+// made the same act look like two.
+test('the details screen offers no way to change the configuration', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1', enabled_tools: ['shell'], enabled_skills: ['research'] }) },
+    '/tools': { tools: [{ name: 'shell' }, { name: 'browse' }] },
+    '/skills': { skills: [{ name: 'research' }] },
+    '/models': [], '/personas': { personas: [] },
+  });
+  ctx.location.hash = '#settings/S1';
+  ctx.route();
+  const v = node('div');
+  await ctx.viewSettings(v);
+  assert.equal(findAll(v, 'choice').length, 0,
+    'the details screen still opens the model dialog');
+  const clickable = findAll(v, 'pill').filter(p => p.onclick);
+  assert.deepEqual(clickable.map(p => p.textContent), [],
+    'the details screen still offers the configuration for editing');
+  const buttons = findAll(v, 'btn').map(b => b.textContent);
+  assert.ok(!buttons.some(t => /fork/i.test(t)),
+    'the details screen still forks; that belongs to the fork screen: ' + buttons.join(', '));
+});
+
+// The header of every conversation already carries Files, so a second way in
+// from this screen is a duplicate and not a shortcut.
+test('the details screen does not repeat the files link', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1' }) },
+    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [], '/personas': { personas: [] },
+  });
+  ctx.location.hash = '#settings/S1';
+  ctx.route();
+  const v = node('div');
+  await ctx.viewSettings(v);
+  const buttons = findAll(v, 'btn').map(b => b.textContent);
+  assert.ok(!buttons.some(t => /files/i.test(t)),
+    'the details screen repeats the header\'s files link: ' + buttons.join(', '));
+});
+
+// Read-only is not the same as absent: what a conversation is fixed on is the
+// reason to open this screen, so it is named here rather than inferred from a
+// count in the summary.
+test('the details screen names the configuration the conversation is fixed on', async () => {
+  const ctx = load({
+    '/sessions/S1': {
+      session: session({
+        id: 'S1', model: 'acme/fast', persona: 'terse',
+        enabled_tools: ['shell'], enabled_skills: ['research'], granted_env: ['GH_TOKEN'],
+      })
+    },
+    '/tools': { tools: [{ name: 'shell' }, { name: 'browse' }] },
+    '/skills': { skills: [{ name: 'research' }, { name: 'write' }] },
+    '/models': [], '/personas': { personas: [] },
+  });
+  ctx.location.hash = '#settings/S1';
+  ctx.route();
+  const v = node('div');
+  await ctx.viewSettings(v);
+  const shown = findAll(v, 'pill').map(p => p.textContent);
+  assert.ok(shown.includes('shell') && !shown.includes('browse'),
+    'the tools the conversation runs with are not the ones shown: ' + shown.join(', '));
+  assert.ok(shown.includes('research') && !shown.includes('write'),
+    'the skills the conversation runs with are not the ones shown: ' + shown.join(', '));
+  assert.ok(shown.includes('terse'), 'the persona is not shown: ' + shown.join(', '));
+  assert.ok(shown.includes('GH_TOKEN'), 'the granted variables are not shown: ' + shown.join(', '));
+  assert.ok(findAll(v, 'n').some(c => c.textContent === 'acme/fast'),
+    'the model the conversation runs on is not shown');
+});
+
 // ---------- the persona, chosen before a conversation starts ----------
 
 const PERSONAS = {

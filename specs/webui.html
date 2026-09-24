@@ -46,7 +46,7 @@ other can answer in the wrong order. The screen on the address bar is the one on
 is no longer the current one stops where it stands rather than painting its conversation, or a second
 composer, over the screen that replaced it.</p>
 
-<p>A view's own actions &mdash; a conversation's jobs, files, summary, fork, controls &mdash; belong to
+<p>A view's own actions &mdash; a conversation's jobs, files, summary, fork, details &mdash; belong to
 the header. They are one list rendered in two shapes: laid along the header where there is room for
 them, folded behind a single button where there is not. Which is on screen is the stylesheet's
 decision, so the two can never offer different things.</p>
@@ -172,13 +172,14 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 </ul>
 </div>
 
-<h2>Per-session controls</h2>
+<h2>Per-session details</h2>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The controls screen shows the session's model, tools, skills, grants, and persona, and offers a new configuration, which takes effect by forking.</li>
-<li>The controls screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
+<li>The details screen states the session's model, tools, skills, grants, and persona, and states them as read: nothing on it changes any of them, and it says that a different configuration is reached by forking.</li>
+<li>The details screen offers only what a conversation can still be given or denied once it exists: a new title, and deletion. It does not repeat an action the conversation's header already carries.</li>
+<li>The details screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
 <li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
 <li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
 <li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>

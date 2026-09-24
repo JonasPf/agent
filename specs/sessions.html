@@ -29,7 +29,7 @@ private one of its own, so a session is always something a person started and ca
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste. It addresses the same conversation for as long as the conversation exists.</td></tr>
-<tr><td><code>title</code></td><td>Generated from the first user message, and editable from the session's controls at any time. A title given by hand is kept: nothing regenerates over it.</td></tr>
+<tr><td><code>title</code></td><td>Generated from the first user message, and editable from the session's details at any time. A title given by hand is kept: nothing regenerates over it.</td></tr>
 <tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life. A conversation that names none starts on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</td></tr>
 <tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>. Archiving is something a person does when they are finished; nothing archives a session automatically.</td></tr>
 <tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
