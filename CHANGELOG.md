@@ -1,10 +1,21 @@
 # Changelog
 
+## 2026-09-24
+
+- **Controls is now Details, and it reads rather than asks.** That screen used
+  to carry a full configuration editor — model, tools, skills, persona,
+  grants — ending in a Fork button, which is the same screen Fork already
+  opens from the same menu. It now states what the conversation runs on and
+  leaves it at that: the settings are there to read, greyed and unpressable,
+  and Fork is where a different configuration is chosen. What is left that you
+  can actually do to a conversation — rename it, delete it — stayed.
+  The duplicate Files button went too; the header has had that link all along.
+
 ## 2026-09-23
 
 - **A conversation can be renamed.** The title the agent writes after your
   first message is a guess at what the conversation turned out to be about,
-  and it is often wrong by the end. Open a conversation's Controls and the
+  and it is often wrong by the end. Open a conversation's Details and the
   title is now the first thing on the screen, in a box: change it, tap
   Rename, and the rail and the list follow. Everything else on that screen is
   still fixed for the conversation's life and still changes only by forking.

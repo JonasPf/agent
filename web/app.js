@@ -466,7 +466,7 @@ async function viewSession(v) {
     { label: 'Compact', fn: () => compactNow(id) },
     { label: 'Fork', fn: () => location.hash = '#fork/' + id },
     { label: 'Compare', fn: () => location.hash = '#compare/' + id },
-    { label: 'Controls', fn: () => location.hash = '#settings/' + id },
+    { label: 'Details', fn: () => location.hash = '#settings/' + id },
   ]);
   await post('/sessions/' + state.arg + '/read', {});
   if (stale(gen)) return;
@@ -1198,6 +1198,51 @@ async function configEditor(v, current) {
   return () => cfg;
 }
 
+// configFacts renders a configuration that cannot be changed. A conversation's
+// is fixed for its life, so the screen that describes one states it: the same
+// five headings the editor uses, so the two read alike, with nothing to press.
+// A different configuration is a different conversation, reached from Fork.
+async function configFacts(v, s) {
+  v.append(el('h2', null, 'model'));
+  const m = (state.models || []).find(x => x.id === s.model) || { id: s.model || '' };
+  const line = el('div', 'fact fixed');
+  const text = el('div', 'm');
+  text.append(el('div', 'n', m.name ? modelName(m) : (m.id || 'none')));
+  if (m.name) text.append(el('div', 's ident', m.id));
+  line.append(text, factList(m));
+  v.append(line);
+
+  // A set nobody chose is the defaults, and the defaults live on disk rather
+  // than on the session, so what the conversation actually runs with is only
+  // known once they are fetched.
+  const shown = async (label, path, chosen) => {
+    const data = await api(path).catch(() => null) || {};
+    const items = data.tools || data.skills || [];
+    const names = chosen == null
+      ? items.filter(x => x.default_enabled !== false).map(x => x.name)
+      : chosen;
+    v.append(el('h2', null, label));
+    if (!names.length) { v.append(el('div', 's', 'None.')); return; }
+    const wrap = el('div');
+    for (const n of names) wrap.append(el('span', 'pill fixed', n));
+    v.append(wrap);
+  };
+  await shown('tools', '/tools', s.enabled_tools);
+  await shown('skills', '/skills', s.enabled_skills);
+
+  v.append(el('h2', null, 'persona'));
+  v.append(el('span', 'pill fixed', s.persona || 'default'));
+
+  v.append(el('h2', null, 'granted environment'));
+  const grants = s.granted_env || [];
+  if (!grants.length) v.append(el('div', 's', 'Nothing granted.'));
+  else {
+    const wrap = el('div');
+    for (const n of grants) wrap.append(el('span', 'pill fixed', n));
+    v.append(wrap);
+  }
+}
+
 async function viewNew(v) {
   const gen = drawing;
   setHeader('New conversation', true);
@@ -1573,14 +1618,14 @@ async function viewSettings(v) {
   const res = await api('/sessions/' + id);
   if (stale(gen)) return;
   const s = res.session;
-  setHeader('Controls', true);
+  setHeader('Details', true);
 
   const grants = (s.granted_env || []);
   const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools', 'all tools')} and ${describeSet(s.enabled_skills, 'skills', 'the default skills')}` +
     (grants.length ? `, and may read ${grants.join(', ')}` : '');
   v.append(el('p', 'note',
-    `This conversation runs on ${runs}, fixed for its life. Changing any of it copies the ` +
-    `conversation into a new session, leaving this one as it is.`));
+    `This conversation runs on ${runs}, fixed for its life. None of it can be changed here: ` +
+    `a different configuration is a different conversation, which Fork makes, leaving this one as it is.`));
 
   // The title is the exception to the paragraph above: nothing in the prompt
   // reads it, so it can be changed in place instead of by forking.
@@ -1604,19 +1649,7 @@ async function viewSettings(v) {
   };
   v.append(rename);
 
-  const read = await configEditor(v, s);
-  const go = el('button', 'btn primary', 'Fork into a new session');
-  go.onclick = async () => {
-    const succ = await post('/sessions/' + id + '/fork', read());
-    location.hash = '#session/' + succ.id;
-  };
-  const done = el('div', 'finish'); done.append(go);
-  v.append(done);
-
-  v.append(el('h2', null, 'files'));
-  const files = el('button', 'btn', 'Files and export');
-  files.onclick = () => location.hash = '#files/' + id;
-  v.append(files);
+  await configFacts(v, s);
 
   v.append(el('h2', null, 'danger'));
   const d = el('button', 'btn danger', 'Delete conversation');
