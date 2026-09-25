@@ -146,6 +146,8 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>From the moment a message is sent until the agent's last queued turn in that conversation ends, the status line says the agent is working and counts the seconds; a conversation opened mid-turn counts from when the turn started, and the indicator goes when the turn ends.</li>
 <li>A session reports whether it is working and for how long, and the change is pushed as it happens, once when work starts and once when the last queued turn ends.</li>
 <li>While a conversation is working, the status line offers a way to stop the turn, and the offer goes when the turn does.</li>
+<li>While a conversation is working and nothing of the answer has arrived yet, the transcript shows the agent thinking where the answer will appear; the first word of the answer replaces it, and it goes when the turn ends.</li>
+<li>When a turn ends, the conversation scrolls to its answer, even if the reader had scrolled away while it worked.</li>
 <li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
 </ul>
 </div>
@@ -165,6 +167,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>A session can be compacted on request, from the session itself, without waiting for the threshold.</li>
 <li>A conversation can be put to several models at once, with the models and the message chosen on one screen that says what asking that many models costs.</li>
 <li>The candidates of a comparison are shown together, each headed by its model, each filling in as it answers.</li>
+<li>A candidate still working with nothing of its answer yet shows it is thinking, in its own column; when it finishes, its column scrolls to the answer, and a redraw leaves every other column where its reader left it.</li>
 <li>Keeping a candidate is one action from that screen, confirmed, and the confirmation says the other candidates will be deleted.</li>
 <li>Asking is one action: the button stops offering once a comparison is under way, so a second press cannot start a second comparison of the same question.</li>
 <li>An undecided comparison is reachable again after leaving its screen &mdash; from any candidate's header, from the mark on its row in the list, and from the origin's record of it.</li>

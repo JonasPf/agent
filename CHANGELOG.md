@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-25
+
+- **You can see the agent thinking.** After you send a message, a "thinking"
+  line now sits where the answer will appear, until the first word arrives.
+  Comparisons show one in each column whose model has not started answering.
+- **A finished answer comes into view.** When a turn ends, the conversation
+  scrolls down to the answer, even if you had scrolled up while waiting. In a
+  comparison, each column scrolls to its own answer when that model finishes.
+  A column you scrolled back up in stays where you left it until then.
+
 ## 2026-09-24
 
 - **Controls is now Details, and it reads rather than asks.** That screen used

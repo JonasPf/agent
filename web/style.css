@@ -418,6 +418,15 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
 .msg.you .who { text-align: right; }
 
 .msg .bub.md { white-space: normal; }
+/* Where the answer will appear, until its first word does. A highlight slides
+   across the word so the row reads as live without a spinner's noise. */
+.msg.thinking .bub {
+  display: inline-block; font-style: italic;
+  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 40%, var(--accent) 50%, var(--muted) 60%, var(--muted) 100%);
+  background-size: 250% 100%; background-clip: text; -webkit-background-clip: text;
+  color: transparent; animation: slide 1.6s linear infinite;
+}
+@keyframes slide { from { background-position: 100% 0; } to { background-position: 0 0; } }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 10px; }

@@ -185,8 +185,17 @@ function handle(e) {
     // start; the server's word only confirms it.
     if (e.kind === 'idle') delete state.working[e.session_id];
     else if (state.working[e.session_id] == null) state.working[e.session_id] = Date.now();
-    if (state.view === 'session' && e.session_id === state.arg) renderStatus();
-    if (comparing(e.session_id)) renderCompare();
+    // The transcript carries the thinking row, so it follows the change, and a
+    // turn that has ended goes to its answer: that is what was waited for.
+    if (state.view === 'session' && e.session_id === state.arg) {
+      renderTranscript();
+      if (e.kind === 'idle') scrollDown();
+    }
+    const col = comparing(e.session_id);
+    if (col) {
+      if (e.kind === 'idle') col.toEnd = true;
+      renderCompare();
+    }
   } else if (e.kind === 'skills' || e.kind === 'personas') {
     // Written from another window, or by a second browser. The screen that
     // lists them follows; every other screen reads them when it next opens.
@@ -551,11 +560,12 @@ async function viewSession(v) {
     // so: that gap is part of what the operator is waiting through.
     const sid = state.session.id;
     if (state.working[sid] == null) state.working[sid] = Date.now();
-    renderStatus();
+    renderTranscript();
+    scrollDown();
     try { await post('/sessions/' + sid + '/messages', { text }); }
     catch (err) {
       delete state.working[sid];
-      renderStatus();
+      renderTranscript();
       toast({ title: 'Not sent', body: String(err.message) });
     }
   };
@@ -694,6 +704,7 @@ function renderTranscript() {
     t.append(node);
   }
   if (state.streaming) t.append(streamNode());
+  else if (state.session && state.working[state.session.id] != null) t.append(thinkingNode());
   if (atBottom) scrollDown();
   renderStatus();
 }
@@ -701,10 +712,20 @@ function renderTranscript() {
 function renderStreaming() {
   const t = $('transcript');
   if (!t) return;
+  // The first word replaces the thinking row with the answer it was standing in for.
+  if (t.querySelector('.thinking')) { renderTranscript(); scrollDown(); return; }
   let n = document.getElementById('streaming');
   if (!n) { n = streamNode(); t.append(n); }
   n.querySelector('.bub').innerHTML = renderMarkdown(state.streaming);
   scrollDown();
+}
+
+// thinkingNode stands where the agent's answer will appear, from the moment it
+// is asked until its first word arrives, and between the steps of a turn.
+function thinkingNode() {
+  const w = el('div', 'msg thinking');
+  w.append(el('div', 'who', 'agent'), el('div', 'bub', 'thinking'));
+  return w;
 }
 
 function streamNode() {
@@ -1554,15 +1575,33 @@ async function viewCompared(v) {
 function renderCompare() {
   const c = state.compare;
   if (!c || !c.grid) return;
+  // Each column scrolls on its own and is rebuilt on every redraw, so where it
+  // was is carried across: a column the reader left at its end stays at its
+  // end, one scrolled back up stays put, and one that has just finished goes to
+  // its answer.
+  for (const col of c.cols) {
+    const b = col.body;
+    if (!b) continue;
+    col.scroll = b.scrollTop;
+    col.atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 40;
+  }
   c.grid.innerHTML = '';
   for (const col of c.cols) c.grid.append(candidateColumn(col));
+  for (const col of c.cols) {
+    const b = col.body;
+    b.scrollTop = col.toEnd || col.atEnd ? b.scrollHeight : (col.scroll || 0);
+    col.toEnd = false;
+  }
 }
 
 // A column is patched rather than redrawn while its model is writing, so the
 // other columns are not rebuilt on every token.
 function renderCandidateStream(col) {
   if (!col.stream) return renderCompare();
+  const b = col.body;
+  const atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 40;
   col.stream.querySelector('.bub').innerHTML = renderMarkdown(col.streaming);
+  if (atEnd) b.scrollTop = b.scrollHeight;
 }
 
 function candidateColumn(col) {
@@ -1578,7 +1617,8 @@ function candidateColumn(col) {
     col.stream = el('div', 'msg');
     col.stream.append(el('div', 'who', 'agent'), bubble({ role: 'assistant', text: col.streaming }));
     body.append(col.stream);
-  }
+  } else if (state.working[s.id]) body.append(thinkingNode());
+  col.body = body;
   const acts = el('div', 'candidate-acts');
   const open = el('button', 'btn', 'Open');
   open.onclick = () => location.hash = '#session/' + s.id;
