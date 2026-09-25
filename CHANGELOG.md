@@ -9,6 +9,10 @@
   scrolls down to the answer, even if you had scrolled up while waiting. In a
   comparison, each column scrolls to its own answer when that model finishes.
   A column you scrolled back up in stays where you left it until then.
+- **A model's price matches everywhere.** The model shown on a configuration
+  screen used to keep the price from when the page first loaded, so it could
+  disagree with the model dialog after a price change. Both now show the
+  current price.
 
 ## 2026-09-24
 

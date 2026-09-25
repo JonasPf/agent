@@ -960,6 +960,23 @@ function factList(m) {
   return w;
 }
 
+// loadModels fetches the catalogue every time a screen names a model. The page
+// can stay open for days while the gateway's prices move, and the agent caches
+// the catalogue itself, so asking again costs a local round trip and keeps what
+// a screen says a model costs the same as what the dialog says.
+async function loadModels() {
+  const found = await api('/models').catch(() => null);
+  if (found && found.length) state.models = found;
+  return state.models || [];
+}
+
+// keepModels folds a search's answer into the catalogue the page holds, so a
+// figure the dialog has just shown is the one every other screen shows too.
+function keepModels(found) {
+  const byID = new Map(found.map(m => [m.id, m]));
+  state.models = (state.models || []).map(m => byID.get(m.id) || m);
+}
+
 const MODEL_SORTS = [['intelligence', 'Smartest'], ['price', 'Cheapest'], ['context', 'Largest context'], ['newest', 'Newest']];
 
 // A row is a div acting as a button rather than a button, because it holds a
@@ -1028,7 +1045,7 @@ async function chooseModel(current, pick) {
     const mine = ++seq;
     const found = await api('/models' + (query ? '?q=' + encodeURIComponent(query) : '')).catch(() => []) || [];
     if (mine !== seq) return;
-    if (!query) state.models = found;
+    if (!query) state.models = found; else keepModels(found);
     models = found;
     q = query;
     draw();
@@ -1038,8 +1055,9 @@ async function chooseModel(current, pick) {
     clearTimeout(debounce);
     debounce = setTimeout(() => load(search.value.trim()), 150);
   };
-  if (models.length) draw(); else await load('');
+  if (models.length) draw();
   search.focus();
+  await load('');
 }
 
 function envRow(name, on, change) {
@@ -1133,7 +1151,7 @@ async function configEditor(v, current) {
   };
   choice.onclick = () => chooseModel(cfg.model, id => { cfg.model = id; drawChoice(); });
   v.append(choice);
-  if (!state.models.length) state.models = await api('/models').catch(() => []) || [];
+  await loadModels();
   drawChoice();
 
   // A set nobody chose is the defaults: every tool, and every skill but those
@@ -1224,6 +1242,7 @@ async function configEditor(v, current) {
 // five headings the editor uses, so the two read alike, with nothing to press.
 // A different configuration is a different conversation, reached from Fork.
 async function configFacts(v, s) {
+  await loadModels();
   v.append(el('h2', null, 'model'));
   const m = (state.models || []).find(x => x.id === s.model) || { id: s.model || '' };
   const line = el('div', 'fact fixed');
@@ -1455,7 +1474,7 @@ async function viewCompare(v) {
   const gen = drawing;
   const res = await api('/sessions/' + state.arg);
   if (stale(gen)) return;
-  if (!(state.models || []).length) state.models = await api('/models').catch(() => []) || [];
+  await loadModels();
   if (stale(gen)) return;
   const s = res.session;
   setHeader('Compare', true);

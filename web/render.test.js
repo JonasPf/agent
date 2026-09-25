@@ -65,7 +65,8 @@ function load() {
     fetch: async (path, opts) => {
       const method = (opts || {}).method || 'GET';
       (ctx._calls = ctx._calls || []).push({ path, method });
-      if (method === 'GET') return { ok: true, status: 200, text: async () => '[]' };
+      const body = (ctx._get || {})[path];
+      if (method === 'GET') return { ok: true, status: 200, text: async () => body ? JSON.stringify(body) : '[]' };
       return { ok: true, status: 204, text: async () => '' };
     },
     confirm: () => ctx._confirm !== false,
@@ -76,7 +77,7 @@ function load() {
   ctx.addEventListener = () => {};
   ctx.window = ctx;
   vm.createContext(ctx);
-  for (const f of ['markdown.js', 'transcript.js', 'notify.js', 'app.js']) {
+  for (const f of ['markdown.js', 'transcript.js', 'notify.js', 'models.js', 'app.js']) {
     let src = fs.readFileSync(path.join(WEB, f), 'utf8');
     if (f === 'app.js') src = src.replace(/^boot\(\);$/m, '');
     vm.runInContext(src, ctx, { filename: f });
@@ -342,4 +343,20 @@ test('a failed call opens its error and still folds its logs away', () => {
   const n = ctx.renderEntry(toolEntry({
     tool_result: { ok: false, error: 'connection refused' }, stderr: 'dial tcp: connect: refused' }));
   assert.strictEqual(find(n, 'logs').hidden, true);
+});
+
+// A page stays open for days, and the gateway's prices move under it. The model
+// named on a configuration is priced from the catalogue as it is now, the same
+// figures the model dialog shows, not from the copy the page loaded first.
+test("a configuration's model is priced from the current catalogue", async () => {
+  const ctx = load();
+  vm.runInContext(`state.models = [{ id: 'z-ai/glm-5.3', name: 'Z.ai: GLM 5.3', prompt_price: 0.00000084, completion_price: 0.00000264 }]`, ctx);
+  ctx._get = { '/models': [{ id: 'z-ai/glm-5.3', name: 'Z.ai: GLM 5.3', prompt_price: 0.0000014, completion_price: 0.0000044 }] };
+  const v = ctx.document.createElement('div');
+  await ctx.configFacts(v, { model: 'z-ai/glm-5.3' });
+  const facts = find(v, 'facts');
+  const text = JSON.stringify(facts);
+  assert.match(text, /\$1\.40/);
+  assert.match(text, /\$4\.40/);
+  assert.ok(!/\$0\.84/.test(text), text);
 });
