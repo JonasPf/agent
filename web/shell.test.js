@@ -590,6 +590,40 @@ test('a working conversation can be stopped from the status line', async () => {
     'the button stayed after the conversation finished');
 });
 
+// Between sending and the first word back, the status line is the only thing
+// that moves, and it is out of the way at the foot. The transcript itself says
+// the agent is on it, where the answer is about to appear.
+test('the transcript shows the agent thinking until it answers', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  assert.ok(!find(ctx._id('transcript'), 'thinking'), 'an idle conversation says it is thinking');
+
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  assert.ok(find(ctx._id('transcript'), 'thinking'), 'a working conversation shows no thinking indicator');
+
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: 'The humidity' });
+  assert.ok(!find(ctx._id('transcript'), 'thinking'), 'the indicator stayed once the answer began');
+
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  assert.ok(!find(ctx._id('transcript'), 'thinking'), 'the indicator stayed after the turn ended');
+});
+
+// Reading back up while the agent works is fine; when it is done, the answer is
+// what the operator is waiting for, so the conversation goes to it.
+test('a finished turn scrolls the conversation to its answer', async () => {
+  const ctx = conversationScreen(session({ id: 'S1', working_seconds: 3 }));
+  await ctx.viewSession(node('div'));
+  const main = ctx._id('main');
+  main.scrollHeight = 5000; main.clientHeight = 500; main.scrollTop = 0;
+
+  ctx.handle({ kind: 'entry', session_id: 'S1',
+    entry: { seq: 9, type: 'message', role: 'assistant', text: 'Done.', created_at: '2026-09-25T10:00:00Z' } });
+  assert.strictEqual(main.scrollTop, 0, 'an entry mid-turn pulled a reader who had scrolled up');
+
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  assert.strictEqual(main.scrollTop, 5000, 'the finished answer was left below the fold');
+});
+
 test('an idle conversation shows no indicator', async () => {
   const ctx = conversationScreen(session({ id: 'S1' }));
   await ctx.viewSession(node('div'));
@@ -1450,6 +1484,52 @@ test('a comparison shows one column per candidate, headed by its model', async (
   ctx.handle({ kind: 'delta', session_id: 'C2', text: 'The soil one.' });
   assert.match(textOf(findAll(v, 'candidate')[1]), /The soil one/, 'a delta missed its column');
   assert.ok(!/The soil one/.test(textOf(findAll(v, 'candidate')[0])), 'a delta reached the wrong column');
+});
+
+function comparedScreen() {
+  return load({
+    '/sessions': [
+      session({ id: 'C1', model: 'a/one', comparison: 'G1', working_seconds: 2 }),
+      session({ id: 'C2', model: 'b/two', comparison: 'G1' }),
+    ],
+    '/sessions/C1/transcript': [
+      { seq: 1, type: 'message', role: 'user', text: 'Which sensor?', created_at: '2026-09-23T10:00:00Z' },
+    ],
+    '/sessions/C2/transcript': [
+      { seq: 1, type: 'message', role: 'user', text: 'Which sensor?', created_at: '2026-09-23T10:00:00Z' },
+      { seq: 2, type: 'message', role: 'assistant', text: 'The soil one.', created_at: '2026-09-23T10:00:01Z' },
+    ],
+  });
+}
+
+test('a candidate still working shows it is thinking, and one that answered does not', async () => {
+  const ctx = comparedScreen();
+  vm.runInContext("state.view = 'compared'; state.arg = 'G1';", ctx);
+  const v = node('div');
+  await ctx.viewCompared(v);
+  let cols = findAll(v, 'candidate');
+  assert.ok(find(cols[0], 'thinking'), 'a working candidate shows no thinking indicator');
+  assert.ok(!find(cols[1], 'thinking'), 'an answered candidate says it is thinking');
+
+  ctx.handle({ kind: 'delta', session_id: 'C1', text: 'The humidity' });
+  assert.ok(!find(findAll(v, 'candidate')[0], 'thinking'), 'the indicator stayed once the answer began');
+});
+
+// A column's body scrolls on its own. Every redraw builds it afresh, so without
+// being told, each one would start back at the question.
+test('a candidate that finishes scrolls its column to the answer', async () => {
+  const ctx = comparedScreen();
+  const make = ctx.document.createElement;
+  ctx.document.createElement = t => { const n = make(t); n.scrollHeight = 900; return n; };
+  vm.runInContext("state.view = 'compared'; state.arg = 'G1';", ctx);
+  const v = node('div');
+  await ctx.viewCompared(v);
+
+  ctx.handle({ kind: 'entry', session_id: 'C1',
+    entry: { seq: 2, type: 'message', role: 'assistant', text: 'The humidity one.', created_at: '2026-09-23T10:00:02Z' } });
+  ctx.handle({ kind: 'idle', session_id: 'C1' });
+  const body = find(findAll(v, 'candidate')[0], 'candidate-body');
+  assert.strictEqual(body.scrollTop, 900, 'the finished answer was left below the fold of its column');
 });
 
 test('keeping a candidate says the others go, and leaves the comparison in it', async () => {
