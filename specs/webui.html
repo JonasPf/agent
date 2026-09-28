@@ -185,6 +185,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>The details screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
 <li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
 <li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
+<li>Wherever a screen names a model, its figures come from the catalogue as the agent currently holds it, fetched when the screen is drawn, so the configuration and the model dialog never show one model at two prices.</li>
 <li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
 <li>Dismissing a dialog changes nothing; only picking in it does.</li>
