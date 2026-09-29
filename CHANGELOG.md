@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-29
+
+- **Reminders count as unread.** A message from a scheduled job used to leave
+  the unread badge at zero; it now counts like any other reply. The badge
+  counts messages rather than turns, so two answers waiting show as 2.
+- **Opening a conversation clears its badge.** The badge could stay after you
+  had read a conversation, most often on a phone coming back from the
+  background. It now clears the moment the conversation opens. A reply that
+  arrives while you are looking at it never adds to the badge at all.
+- **A conversation opens where you stopped reading.** If it has unread
+  messages, the first of them is at the top of the screen under an "unread"
+  line, so you read down from there instead of starting at the end.
+
 ## 2026-09-25
 
 - **You can see the agent thinking.** After you send a message, a "thinking"

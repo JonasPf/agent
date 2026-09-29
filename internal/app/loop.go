@@ -218,9 +218,6 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 		if first {
 			a.titleIfNeeded(ctx, live, text)
 		}
-		live.Unread++
-		_ = a.store.PutSession(live)
-		a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	})
 	return nil
 }

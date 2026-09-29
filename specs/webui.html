@@ -254,6 +254,19 @@ is tell the operator about output they have not read, and it does that in two pl
 <p>The first is a count. The session list shows unread assistant messages per session, each job
 carries its own run log, and a tripped breaker is a banner across the top of every screen.</p>
 
+<p>The count is not kept, it is derived. Each session records the last entry the operator was shown,
+and what is unread is the assistant messages after it &mdash; whoever started the turn, the operator or
+a job. A read names the entry it read through, so a message that arrives between the page loading and
+the read reaching the agent stays unread, and a read point only ever moves forward. A conversation is
+read when it is opened, and a message arriving in the conversation on screen is read as it arrives,
+unless the page is hidden; then it is read when the page is shown again. The rail redraws after a read
+of its own accord and whenever its socket connects, rather than waiting to hear the list moved, so a
+phone back from the background does not keep a count it has already cleared.</p>
+
+<p>A conversation with unread messages opens at the first entry after the read point, under a line
+that marks it, rather than at its end with what was missed above the fold. The line stays where it
+is while the conversation is open.</p>
+
 <p>The second is a system notification, on the narrow terms of
 <a href="adrs.html#adr-027">ADR-027</a>: while a tab is open, a new agent message the operator is not
 currently reading shows a banner. It is the browser's own notification API and nothing else &mdash; no
@@ -280,6 +293,12 @@ popup of its own instead.</p>
 <li>Without permission nothing is shown at all &mdash; no banner and no in-app popup &mdash; and the settings screen says so.</li>
 <li>The system makes no outbound connection to any push service, and nothing reaches a closed browser.</li>
 <li>The session list shows the unread assistant message count for each session, and clears it when the session is read.</li>
+<li>A message a job's wake produced counts as unread exactly as a reply to a typed message does.</li>
+<li>A read clears only what it names: a message written after the point read through stays unread, and a late read for an earlier point does not make anything unread again.</li>
+<li>Opening a conversation clears its count on the rail without waiting for the socket, and the rail refreshes whenever the socket connects.</li>
+<li>A message arriving in the conversation on screen is read at once; while the page is hidden it stays unread until the page is shown.</li>
+<li>A conversation with unread messages opens scrolled to a line marking the first of them; one with none opens at its end.</li>
+<li>A fork starts with nothing unread.</li>
 <li>A job that failed shows it in its own log, and a tripped breaker appears as a banner, without either interrupting.</li>
 </ul>
 </div>

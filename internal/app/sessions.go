@@ -105,6 +105,11 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	a.append(origin.ID, Entry{Type: "event", EventKind: "fork",
 		Text: fmt.Sprintf("copied into %s (%s)", fork.ID, why)})
 	fork.Title = origin.Title
+	// The operator made the fork from a conversation in front of them; what it
+	// copied is not news.
+	if copied := a.store.Entries(fork.ID); len(copied) > 0 {
+		fork.ReadThrough = copied[len(copied)-1].Seq
+	}
 	_ = a.store.PutSession(fork)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return fork, nil
@@ -123,7 +128,29 @@ func (a *App) append(sessionID string, e Entry) Entry {
 		return out
 	}
 	a.hub.Broadcast(wsEvent{Kind: "entry", SessionID: sessionID, Entry: &out})
+	// The session list carries the unread count, so a message that adds to it
+	// moves the list too, whoever wrote it: a reply, a reminder, a forked copy.
+	if countsAsUnread(out) {
+		a.hub.Broadcast(wsEvent{Kind: "sessions"})
+	}
 	return out
+}
+
+// countsAsUnread is what the unread count counts: something the agent said. A
+// turn that only called tools said nothing, and neither did a tool or an event.
+func countsAsUnread(e Entry) bool {
+	return e.Type == "message" && e.Role == "assistant" && strings.TrimSpace(e.Text) != ""
+}
+
+// unreadAfter counts the assistant messages after a read point.
+func unreadAfter(entries []Entry, through int) int {
+	n := 0
+	for _, e := range entries {
+		if e.Seq > through && countsAsUnread(e) {
+			n++
+		}
+	}
+	return n
 }
 
 func (a *App) appendEvent(sessionID string, e Entry) Entry {

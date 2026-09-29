@@ -150,6 +150,9 @@ let ws;
 function connect() {
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.onmessage = ev => handle(JSON.parse(ev.data));
+  // Whatever moved while there was no socket was not heard, so the rail reads
+  // the list afresh each time one opens.
+  ws.onopen = () => renderSidebar();
   ws.onclose = () => setTimeout(connect, 2000);
 }
 function handle(e) {
@@ -157,6 +160,7 @@ function handle(e) {
     if (e.kind === 'entry') announce(e.entry, e.session_id);
     if (state.view === 'session' && e.session_id === state.arg) {
       if (e.kind === 'entry') state.entries.push(e.entry);
+      if (e.kind === 'entry' && !document.hidden) readThrough(e.session_id, e.entry.seq);
       state.streaming = '';
       renderTranscript();
     }
@@ -209,6 +213,21 @@ function handle(e) {
   }
 }
 
+// readThrough tells the agent the operator has been shown a conversation up to
+// seq, and redraws the rail without waiting to hear back over the socket.
+async function readThrough(id, seq) {
+  try { await post('/sessions/' + id + '/read', { through: seq }); } catch (e) { return; }
+  renderSidebar();
+}
+
+// onVisible reads what the conversation on screen showed while nobody could
+// see it.
+function onVisible() {
+  if (document.hidden || state.view !== 'session' || !state.session) return;
+  const last = state.entries[state.entries.length - 1];
+  if (last) readThrough(state.session.id, last.seq);
+}
+
 // announce shows a system notification for a message the operator is not
 // looking at. It is best-effort by design: without permission the unread count
 // in the session list is the whole signal, and nothing opens inside the app.
@@ -258,7 +277,9 @@ function setHeader(title, showBack, actions) {
 // The rail carries the way to everything: a conversation to switch to, a panel
 // to open, and what the gateway costs. It is redrawn on every route change and
 // whenever the agent says a session or the status moved.
+let sideDrawing = 0;
 async function renderSidebar() {
+  const mine = ++sideDrawing;
   const nav = $('side-nav');
   nav.innerHTML = '';
   for (const [hash, label] of PANELS) {
@@ -269,7 +290,10 @@ async function renderSidebar() {
   renderSideFoot();
   const list = $('side-list');
   let sessions = state.sessions;
-  try { sessions = await api('/sessions'); state.sessions = sessions; } catch (e) {}
+  try { sessions = await api('/sessions'); } catch (e) {}
+  // Two redraws can be in flight; the older answer arriving last must not win.
+  if (mine !== sideDrawing) return;
+  state.sessions = sessions;
   list.innerHTML = '';
   const ordered = sortSessions((sessions || []).filter(s => s.status === 'active'), 'recent')
     .concat(sortSessions((sessions || []).filter(s => s.status !== 'active'), 'recent'));
@@ -458,6 +482,9 @@ async function viewSession(v) {
   state.session = res.session;
   state.entries = entries;
   const id = state.session.id;
+  // Where reading stopped, fixed for as long as the conversation is open: the
+  // line stays put while the operator reads down from it.
+  state.readFrom = res.session.unread ? (res.session.read_through || 0) : null;
   // Opened mid-turn, the wait counts from when the agent started, not from now.
   if (res.session.working_seconds != null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
   else delete state.working[id];
@@ -477,8 +504,8 @@ async function viewSession(v) {
     { label: 'Compare', fn: () => location.hash = '#compare/' + id },
     { label: 'Details', fn: () => location.hash = '#settings/' + id },
   ]);
-  await post('/sessions/' + state.arg + '/read', {});
-  if (stale(gen)) return;
+  const last = entries[entries.length - 1];
+  readThrough(id, last ? last.seq : 0);
 
   const t = el('div'); t.id = 'transcript';
   v.append(t);
@@ -572,7 +599,16 @@ async function viewSession(v) {
   const hint = el('div', 'hint', 'Enter sends · Shift+Enter for a new line');
   foot.append(status, chips, form, hint);
   renderStatus();
-  scrollDown();
+  if (!scrollToUnread()) scrollDown();
+}
+
+// scrollToUnread opens a conversation at the first thing the operator has not
+// seen, rather than at its end with what they missed above the fold.
+function scrollToUnread() {
+  const mark = $('transcript') && $('transcript').querySelector('.unread-mark');
+  if (!mark) return false;
+  requestAnimationFrame(() => mark.scrollIntoView({ block: 'start' }));
+  return true;
 }
 
 // sendsOnEnter decides what Enter means in the composer. On a keyboard it sends,
@@ -694,9 +730,14 @@ function renderTranscript() {
   const atBottom = $('main').scrollHeight - $('main').scrollTop - $('main').clientHeight < 120;
   t.innerHTML = '';
   const covers = coveredThrough(state.entries);
+  let marked = state.readFrom == null;
   for (const e of state.entries) {
     const isFolded = covers > 0 && e.seq <= covers;
     if (isFolded && !state.revealCompacted) continue;
+    if (!marked && e.seq > state.readFrom) {
+      t.append(el('div', 'unread-mark', 'unread'));
+      marked = true;
+    }
     const node = renderEntry(e);
     // Revealed, a folded entry is dimmed behind a gutter rule so it can never be
     // mistaken for something the agent can still see.
@@ -2203,6 +2244,7 @@ function notifyControl() {
 // ---------- boot ----------
 
 async function boot() {
+  document.addEventListener('visibilitychange', onVisible);
   connect();
   route();
   try {
