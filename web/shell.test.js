@@ -630,11 +630,14 @@ test('a finished turn scrolls the conversation to its answer', async () => {
 const said = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-09-29T10:00:00Z' });
 
 function unreadScreen(sess, entries, sessions) {
-  const ctx = load({
+  const routes = {
     '/sessions/S1': { session: sess },
     '/sessions/S1/transcript': entries,
     '/sessions': sessions || [sess],
-  });
+  };
+  const ctx = load(routes);
+  // What the agent holds, which a test moves on when something is written.
+  ctx._routes = routes;
   ctx.location.hash = '#session/S1';
   vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
   return ctx;
@@ -714,6 +717,7 @@ test('a message arriving while the page is hidden stays unread until it is shown
   const before = readsOf(ctx).length;
 
   ctx.document.hidden = true;
+  ctx._routes['/sessions/S1/transcript'] = [said(1, 'user', 'Hi'), said(2, 'assistant', 'Hello.')];
   ctx.handle({ kind: 'entry', session_id: 'S1', entry: said(2, 'assistant', 'Hello.') });
   await new Promise(r => setImmediate(r));
   assert.strictEqual(readsOf(ctx).length, before, 'a message nobody could see was marked read');
@@ -755,6 +759,71 @@ test('the rail is redrawn when the socket connects', async () => {
   await new Promise(r => setImmediate(r));
   const after = ctx._calls.filter(c => c.path === '/sessions').length;
   assert.strictEqual(after, before + 1, 'connecting did not refresh the rail');
+});
+
+// ---------- another device ----------
+
+// The same conversation is open on a laptop and a phone. Whatever one of them
+// sends, the other shows without a reload, including what it missed while it
+// was asleep or its socket was down.
+
+test('a reconnected socket brings the conversation on screen up to date', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  let sock;
+  ctx.WebSocket = function () { sock = this; this.readyState = 0; };
+  ctx.connect();
+  await ctx.viewSession(node('div'));
+
+  ctx._routes['/sessions/S1/transcript'] = [said(1, 'user', 'Hi'), said(2, 'user', 'Sent from the phone.')];
+  sock.readyState = 1;
+  sock.onopen();
+  await new Promise(r => setImmediate(r));
+  assert.match(textOf(ctx._id('transcript')), /Sent from the phone\./,
+    'a message sent while the socket was down did not appear');
+});
+
+test('a page shown again shows what was sent elsewhere, and reads it', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  let sock;
+  ctx.WebSocket = function () { sock = this; this.readyState = 1; };
+  ctx.WebSocket.OPEN = 1;
+  ctx.connect();
+  await ctx.viewSession(node('div'));
+  const before = readsOf(ctx).length;
+
+  // The socket still looks open: a phone back from the background can hold one
+  // that heard nothing, so what is on screen is read again whatever it says.
+  ctx._routes['/sessions/S1/transcript'] = [said(1, 'user', 'Hi'),
+    said(2, 'user', 'Sent from the laptop.'), said(3, 'assistant', 'Answered.')];
+  ctx.onVisible();
+  await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  assert.match(textOf(ctx._id('transcript')), /Sent from the laptop\.[\s\S]*Answered\./,
+    'what was sent from the other device did not appear');
+  const reads = readsOf(ctx).slice(before);
+  assert.deepStrictEqual(reads.map(r => JSON.parse(r.body)), [{ through: 3 }],
+    'what was caught up on was not read through its newest entry');
+});
+
+test('a page shown again with a closed socket reconnects at once, only once', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  const socks = [];
+  const timers = new Map();
+  ctx.setTimeout = f => { timers.set(timers.size + 1, f); return timers.size; };
+  ctx.clearTimeout = h => timers.delete(h);
+  ctx.WebSocket = function () { socks.push(this); this.readyState = 0; };
+  ctx.WebSocket.OPEN = 1; ctx.WebSocket.CONNECTING = 0;
+  ctx.connect();
+  socks[0].readyState = 3;
+  socks[0].onclose();
+  assert.strictEqual(socks.length, 1, 'reconnected before the wait');
+
+  ctx.document.hidden = false;
+  ctx.onVisible();
+  assert.strictEqual(socks.length, 2, 'a page shown with its socket closed did not reconnect at once');
+
+  for (const f of timers.values()) f();
+  assert.strictEqual(socks.length, 2, 'the waiting reconnect opened a second socket');
 });
 
 test('an idle conversation shows no indicator', async () => {

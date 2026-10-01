@@ -107,6 +107,15 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send.</td></tr>
 </table>
 
+<p>The same conversation can be open on more than one device. Every entry goes to every page that is
+connected, whichever device wrote it, so a message typed on a laptop appears on a phone showing that
+conversation. A page that was not connected when something was written &mdash; a phone in the
+background, a laptop asleep &mdash; reads the rail and the conversation on screen again from the agent
+when its socket reconnects and whenever it is shown again. Shown again, it does this even if its socket
+still looks open, because a socket can survive a sleep without hearing anything; one that has closed
+reconnects at once rather than after its usual wait. Nothing is reloaded and the unread line stays where
+it was.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -128,6 +137,8 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <li>A tool call that wrote to standard error offers those logs behind a toggle of their own, closed by default &mdash; including on a call that failed, where the error is already open: the error is the answer and the logs are the evidence.</li>
 <li>A tool call that wrote nothing to standard error offers no logs toggle, so a toggle never promises detail that is not there.</li>
 <li>Scrolling to the top of any conversation reaches the prompt entry it opened with.</li>
+<li>A message sent from one device appears in the same conversation open on another without a reload, including one sent while the other's socket was down or its page hidden.</li>
+<li>A page shown again with its socket closed reconnects at once, and opens only one new socket.</li>
 <li>A compacted session shows the compaction banner in place of the entries it covers, and does not render those entries by default.</li>
 <li>The banner names itself a compaction, says the agent can no longer see what is above it, and shows the turn count and the tokens before and after.</li>
 <li>The entries a compaction covers can be revealed in place, and when revealed are visually distinct from live context so they cannot be read as something the agent can see.</li>
