@@ -33,6 +33,7 @@ function node(tag) {
     appendChild(k) { k.parent = this; this.children.push(k); return k; },
     querySelector(sel) { return find(this, sel.replace(/^\./, '')); },
     setAttribute() {}, focus() {}, addEventListener() {},
+    scrollIntoView(o) { this._scrolledInto = o || {}; },
     remove() {
       if (!this.parent) return;
       this.parent.children = this.parent.children.filter(c => c !== this);
@@ -622,6 +623,138 @@ test('a finished turn scrolls the conversation to its answer', async () => {
 
   ctx.handle({ kind: 'idle', session_id: 'S1' });
   assert.strictEqual(main.scrollTop, 5000, 'the finished answer was left below the fold');
+});
+
+// ---------- unread ----------
+
+const said = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-09-29T10:00:00Z' });
+
+function unreadScreen(sess, entries, sessions) {
+  const ctx = load({
+    '/sessions/S1': { session: sess },
+    '/sessions/S1/transcript': entries,
+    '/sessions': sessions || [sess],
+  });
+  ctx.location.hash = '#session/S1';
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  return ctx;
+}
+
+const readsOf = ctx => (ctx._calls || []).filter(c => c.method === 'POST' && /\/read$/.test(c.path));
+
+// Opening a conversation reads what it shows, and the rail says so at once. It
+// cannot wait for the server's word over the socket: a phone back from the
+// background has no socket yet, and the badge would stay until something else
+// happened to move the list.
+test('opening a conversation marks what it shows read and redraws the rail', async () => {
+  const entries = [said(1, 'user', 'Hi'), said(2, 'assistant', 'Hello.'), said(3, 'assistant', 'Reminder.')];
+  const ctx = unreadScreen(session({ id: 'S1', unread: 2, read_through: 1 }), entries);
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+
+  const reads = readsOf(ctx);
+  assert.strictEqual(reads.length, 1, 'opening did not mark the conversation read');
+  assert.deepStrictEqual(JSON.parse(reads[0].body), { through: 3 }, 'the read did not name what was shown');
+  const after = ctx._calls.slice(ctx._calls.indexOf(reads[0]) + 1);
+  assert.ok(after.some(c => c.method === 'GET' && c.path === '/sessions'), 'the rail was not redrawn after the read');
+});
+
+// The operator picks up where they stopped: the first thing they have not seen
+// is at the top of the screen, under a line that says where reading stopped.
+test('a conversation with unread messages opens at the first of them', async () => {
+  const entries = [said(1, 'user', 'Hi'), said(2, 'assistant', 'Hello.'),
+    said(3, 'user', 'Remind me.'), said(4, 'assistant', 'Reminder one.'), said(5, 'assistant', 'Reminder two.')];
+  const ctx = unreadScreen(session({ id: 'S1', unread: 2, read_through: 2 }), entries);
+  const main = ctx._id('main');
+  main.scrollHeight = 5000; main.clientHeight = 500; main.scrollTop = 0;
+  await ctx.viewSession(node('div'));
+
+  const t = ctx._id('transcript');
+  const at = t.children.findIndex(c => String(c.className).split(/\s+/).includes('unread-mark'));
+  assert.ok(at >= 0, 'no line marks where the unread messages begin');
+  assert.strictEqual(textOf(t.children[at + 1]).includes('Remind me.'), true,
+    'the line is not before the first entry after the read point');
+  assert.ok(t.children[at]._scrolledInto, 'the conversation did not open at the unread line');
+  assert.strictEqual(main.scrollTop, 0, 'the conversation jumped past the unread messages to the end');
+});
+
+test('a conversation with nothing unread opens at the end, unmarked', async () => {
+  const entries = [said(1, 'user', 'Hi'), said(2, 'assistant', 'Hello.')];
+  const ctx = unreadScreen(session({ id: 'S1', unread: 0, read_through: 2 }), entries);
+  const main = ctx._id('main');
+  main.scrollHeight = 5000; main.clientHeight = 500; main.scrollTop = 0;
+  await ctx.viewSession(node('div'));
+  assert.ok(!find(ctx._id('transcript'), 'unread-mark'), 'a read conversation shows an unread line');
+  assert.strictEqual(main.scrollTop, 5000, 'a read conversation did not open at its end');
+});
+
+// A reply that arrives on screen is read as it arrives. Left alone, the count
+// on the rail would rise for the conversation being looked at.
+test('a message arriving in the conversation on screen is read', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  await ctx.viewSession(node('div'));
+  const before = readsOf(ctx).length;
+
+  ctx.handle({ kind: 'entry', session_id: 'S1', entry: said(2, 'assistant', 'Hello.') });
+  await new Promise(r => setImmediate(r));
+  const reads = readsOf(ctx).slice(before);
+  assert.strictEqual(reads.length, 1, 'the message on screen was not marked read');
+  assert.deepStrictEqual(JSON.parse(reads[0].body), { through: 2 });
+
+  ctx.handle({ kind: 'entry', session_id: 'OTHER', entry: said(9, 'assistant', 'Elsewhere.') });
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(readsOf(ctx).length, before + 1, 'a message in another conversation was marked read');
+});
+
+// Hidden, the page is not being read, whatever it shows. It is read when it is
+// looked at again.
+test('a message arriving while the page is hidden stays unread until it is shown', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  await ctx.viewSession(node('div'));
+  const before = readsOf(ctx).length;
+
+  ctx.document.hidden = true;
+  ctx.handle({ kind: 'entry', session_id: 'S1', entry: said(2, 'assistant', 'Hello.') });
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(readsOf(ctx).length, before, 'a message nobody could see was marked read');
+
+  ctx.document.hidden = false;
+  ctx.onVisible();
+  await new Promise(r => setImmediate(r));
+  const reads = readsOf(ctx).slice(before);
+  assert.strictEqual(reads.length, 1, 'coming back to the page did not read what it shows');
+  assert.deepStrictEqual(JSON.parse(reads[0].body), { through: 2 });
+});
+
+// Two redraws of the rail can be in flight at once: one for the route change,
+// one for the list moving. Whichever answers last must not be the older one.
+test('an older answer does not overwrite a newer one on the rail', async () => {
+  const ctx = load({});
+  const pending = [];
+  ctx.fetch = (p, opts) => new Promise(res => pending.push({ p, res }));
+  const first = ctx.renderSidebar();
+  const second = ctx.renderSidebar();
+  const reply = list => ({ ok: true, status: 200, text: async () => JSON.stringify(list) });
+  pending[1].res(reply([session({ id: 'S1', unread: 0 })]));
+  await second;
+  pending[0].res(reply([session({ id: 'S1', unread: 3 })]));
+  await first;
+  const rows = findAll(ctx._id('side-list'), 'side-item');
+  assert.strictEqual(rows.length, 1);
+  assert.ok(!find(rows[0], 'badge'), 'a stale count came back after the newer one was drawn');
+});
+
+// A socket that dropped missed every change to the list while it was down.
+test('the rail is redrawn when the socket connects', async () => {
+  const ctx = load({ '/sessions': [] });
+  let sock;
+  ctx.WebSocket = function () { sock = this; };
+  ctx.connect();
+  const before = (ctx._calls || []).filter(c => c.path === '/sessions').length;
+  sock.onopen();
+  await new Promise(r => setImmediate(r));
+  const after = ctx._calls.filter(c => c.path === '/sessions').length;
+  assert.strictEqual(after, before + 1, 'connecting did not refresh the rail');
 });
 
 test('an idle conversation shows no indicator', async () => {

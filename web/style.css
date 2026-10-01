@@ -417,6 +417,14 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
 }
 .msg.you .who { text-align: right; }
 
+/* Where reading stopped. A conversation with unread messages opens with this
+   line at the top, so the operator reads down from what they have not seen. */
+.unread-mark {
+  display: flex; align-items: center; gap: 10px; margin: 22px 0 8px; scroll-margin-top: 12px;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--accent);
+}
+.unread-mark::before, .unread-mark::after { content: ''; flex: 1; border-top: 1px solid var(--accent); opacity: .5; }
+
 .msg .bub.md { white-space: normal; }
 /* Where the answer will appear, until its first word does. A highlight slides
    across the word so the row reads as live without a spinner's noise. */

@@ -116,7 +116,14 @@ type Session struct {
 	Title string `json:"title"`
 	SessionConfig
 	Status string `json:"status"` // active | archived
-	Unread int    `json:"unread"`
+	// ReadThrough is the last sequence number the operator was shown. What is
+	// unread is derived from it rather than counted, so a reminder, a reply, and
+	// a read racing one another can never leave the count wrong.
+	ReadThrough int `json:"read_through"`
+	// Unread is the number of assistant messages after ReadThrough. Derived;
+	// what is stored of it is only read once, to place ReadThrough for a session
+	// written before there was one.
+	Unread int `json:"unread"`
 	// ForkedFrom names the session this one was copied from. There is no
 	// corresponding forward pointer: a fork does not supersede its origin, which
 	// stays active and keeps its jobs, so no identifier ever comes to address

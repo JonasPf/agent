@@ -306,6 +306,46 @@
         }
       }
     },
+    "/sessions/{id}/read": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/Id"
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Mark this session read through an entry. What is unread is the assistant messages after the point read through; a point earlier than the one recorded changes nothing.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "through": {
+                    "type": "integer",
+                    "description": "Sequence number of the last entry shown. Absent, the read covers every entry the session has."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Recorded."
+          },
+          "400": {
+            "description": "The body is not JSON."
+          },
+          "404": {
+            "description": "No such session."
+          }
+        }
+      }
+    },
     "/sessions/{id}/messages": {
       "parameters": [
         {
@@ -1452,8 +1492,13 @@
             "nullable": true,
             "description": "Skills indexed in this session. Null means every skill that is on by default. A new session inherits the most recently used set."
           },
+          "read_through": {
+            "type": "integer",
+            "description": "Sequence number of the last entry the operator was shown. Only moves forward."
+          },
           "unread": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Assistant messages after read_through. Derived, not stored."
           },
           "job_count": {
             "type": "integer"

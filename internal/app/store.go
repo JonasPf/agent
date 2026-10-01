@@ -177,6 +177,9 @@ func (s *Store) load() error {
 		if err != nil {
 			return err
 		}
+		if !hasKey(b, "read_through") {
+			sess.ReadThrough = readThroughFromCount(list, sess.Unread)
+		}
 		s.sessions[id] = &sess
 		s.entries[id] = list
 		if reindex {
@@ -186,6 +189,35 @@ func (s *Store) load() error {
 		}
 	}
 	return nil
+}
+
+// hasKey says whether a stored object names a field at all, which a zero value
+// cannot: a session read through nothing and one written before there was a
+// read point both decode to 0.
+func hasKey(b []byte, key string) bool {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(b, &m) != nil {
+		return false
+	}
+	_, ok := m[key]
+	return ok
+}
+
+// readThroughFromCount places the read point of a session that stored a count
+// instead: just before its last n assistant messages, so it keeps exactly the
+// count it had.
+func readThroughFromCount(entries []Entry, n int) int {
+	for i := len(entries) - 1; i >= 0; i-- {
+		if !countsAsUnread(entries[i]) {
+			continue
+		}
+		if n == 0 {
+			return entries[i].Seq
+		}
+		n--
+	}
+	// Every message is unread, or there are fewer than it counted.
+	return 0
 }
 
 func readTranscript(path string) ([]Entry, error) {
@@ -243,6 +275,21 @@ func (s *Store) writeMeta(sess *Session) error {
 	}
 	b, _ := json.MarshalIndent(sess, "", "  ")
 	return os.WriteFile(filepath.Join(s.sessionDir(sess.ID), "meta.json"), b, 0o644)
+}
+
+// MarkRead moves where the operator has read a session through. It only moves
+// forward: a read that arrives late, for a point already passed, is not a
+// reason to call anything unread again.
+func (s *Store) MarkRead(id string, through int) error {
+	s.mu.Lock()
+	sess := s.sessions[id]
+	if sess == nil || through <= sess.ReadThrough {
+		s.mu.Unlock()
+		return nil
+	}
+	sess.ReadThrough = through
+	s.mu.Unlock()
+	return s.writeMeta(sess)
 }
 
 func (s *Store) Session(id string) *Session {

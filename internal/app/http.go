@@ -118,6 +118,7 @@ func (a *App) enrich(s *Session) *Session {
 	out := *s
 	entries := a.store.Entries(s.ID)
 	out.EntryCount = len(entries)
+	out.Unread = unreadAfter(entries, s.ReadThrough)
 	out.ContextUsed = projectedTokens(entries)
 	out.DiskBytes = a.sessionDiskBytes(s.ID)
 	if jobs, err := a.store.SessionJobs(s.ID); err == nil {
@@ -451,8 +452,24 @@ func (a *App) hMarkRead(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	s.Unread = 0
-	_ = a.store.PutSession(s)
+	// Through names the last entry the operator was shown. Without it, the read
+	// covers everything there is, which is what a client that cannot say means.
+	var in struct {
+		Through *int `json:"through"`
+	}
+	if r.ContentLength != 0 {
+		if err := readJSON(r, &in); err != nil && err != io.EOF {
+			fail(w, 400, "bad body: %v", err)
+			return
+		}
+	}
+	through := 0
+	if in.Through != nil {
+		through = *in.Through
+	} else if entries := a.store.Entries(s.ID); len(entries) > 0 {
+		through = entries[len(entries)-1].Seq
+	}
+	_ = a.store.MarkRead(s.ID, through)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	w.WriteHeader(204)
 }
