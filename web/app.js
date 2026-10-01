@@ -147,13 +147,39 @@ document.addEventListener('click', closeMenu);
 // ---------- websocket ----------
 
 let ws;
+let reconnecting = null;
 function connect() {
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
-  ws.onmessage = ev => handle(JSON.parse(ev.data));
-  // Whatever moved while there was no socket was not heard, so the rail reads
-  // the list afresh each time one opens.
-  ws.onopen = () => renderSidebar();
-  ws.onclose = () => setTimeout(connect, 2000);
+  clearTimeout(reconnecting);
+  reconnecting = null;
+  const sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws = sock;
+  sock.onmessage = ev => handle(JSON.parse(ev.data));
+  // Whatever moved while there was no socket was not heard — on this device or
+  // any other — so the page reads it afresh each time one opens.
+  sock.onopen = () => catchUp();
+  // A socket already replaced, by a page shown again, does not reconnect too.
+  sock.onclose = () => { if (ws === sock && !reconnecting) reconnecting = setTimeout(connect, 2000); };
+}
+
+// catchUp redraws the rail and the conversation on screen from the agent, for
+// when the socket may have missed something: a phone back from the background,
+// a laptop woken up. The unread line stays where it was.
+async function catchUp() {
+  renderSidebar();
+  if (state.view !== 'session' || !state.session) return;
+  const id = state.session.id;
+  let res, entries;
+  try {
+    [res, entries] = await Promise.all([api('/sessions/' + id), api('/sessions/' + id + '/transcript')]);
+  } catch (e) { return; }
+  if (state.view !== 'session' || !state.session || state.session.id !== id) return;
+  state.session = res.session;
+  state.entries = entries;
+  if (res.session.working_seconds == null) delete state.working[id];
+  else if (state.working[id] == null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
+  renderTranscript();
+  const last = entries[entries.length - 1];
+  if (last && !document.hidden) readThrough(id, last.seq);
 }
 function handle(e) {
   if (e.kind === 'entry' || e.kind === 'transient') {
@@ -220,12 +246,15 @@ async function readThrough(id, seq) {
   renderSidebar();
 }
 
-// onVisible reads what the conversation on screen showed while nobody could
-// see it.
+// onVisible brings the page up to date when it is looked at again, and reads
+// what the conversation on screen showed while nobody could see it. A socket
+// that died in the background reconnects now rather than after its wait; one
+// that still looks open may have heard nothing, so the page is read afresh
+// either way.
 function onVisible() {
-  if (document.hidden || state.view !== 'session' || !state.session) return;
-  const last = state.entries[state.entries.length - 1];
-  if (last) readThrough(state.session.id, last.seq);
+  if (document.hidden) return;
+  if (!ws || (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING)) connect();
+  catchUp();
 }
 
 // announce shows a system notification for a message the operator is not

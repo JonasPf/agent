@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-01
+
+- **Laptop and phone stay in step.** A message sent on one device now appears
+  on the other without a reload, even if the other was asleep or in the
+  background when you sent it. Coming back to the page brings the conversation
+  and the unread badges up to date.
+
 ## 2026-09-29
 
 - **Reminders count as unread.** A message from a scheduled job used to leave
