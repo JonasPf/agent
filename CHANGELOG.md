@@ -6,6 +6,11 @@
   on the other without a reload, even if the other was asleep or in the
   background when you sent it. Coming back to the page brings the conversation
   and the unread badges up to date.
+- **No crash when the password has lapsed.** Coming back to the page after
+  the browser forgot the password could crash Brave on a phone, because the
+  page asked for several things at once and each one asked for the password.
+  It now checks once first, and if the password is gone it reloads, so you are
+  asked for it once, the same way as when you first opened the page.
 
 ## 2026-09-29
 

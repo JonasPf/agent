@@ -116,6 +116,14 @@ still looks open, because a socket can survive a sleep without hearing anything;
 reconnects at once rather than after its usual wait. Nothing is reloaded and the unread line stays where
 it was.</p>
 
+<p>The agent sits behind a password the proxy in front of it asks for, and a browser forgets that password
+after a while. From then on every request is refused with a request for the password, and a phone asked
+for it by several requests at once can crash rather than ask. So a page shown again makes one request
+first, and only once that is answered does it reconnect and read the rail and the conversation. A socket
+that drops makes the same check before it opens again, rather than retrying blind. When the check is
+refused, the page reloads instead: the password is asked for once, by the page itself, as it was when
+the page was first opened. A check already under way is shared, not sent again.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -139,6 +147,8 @@ it was.</p>
 <li>Scrolling to the top of any conversation reaches the prompt entry it opened with.</li>
 <li>A message sent from one device appears in the same conversation open on another without a reload, including one sent while the other's socket was down or its page hidden.</li>
 <li>A page shown again with its socket closed reconnects at once, and opens only one new socket.</li>
+<li>A page shown again makes one request before any other, and reconnects and reads the conversation only once it is answered.</li>
+<li>A page shown again, or a dropped socket retrying, whose password has lapsed makes that one request and reloads, opening no socket and asking for nothing else.</li>
 <li>A compacted session shows the compaction banner in place of the entries it covers, and does not render those entries by default.</li>
 <li>The banner names itself a compaction, says the agent can no longer see what is above it, and shows the turn count and the tokens before and after.</li>
 <li>The entries a compaction covers can be revealed in place, and when revealed are visually distinct from live context so they cannot be read as something the agent can see.</li>

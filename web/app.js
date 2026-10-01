@@ -158,7 +158,33 @@ function connect() {
   // any other — so the page reads it afresh each time one opens.
   sock.onopen = () => catchUp();
   // A socket already replaced, by a page shown again, does not reconnect too.
-  sock.onclose = () => { if (ws === sock && !reconnecting) reconnecting = setTimeout(connect, 2000); };
+  sock.onclose = () => { if (ws === sock && !reconnecting) reconnecting = setTimeout(retry, 2000); };
+}
+
+// retry opens a dropped socket again once the agent is known to answer. A socket
+// cannot say why it was refused, so a lapsed password would otherwise be retried
+// every two seconds for as long as the page is open.
+async function retry() {
+  reconnecting = null;
+  if (await checkIn() === 'ok') connect();
+  else if (!reconnecting) reconnecting = setTimeout(retry, 2000);
+}
+
+// checkIn is the one request a page coming back makes before any other. The
+// agent sits behind a password the proxy asks for, and a browser forgets it;
+// every request is then refused with a request for the password, and a phone
+// asked for it by several requests at once can crash rather than ask. Refused,
+// the page reloads, so the password is asked for once, by the page itself, the
+// way it was at first. A check already under way is shared, not repeated.
+let checking = null;
+function checkIn() {
+  if (!checking) checking = (async () => {
+    let status;
+    try { status = (await fetch('/status')).status; } catch (e) { return 'down'; }
+    if (status === 401) { location.reload(); return 'signed-out'; }
+    return status < 500 ? 'ok' : 'down';
+  })().finally(() => { checking = null; });
+  return checking;
 }
 
 // catchUp redraws the rail and the conversation on screen from the agent, for
@@ -251,8 +277,9 @@ async function readThrough(id, seq) {
 // that died in the background reconnects now rather than after its wait; one
 // that still looks open may have heard nothing, so the page is read afresh
 // either way.
-function onVisible() {
+async function onVisible() {
   if (document.hidden) return;
+  if (await checkIn() === 'signed-out') return;
   if (!ws || (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CONNECTING)) connect();
   catchUp();
 }

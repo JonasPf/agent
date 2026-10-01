@@ -88,13 +88,17 @@ function load(routes) {
     },
     location: {
       hash: '', protocol: 'http:', host: 'x',
-      replace(h) { (ctx._replaced = ctx._replaced || []).push(h); this.hash = h; }
+      replace(h) { (ctx._replaced = ctx._replaced || []).push(h); this.hash = h; },
+      reload() { ctx._reloads = (ctx._reloads || 0) + 1; }
     },
     history: { length: 1 },
     navigator: {},
     fetch: async (p, opts) => {
       const method = (opts || {}).method || 'GET';
       (ctx._calls = ctx._calls || []).push({ path: p, method, body: (opts || {}).body });
+      // The password in front of the agent has lapsed: the proxy refuses
+      // everything before the agent sees it.
+      if (ctx._signedOut) return { ok: false, status: 401, text: async () => '401 Unauthorized' };
       const body = (routes || {})[p];
       if (method !== 'GET') {
         // A write answers with nothing unless the test gave it a reply, keyed
@@ -819,11 +823,84 @@ test('a page shown again with a closed socket reconnects at once, only once', as
   assert.strictEqual(socks.length, 1, 'reconnected before the wait');
 
   ctx.document.hidden = false;
-  ctx.onVisible();
+  await ctx.onVisible();
   assert.strictEqual(socks.length, 2, 'a page shown with its socket closed did not reconnect at once');
 
   for (const f of timers.values()) f();
   assert.strictEqual(socks.length, 2, 'the waiting reconnect opened a second socket');
+});
+
+// ---------- signed out ----------
+
+// The agent sits behind a password the proxy asks for, and a browser forgets it.
+// Every request the page makes is then refused and answered with a request for
+// the password, and a phone that is asked for it by several requests at once —
+// the socket, the rail, the conversation — can crash rather than ask. So a page
+// coming back makes one request first, and when that one is refused it reloads:
+// the password is asked for once, by the page itself, the way it was at first.
+
+test('a page shown again checks in with one request before making any other', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  const socks = [];
+  ctx.WebSocket = function () { socks.push(this); this.readyState = 3; };
+  ctx.WebSocket.OPEN = 1; ctx.WebSocket.CONNECTING = 0;
+  await ctx.viewSession(node('div'));
+  ctx._calls = [];
+  ctx.document.hidden = false;
+  const shown = ctx.onVisible();
+  assert.deepStrictEqual(ctx._calls.map(c => c.path), ['/status'], 'more than one request went out before the check');
+  assert.strictEqual(socks.length, 0, 'the socket opened before the check');
+  await shown;
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(socks.length, 1, 'the socket did not open after the check');
+  assert.ok(ctx._calls.some(c => c.path === '/sessions/S1/transcript'), 'the conversation was not read after the check');
+});
+
+test('a page shown again while signed out reloads, having made one request', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  const socks = [];
+  ctx.WebSocket = function () { socks.push(this); this.readyState = 3; };
+  ctx.WebSocket.OPEN = 1; ctx.WebSocket.CONNECTING = 0;
+  ctx._calls = [];
+  ctx._signedOut = true;
+  ctx.document.hidden = false;
+  await ctx.onVisible();
+  await new Promise(r => setImmediate(r));
+  assert.deepStrictEqual(ctx._calls.map(c => c.path), ['/status'], 'a refused page went on asking');
+  assert.strictEqual(socks.length, 0, 'a refused page opened a socket');
+  assert.strictEqual(ctx._reloads, 1, 'a refused page did not reload to ask for the password');
+});
+
+test('a page shown again twice in quick succession checks in once', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  ctx.WebSocket = function () { this.readyState = 3; };
+  ctx.WebSocket.OPEN = 1; ctx.WebSocket.CONNECTING = 0;
+  ctx._calls = [];
+  ctx._signedOut = true;
+  ctx.document.hidden = false;
+  await Promise.all([ctx.onVisible(), ctx.onVisible()]);
+  assert.strictEqual(ctx._calls.filter(c => c.path === '/status').length, 1, 'the check went out twice');
+  assert.strictEqual(ctx._reloads, 1, 'the page reloaded more than once');
+});
+
+test('a dropped socket checks in before opening again, and reloads when signed out', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  const socks = [];
+  const timers = [];
+  ctx.setTimeout = f => { timers.push(f); return timers.length; };
+  ctx.clearTimeout = () => {};
+  ctx.WebSocket = function () { socks.push(this); this.readyState = 0; };
+  ctx.WebSocket.OPEN = 1; ctx.WebSocket.CONNECTING = 0;
+  ctx.connect();
+  ctx._calls = [];
+  ctx._signedOut = true;
+  socks[0].readyState = 3;
+  socks[0].onclose();
+  await timers.shift()();
+  await new Promise(r => setImmediate(r));
+  assert.deepStrictEqual(ctx._calls.map(c => c.path), ['/status'], 'the retry asked for more than the check');
+  assert.strictEqual(socks.length, 1, 'a socket was opened against a refusal');
+  assert.strictEqual(ctx._reloads, 1, 'a refused retry did not reload');
 });
 
 test('an idle conversation shows no indicator', async () => {
