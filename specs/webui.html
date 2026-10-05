@@ -104,7 +104,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
 <tr><td>Status line</td><td>While the agent is working, how long it has been working, counting, and the way to stop it. Model, context used against the compaction threshold, live cache size and its countdown, tokens per second while streaming, session cost.</td></tr>
 <tr><td>Copy</td><td>A header action that puts the whole conversation on the clipboard as Markdown.</td></tr>
-<tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send.</td></tr>
+<tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send. On a keyboard the cursor is in it as soon as the conversation opens. Up and down step through what the operator has sent in this conversation, newest first, and back to what was being typed.</td></tr>
 </table>
 
 <p>The same conversation can be open on more than one device. Every entry goes to every page that is
@@ -164,6 +164,8 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>Markup in model output is shown as text and never becomes markup: a link renders only when it points at the web, an address, or this app, and an image renders as a link rather than a fetch.</li>
 <li>A keyboard sends the composer with Enter and breaks the line with shift-Enter; a touch screen breaks the line with Enter and sends from the button. The platform's own combination sends on either.</li>
 <li>A key that ends a composition &mdash; an accent, a kana, a candidate &mdash; sends nothing.</li>
+<li>Opening a conversation on a keyboard puts the cursor in the composer without scrolling the transcript; on a touch screen nothing is focused, so no keyboard rises.</li>
+<li>Up in the composer recalls the operator's own messages in this conversation, newest first, and never a job's prompt; down steps back to the newest and then to what was being typed. Up reaches history only from the first line and down only from the last, and with a modifier held the arrows only select.</li>
 <li>From the moment a message is sent until the agent's last queued turn in that conversation ends, the status line says the agent is working and counts the seconds; a conversation opened mid-turn counts from when the turn started, and the indicator goes when the turn ends.</li>
 <li>A session reports whether it is working and for how long, and the change is pushed as it happens, once when work starts and once when the last queued turn ends.</li>
 <li>While a conversation is working, the status line offers a way to stop the turn, and the offer goes when the turn does.</li>

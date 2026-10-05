@@ -575,7 +575,11 @@ async function viewSession(v) {
   // A keyboard sends on Enter, because that is what a keyboard expects. A touch
   // screen has no comfortable shift, so there Enter is a newline and the button
   // is how a message is sent.
+  // Up and down walk through what the operator has sent here, newest first,
+  // and back down to what was being typed when they started.
+  const recall = { at: -1, draft: '' };
   ta.onkeydown = e => {
+    if (recallStep(e, ta, recall, sentTexts(state.entries))) { e.preventDefault(); ta.oninput(); return; }
     if (!sendsOnEnter(e, hasKeyboard())) return;
     e.preventDefault();
     form.requestSubmit();
@@ -638,6 +642,7 @@ async function viewSession(v) {
     const text = [ta.value.trim(), names && 'Attached: ' + names].filter(Boolean).join('\n\n');
     if (!text) return;
     attached.length = 0; drawChips();
+    recall.at = -1;
     ta.value = ''; ta.style.height = 'auto';
     // The wait starts when the message leaves, not when the server first says
     // so: that gap is part of what the operator is waiting through.
@@ -656,6 +661,38 @@ async function viewSession(v) {
   foot.append(status, chips, form, hint);
   renderStatus();
   if (!scrollToUnread()) scrollDown();
+  // A conversation is opened to say something, so on a keyboard the cursor is
+  // already there. On a touch screen focus would raise the keyboard over what
+  // was opened to be read.
+  if (hasKeyboard()) ta.focus({ preventScroll: true });
+}
+
+// sentTexts is what the operator has typed into this conversation, newest
+// first. A job's prompt is the agent talking to itself, not something to recall.
+function sentTexts(entries) {
+  return (entries || [])
+    .filter(e => e.type === 'message' && e.role === 'user' && !e.job_id && e.text)
+    .map(e => e.text).reverse();
+}
+
+// recallStep moves the composer one step through `sent` and says whether it
+// did. Up reaches history only from the first line and down only from the last,
+// so the arrows still move the cursor through a message of several lines; a
+// modifier means selecting, which is left alone.
+function recallStep(e, ta, rec, sent) {
+  if (e.isComposing || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return false;
+  const v = ta.value, from = ta.selectionStart, to = ta.selectionEnd;
+  if (from !== to) return false;
+  let next;
+  if (e.key === 'ArrowUp' && !v.slice(0, from).includes('\n')) next = rec.at + 1;
+  else if (e.key === 'ArrowDown' && rec.at >= 0 && !v.slice(to).includes('\n')) next = rec.at - 1;
+  else return false;
+  if (next >= sent.length) return false;
+  if (rec.at < 0) rec.draft = v;
+  rec.at = next;
+  ta.value = next < 0 ? rec.draft : sent[next];
+  ta.selectionStart = ta.selectionEnd = ta.value.length;
+  return true;
 }
 
 // scrollToUnread opens a conversation at the first thing the operator has not

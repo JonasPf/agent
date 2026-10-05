@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-05
+
+- **Start typing straight away.** On a computer, opening a conversation puts
+  the cursor in the message box. On a phone it does not, so the keyboard
+  stays down until you tap.
+- **Up arrow brings back what you sent.** In the message box, up steps back
+  through your earlier messages in this conversation and down steps forward
+  again, ending at whatever you had half typed.
+
 ## 2026-10-01
 
 - **Laptop and phone stay in step.** A message sent on one device now appears

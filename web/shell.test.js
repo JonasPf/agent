@@ -32,7 +32,7 @@ function node(tag) {
     },
     appendChild(k) { k.parent = this; this.children.push(k); return k; },
     querySelector(sel) { return find(this, sel.replace(/^\./, '')); },
-    setAttribute() {}, focus() {}, addEventListener() {},
+    setAttribute() {}, focus(o) { this._focused = o || {}; }, addEventListener() {},
     scrollIntoView(o) { this._scrolledInto = o || {}; },
     remove() {
       if (!this.parent) return;
@@ -916,6 +916,72 @@ test('sending a message shows the indicator before the server answers', async ()
   form.children.find(c => c.tagName === 'textarea').value = 'hello';
   await form.onsubmit({ preventDefault() {} });
   assert.match(textOf(ctx._id('statusline')), /working\s+0s/);
+});
+
+// Opening a conversation is opening it to say something, so on a keyboard the
+// cursor is already in the composer. On a touch screen it is not: focus would
+// raise the keyboard over what was opened to be read.
+test('opening a conversation on a keyboard puts the cursor in the composer', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const ta = composerOf(ctx).children.find(c => c.tagName === 'textarea');
+  assert.ok(ta._focused, 'the composer was not focused');
+  assert.strictEqual(ta._focused.preventScroll, true, 'focusing the composer scrolled the transcript');
+
+  const touch = conversationScreen(session({ id: 'S1' }));
+  touch.matchMedia = () => ({ matches: false });
+  await touch.viewSession(node('div'));
+  assert.ok(!composerOf(touch).children.find(c => c.tagName === 'textarea')._focused,
+    'a touch screen had its keyboard raised on opening');
+});
+
+// Up walks back through what the operator has sent in this conversation, the
+// way a shell walks its history, and down walks forward to what was being typed.
+const key = (k, over) => Object.assign({ key: k, preventDefault() { this.prevented = true; } }, over);
+const at = (ta, i) => { ta.selectionStart = ta.selectionEnd = i == null ? ta.value.length : i; };
+
+test('up and down step through the messages sent in this conversation', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }), [
+    { seq: 1, type: 'message', role: 'user', text: 'How warm is it?' },
+    { seq: 2, type: 'message', role: 'assistant', text: '21.5 degrees.' },
+    { seq: 3, type: 'message', role: 'user', text: 'Check the sensors', job_id: 'J1' },
+    { seq: 4, type: 'message', role: 'user', text: 'And the humidity?' },
+  ]);
+  await ctx.viewSession(node('div'));
+  const ta = composerOf(ctx).children.find(c => c.tagName === 'textarea');
+  ta.value = 'half wri'; at(ta);
+  let e = key('ArrowUp'); ta.onkeydown(e);
+  assert.ok(e.prevented);
+  assert.strictEqual(ta.value, 'And the humidity?');
+  at(ta); ta.onkeydown(key('ArrowUp'));
+  assert.strictEqual(ta.value, 'How warm is it?', "a job's prompt was offered as something the operator sent");
+  at(ta); e = key('ArrowUp'); ta.onkeydown(e);
+  assert.strictEqual(ta.value, 'How warm is it?', 'up went past the oldest message');
+  assert.ok(!e.prevented, 'up at the oldest message was swallowed');
+  at(ta); ta.onkeydown(key('ArrowDown'));
+  assert.strictEqual(ta.value, 'And the humidity?');
+  at(ta); ta.onkeydown(key('ArrowDown'));
+  assert.strictEqual(ta.value, 'half wri', 'what was being typed was lost');
+  at(ta); e = key('ArrowDown'); ta.onkeydown(e);
+  assert.ok(!e.prevented, 'down below the draft was swallowed');
+});
+
+// A message of several lines is edited with the arrows too: up only reaches
+// back into history from the first line, and down only from the last.
+test('up and down move within a message of several lines', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }), [
+    { seq: 1, type: 'message', role: 'user', text: 'Earlier' },
+  ]);
+  await ctx.viewSession(node('div'));
+  const ta = composerOf(ctx).children.find(c => c.tagName === 'textarea');
+  ta.value = 'one\ntwo'; at(ta);
+  let e = key('ArrowUp'); ta.onkeydown(e);
+  assert.ok(!e.prevented, 'up on the second line left the message');
+  assert.strictEqual(ta.value, 'one\ntwo');
+  at(ta, 1); e = key('ArrowUp'); ta.onkeydown(e);
+  assert.strictEqual(ta.value, 'Earlier', 'up on the first line did not reach history');
+  e = key('ArrowUp', { shiftKey: true }); ta.onkeydown(e);
+  assert.ok(!e.prevented, 'shift-up, which selects, was taken for history');
 });
 
 test('the whole conversation copies to the clipboard from its header', async () => {
