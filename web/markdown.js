@@ -90,12 +90,35 @@ function cells(line) {
 
 function renderMarkdown(src) {
   const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
+  return blocks(lines).map(b => b.html).join('');
+}
+
+// markdownSettled is how much of an answer still arriving can be rendered once
+// and left alone: every block but the last, on lines that are complete. Nothing
+// written after it can change how those blocks render, and it is always where a
+// block starts, so rendering the two sides apart gives exactly what rendering
+// the whole gives. The source has \n line ends.
+function markdownSettled(src) {
+  const end = String(src).lastIndexOf('\n') + 1;
+  if (!end) return 0;
+  const lines = src.slice(0, end).split('\n');
+  const all = blocks(lines);
+  if (all.length < 2) return 0;
+  let at = 0;
+  for (let k = 0; k < all[all.length - 1].line; k++) at += lines[k].length + 1;
+  return at;
+}
+
+// blocks reads lines into the blocks they make, each with the line it starts on.
+function blocks(lines) {
   const out = [];
   let i = 0;
+  const push = (line, html) => out.push({ line, html });
 
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) { i++; continue; }
+    const at = i;
 
     const fence = FENCE.exec(line);
     if (fence) {
@@ -105,17 +128,17 @@ function renderMarkdown(src) {
       i++;
       while (i < lines.length && !close.test(lines[i])) body.push(lines[i++]);
       i++; // the closing fence — or the end of a turn that is still streaming
-      out.push('<pre' + (lang ? ' data-lang="' + escapeHTML(lang) + '"' : '') + '><code>'
+      push(at, '<pre' + (lang ? ' data-lang="' + escapeHTML(lang) + '"' : '') + '><code>'
         + escapeHTML(body.join('\n')) + '</code></pre>');
       continue;
     }
 
-    if (RULE.test(line)) { out.push('<hr>'); i++; continue; }
+    if (RULE.test(line)) { push(at, '<hr>'); i++; continue; }
 
     const head = HEADING.exec(line);
     if (head) {
       const n = head[1].length;
-      out.push('<h' + n + '>' + inline(head[2].trim()) + '</h' + n + '>');
+      push(at, '<h' + n + '>' + inline(head[2].trim()) + '</h' + n + '>');
       i++;
       continue;
     }
@@ -123,7 +146,7 @@ function renderMarkdown(src) {
     if (QUOTE.test(line)) {
       const body = [];
       while (i < lines.length && QUOTE.test(lines[i])) body.push(QUOTE.exec(lines[i++])[1]);
-      out.push('<blockquote>' + renderMarkdown(body.join('\n')) + '</blockquote>');
+      push(at, '<blockquote>' + renderMarkdown(body.join('\n')) + '</blockquote>');
       continue;
     }
 
@@ -142,7 +165,7 @@ function renderMarkdown(src) {
         break;
       }
       const tag = ordered ? 'ol' : 'ul';
-      out.push('<' + tag + '>'
+      push(at, '<' + tag + '>'
         + items.map(t => '<li>' + inlineLines(t) + '</li>').join('')
         + '</' + tag + '>');
       continue;
@@ -154,7 +177,7 @@ function renderMarkdown(src) {
       i += 2;
       const rows = [];
       while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(cells(lines[i++]));
-      out.push('<table><thead><tr>'
+      push(at, '<table><thead><tr>'
         + header.map(c => '<th>' + inline(c) + '</th>').join('')
         + '</tr></thead><tbody>'
         + rows.map(r => '<tr>' + r.map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('')
@@ -164,12 +187,12 @@ function renderMarkdown(src) {
 
     const para = [];
     while (i < lines.length && lines[i].trim() && !starts(lines[i])) para.push(lines[i++]);
-    out.push('<p>' + inlineLines(para.join('\n')) + '</p>');
+    push(at, '<p>' + inlineLines(para.join('\n')) + '</p>');
   }
 
-  return out.join('');
+  return out;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { renderMarkdown };
+  module.exports = { renderMarkdown, markdownSettled };
 }

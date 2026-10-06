@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { renderMarkdown } = require('./markdown.js');
+const { renderMarkdown, markdownSettled } = require('./markdown.js');
 
 // The agent writes markdown whether or not anything renders it. What must never
 // happen is the other direction: model output becoming markup of its own.
@@ -108,4 +108,53 @@ test('an image renders as a link to it, not as a remote fetch', () => {
 test('empty input renders nothing', () => {
   assert.strictEqual(renderMarkdown(''), '');
   assert.strictEqual(renderMarkdown(null), '');
+});
+
+// ---------- streaming ----------
+
+// An answer arrives a few characters at a time. Rendering all of it again for
+// every few characters is quadratic in its length, so what can no longer change
+// is rendered once and only the rest is redrawn. That is only sound if splitting
+// there renders exactly as the whole does, and if nothing more arriving could
+// change what was already settled.
+const streamed = [
+  '# Findings\n\nThe sensor reads **high** on Tuesdays.\nIt reads low otherwise.\n\n' +
+    '- one\n- two\n  continued\n- three\n\n1. first\n\n2. second\n\n' +
+    '```go\nfunc main() {\n\n\tfmt.Println("x")\n}\n```\n\nAfter the code.\n\n' +
+    '| a | b |\n|---|---|\n| 1 | 2 |\n\n> quoted\n> still\n\n---\n\n## Next\nDone.',
+  'para\n# heading straight after\nmore text\n- item after text\n```\nunclosed fence\n\nstill code',
+  '- item\n  ```\n  not a fence\n\n  later\n  ```\n\nafter\n\n~~~\ntilde\n~~~\n',
+  'a | b\n--- | ---\nx | y\nplain\n\n#hashtag is not a heading\n## but this is\n',
+];
+
+test('a settled split renders exactly as the whole does', () => {
+  for (const doc of streamed) {
+    for (let n = 0; n <= doc.length; n++) {
+      const prefix = doc.slice(0, n);
+      const cut = markdownSettled(prefix);
+      assert.ok(cut >= 0 && cut <= prefix.length, `cut ${cut} outside ${JSON.stringify(prefix)}`);
+      assert.strictEqual(renderMarkdown(prefix.slice(0, cut)) + renderMarkdown(prefix.slice(cut)),
+        renderMarkdown(prefix), `split at ${cut} of ${JSON.stringify(prefix)}`);
+    }
+  }
+});
+
+test('what is settled stays as it was rendered, however the answer goes on', () => {
+  for (const doc of streamed) {
+    const whole = renderMarkdown(doc);
+    let last = 0;
+    for (let n = 0; n <= doc.length; n++) {
+      const cut = markdownSettled(doc.slice(0, n));
+      assert.ok(cut >= last, `settled went back from ${last} to ${cut}`);
+      last = cut;
+      const settled = renderMarkdown(doc.slice(0, cut));
+      assert.ok(whole.startsWith(settled),
+        `settled ${JSON.stringify(doc.slice(0, cut))} rendered differently once more arrived`);
+    }
+  }
+});
+
+test('most of a long answer settles while it arrives', () => {
+  const doc = Array.from({ length: 30 }, (_, i) => 'Paragraph ' + i + ' says something.').join('\n\n');
+  assert.ok(markdownSettled(doc) > doc.length * 0.9, 'a long answer settled almost none of itself');
 });

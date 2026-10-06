@@ -107,6 +107,14 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send. On a keyboard the cursor is in it as soon as the conversation opens. Up and down step through what the operator has sent in this conversation, newest first, and back to what was being typed.</td></tr>
 </table>
 
+<p>A conversation is drawn whole when it is opened, and grows from there: an entry that arrives is
+added after the last one, and a turn starting or ending changes only the row at the end that stands for
+the answer. Nothing already on screen is drawn again, so a tool result the reader opened stays open
+through the rest of the turn. An answer arriving is drawn at most once a frame, however fast its tokens
+come; the blocks of it that can no longer change are drawn once, and only the block still growing is
+drawn again. What it shows is exactly what the finished answer will show. A reader who has scrolled up is
+left where they are while it arrives; one at the end stays at the end.</p>
+
 <p>The same conversation can be open on more than one device. Every entry goes to every page that is
 connected, whichever device wrote it, so a message typed on a laptop appears on a phone showing that
 conversation. A page that was not connected when something was written &mdash; a phone in the
@@ -171,6 +179,8 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>While a conversation is working, the status line offers a way to stop the turn, and the offer goes when the turn does.</li>
 <li>While a conversation is working and nothing of the answer has arrived yet, the transcript shows the agent thinking where the answer will appear; the first word of the answer replaces it, and it goes when the turn ends.</li>
 <li>When a turn ends, the conversation scrolls to its answer, even if the reader had scrolled away while it worked.</li>
+<li>An entry arriving is added without drawing again what is already on screen; a tool result the reader opened stays open.</li>
+<li>An answer arriving reads exactly as the finished answer will, is drawn at most once a frame, and draws again only the block still growing; a reader who has scrolled up is left where they are.</li>
 <li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
 </ul>
 </div>

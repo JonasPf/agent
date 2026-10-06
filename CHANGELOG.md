@@ -11,6 +11,11 @@
   Those figures are now kept until something changes them, so the list
   arrives in a few milliseconds instead of a noticeable pause with many
   conversations or a large checked-out repository.
+- **Long answers stream smoothly on a phone.** The conversation used to be
+  rebuilt from the top for every step of a turn, and a reply redrawn from its
+  first word for every few new ones. Now only what is new is drawn. A tool
+  result you opened stays open while the agent carries on, and scrolling up
+  to read while an answer arrives no longer pulls you back down.
 
 ## 2026-10-05
 

@@ -32,6 +32,7 @@ function node(tag) {
     },
     appendChild(k) { k.parent = this; this.children.push(k); return k; },
     querySelector(sel) { return find(this, sel.replace(/^\./, '')); },
+    insertAdjacentHTML(where, html) { this._html = (this._html == null ? '' : this._html) + String(html); },
     setAttribute() {}, focus(o) { this._focused = o || {}; }, addEventListener() {},
     scrollIntoView(o) { this._scrolledInto = o || {}; },
     remove() {
@@ -627,6 +628,103 @@ test('a finished turn scrolls the conversation to its answer', async () => {
 
   ctx.handle({ kind: 'idle', session_id: 'S1' });
   assert.strictEqual(main.scrollTop, 5000, 'the finished answer was left below the fold');
+});
+
+// ---------- an answer arriving ----------
+
+// What the stream shows is the answer as it will finally read: the part that
+// can no longer change plus the block still arriving.
+const streamedMarkup = t => {
+  const settled = find(t, 'settled'), tail = find(t, 'tail');
+  return (settled && settled._html || '') + (tail && tail._html || '');
+};
+
+test('an answer arriving reads as the whole answer will', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  const doc = '# Plan\n\nFirst **step**.\n\n- a\n- b\n\n```\ncode\n\nmore\n```\n\nDone, with `code`.';
+  for (let i = 0; i < doc.length; i += 3) ctx.handle({ kind: 'delta', session_id: 'S1', text: doc.slice(i, i + 3) });
+  assert.strictEqual(streamedMarkup(ctx._id('transcript')), ctx.renderMarkdown(doc));
+});
+
+// Rendering the whole answer again for every few characters costs the square of
+// its length; on a phone a long answer stuttered. What has settled is drawn once.
+test('a long answer is not rendered again from its start for every token', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const sizes = [];
+  const real = ctx.renderMarkdown;
+  ctx.renderMarkdown = src => { sizes.push(String(src).length); return real(src); };
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  const doc = Array.from({ length: 40 }, (_, i) => 'Paragraph ' + i + ' has a finding in it.').join('\n\n');
+  for (let i = 0; i < doc.length; i += 4) ctx.handle({ kind: 'delta', session_id: 'S1', text: doc.slice(i, i + 4) });
+  assert.ok(Math.max(...sizes) < doc.length / 4,
+    'the answer was rendered again from its start: largest render ' + Math.max(...sizes) + ' of ' + doc.length);
+  assert.strictEqual(streamedMarkup(ctx._id('transcript')), real(doc));
+});
+
+// Tokens come faster than a screen draws. Those that land within one frame are
+// drawn together.
+test('tokens arriving within one frame are drawn once', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const frames = [];
+  ctx.requestAnimationFrame = f => { frames.push(f); return frames.length; };
+  let renders = 0;
+  const real = ctx.renderMarkdown;
+  ctx.renderMarkdown = src => { renders++; return real(src); };
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  for (const w of ['The ', 'humidity ', 'in ', 'the ', 'greenhouse ', 'is ', 'high.']) {
+    ctx.handle({ kind: 'delta', session_id: 'S1', text: w });
+  }
+  assert.strictEqual(renders, 0, 'tokens were drawn before the frame');
+  while (frames.length) frames.shift()();
+  assert.ok(renders <= 2, 'one frame of tokens was drawn ' + renders + ' times');
+  assert.strictEqual(streamedMarkup(ctx._id('transcript')), real('The humidity in the greenhouse is high.'));
+});
+
+// Reading back up while an answer arrives is allowed; the reader is left there.
+// One already at the end stays at the end as it grows.
+test('an answer arriving leaves a reader who scrolled up where they are', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const main = ctx._id('main');
+  main.scrollHeight = 5000; main.clientHeight = 500; main.scrollTop = 0;
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: 'The humidity' });
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: ' is high.' });
+  assert.strictEqual(main.scrollTop, 0, 'the answer pulled a reader who had scrolled up');
+
+  main.scrollTop = 4500;
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: ' And rising.' });
+  assert.strictEqual(main.scrollTop, 5000, 'a reader at the end was left behind as the answer grew');
+});
+
+// A turn with many tool calls appends many entries. Each is added where it
+// belongs; what is already on screen stays as it is, a result the reader opened
+// included.
+test('an entry arriving is added without redrawing the conversation', async () => {
+  const entries = [
+    { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 2, type: 'message', role: 'tool', tool_name: 'clock', tool_result: '{"ok":true,"content":"10:00"}', created_at: '2026-10-06T10:00:01Z' },
+  ];
+  const ctx = conversationScreen(session({ id: 'S1', working_seconds: 2 }), entries);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.filter(c => !String(c.className).includes('thinking'));
+  const pre = find(t, 'tool').children.find(c => c.tagName === 'pre');
+  pre.hidden = false;
+
+  ctx.handle({ kind: 'entry', session_id: 'S1',
+    entry: { seq: 3, type: 'message', role: 'assistant', text: 'It reads 41%.', created_at: '2026-10-06T10:00:02Z' } });
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+
+  for (const n of shown) assert.ok(t.children.includes(n), 'an entry already on screen was drawn again');
+  assert.strictEqual(pre.hidden, false, 'a result the reader had opened closed again');
+  assert.match(textOf(t), /It reads 41%\./, 'the new entry is not on screen');
+  assert.ok(find(t, 'thinking'), 'working again shows no thinking row');
 });
 
 // ---------- unread ----------
