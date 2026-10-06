@@ -334,8 +334,24 @@
           }
         },
         "responses": {
-          "204": {
-            "description": "Recorded."
+          "200": {
+            "description": "Recorded. Says whether the read cleared anything unread; a read that cleared nothing changes nothing the session list shows, and no page is told the list moved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "cleared"
+                  ],
+                  "properties": {
+                    "cleared": {
+                      "type": "boolean",
+                      "description": "True when an assistant message that was unread is now read."
+                    }
+                  }
+                }
+              }
+            }
           },
           "400": {
             "description": "The body is not JSON."

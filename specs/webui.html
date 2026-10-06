@@ -282,9 +282,12 @@ and what is unread is the assistant messages after it &mdash; whoever started th
 a job. A read names the entry it read through, so a message that arrives between the page loading and
 the read reaching the agent stays unread, and a read point only ever moves forward. A conversation is
 read when it is opened, and a message arriving in the conversation on screen is read as it arrives,
-unless the page is hidden; then it is read when the page is shown again. The rail redraws after a read
-of its own accord and whenever its socket connects, rather than waiting to hear the list moved, so a
-phone back from the background does not keep a count it has already cleared.</p>
+unless the page is hidden; then it is read when the page is shown again. A read says whether it cleared
+anything. The rail redraws after one that did of its own accord, and whenever its socket connects, rather
+than waiting to hear the list moved, so a phone back from the background does not keep a count it has
+already cleared. Most of what arrives on screen is a tool call or its result, and reading past it clears
+nothing; such a read changes nothing a list shows, so neither the page nor the agent sends anyone back
+for the session list, which is the costliest thing the agent serves.</p>
 
 <p>A conversation with unread messages opens at the first entry after the read point, under a line
 that marks it, rather than at its end with what was missed above the fold. The line stays where it
@@ -319,6 +322,7 @@ popup of its own instead.</p>
 <li>A message a job's wake produced counts as unread exactly as a reply to a typed message does.</li>
 <li>A read clears only what it names: a message written after the point read through stays unread, and a late read for an earlier point does not make anything unread again.</li>
 <li>Opening a conversation clears its count on the rail without waiting for the socket, and the rail refreshes whenever the socket connects.</li>
+<li>A read that clears no count sends no page, on this device or another, to read the session list again.</li>
 <li>A message arriving in the conversation on screen is read at once; while the page is hidden it stays unread until the page is shown.</li>
 <li>A conversation with unread messages opens scrolled to a line marking the first of them; one with none opens at its end.</li>
 <li>A fork starts with nothing unread.</li>

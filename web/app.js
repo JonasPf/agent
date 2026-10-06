@@ -266,10 +266,12 @@ function handle(e) {
 }
 
 // readThrough tells the agent the operator has been shown a conversation up to
-// seq, and redraws the rail without waiting to hear back over the socket.
+// seq. A read that cleared a count redraws the rail without waiting to hear
+// back over the socket; one that cleared nothing changed nothing it shows.
 async function readThrough(id, seq) {
-  try { await post('/sessions/' + id + '/read', { through: seq }); } catch (e) { return; }
-  renderSidebar();
+  let res;
+  try { res = await post('/sessions/' + id + '/read', { through: seq }); } catch (e) { return; }
+  if (res && res.cleared) renderSidebar();
 }
 
 // onVisible brings the page up to date when it is looked at again, and reads

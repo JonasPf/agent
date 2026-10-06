@@ -656,6 +656,8 @@ const readsOf = ctx => (ctx._calls || []).filter(c => c.method === 'POST' && /\/
 test('opening a conversation marks what it shows read and redraws the rail', async () => {
   const entries = [said(1, 'user', 'Hi'), said(2, 'assistant', 'Hello.'), said(3, 'assistant', 'Reminder.')];
   const ctx = unreadScreen(session({ id: 'S1', unread: 2, read_through: 1 }), entries);
+  // The agent answers that the read cleared the two it counted.
+  ctx._routes['POST /sessions/S1/read'] = { cleared: true };
   await ctx.viewSession(node('div'));
   await new Promise(r => setImmediate(r));
 
@@ -711,6 +713,27 @@ test('a message arriving in the conversation on screen is read', async () => {
   ctx.handle({ kind: 'entry', session_id: 'OTHER', entry: said(9, 'assistant', 'Elsewhere.') });
   await new Promise(r => setImmediate(r));
   assert.strictEqual(readsOf(ctx).length, before + 1, 'a message in another conversation was marked read');
+});
+
+// Most of what arrives on screen is a tool call or its result, and reading past
+// it clears no count. Redrawing the rail for every one of those sent the agent
+// for the whole session list — its costliest answer — once per entry per page.
+test('a read that clears nothing leaves the rail alone', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  ctx._routes['POST /sessions/S1/read'] = { cleared: false };
+  const before = ctx._calls.length;
+
+  ctx.handle({ kind: 'entry', session_id: 'S1',
+    entry: { seq: 2, type: 'message', role: 'tool', tool_name: 'clock', tool_result: '{}', created_at: '2026-09-29T10:00:00Z' } });
+  await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  const after = ctx._calls.slice(before);
+  assert.strictEqual(after.filter(c => c.method === 'POST' && /\/read$/.test(c.path)).length, 1,
+    'the entry on screen was not read');
+  assert.ok(!after.some(c => c.method === 'GET' && c.path === '/sessions'),
+    'a read that cleared nothing redrew the rail');
 });
 
 // Hidden, the page is not being read, whatever it shows. It is read when it is

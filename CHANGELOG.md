@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-06
+
+- **Busy turns no longer slow every open page.** While the agent works
+  through tool calls, each page showing the conversation used to fetch the
+  whole conversation list again for every step, on every device. The list is
+  now fetched only when an unread count actually changes.
+
 ## 2026-10-05
 
 - **Start typing straight away.** On a computer, opening a conversation puts

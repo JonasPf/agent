@@ -279,17 +279,25 @@ func (s *Store) writeMeta(sess *Session) error {
 
 // MarkRead moves where the operator has read a session through. It only moves
 // forward: a read that arrives late, for a point already passed, is not a
-// reason to call anything unread again.
-func (s *Store) MarkRead(id string, through int) error {
+// reason to call anything unread again. It reports whether the move cleared
+// anything unread, which is the only change to a session a list would show.
+func (s *Store) MarkRead(id string, through int) (bool, error) {
 	s.mu.Lock()
 	sess := s.sessions[id]
 	if sess == nil || through <= sess.ReadThrough {
 		s.mu.Unlock()
-		return nil
+		return false, nil
+	}
+	cleared := false
+	for _, e := range s.entries[id] {
+		if e.Seq > sess.ReadThrough && e.Seq <= through && countsAsUnread(e) {
+			cleared = true
+			break
+		}
 	}
 	sess.ReadThrough = through
 	s.mu.Unlock()
-	return s.writeMeta(sess)
+	return cleared, s.writeMeta(sess)
 }
 
 func (s *Store) Session(id string) *Session {

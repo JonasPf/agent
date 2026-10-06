@@ -469,9 +469,14 @@ func (a *App) hMarkRead(w http.ResponseWriter, r *http.Request) {
 	} else if entries := a.store.Entries(s.ID); len(entries) > 0 {
 		through = entries[len(entries)-1].Seq
 	}
-	_ = a.store.MarkRead(s.ID, through)
-	a.hub.Broadcast(wsEvent{Kind: "sessions"})
-	w.WriteHeader(204)
+	// Every page showing a conversation reads each entry as it arrives, so most
+	// reads pass nothing but tool results and clear no count. Only one that
+	// does changes what a list shows, and only then are pages sent to read it.
+	cleared, _ := a.store.MarkRead(s.ID, through)
+	if cleared {
+		a.hub.Broadcast(wsEvent{Kind: "sessions"})
+	}
+	writeJSON(w, 200, map[string]bool{"cleared": cleared})
 }
 
 func (a *App) hSearch(w http.ResponseWriter, r *http.Request) {
