@@ -26,6 +26,9 @@
   and all, and draw it from the top. It now fetches only what was written
   while you were away. Opening a conversation also loads it in one round trip
   instead of two.
+- **Less to download.** The app, its conversations and lists are now sent
+  compressed, typically a fifth of the size or less. Files you download from
+  a conversation are sent exactly as stored.
 
 ## 2026-10-05
 

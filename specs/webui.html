@@ -285,11 +285,18 @@ therefore sent with <code>Cache-Control: no-cache</code>: the browser may keep a
 before reusing it. Without that, a cached script runs against markup it no longer matches, and the
 failure looks like a bug in the page rather than a stale copy of it.</p>
 
+<p>Whatever a browser accepts compressed is sent gzipped: the interface's scripts and stylesheet, and
+every JSON answer, of which a transcript carrying its tool results is the largest. They shrink five to
+ten times, and nothing in front of the agent can be relied on to do it. A file from a session's directory
+and an exported archive go out exactly as stored: either may be compressed already, and a range of a
+file has to mean the file's own bytes.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every interface asset is served with <code>Cache-Control: no-cache</code>.</li>
 <li>An unchanged asset revalidates to 304 rather than being sent again.</li>
+<li>Assets and JSON answers are sent gzipped to a browser that accepts it; a session's files and archives are sent as stored.</li>
 </ul>
 </div>
 

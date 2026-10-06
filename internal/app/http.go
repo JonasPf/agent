@@ -84,7 +84,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/ws", a.handleWS)
 
 	mux.Handle("/", revalidated(http.FileServer(http.Dir(a.cfg.WebDir))))
-	return mux
+	return compressed(mux)
 }
 
 // revalidated makes the browser ask before reusing an interface asset. The
