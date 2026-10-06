@@ -471,6 +471,26 @@ func (s *Store) Job(id string) (*Job, error) {
 	return js[0], nil
 }
 
+// JobCounts is how many jobs each session holds, in one query: the session list
+// shows every session's count at once.
+func (s *Store) JobCounts() (map[string]int, error) {
+	rows, err := s.db.Query(`select session_id, count(*) from jobs group by session_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) SessionJobs(sessionID string) ([]*Job, error) {
 	rows, err := s.db.Query(`select `+jobCols+` from jobs where session_id=?`, sessionID)
 	if err != nil {

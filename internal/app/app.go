@@ -183,6 +183,9 @@ type App struct {
 	calls    callTokens
 	toolAddr string
 
+	// memos keeps the session list's costly figures between reads.
+	memos listMemos
+
 	qmu    sync.Mutex
 	queues map[string]chan func()
 	// pending counts the turns running or queued in each session; since is

@@ -6,6 +6,11 @@
   through tool calls, each page showing the conversation used to fetch the
   whole conversation list again for every step, on every device. The list is
   now fetched only when an unread count actually changes.
+- **The conversation list loads in a blink.** Building it used to re-measure
+  every conversation's context and walk every file it holds, every time.
+  Those figures are now kept until something changes them, so the list
+  arrives in a few milliseconds instead of a noticeable pause with many
+  conversations or a large checked-out repository.
 
 ## 2026-10-05
 

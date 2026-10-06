@@ -177,6 +177,15 @@ the page was first opened. A check already under way is shared, not sent again.<
 
 <h2>Session management</h2>
 
+<p>Every page reads the session list whenever a count on it moves, so the list is built to be cheap to
+read. Two of its figures are costly to measure &mdash; the context each conversation would send, and what
+its working directory holds &mdash; and both are kept between reads for exactly as long as what they
+measure cannot have changed. The context figure is kept until the transcript grows. What a directory
+holds is measured again after anything the agent does or sees touches it &mdash; a tool call, a check, an
+upload, a delete &mdash; and is never more than a minute old, which covers a process a command left
+running that goes on writing. A single session asked about on its own, as the files screen asks, is
+always measured on the spot.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -185,6 +194,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>The list shows which sessions have jobs attached.</li>
 <li>Every session shows what it occupies on disk, so it is clear what deleting one frees.</li>
+<li>What a tool writes or an upload adds, and what a delete frees, shows in the session list on its next read; a session's context figure moves with every entry.</li>
 <li>A session can be forked in one action.</li>
 <li>A fork links back to its origin, and the origin links forward to it.</li>
 <li>A session can be compacted on request, from the session itself, without waiting for the threshold.</li>

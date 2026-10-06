@@ -113,16 +113,27 @@ func readJSON(r *http.Request, v any) error {
 	return json.NewDecoder(io.LimitReader(r.Body, 1<<24)).Decode(v)
 }
 
-// enrich fills the derived fields the interface shows.
+// enrich fills the derived fields the interface shows, for one session asked
+// about on its own: what it holds on disk is measured now.
 func (a *App) enrich(s *Session) *Session {
+	jobs := -1
+	if js, err := a.store.SessionJobs(s.ID); err == nil {
+		jobs = len(js)
+	}
+	return a.derive(s, jobs, true)
+}
+
+// derive fills the derived fields. jobs is the session's job count, or -1 when
+// it could not be read.
+func (a *App) derive(s *Session, jobs int, fresh bool) *Session {
 	out := *s
 	entries := a.store.Entries(s.ID)
 	out.EntryCount = len(entries)
 	out.Unread = unreadAfter(entries, s.ReadThrough)
-	out.ContextUsed = projectedTokens(entries)
-	out.DiskBytes = a.sessionDiskBytes(s.ID)
-	if jobs, err := a.store.SessionJobs(s.ID); err == nil {
-		out.JobCount = len(jobs)
+	out.ContextUsed = a.contextUsed(s.ID, entries)
+	out.DiskBytes = a.sessionDiskBytes(s.ID, fresh)
+	if jobs >= 0 {
+		out.JobCount = jobs
 	}
 	if s.PromptTokens > 0 {
 		out.CacheHitRate = float64(s.CachedTokens) / float64(s.PromptTokens)
@@ -131,11 +142,19 @@ func (a *App) enrich(s *Session) *Session {
 	return &out
 }
 
+// hSessions is the list every page reads whenever a count it shows moves, so it
+// counts every session's jobs in one query and reads what each holds on disk
+// from what is kept rather than walking every directory each time.
 func (a *App) hSessions(w http.ResponseWriter, r *http.Request) {
 	all := a.store.Sessions()
+	counts, err := a.store.JobCounts()
 	out := make([]*Session, 0, len(all))
 	for _, s := range all {
-		out = append(out, a.enrich(s))
+		jobs := counts[s.ID]
+		if err != nil {
+			jobs = -1
+		}
+		out = append(out, a.derive(s, jobs, false))
 	}
 	writeJSON(w, 200, out)
 }
@@ -541,7 +560,7 @@ func (a *App) priceJob(j *Job, prices map[string]float64) *Job {
 		// What a wake actually sends is the system prompt plus the conversation.
 		// Counting only the conversation would put a new session's cost at zero,
 		// when its every turn already carries a few thousand tokens of prompt.
-		tokens = projectedTokens(a.store.Entries(s.ID))
+		tokens = a.contextUsed(s.ID, a.store.Entries(s.ID))
 		if p, ok := a.promptEntry(s.ID); ok {
 			tokens += sectionsTotal(p.Sections)
 		}
@@ -930,6 +949,7 @@ func (a *App) hDeleteSessionFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "%v", err)
 		return
 	}
+	a.workspaceChanged(id)
 	w.WriteHeader(204)
 }
 
