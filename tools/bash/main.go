@@ -4,9 +4,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 
 	"agent/internal/tool"
@@ -18,6 +20,10 @@ type args struct {
 }
 
 const maxOutput = 20000
+
+// backgroundGrace is how long output is still read after the shell exits, for
+// what a process left running in the background writes on its way out.
+const backgroundGrace = 2 * time.Second
 
 // Clip caps a body and reports how much it dropped. An unannounced truncation
 // is worse than a short answer: the model reasons from what it was handed as
@@ -43,7 +49,21 @@ func main() {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", a.Command)
+	// The command runs in a process group of its own, so a timeout ends
+	// everything it started rather than the shell alone, which left its children
+	// holding the output open and the call waiting on them.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	// A command that leaves something running in the background — a server, a
+	// watcher — is finished when its shell is. Whatever it left running keeps
+	// the output open, so the output is read for a moment longer and then the
+	// call returns rather than waiting out its timeout on a process nobody asked
+	// it to wait for. What it left running carries on.
+	cmd.WaitDelay = backgroundGrace
 	out, err := cmd.CombinedOutput()
+	if errors.Is(err, exec.ErrWaitDelay) {
+		err = nil
+	}
 	if ctx.Err() == context.DeadlineExceeded {
 		tool.Failf("timed out after %ds", timeout)
 	}

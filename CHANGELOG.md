@@ -26,6 +26,11 @@
   and all, and draw it from the top. It now fetches only what was written
   while you were away. Opening a conversation also loads it in one round trip
   instead of two.
+- **Starting a server no longer stalls the agent.** A shell command that left
+  something running in the background, such as a local server, used to hold
+  the agent up until the command's two-minute timeout. It now returns as soon
+  as the command itself is done. A command that runs too long is stopped along
+  with everything it started.
 - **Less to download.** The app, its conversations and lists are now sent
   compressed, typically a fifth of the size or less. Files you download from
   a conversation are sent exactly as stored.
