@@ -16,6 +16,11 @@
   first word for every few new ones. Now only what is new is drawn. A tool
   result you opened stays open while the agent carries on, and scrolling up
   to read while an answer arrives no longer pulls you back down.
+- **Coming back to the app never waits on OpenRouter.** The first thing a
+  page does when you return to it used to wait for OpenRouter to report your
+  credit, once an hour, and a slow day there could leave the page hanging or
+  mark the container unhealthy. The credit is now fetched in the background
+  and the rail updates when it arrives.
 
 ## 2026-10-05
 

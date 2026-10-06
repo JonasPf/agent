@@ -210,6 +210,18 @@ test('the rail states the credit remaining and whether tools are sandboxed', () 
   assert.match(text, /seatbelt/);
 });
 
+// The agent answers /status at once, with the credit it last heard of, and
+// says so over the socket when a fresher figure arrives.
+test('the rail shows the credit once the agent has heard it', async () => {
+  const ctx = load({ '/status': { key: { usage: 1.5, remaining: 3.5 }, sandbox: { mechanism: 'landlock' } } });
+  vm.runInContext("state.status = { sandbox: { mechanism: 'landlock' } };", ctx);
+  ctx.handle({ kind: 'status' });
+  await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  const text = findAll(ctx._id('side-foot'), 'l').map(l => l.children.map(c => c.textContent || c.text || '').join('')).join(' | ');
+  assert.match(text, /3\.5000 left/, 'the rail did not read the status again: ' + text);
+});
+
 test('a sandbox that is not enforced says so rather than naming a mechanism', () => {
   const ctx = load({});
   vm.runInContext("state.status = { sandbox: { mechanism: 'none', reason: 'no sandbox-exec' } };", ctx);

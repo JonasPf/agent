@@ -262,7 +262,7 @@ function handle(e) {
     // The rail is on screen whatever the view is, so it follows every change to
     // the list rather than only the one the session list happens to be showing.
     if (e.kind !== 'jobs') renderSidebar();
-    if (e.kind === 'status') loadStatus();
+    if (e.kind === 'status') { loadStatus(); readStatus(); }
   }
 }
 
@@ -2440,6 +2440,12 @@ async function boot() {
   document.addEventListener('visibilitychange', onVisible);
   connect();
   route();
+  readStatus();
+}
+
+// readStatus reads the agent's status — the breaker, the credit, the sandbox —
+// into the banner and the foot of the rail.
+async function readStatus() {
   try {
     state.status = await api('/status');
     const b = state.status.breaker;

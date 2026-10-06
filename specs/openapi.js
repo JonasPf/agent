@@ -1074,7 +1074,7 @@ window.OPENAPI_SPEC = {
         "tags": [
           "system"
         ],
-        "summary": "Credit, usage, and scheduler health.",
+        "summary": "Credit, usage, and scheduler health. Answers at once and never waits on OpenRouter: it is the first request a page coming back makes and the container's health check. The credit is the figure last heard from OpenRouter, absent until it first has been, and fetched again in the background once it is an hour old; a status event over the socket says when a fresher figure has arrived.",
         "responses": {
           "200": {
             "description": "Status.",

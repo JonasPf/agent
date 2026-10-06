@@ -1035,7 +1035,9 @@ func (a *App) hStatus(w http.ResponseWriter, r *http.Request) {
 		"sandbox":   a.sandbox,
 		"workspace": a.cfg.Workspace,
 	}
-	if k, err := a.or.Key(r.Context()); err == nil {
+	// The credit is what the gateway last said, never a wait on it: this is
+	// the first request a page coming back makes, and the health check's.
+	if k := a.or.KnownKey(func() { a.hub.Broadcast(wsEvent{Kind: "status"}) }); k != nil {
 		out["key"] = k
 	}
 	writeJSON(w, 200, out)
