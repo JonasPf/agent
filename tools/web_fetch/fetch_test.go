@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"agent/internal/tool"
 )
 
 // The whole reason a cheap fetch is safe to offer is that it can tell when it
@@ -20,7 +22,7 @@ func TestAPageWhoseTextIsWrittenByScriptsIsRecognised(t *testing.T) {
 <script>fetch('/api').then(r => r.json()).then(d => out.textContent = d.text)</script></body></html>`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if !NeedsScripts(c.html) {
+			if !NeedsScripts(c.html, tool.ToText(c.html)) {
 				t.Error("a page assembled by its scripts was not recognised as one")
 			}
 		})
@@ -48,7 +50,7 @@ func TestAPageThatIsAlreadyReadableIsNotSecondGuessed(t *testing.T) {
 			`</p><pre><code>&lt;a href="/help"&gt;Help&lt;/a&gt;</code></pre></body></html>`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if NeedsScripts(c.html) {
+			if NeedsScripts(c.html, tool.ToText(c.html)) {
 				t.Error("a page that was already readable was reported as needing a browser")
 			}
 		})
@@ -78,7 +80,7 @@ func TestTemplateSyntaxSurvivingIntoTheTextIsRecognised(t *testing.T) {
 <span data-show="items.length > 2 && ready()">More</span></body></html>`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if !NeedsScripts(c.html) {
+			if !NeedsScripts(c.html, tool.ToText(c.html)) {
 				t.Error("a page still showing its own template syntax was not recognised as unrendered")
 			}
 		})
@@ -88,7 +90,7 @@ func TestTemplateSyntaxSurvivingIntoTheTextIsRecognised(t *testing.T) {
 // A body that is not a document is the case this tool is best at, and the one
 // where a browser is pure cost. It is never second-guessed.
 func TestANonDocumentIsNeverSentToABrowser(t *testing.T) {
-	if NeedsScripts(`{"stock": 4, "sku": "W-1"}`) {
+	if NeedsScripts(`{"stock": 4, "sku": "W-1"}`, `{"stock": 4, "sku": "W-1"}`) {
 		t.Error("a JSON body was reported as needing a browser")
 	}
 }

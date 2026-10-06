@@ -89,9 +89,10 @@ func main() {
 			url, resp.Status, truncate(bodyText(resp, string(b)), 2000), afterFailure)
 	}
 
-	out := bodyText(resp, string(b))
+	body := string(b)
+	out := bodyText(resp, body)
 	// Only a document can be waiting on scripts; a JSON body is the answer.
-	if isDocument(resp) && NeedsScripts(string(b)) {
+	if isDocument(resp) && NeedsScripts(body, out) {
 		out += tryBrowse
 	}
 	tool.OK(truncate(out, limit))

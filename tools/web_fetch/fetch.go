@@ -3,8 +3,6 @@ package main
 import (
 	"regexp"
 	"strings"
-
-	"agent/internal/tool"
 )
 
 // Deciding whether the bytes a server sent are the page, or only the shell it
@@ -48,14 +46,17 @@ const thin = 400
 // a warning that fires on finished pages is a warning nobody reads. So it fires
 // only when a page both runs scripts and has next to nothing to say without
 // them.
-func NeedsScripts(body string) bool {
+//
+// text is the body's text as tool.ToText recovers it. The caller has already
+// recovered it to answer with, and recovering it again cost as much as the
+// first time — the largest piece of work in a fetch.
+func NeedsScripts(body, text string) bool {
 	if !hasScript.MatchString(body) {
 		return false
 	}
 	if emptyRoot.MatchString(body) {
 		return true
 	}
-	text := tool.ToText(body)
 	// Template syntax left in the text is proof rather than a threshold, so it
 	// is asked first. The length test below measures the whole document —
 	// navigation, cookie banner, footer — which a shell clears comfortably while

@@ -30,12 +30,16 @@ const thin = 1000
 // BotCheck names the vendor whose check this page is, or the empty string if it
 // is a page. It asks for both a marker and next to no text, because being wrong
 // in this direction tells the model that a readable page cannot be read.
+//
+// The markers are asked first. Recovering a page's text costs more than every
+// marker test together, and only a page carrying a marker needs it measured;
+// asked first, it was recovered twice for every page read.
 func BotCheck(dom string) string {
-	if len(tool.ToText(dom)) >= thin {
-		return ""
-	}
 	for _, c := range checks {
 		if c.marker.MatchString(dom) {
+			if len(tool.ToText(dom)) >= thin {
+				return ""
+			}
 			return c.vendor
 		}
 	}
