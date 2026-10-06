@@ -237,6 +237,14 @@ window.OPENAPI_SPEC = {
         "summary": "Read transcript entries. Returns the complete stored record, including entries not sent to the model.",
         "parameters": [
           {
+            "name": "from",
+            "in": "query",
+            "description": "Read from this index on: the entries after the first n. Entry n is at index n, so a page catching up passes how many it holds; from the end or past it, the answer is empty.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
             "name": "before",
             "in": "query",
             "description": "Entry sequence number to page backwards from.",

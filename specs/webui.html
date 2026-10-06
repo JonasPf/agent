@@ -123,7 +123,11 @@ background, a laptop asleep &mdash; reads the rail and the conversation on scree
 when its socket reconnects and whenever it is shown again. Shown again, it does this even if its socket
 still looks open, because a socket can survive a sleep without hearing anything; one that has closed
 reconnects at once rather than after its usual wait. Nothing is reloaded and the unread line stays where
-it was.</p>
+it was. What the page already holds is not fetched again: it asks only for the entries after the last one
+it has and adds those, so coming back to a long conversation costs what was written while it was away. A
+page holding a gap &mdash; an entry the socket dropped &mdash; reads the whole conversation instead.
+Opening a conversation asks for the session and its transcript at once rather than one after the
+other.</p>
 
 <p>The agent sits behind a password the proxy in front of it asks for, and a browser forgets that password
 after a while. From then on every request is refused with a request for the password, and a phone asked
@@ -343,6 +347,7 @@ popup of its own instead.</p>
 <li>A message a job's wake produced counts as unread exactly as a reply to a typed message does.</li>
 <li>A read clears only what it names: a message written after the point read through stays unread, and a late read for an earlier point does not make anything unread again.</li>
 <li>Opening a conversation clears its count on the rail without waiting for the socket, and the rail refreshes whenever the socket connects.</li>
+<li>A page catching up fetches only the entries written after the last one it holds and adds only those; with nothing new, nothing on screen changes.</li>
 <li>A read that clears no count sends no page, on this device or another, to read the session list again.</li>
 <li>A message arriving in the conversation on screen is read at once; while the page is hidden it stays unread until the page is shown.</li>
 <li>A conversation with unread messages opens scrolled to a line marking the first of them; one with none opens at its end.</li>

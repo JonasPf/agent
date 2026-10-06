@@ -303,9 +303,14 @@ func (a *App) hTranscript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entries := a.store.Entries(id)
+	// A page catching up asks from the index after the last entry it holds. One
+	// already up to date asks from the end, and is owed nothing, not everything.
 	if from := r.URL.Query().Get("from"); from != "" {
 		n, _ := strconv.Atoi(from)
-		if n > 0 && n < len(entries) {
+		if n > len(entries) {
+			n = len(entries)
+		}
+		if n > 0 {
 			entries = entries[n:]
 		}
 	}

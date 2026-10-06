@@ -963,6 +963,67 @@ test('a page shown again with a closed socket reconnects at once, only once', as
   assert.strictEqual(socks.length, 2, 'the waiting reconnect opened a second socket');
 });
 
+// A long conversation is a large download, and a phone comes back to the page
+// often. What it already holds is not fetched again: it asks for what was
+// written since, and draws only that.
+const fromZero = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-10-06T10:00:00Z' });
+
+test('catching up reads only what was written since, and draws only that', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }),
+    [fromZero(0, 'user', 'Hi'), fromZero(1, 'assistant', 'Hello.')]);
+  let sock;
+  ctx.WebSocket = function () { sock = this; this.readyState = 1; };
+  ctx.WebSocket.OPEN = 1;
+  ctx.connect();
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.slice();
+  ctx._routes['/sessions/S1/transcript?from=2'] = [fromZero(2, 'user', 'Sent from the laptop.')];
+  ctx._calls = [];
+
+  await ctx.onVisible();
+  await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  const reads = ctx._calls.filter(c => /\/transcript/.test(c.path)).map(c => c.path);
+  assert.deepStrictEqual(reads, ['/sessions/S1/transcript?from=2'], 'the whole conversation was fetched again');
+  assert.match(textOf(t), /Sent from the laptop\./, 'what was written elsewhere did not appear');
+  for (const n of shown) assert.ok(t.children.includes(n), 'what was already on screen was drawn again');
+});
+
+// Opening a conversation needs the session and its transcript, and neither
+// waits for the other.
+test('opening a conversation asks for the session and its transcript together', async () => {
+  const ctx = unreadScreen(session({ id: 'S1' }), [fromZero(0, 'user', 'Hi')]);
+  const pending = [];
+  const real = ctx.fetch;
+  ctx.fetch = (p, opts) => new Promise(res => pending.push({ p, go: () => res(real(p, opts)) }));
+  const opened = ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  assert.deepStrictEqual(pending.map(x => x.p).sort(), ['/sessions/S1', '/sessions/S1/transcript'],
+    'the transcript waited for the session');
+  ctx.fetch = real;
+  for (const x of pending) x.go();
+  await opened;
+  assert.match(textOf(ctx._id('transcript')), /Hi/);
+});
+
+test('catching up with nothing new changes nothing on screen', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }),
+    [fromZero(0, 'user', 'Hi'), fromZero(1, 'assistant', 'Hello.')]);
+  ctx.WebSocket = function () { this.readyState = 1; };
+  ctx.WebSocket.OPEN = 1;
+  ctx.connect();
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.slice();
+  ctx._routes['/sessions/S1/transcript?from=2'] = [];
+  ctx._calls = [];
+
+  await ctx.onVisible();
+  await new Promise(r => setImmediate(r));
+  assert.deepStrictEqual(t.children, shown, 'nothing new arrived and the conversation was drawn again');
+});
+
 // ---------- signed out ----------
 
 // The agent sits behind a password the proxy asks for, and a browser forgets it.

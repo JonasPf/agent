@@ -21,6 +21,11 @@
   credit, once an hour, and a slow day there could leave the page hanging or
   mark the container unhealthy. The credit is now fetched in the background
   and the rail updates when it arrives.
+- **Coming back to a long conversation is quick.** Returning to the page, or
+  reconnecting, used to download the whole conversation again, tool output
+  and all, and draw it from the top. It now fetches only what was written
+  while you were away. Opening a conversation also loads it in one round trip
+  instead of two.
 
 ## 2026-10-05
 

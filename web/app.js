@@ -190,21 +190,37 @@ function checkIn() {
 // catchUp redraws the rail and the conversation on screen from the agent, for
 // when the socket may have missed something: a phone back from the background,
 // a laptop woken up. The unread line stays where it was.
+//
+// What the page already holds is not fetched again. A transcript only grows at
+// its end, and entry n is at index n, so a page holding every entry up to its
+// last asks for what follows and draws only that. One holding anything else —
+// a gap where the socket dropped an entry — reads the whole.
 async function catchUp() {
   renderSidebar();
   if (state.view !== 'session' || !state.session) return;
   const id = state.session.id;
+  const held = state.entries || [];
+  const whole = !held.length || held[held.length - 1].seq !== held.length - 1;
+  const path = '/sessions/' + id + '/transcript' + (whole ? '' : '?from=' + held.length);
   let res, entries;
   try {
-    [res, entries] = await Promise.all([api('/sessions/' + id), api('/sessions/' + id + '/transcript')]);
+    [res, entries] = await Promise.all([api('/sessions/' + id), api(path)]);
   } catch (e) { return; }
   if (state.view !== 'session' || !state.session || state.session.id !== id) return;
   state.session = res.session;
-  state.entries = entries;
   if (res.session.working_seconds == null) delete state.working[id];
   else if (state.working[id] == null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
-  renderTranscript();
-  const last = entries[entries.length - 1];
+  if (whole) {
+    state.entries = entries || [];
+    renderTranscript();
+  } else {
+    // The socket may have delivered some of these while they were on their way.
+    const top = state.entries.length ? state.entries[state.entries.length - 1].seq : -1;
+    const fresh = (entries || []).filter(e => e.seq > top);
+    for (const e of fresh) { state.entries.push(e); appendEntry(e); }
+    if (!fresh.length) refreshTail();
+  }
+  const last = state.entries[state.entries.length - 1];
   if (last && !document.hidden) readThrough(id, last.seq);
 }
 function handle(e) {
@@ -529,14 +545,9 @@ function sessionRow(s) {
 
 async function viewSession(v) {
   const gen = drawing;
-  const res = await api('/sessions/' + state.arg);
-  if (stale(gen)) return;
-  if (res.redirected_to) {
-    toast({ title: 'Archived conversation', body: 'Opened the live session of this chain instead.' });
-    location.hash = '#session/' + res.redirected_to;
-    return;
-  }
-  const entries = await api('/sessions/' + state.arg + '/transcript');
+  // Neither waits on the other: on a phone each is a round trip of its own.
+  const [res, entries] = await Promise.all([
+    api('/sessions/' + state.arg), api('/sessions/' + state.arg + '/transcript')]);
   if (stale(gen)) return;
   state.session = res.session;
   state.entries = entries;
