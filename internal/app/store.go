@@ -447,6 +447,57 @@ func (s *Store) Append(sessionID string, e Entry) (Entry, error) {
 	return e, nil
 }
 
+// AppendAll writes several entries to a transcript at once: one write to the
+// file, one transaction for the search index, one write of the metadata. A fork
+// copies a whole conversation, and copied an entry at a time it paid each of
+// those once for every entry.
+func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	now := time.Now()
+	s.mu.Lock()
+	list := s.entries[sessionID]
+	out := make([]Entry, len(in))
+	for i, e := range in {
+		e.Seq = len(list) + i
+		if e.CreatedAt.IsZero() {
+			e.CreatedAt = now
+		}
+		if e.Type == "" {
+			e.Type = "message"
+		}
+		out[i] = e
+	}
+	s.entries[sessionID] = append(list, out...)
+	sess := s.sessions[sessionID]
+	if sess != nil {
+		sess.LastActiveAt = out[len(out)-1].CreatedAt
+	}
+	s.mu.Unlock()
+
+	var buf bytes.Buffer
+	for _, e := range out {
+		line, _ := json.Marshal(e)
+		buf.Write(line)
+		buf.WriteByte('\n')
+	}
+	f, err := os.OpenFile(filepath.Join(s.sessionDir(sessionID), "transcript.jsonl"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return out, err
+	}
+	defer f.Close()
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		return out, err
+	}
+	_ = s.indexAll(map[string][]Entry{sessionID: out})
+	if sess != nil {
+		_ = s.writeMeta(sess)
+	}
+	return out, nil
+}
+
 func (s *Store) Entries(sessionID string) []Entry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
