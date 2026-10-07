@@ -404,6 +404,11 @@ func (o *OpenRouter) chatOnce(ctx context.Context, req ChatRequest, onDelta func
 	res := &ChatResult{}
 	calls := map[int]*ToolCall{}
 	var order []int
+	// The answer and each call's arguments arrive a few characters at a time.
+	// Joined with +=, every piece copied everything before it, and a write call
+	// carrying a large file in ten-byte pieces copied it thousands of times.
+	var text strings.Builder
+	args := map[int]*strings.Builder{}
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 1<<16), 1<<24)
 	for sc.Scan() {
@@ -460,7 +465,7 @@ func (o *OpenRouter) chatOnce(ctx context.Context, req ChatRequest, onDelta func
 			if ch.Delta.Content != "" {
 				// The answer has begun: from here the attempt cannot be repeated.
 				started = true
-				res.Text += ch.Delta.Content
+				text.WriteString(ch.Delta.Content)
 				if onDelta != nil {
 					onDelta(ch.Delta.Content)
 				}
@@ -471,6 +476,7 @@ func (o *OpenRouter) chatOnce(ctx context.Context, req ChatRequest, onDelta func
 				if !ok {
 					c = &ToolCall{}
 					calls[tc.Index] = c
+					args[tc.Index] = &strings.Builder{}
 					order = append(order, tc.Index)
 				}
 				if tc.ID != "" {
@@ -479,16 +485,18 @@ func (o *OpenRouter) chatOnce(ctx context.Context, req ChatRequest, onDelta func
 				if tc.Function.Name != "" {
 					c.Name += tc.Function.Name
 				}
-				c.Arguments += tc.Function.Arguments
+				args[tc.Index].WriteString(tc.Function.Arguments)
 			}
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return nil, started, err
 	}
+	res.Text = text.String()
 	sort.Ints(order)
 	for _, i := range order {
 		c := calls[i]
+		c.Arguments = args[i].String()
 		if c.ID == "" {
 			c.ID = fmt.Sprintf("call_%d_%d", start.UnixNano(), i)
 		}
