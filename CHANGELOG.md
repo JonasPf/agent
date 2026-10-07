@@ -31,6 +31,9 @@
   the agent up until the command's two-minute timeout. It now returns as soon
   as the command itself is done. A command that runs too long is stopped along
   with everything it started.
+- **The agent starts faster.** Every conversation is now read back in
+  parallel when the agent starts, and rebuilding the search index, when it
+  has to, is one step rather than one per message.
 - **Less to download.** The app, its conversations and lists are now sent
   compressed, typically a fifth of the size or less. Files you download from
   a conversation are sent exactly as stored.
