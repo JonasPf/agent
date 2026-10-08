@@ -2,10 +2,12 @@ package app
 
 import (
 	"bufio"
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -152,6 +154,10 @@ func OpenStore(dir string) (*Store, error) {
 func (s *Store) sessionDir(id string) string { return filepath.Join(s.dir, "sessions", id) }
 
 // load rebuilds all session metadata and the search index from disk.
+//
+// Startup waits on it, and it reads and decodes every transcript the agent has
+// ever kept. Each session is independent of every other, so they are read in
+// parallel, one reader per processor.
 func (s *Store) load() error {
 	ents, err := os.ReadDir(filepath.Join(s.dir, "sessions"))
 	if err != nil {
@@ -159,36 +165,80 @@ func (s *Store) load() error {
 	}
 	var indexed int
 	_ = s.db.QueryRow(`select count(*) from entry_fts`).Scan(&indexed)
-	reindex := indexed == 0
-	for _, e := range ents {
-		if !e.IsDir() {
-			continue
-		}
-		id := e.Name()
-		var sess Session
-		b, err := os.ReadFile(filepath.Join(s.sessionDir(id), "meta.json"))
-		if err != nil {
-			continue
-		}
-		if err := json.Unmarshal(b, &sess); err != nil {
-			continue
-		}
-		list, err := readTranscript(filepath.Join(s.sessionDir(id), "transcript.jsonl"))
-		if err != nil {
-			return err
-		}
-		if !hasKey(b, "read_through") {
-			sess.ReadThrough = readThroughFromCount(list, sess.Unread)
-		}
-		s.sessions[id] = &sess
-		s.entries[id] = list
-		if reindex {
-			for _, en := range list {
-				s.index(id, en)
+
+	type loaded struct {
+		id   string
+		sess *Session
+		list []Entry
+	}
+	var (
+		mu       sync.Mutex
+		wg       sync.WaitGroup
+		out      []loaded
+		firstErr error
+	)
+	ids := make(chan string)
+	for w := 0; w < runtime.GOMAXPROCS(0); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range ids {
+				sess, list, err := s.loadSession(id)
+				mu.Lock()
+				if err != nil && firstErr == nil {
+					firstErr = err
+				}
+				if sess != nil {
+					out = append(out, loaded{id, sess, list})
+				}
+				mu.Unlock()
 			}
+		}()
+	}
+	for _, e := range ents {
+		if e.IsDir() {
+			ids <- e.Name()
 		}
 	}
+	close(ids)
+	wg.Wait()
+	if firstErr != nil {
+		return firstErr
+	}
+	for _, l := range out {
+		s.sessions[l.id] = l.sess
+		s.entries[l.id] = l.list
+	}
+	if indexed == 0 {
+		all := make(map[string][]Entry, len(out))
+		for _, l := range out {
+			all[l.id] = l.list
+		}
+		return s.indexAll(all)
+	}
 	return nil
+}
+
+// loadSession reads one session's metadata and transcript. A session whose
+// metadata cannot be read or decoded is skipped, as it always was; a transcript
+// that cannot be read is an error.
+func (s *Store) loadSession(id string) (*Session, []Entry, error) {
+	var sess Session
+	b, err := os.ReadFile(filepath.Join(s.sessionDir(id), "meta.json"))
+	if err != nil {
+		return nil, nil, nil
+	}
+	if err := json.Unmarshal(b, &sess); err != nil {
+		return nil, nil, nil
+	}
+	list, err := readTranscript(filepath.Join(s.sessionDir(id), "transcript.jsonl"))
+	if err != nil {
+		return nil, nil, err
+	}
+	if !hasKey(b, "read_through") {
+		sess.ReadThrough = readThroughFromCount(list, sess.Unread)
+	}
+	return &sess, list, nil
 }
 
 // hasKey says whether a stored object names a field at all, which a zero value
@@ -231,14 +281,14 @@ func readTranscript(path string) ([]Entry, error) {
 	defer f.Close()
 	var out []Entry
 	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 1<<26)
+	sc.Buffer(make([]byte, 64<<10), 1<<26)
 	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
-		if line == "" {
+		line := bytes.TrimSpace(sc.Bytes())
+		if len(line) == 0 {
 			continue
 		}
 		var e Entry
-		if err := json.Unmarshal([]byte(line), &e); err != nil {
+		if err := json.Unmarshal(line, &e); err != nil {
 			continue
 		}
 		out = append(out, e)
@@ -246,7 +296,9 @@ func readTranscript(path string) ([]Entry, error) {
 	return out, sc.Err()
 }
 
-func (s *Store) index(sessionID string, e Entry) {
+// indexBody is what the search index holds for an entry, or "" for one with
+// nothing to find.
+func indexBody(e Entry) string {
 	body := e.Text
 	for _, tc := range e.ToolCalls {
 		body += "\n" + tc.Name + " " + tc.Arguments
@@ -255,9 +307,41 @@ func (s *Store) index(sessionID string, e Entry) {
 		body += "\n" + string(e.ToolResult)
 	}
 	if strings.TrimSpace(body) == "" {
-		return
+		return ""
 	}
-	_, _ = s.db.Exec(`insert into entry_fts(session_id, seq, body) values(?,?,?)`, sessionID, e.Seq, body)
+	return body
+}
+
+func (s *Store) index(sessionID string, e Entry) {
+	if body := indexBody(e); body != "" {
+		_, _ = s.db.Exec(`insert into entry_fts(session_id, seq, body) values(?,?,?)`, sessionID, e.Seq, body)
+	}
+}
+
+// indexAll writes many entries into the search index in one transaction. A
+// commit of its own for each entry is a sync to disk for each entry, and
+// rebuilding the index of a few hundred conversations that way took seconds.
+func (s *Store) indexAll(sessions map[string][]Entry) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	stmt, err := tx.Prepare(`insert into entry_fts(session_id, seq, body) values(?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+	for id, list := range sessions {
+		for _, e := range list {
+			if body := indexBody(e); body != "" {
+				if _, err := stmt.Exec(id, e.Seq, body); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return tx.Commit()
 }
 
 // ---- sessions ----
@@ -279,17 +363,25 @@ func (s *Store) writeMeta(sess *Session) error {
 
 // MarkRead moves where the operator has read a session through. It only moves
 // forward: a read that arrives late, for a point already passed, is not a
-// reason to call anything unread again.
-func (s *Store) MarkRead(id string, through int) error {
+// reason to call anything unread again. It reports whether the move cleared
+// anything unread, which is the only change to a session a list would show.
+func (s *Store) MarkRead(id string, through int) (bool, error) {
 	s.mu.Lock()
 	sess := s.sessions[id]
 	if sess == nil || through <= sess.ReadThrough {
 		s.mu.Unlock()
-		return nil
+		return false, nil
+	}
+	cleared := false
+	for _, e := range s.entries[id] {
+		if e.Seq > sess.ReadThrough && e.Seq <= through && countsAsUnread(e) {
+			cleared = true
+			break
+		}
 	}
 	sess.ReadThrough = through
 	s.mu.Unlock()
-	return s.writeMeta(sess)
+	return cleared, s.writeMeta(sess)
 }
 
 func (s *Store) Session(id string) *Session {
@@ -353,6 +445,57 @@ func (s *Store) Append(sessionID string, e Entry) (Entry, error) {
 		_ = s.writeMeta(sess)
 	}
 	return e, nil
+}
+
+// AppendAll writes several entries to a transcript at once: one write to the
+// file, one transaction for the search index, one write of the metadata. A fork
+// copies a whole conversation, and copied an entry at a time it paid each of
+// those once for every entry.
+func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	now := time.Now()
+	s.mu.Lock()
+	list := s.entries[sessionID]
+	out := make([]Entry, len(in))
+	for i, e := range in {
+		e.Seq = len(list) + i
+		if e.CreatedAt.IsZero() {
+			e.CreatedAt = now
+		}
+		if e.Type == "" {
+			e.Type = "message"
+		}
+		out[i] = e
+	}
+	s.entries[sessionID] = append(list, out...)
+	sess := s.sessions[sessionID]
+	if sess != nil {
+		sess.LastActiveAt = out[len(out)-1].CreatedAt
+	}
+	s.mu.Unlock()
+
+	var buf bytes.Buffer
+	for _, e := range out {
+		line, _ := json.Marshal(e)
+		buf.Write(line)
+		buf.WriteByte('\n')
+	}
+	f, err := os.OpenFile(filepath.Join(s.sessionDir(sessionID), "transcript.jsonl"),
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return out, err
+	}
+	defer f.Close()
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		return out, err
+	}
+	_ = s.indexAll(map[string][]Entry{sessionID: out})
+	if sess != nil {
+		_ = s.writeMeta(sess)
+	}
+	return out, nil
 }
 
 func (s *Store) Entries(sessionID string) []Entry {
@@ -461,6 +604,26 @@ func (s *Store) Job(id string) (*Job, error) {
 		return nil, err
 	}
 	return js[0], nil
+}
+
+// JobCounts is how many jobs each session holds, in one query: the session list
+// shows every session's count at once.
+func (s *Store) JobCounts() (map[string]int, error) {
+	rows, err := s.db.Query(`select session_id, count(*) from jobs group by session_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SessionJobs(sessionID string) ([]*Job, error) {
@@ -579,9 +742,9 @@ func (s *Store) ImportSession(sess *Session, entries []Entry) error {
 	s.sessions[sess.ID] = sess
 	s.entries[sess.ID] = entries
 	s.mu.Unlock()
+	// The index is derived: a write to it that fails costs searches, not the
+	// conversation, and is not a reason to refuse the import.
 	_, _ = s.db.Exec(`delete from entry_fts where session_id=?`, sess.ID)
-	for _, e := range entries {
-		s.index(sess.ID, e)
-	}
+	_ = s.indexAll(map[string][]Entry{sess.ID: entries})
 	return nil
 }

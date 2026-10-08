@@ -107,9 +107,11 @@ func dirBytes(dir string) int64 {
 }
 
 // sessionDiskBytes is what deleting a session would free: its transcript and
-// metadata, and everything in its working directory.
-func (a *App) sessionDiskBytes(id string) int64 {
-	return dirBytes(a.store.sessionDir(id)) + dirBytes(a.sessionWorkspace(id))
+// metadata, and everything in its working directory. The transcript is two
+// files and always measured; the directory is measured fresh when one session
+// is asked about, and read from what is kept when the whole list is.
+func (a *App) sessionDiskBytes(id string, fresh bool) int64 {
+	return dirBytes(a.store.sessionDir(id)) + a.workspaceBytes(id, fresh)
 }
 
 // resolveInWorkspace joins a relative path to a session's working directory and
@@ -141,6 +143,7 @@ func (a *App) writeWorkspaceFile(id, rel string, r io.Reader) (string, int64, er
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return "", 0, err
 	}
+	defer a.workspaceChanged(id)
 	f, err := os.Create(full)
 	if err != nil {
 		return "", 0, err
@@ -204,6 +207,7 @@ func (a *App) DeleteSession(id string) error {
 	if err := a.store.DeleteSession(id); err != nil {
 		return err
 	}
+	a.forgetSession(id)
 	if !validSessionID(id) {
 		return nil
 	}

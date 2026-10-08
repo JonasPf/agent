@@ -194,3 +194,81 @@ func itoa(n int) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+// readAnswer marks a session read and returns what the agent said the read did.
+func readAnswer(t *testing.T, a *App, id, body string) bool {
+	t.Helper()
+	r := httptest.NewRequest("POST", "/sessions/"+id+"/read", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("mark read: status %d: %s", w.Code, w.Body.String())
+	}
+	var res struct {
+		Cleared *bool `json:"cleared"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil || res.Cleared == nil {
+		t.Fatalf("a read does not say whether it cleared anything: %q", w.Body.String())
+	}
+	return *res.Cleared
+}
+
+// listMoves counts the events already sent that send a page to read the
+// session list again. A broadcast is delivered before the handler returns, so
+// what has not arrived by now was never sent.
+func listMoves(events chan wsEvent) int {
+	n := 0
+	for {
+		select {
+		case e := <-events:
+			if e.Kind == "sessions" {
+				n++
+			}
+		default:
+			return n
+		}
+	}
+}
+
+// Every page showing a conversation reads each entry as it arrives, and each
+// read used to send every page back for the whole session list — the costliest
+// thing the agent serves — whether or not any count had moved. A read that
+// clears nothing changes nothing any page shows, so it says so and tells no one.
+func TestAReadThatClearsNothingMovesNoList(t *testing.T) {
+	a, _ := modelBackedApp(t, "First.")
+	s := newSession(t, a)
+	sendMessage(t, a, s.ID, "one")
+	events := a.hub.add()
+	defer a.hub.remove(events)
+
+	if !readAnswer(t, a, s.ID, "") {
+		t.Error("a read that cleared an unread message said it cleared nothing")
+	}
+	if n := listMoves(events); n != 1 {
+		t.Errorf("a read that cleared a count told pages %d times, want once", n)
+	}
+
+	if readAnswer(t, a, s.ID, "") {
+		t.Error("reading the same point again said it cleared something")
+	}
+	if n := listMoves(events); n != 0 {
+		t.Errorf("a read that cleared nothing sent pages to the list %d times", n)
+	}
+
+	// Past a tool result and an event the read point moves, but no count does:
+	// only what the agent said is ever unread.
+	a.append(s.ID, Entry{Type: "message", Role: "tool", ToolName: "clock", ToolResult: json.RawMessage(`{"ok":true}`)})
+	a.appendEvent(s.ID, Entry{EventKind: "job_check", Text: "check said no"})
+	listMoves(events)
+	if readAnswer(t, a, s.ID, "") {
+		t.Error("reading past a tool result and an event said it cleared something")
+	}
+	if n := listMoves(events); n != 0 {
+		t.Errorf("a read past nothing unread sent pages to the list %d times", n)
+	}
+	read := a.store.Entries(s.ID)
+	if got, want := a.store.Session(s.ID).ReadThrough, read[len(read)-1].Seq; got != want {
+		t.Errorf("read_through = %d, want %d: the point still moves when no count does", got, want)
+	}
+}

@@ -63,6 +63,7 @@ middle.</p>
 <li>With the rail pinned open the pane offers no back button and the drawer no handle.</li>
 <li>The rail names every conversation, marks the one being read, carries its unread count, and separates archived conversations from active ones.</li>
 <li>The rail states the credit remaining and whether tools are sandboxed, without opening a screen to ask.</li>
+<li>The page's first request on coming back is answered without waiting on OpenRouter; the credit shown is the last figure the agent heard, and the rail updates when a fresher one arrives.</li>
 <li>The rail links Jobs, Tools, Skills, and More; personas are reached from More.</li>
 <li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
 <li>Saving or deleting a skill or persona returns to the list it was opened from without adding the list to the history a second time.</li>
@@ -107,6 +108,14 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send. On a keyboard the cursor is in it as soon as the conversation opens. Up and down step through what the operator has sent in this conversation, newest first, and back to what was being typed.</td></tr>
 </table>
 
+<p>A conversation is drawn whole when it is opened, and grows from there: an entry that arrives is
+added after the last one, and a turn starting or ending changes only the row at the end that stands for
+the answer. Nothing already on screen is drawn again, so a tool result the reader opened stays open
+through the rest of the turn. An answer arriving is drawn at most once a frame, however fast its tokens
+come; the blocks of it that can no longer change are drawn once, and only the block still growing is
+drawn again. What it shows is exactly what the finished answer will show. A reader who has scrolled up is
+left where they are while it arrives; one at the end stays at the end.</p>
+
 <p>The same conversation can be open on more than one device. Every entry goes to every page that is
 connected, whichever device wrote it, so a message typed on a laptop appears on a phone showing that
 conversation. A page that was not connected when something was written &mdash; a phone in the
@@ -114,7 +123,11 @@ background, a laptop asleep &mdash; reads the rail and the conversation on scree
 when its socket reconnects and whenever it is shown again. Shown again, it does this even if its socket
 still looks open, because a socket can survive a sleep without hearing anything; one that has closed
 reconnects at once rather than after its usual wait. Nothing is reloaded and the unread line stays where
-it was.</p>
+it was. What the page already holds is not fetched again: it asks only for the entries after the last one
+it has and adds those, so coming back to a long conversation costs what was written while it was away. A
+page holding a gap &mdash; an entry the socket dropped &mdash; reads the whole conversation instead.
+Opening a conversation asks for the session and its transcript at once rather than one after the
+other.</p>
 
 <p>The agent sits behind a password the proxy in front of it asks for, and a browser forgets that password
 after a while. From then on every request is refused with a request for the password, and a phone asked
@@ -171,11 +184,22 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>While a conversation is working, the status line offers a way to stop the turn, and the offer goes when the turn does.</li>
 <li>While a conversation is working and nothing of the answer has arrived yet, the transcript shows the agent thinking where the answer will appear; the first word of the answer replaces it, and it goes when the turn ends.</li>
 <li>When a turn ends, the conversation scrolls to its answer, even if the reader had scrolled away while it worked.</li>
+<li>An entry arriving is added without drawing again what is already on screen; a tool result the reader opened stays open.</li>
+<li>An answer arriving reads exactly as the finished answer will, is drawn at most once a frame, and draws again only the block still growing; a reader who has scrolled up is left where they are.</li>
 <li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
 </ul>
 </div>
 
 <h2>Session management</h2>
+
+<p>Every page reads the session list whenever a count on it moves, so the list is built to be cheap to
+read. Two of its figures are costly to measure &mdash; the context each conversation would send, and what
+its working directory holds &mdash; and both are kept between reads for exactly as long as what they
+measure cannot have changed. The context figure is kept until the transcript grows. What a directory
+holds is measured again after anything the agent does or sees touches it &mdash; a tool call, a check, an
+upload, a delete &mdash; and is never more than a minute old, which covers a process a command left
+running that goes on writing. A single session asked about on its own, as the files screen asks, is
+always measured on the spot.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -185,6 +209,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>The list shows which sessions have jobs attached.</li>
 <li>Every session shows what it occupies on disk, so it is clear what deleting one frees.</li>
+<li>What a tool writes or an upload adds, and what a delete frees, shows in the session list on its next read; a session's context figure moves with every entry.</li>
 <li>A session can be forked in one action.</li>
 <li>A fork links back to its origin, and the origin links forward to it.</li>
 <li>A session can be compacted on request, from the session itself, without waiting for the threshold.</li>
@@ -260,11 +285,18 @@ therefore sent with <code>Cache-Control: no-cache</code>: the browser may keep a
 before reusing it. Without that, a cached script runs against markup it no longer matches, and the
 failure looks like a bug in the page rather than a stale copy of it.</p>
 
+<p>Whatever a browser accepts compressed is sent gzipped: the interface's scripts and stylesheet, and
+every JSON answer, of which a transcript carrying its tool results is the largest. They shrink five to
+ten times, and nothing in front of the agent can be relied on to do it. A file from a session's directory
+and an exported archive go out exactly as stored: either may be compressed already, and a range of a
+file has to mean the file's own bytes.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every interface asset is served with <code>Cache-Control: no-cache</code>.</li>
 <li>An unchanged asset revalidates to 304 rather than being sent again.</li>
+<li>Assets and JSON answers are sent gzipped to a browser that accepts it; a session's files and archives are sent as stored.</li>
 </ul>
 </div>
 
@@ -282,9 +314,12 @@ and what is unread is the assistant messages after it &mdash; whoever started th
 a job. A read names the entry it read through, so a message that arrives between the page loading and
 the read reaching the agent stays unread, and a read point only ever moves forward. A conversation is
 read when it is opened, and a message arriving in the conversation on screen is read as it arrives,
-unless the page is hidden; then it is read when the page is shown again. The rail redraws after a read
-of its own accord and whenever its socket connects, rather than waiting to hear the list moved, so a
-phone back from the background does not keep a count it has already cleared.</p>
+unless the page is hidden; then it is read when the page is shown again. A read says whether it cleared
+anything. The rail redraws after one that did of its own accord, and whenever its socket connects, rather
+than waiting to hear the list moved, so a phone back from the background does not keep a count it has
+already cleared. Most of what arrives on screen is a tool call or its result, and reading past it clears
+nothing; such a read changes nothing a list shows, so neither the page nor the agent sends anyone back
+for the session list, which is the costliest thing the agent serves.</p>
 
 <p>A conversation with unread messages opens at the first entry after the read point, under a line
 that marks it, rather than at its end with what was missed above the fold. The line stays where it
@@ -311,6 +346,7 @@ popup of its own instead.</p>
 <li>A new assistant message in a session the operator is not reading shows a system notification, whether the page is hidden or showing another screen.</li>
 <li>A message in the conversation on screen shows no notification.</li>
 <li>A user message, a tool result, an event, and a turn that only called tools show no notification.</li>
+<li>The messages a fork copies show no notification and reach no page one by one: the copy is written at once, and pages hear only that the list moved.</li>
 <li>Successive messages in one session replace each other rather than stacking.</li>
 <li>Opening a notification goes to the session that produced it.</li>
 <li>Without permission nothing is shown at all &mdash; no banner and no in-app popup &mdash; and the settings screen says so.</li>
@@ -319,6 +355,8 @@ popup of its own instead.</p>
 <li>A message a job's wake produced counts as unread exactly as a reply to a typed message does.</li>
 <li>A read clears only what it names: a message written after the point read through stays unread, and a late read for an earlier point does not make anything unread again.</li>
 <li>Opening a conversation clears its count on the rail without waiting for the socket, and the rail refreshes whenever the socket connects.</li>
+<li>A page catching up fetches only the entries written after the last one it holds and adds only those; with nothing new, nothing on screen changes.</li>
+<li>A read that clears no count sends no page, on this device or another, to read the session list again.</li>
 <li>A message arriving in the conversation on screen is read at once; while the page is hidden it stays unread until the page is shown.</li>
 <li>A conversation with unread messages opens scrolled to a line marking the first of them; one with none opens at its end.</li>
 <li>A fork starts with nothing unread.</li>

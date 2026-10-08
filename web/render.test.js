@@ -34,6 +34,7 @@ function node(tag) {
     },
     appendChild(k) { this.children.push(k); return k; },
     querySelector(sel) { return find(this, sel.replace(/^\./, '')); },
+    insertAdjacentHTML(where, html) { this._html = (this._html == null ? '' : this._html) + String(html); },
     remove() {}, addEventListener() {},
     scrollHeight: 0, scrollTop: 0, clientHeight: 0
   };
@@ -147,7 +148,9 @@ test('a streaming turn renders as markdown while it arrives', () => {
   const n = ctx.streamNode();
   const b = find(n, 'bub');
   assert.ok(String(b.className).split(/\s+/).includes('md'));
-  assert.match(b.innerHTML, /half/);
+  // Drawn in two parts — what has settled, and the block still arriving.
+  const markup = x => String(x._html || '') + (x.children || []).map(markup).join('');
+  assert.match(markup(b), /<strong>half|\*\*half/);
 });
 
 // findAll returns every descendant carrying the given class.

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -143,5 +144,44 @@ func TestTranscriptStillCarriesThePrompt(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `"type":"prompt"`) {
 		t.Errorf("transcript must carry the prompt entry: %s", truncate(w.Body.String(), 200))
+	}
+}
+
+// transcriptFrom reads a transcript from an index on, as a page catching up does.
+func transcriptFrom(t *testing.T, a *App, id, from string) []Entry {
+	t.Helper()
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, httptest.NewRequest("GET", "/sessions/"+id+"/transcript?from="+from, nil))
+	if w.Code != 200 {
+		t.Fatalf("transcript from %s = %d: %s", from, w.Code, w.Body.String())
+	}
+	var out []Entry
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v (%s)", err, w.Body.String())
+	}
+	return out
+}
+
+// A page coming back asks only for what was written since it last looked. One
+// that is already up to date asks from the end, and gets nothing — not the whole
+// conversation again, which is what it used to get.
+func TestATranscriptReadFromItsEndIsEmpty(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	a.append(s.ID, Entry{Type: "message", Role: "user", Text: "one"})
+	a.append(s.ID, Entry{Type: "message", Role: "assistant", Text: "two"})
+	all := a.store.Entries(s.ID)
+
+	if got := transcriptFrom(t, a, s.ID, itoa(len(all)-1)); len(got) != 1 || got[0].Text != "two" {
+		t.Errorf("from the last entry: %+v", got)
+	}
+	if got := transcriptFrom(t, a, s.ID, itoa(len(all))); len(got) != 0 {
+		t.Errorf("from the end: %d entries, want none", len(got))
+	}
+	if got := transcriptFrom(t, a, s.ID, itoa(len(all)+5)); len(got) != 0 {
+		t.Errorf("from past the end: %d entries, want none", len(got))
+	}
+	if got := transcriptFrom(t, a, s.ID, "0"); len(got) != len(all) {
+		t.Errorf("from the start: %d entries, want %d", len(got), len(all))
 	}
 }

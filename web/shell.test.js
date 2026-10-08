@@ -32,6 +32,7 @@ function node(tag) {
     },
     appendChild(k) { k.parent = this; this.children.push(k); return k; },
     querySelector(sel) { return find(this, sel.replace(/^\./, '')); },
+    insertAdjacentHTML(where, html) { this._html = (this._html == null ? '' : this._html) + String(html); },
     setAttribute() {}, focus(o) { this._focused = o || {}; }, addEventListener() {},
     scrollIntoView(o) { this._scrolledInto = o || {}; },
     remove() {
@@ -207,6 +208,18 @@ test('the rail states the credit remaining and whether tools are sandboxed', () 
   const text = findAll(ctx._id('side-foot'), 'l').map(l => l.children.map(c => c.textContent || c.text || '').join('')).join(' | ');
   assert.match(text, /8\.2500 left/);
   assert.match(text, /seatbelt/);
+});
+
+// The agent answers /status at once, with the credit it last heard of, and
+// says so over the socket when a fresher figure arrives.
+test('the rail shows the credit once the agent has heard it', async () => {
+  const ctx = load({ '/status': { key: { usage: 1.5, remaining: 3.5 }, sandbox: { mechanism: 'landlock' } } });
+  vm.runInContext("state.status = { sandbox: { mechanism: 'landlock' } };", ctx);
+  ctx.handle({ kind: 'status' });
+  await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  const text = findAll(ctx._id('side-foot'), 'l').map(l => l.children.map(c => c.textContent || c.text || '').join('')).join(' | ');
+  assert.match(text, /3\.5000 left/, 'the rail did not read the status again: ' + text);
 });
 
 test('a sandbox that is not enforced says so rather than naming a mechanism', () => {
@@ -629,6 +642,103 @@ test('a finished turn scrolls the conversation to its answer', async () => {
   assert.strictEqual(main.scrollTop, 5000, 'the finished answer was left below the fold');
 });
 
+// ---------- an answer arriving ----------
+
+// What the stream shows is the answer as it will finally read: the part that
+// can no longer change plus the block still arriving.
+const streamedMarkup = t => {
+  const settled = find(t, 'settled'), tail = find(t, 'tail');
+  return (settled && settled._html || '') + (tail && tail._html || '');
+};
+
+test('an answer arriving reads as the whole answer will', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  const doc = '# Plan\n\nFirst **step**.\n\n- a\n- b\n\n```\ncode\n\nmore\n```\n\nDone, with `code`.';
+  for (let i = 0; i < doc.length; i += 3) ctx.handle({ kind: 'delta', session_id: 'S1', text: doc.slice(i, i + 3) });
+  assert.strictEqual(streamedMarkup(ctx._id('transcript')), ctx.renderMarkdown(doc));
+});
+
+// Rendering the whole answer again for every few characters costs the square of
+// its length; on a phone a long answer stuttered. What has settled is drawn once.
+test('a long answer is not rendered again from its start for every token', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const sizes = [];
+  const real = ctx.renderMarkdown;
+  ctx.renderMarkdown = src => { sizes.push(String(src).length); return real(src); };
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  const doc = Array.from({ length: 40 }, (_, i) => 'Paragraph ' + i + ' has a finding in it.').join('\n\n');
+  for (let i = 0; i < doc.length; i += 4) ctx.handle({ kind: 'delta', session_id: 'S1', text: doc.slice(i, i + 4) });
+  assert.ok(Math.max(...sizes) < doc.length / 4,
+    'the answer was rendered again from its start: largest render ' + Math.max(...sizes) + ' of ' + doc.length);
+  assert.strictEqual(streamedMarkup(ctx._id('transcript')), real(doc));
+});
+
+// Tokens come faster than a screen draws. Those that land within one frame are
+// drawn together.
+test('tokens arriving within one frame are drawn once', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const frames = [];
+  ctx.requestAnimationFrame = f => { frames.push(f); return frames.length; };
+  let renders = 0;
+  const real = ctx.renderMarkdown;
+  ctx.renderMarkdown = src => { renders++; return real(src); };
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  for (const w of ['The ', 'humidity ', 'in ', 'the ', 'greenhouse ', 'is ', 'high.']) {
+    ctx.handle({ kind: 'delta', session_id: 'S1', text: w });
+  }
+  assert.strictEqual(renders, 0, 'tokens were drawn before the frame');
+  while (frames.length) frames.shift()();
+  assert.ok(renders <= 2, 'one frame of tokens was drawn ' + renders + ' times');
+  assert.strictEqual(streamedMarkup(ctx._id('transcript')), real('The humidity in the greenhouse is high.'));
+});
+
+// Reading back up while an answer arrives is allowed; the reader is left there.
+// One already at the end stays at the end as it grows.
+test('an answer arriving leaves a reader who scrolled up where they are', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }));
+  await ctx.viewSession(node('div'));
+  const main = ctx._id('main');
+  main.scrollHeight = 5000; main.clientHeight = 500; main.scrollTop = 0;
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: 'The humidity' });
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: ' is high.' });
+  assert.strictEqual(main.scrollTop, 0, 'the answer pulled a reader who had scrolled up');
+
+  main.scrollTop = 4500;
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: ' And rising.' });
+  assert.strictEqual(main.scrollTop, 5000, 'a reader at the end was left behind as the answer grew');
+});
+
+// A turn with many tool calls appends many entries. Each is added where it
+// belongs; what is already on screen stays as it is, a result the reader opened
+// included.
+test('an entry arriving is added without redrawing the conversation', async () => {
+  const entries = [
+    { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 2, type: 'message', role: 'tool', tool_name: 'clock', tool_result: '{"ok":true,"content":"10:00"}', created_at: '2026-10-06T10:00:01Z' },
+  ];
+  const ctx = conversationScreen(session({ id: 'S1', working_seconds: 2 }), entries);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.filter(c => !String(c.className).includes('thinking'));
+  const pre = find(t, 'tool').children.find(c => c.tagName === 'pre');
+  pre.hidden = false;
+
+  ctx.handle({ kind: 'entry', session_id: 'S1',
+    entry: { seq: 3, type: 'message', role: 'assistant', text: 'It reads 41%.', created_at: '2026-10-06T10:00:02Z' } });
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+
+  for (const n of shown) assert.ok(t.children.includes(n), 'an entry already on screen was drawn again');
+  assert.strictEqual(pre.hidden, false, 'a result the reader had opened closed again');
+  assert.match(textOf(t), /It reads 41%\./, 'the new entry is not on screen');
+  assert.ok(find(t, 'thinking'), 'working again shows no thinking row');
+});
+
 // ---------- unread ----------
 
 const said = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-09-29T10:00:00Z' });
@@ -656,6 +766,8 @@ const readsOf = ctx => (ctx._calls || []).filter(c => c.method === 'POST' && /\/
 test('opening a conversation marks what it shows read and redraws the rail', async () => {
   const entries = [said(1, 'user', 'Hi'), said(2, 'assistant', 'Hello.'), said(3, 'assistant', 'Reminder.')];
   const ctx = unreadScreen(session({ id: 'S1', unread: 2, read_through: 1 }), entries);
+  // The agent answers that the read cleared the two it counted.
+  ctx._routes['POST /sessions/S1/read'] = { cleared: true };
   await ctx.viewSession(node('div'));
   await new Promise(r => setImmediate(r));
 
@@ -711,6 +823,27 @@ test('a message arriving in the conversation on screen is read', async () => {
   ctx.handle({ kind: 'entry', session_id: 'OTHER', entry: said(9, 'assistant', 'Elsewhere.') });
   await new Promise(r => setImmediate(r));
   assert.strictEqual(readsOf(ctx).length, before + 1, 'a message in another conversation was marked read');
+});
+
+// Most of what arrives on screen is a tool call or its result, and reading past
+// it clears no count. Redrawing the rail for every one of those sent the agent
+// for the whole session list — its costliest answer — once per entry per page.
+test('a read that clears nothing leaves the rail alone', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }), [said(1, 'user', 'Hi')]);
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  ctx._routes['POST /sessions/S1/read'] = { cleared: false };
+  const before = ctx._calls.length;
+
+  ctx.handle({ kind: 'entry', session_id: 'S1',
+    entry: { seq: 2, type: 'message', role: 'tool', tool_name: 'clock', tool_result: '{}', created_at: '2026-09-29T10:00:00Z' } });
+  await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  const after = ctx._calls.slice(before);
+  assert.strictEqual(after.filter(c => c.method === 'POST' && /\/read$/.test(c.path)).length, 1,
+    'the entry on screen was not read');
+  assert.ok(!after.some(c => c.method === 'GET' && c.path === '/sessions'),
+    'a read that cleared nothing redrew the rail');
 });
 
 // Hidden, the page is not being read, whatever it shows. It is read when it is
@@ -828,6 +961,67 @@ test('a page shown again with a closed socket reconnects at once, only once', as
 
   for (const f of timers.values()) f();
   assert.strictEqual(socks.length, 2, 'the waiting reconnect opened a second socket');
+});
+
+// A long conversation is a large download, and a phone comes back to the page
+// often. What it already holds is not fetched again: it asks for what was
+// written since, and draws only that.
+const fromZero = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-10-06T10:00:00Z' });
+
+test('catching up reads only what was written since, and draws only that', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }),
+    [fromZero(0, 'user', 'Hi'), fromZero(1, 'assistant', 'Hello.')]);
+  let sock;
+  ctx.WebSocket = function () { sock = this; this.readyState = 1; };
+  ctx.WebSocket.OPEN = 1;
+  ctx.connect();
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.slice();
+  ctx._routes['/sessions/S1/transcript?from=2'] = [fromZero(2, 'user', 'Sent from the laptop.')];
+  ctx._calls = [];
+
+  await ctx.onVisible();
+  await new Promise(r => setImmediate(r));
+  await new Promise(r => setImmediate(r));
+  const reads = ctx._calls.filter(c => /\/transcript/.test(c.path)).map(c => c.path);
+  assert.deepStrictEqual(reads, ['/sessions/S1/transcript?from=2'], 'the whole conversation was fetched again');
+  assert.match(textOf(t), /Sent from the laptop\./, 'what was written elsewhere did not appear');
+  for (const n of shown) assert.ok(t.children.includes(n), 'what was already on screen was drawn again');
+});
+
+// Opening a conversation needs the session and its transcript, and neither
+// waits for the other.
+test('opening a conversation asks for the session and its transcript together', async () => {
+  const ctx = unreadScreen(session({ id: 'S1' }), [fromZero(0, 'user', 'Hi')]);
+  const pending = [];
+  const real = ctx.fetch;
+  ctx.fetch = (p, opts) => new Promise(res => pending.push({ p, go: () => res(real(p, opts)) }));
+  const opened = ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  assert.deepStrictEqual(pending.map(x => x.p).sort(), ['/sessions/S1', '/sessions/S1/transcript'],
+    'the transcript waited for the session');
+  ctx.fetch = real;
+  for (const x of pending) x.go();
+  await opened;
+  assert.match(textOf(ctx._id('transcript')), /Hi/);
+});
+
+test('catching up with nothing new changes nothing on screen', async () => {
+  const ctx = unreadScreen(session({ id: 'S1', read_through: 1 }),
+    [fromZero(0, 'user', 'Hi'), fromZero(1, 'assistant', 'Hello.')]);
+  ctx.WebSocket = function () { this.readyState = 1; };
+  ctx.WebSocket.OPEN = 1;
+  ctx.connect();
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.slice();
+  ctx._routes['/sessions/S1/transcript?from=2'] = [];
+  ctx._calls = [];
+
+  await ctx.onVisible();
+  await new Promise(r => setImmediate(r));
+  assert.deepStrictEqual(t.children, shown, 'nothing new arrived and the conversation was drawn again');
 });
 
 // ---------- signed out ----------

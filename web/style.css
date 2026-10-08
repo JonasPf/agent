@@ -437,6 +437,11 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
 @keyframes slide { from { background-position: 100% 0; } to { background-position: 0 0; } }
 .md > :first-child { margin-top: 0; }
 .md > :last-child { margin-bottom: 0; }
+/* An answer still arriving is drawn in two parts — what has settled, and the
+   block still growing — that lay out as the one answer they will become. */
+.md > .settled, .md > .tail { display: contents; }
+.md > .settled > :first-child, .md > .settled:empty + .tail > :first-child { margin-top: 0; }
+.md > .tail > :last-child { margin-bottom: 0; }
 .md p { margin: 0 0 10px; }
 .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
   margin: 18px 0 7px; font-size: 15px; font-weight: 650; line-height: 1.35;

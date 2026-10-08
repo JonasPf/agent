@@ -196,6 +196,7 @@ func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, 
 	// timeout above bounds the whole call.
 	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.CombinedOutput()
+	s.app.workspaceChanged(sess.ID)
 
 	if cctx.Err() != nil {
 		return false, "", fmt.Errorf("check did not finish within %s: %s", checkTimeout, truncate(j.Check, 120))

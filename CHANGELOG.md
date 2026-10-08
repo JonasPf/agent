@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-10-06
+
+- **Busy turns no longer slow every open page.** While the agent works
+  through tool calls, each page showing the conversation used to fetch the
+  whole conversation list again for every step, on every device. The list is
+  now fetched only when an unread count actually changes.
+- **The conversation list loads in a blink.** Building it used to re-measure
+  every conversation's context and walk every file it holds, every time.
+  Those figures are now kept until something changes them, so the list
+  arrives in a few milliseconds instead of a noticeable pause with many
+  conversations or a large checked-out repository.
+- **Long answers stream smoothly on a phone.** The conversation used to be
+  rebuilt from the top for every step of a turn, and a reply redrawn from its
+  first word for every few new ones. Now only what is new is drawn. A tool
+  result you opened stays open while the agent carries on, and scrolling up
+  to read while an answer arrives no longer pulls you back down.
+- **Coming back to the app never waits on OpenRouter.** The first thing a
+  page does when you return to it used to wait for OpenRouter to report your
+  credit, once an hour, and a slow day there could leave the page hanging or
+  mark the container unhealthy. The credit is now fetched in the background
+  and the rail updates when it arrives.
+- **Coming back to a long conversation is quick.** Returning to the page, or
+  reconnecting, used to download the whole conversation again, tool output
+  and all, and draw it from the top. It now fetches only what was written
+  while you were away. Opening a conversation also loads it in one round trip
+  instead of two.
+- **Starting a server no longer stalls the agent.** A shell command that left
+  something running in the background, such as a local server, used to hold
+  the agent up until the command's two-minute timeout. It now returns as soon
+  as the command itself is done. A command that runs too long is stopped along
+  with everything it started.
+- **Forking and comparing are quicker, and quiet.** Copying a conversation
+  into a fork, or into each model of a comparison, used to write it one
+  message at a time, and could set off a notification for a copied reply as
+  if it were new. The copy is now written in one go, without notifications.
+- **The agent starts faster.** Every conversation is now read back in
+  parallel when the agent starts, and rebuilding the search index, when it
+  has to, is one step rather than one per message.
+- **Less to download.** The app, its conversations and lists are now sent
+  compressed, typically a fifth of the size or less. Files you download from
+  a conversation are sent exactly as stored.
+
 ## 2026-10-05
 
 - **Start typing straight away.** On a computer, opening a conversation puts

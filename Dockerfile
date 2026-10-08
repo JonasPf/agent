@@ -18,8 +18,12 @@
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
 
+# The module and build caches are mounts rather than layers. A change to any
+# file in the repository — a script, the changelog — invalidates every layer
+# from the COPY below, and without them each rebuild compiled the agent and every
+# tool from nothing; with them, a rebuild compiles what changed.
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 ENV CGO_ENABLED=0
@@ -29,8 +33,11 @@ ENV CGO_ENABLED=0
 # names. An unstamped build says "dev" rather than inventing a number.
 ARG VERSION=dev
 ARG BUILT_AT=
-RUN go build -trimpath \
-      -ldflags "-X agent/internal/app.Version=${VERSION} -X agent/internal/app.BuiltAt=${BUILT_AT}" \
+# -s -w leaves out the symbol table and debug information, about a third of each
+# binary; a panic still names its file and line.
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go build -trimpath \
+      -ldflags "-s -w -X agent/internal/app.Version=${VERSION} -X agent/internal/app.BuiltAt=${BUILT_AT}" \
       -o /out/agent ./cmd/agent
 # Every tool directory becomes /out/tools/<name>/{manifest.json,run}, which is
 # the layout the registry scans. A directory without a manifest is not a tool.
@@ -38,14 +45,15 @@ RUN go build -trimpath \
 # a tool may carry a schema, a panel, or a file nobody has thought of yet, and
 # naming them one by one is how notes reached production without the schema that
 # creates its table.
-RUN set -eu; \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    set -eu; \
     for d in tools/*/; do \
       [ -f "$d/manifest.json" ] || continue; \
       name=$(basename "$d"); \
       mkdir -p "/out/tools/$name"; \
       cp -R "$d". "/out/tools/$name/"; \
       rm -f "/out/tools/$name"/*.go "/out/tools/$name/eval.json"; \
-      go build -trimpath -o "/out/tools/$name/run" "./$d"; \
+      go build -trimpath -ldflags "-s -w" -o "/out/tools/$name/run" "./$d"; \
     done
 
 # gh comes from its own release rather than an apt repository, so the runtime
@@ -134,8 +142,12 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 # other — and is not a boundary: Landlock is, and it holds whether or not the
 # two share a mount. Both are created here so a fresh named volume inherits an
 # owner before anything runs.
+#
+# Only the state is the agent's. What the image ships stays root's: the agent
+# never writes it, and a recursive chown over /app copied every binary into a
+# layer of its own, a hundred megabytes each deployment pulled twice.
 RUN mkdir -p /app/state/data /app/state/workspace /app/state/skills /app/state/personas \
-    && chown -R agent:agent /app
+    && chown -R agent:agent /app/state
 
 USER agent
 # Two roots and nothing else. /app/state is what outlives the container and is

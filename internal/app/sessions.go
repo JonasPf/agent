@@ -88,6 +88,7 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	entries := a.store.Entries(origin.ID)
 	a.append(fork.ID, Entry{Type: "event", EventKind: "forked_from", CarriedFrom: origin.ID,
 		Text: fmt.Sprintf("copied from %s (%s): %d entries", origin.ID, why, len(entries))})
+	copied := make([]Entry, 0, len(entries))
 	for _, e := range entries {
 		// The origin's own prompt entry is not copied: the fork has one of its
 		// own, written from the configuration this fork was created under, and
@@ -97,7 +98,13 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 		}
 		e.CarriedFrom = origin.ID
 		e.Usage = nil
-		a.append(fork.ID, e)
+		copied = append(copied, e)
+	}
+	// In one write, and without an event per entry: the fork is on no page
+	// yet, and what it copies is not news — announced one by one, a copied
+	// reply read as a new one. Pages hear the list moved, below.
+	if _, err := a.store.AppendAll(fork.ID, copied); err != nil {
+		return nil, err
 	}
 
 	// Jobs do not move. A job belongs to the conversation it was created in,

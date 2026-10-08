@@ -190,21 +190,37 @@ function checkIn() {
 // catchUp redraws the rail and the conversation on screen from the agent, for
 // when the socket may have missed something: a phone back from the background,
 // a laptop woken up. The unread line stays where it was.
+//
+// What the page already holds is not fetched again. A transcript only grows at
+// its end, and entry n is at index n, so a page holding every entry up to its
+// last asks for what follows and draws only that. One holding anything else —
+// a gap where the socket dropped an entry — reads the whole.
 async function catchUp() {
   renderSidebar();
   if (state.view !== 'session' || !state.session) return;
   const id = state.session.id;
+  const held = state.entries || [];
+  const whole = !held.length || held[held.length - 1].seq !== held.length - 1;
+  const path = '/sessions/' + id + '/transcript' + (whole ? '' : '?from=' + held.length);
   let res, entries;
   try {
-    [res, entries] = await Promise.all([api('/sessions/' + id), api('/sessions/' + id + '/transcript')]);
+    [res, entries] = await Promise.all([api('/sessions/' + id), api(path)]);
   } catch (e) { return; }
   if (state.view !== 'session' || !state.session || state.session.id !== id) return;
   state.session = res.session;
-  state.entries = entries;
   if (res.session.working_seconds == null) delete state.working[id];
   else if (state.working[id] == null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
-  renderTranscript();
-  const last = entries[entries.length - 1];
+  if (whole) {
+    state.entries = entries || [];
+    renderTranscript();
+  } else {
+    // The socket may have delivered some of these while they were on their way.
+    const top = state.entries.length ? state.entries[state.entries.length - 1].seq : -1;
+    const fresh = (entries || []).filter(e => e.seq > top);
+    for (const e of fresh) { state.entries.push(e); appendEntry(e); }
+    if (!fresh.length) refreshTail();
+  }
+  const last = state.entries[state.entries.length - 1];
   if (last && !document.hidden) readThrough(id, last.seq);
 }
 function handle(e) {
@@ -214,7 +230,8 @@ function handle(e) {
       if (e.kind === 'entry') state.entries.push(e.entry);
       if (e.kind === 'entry' && !document.hidden) readThrough(e.session_id, e.entry.seq);
       state.streaming = '';
-      renderTranscript();
+      if (e.kind === 'entry') appendEntry(e.entry);
+      else refreshTail();
     }
     const col = comparing(e.session_id);
     if (col) {
@@ -225,12 +242,12 @@ function handle(e) {
   } else if (e.kind === 'delta') {
     if (state.view === 'session' && e.session_id === state.arg) {
       state.streaming += e.text;
-      renderStreaming();
+      onNextFrame('stream', renderStreaming);
     }
     const col = comparing(e.session_id);
     if (col) {
       col.streaming += e.text;
-      renderCandidateStream(col);
+      onNextFrame(col, () => renderCandidateStream(col));
     }
   } else if (e.kind === 'turn_start') {
     state.streaming = '';
@@ -244,7 +261,7 @@ function handle(e) {
     // The transcript carries the thinking row, so it follows the change, and a
     // turn that has ended goes to its answer: that is what was waited for.
     if (state.view === 'session' && e.session_id === state.arg) {
-      renderTranscript();
+      refreshTail();
       if (e.kind === 'idle') scrollDown();
     }
     const col = comparing(e.session_id);
@@ -261,15 +278,17 @@ function handle(e) {
     // The rail is on screen whatever the view is, so it follows every change to
     // the list rather than only the one the session list happens to be showing.
     if (e.kind !== 'jobs') renderSidebar();
-    if (e.kind === 'status') loadStatus();
+    if (e.kind === 'status') { loadStatus(); readStatus(); }
   }
 }
 
 // readThrough tells the agent the operator has been shown a conversation up to
-// seq, and redraws the rail without waiting to hear back over the socket.
+// seq. A read that cleared a count redraws the rail without waiting to hear
+// back over the socket; one that cleared nothing changed nothing it shows.
 async function readThrough(id, seq) {
-  try { await post('/sessions/' + id + '/read', { through: seq }); } catch (e) { return; }
-  renderSidebar();
+  let res;
+  try { res = await post('/sessions/' + id + '/read', { through: seq }); } catch (e) { return; }
+  if (res && res.cleared) renderSidebar();
 }
 
 // onVisible brings the page up to date when it is looked at again, and reads
@@ -526,14 +545,9 @@ function sessionRow(s) {
 
 async function viewSession(v) {
   const gen = drawing;
-  const res = await api('/sessions/' + state.arg);
-  if (stale(gen)) return;
-  if (res.redirected_to) {
-    toast({ title: 'Archived conversation', body: 'Opened the live session of this chain instead.' });
-    location.hash = '#session/' + res.redirected_to;
-    return;
-  }
-  const entries = await api('/sessions/' + state.arg + '/transcript');
+  // Neither waits on the other: on a phone each is a round trip of its own.
+  const [res, entries] = await Promise.all([
+    api('/sessions/' + state.arg), api('/sessions/' + state.arg + '/transcript')]);
   if (stale(gen)) return;
   state.session = res.session;
   state.entries = entries;
@@ -817,10 +831,22 @@ function scrollDown() {
   requestAnimationFrame(() => m.scrollTop = m.scrollHeight);
 }
 
+// atEnd says whether the reader is at the end of the conversation, which is
+// where it stays as the conversation grows. Asked before anything is written,
+// so the page lays out once rather than on every question.
+function atEnd() {
+  const m = $('main');
+  return m.scrollHeight - m.scrollTop - m.clientHeight < 120;
+}
+
+// renderTranscript draws the whole conversation. It runs when one is opened or
+// read afresh, and when what is folded changes; anything arriving afterwards is
+// added where it belongs instead, so a long conversation is not rebuilt — and a
+// result the reader opened not closed — for every step of a turn.
 function renderTranscript() {
   const t = $('transcript');
   if (!t) return;
-  const atBottom = $('main').scrollHeight - $('main').scrollTop - $('main').clientHeight < 120;
+  const atBottom = atEnd();
   t.innerHTML = '';
   const covers = coveredThrough(state.entries);
   let marked = state.readFrom == null;
@@ -837,21 +863,79 @@ function renderTranscript() {
     if (isFolded) node.classList.add('folded');
     t.append(node);
   }
-  if (state.streaming) t.append(streamNode());
-  else if (state.session && state.working[state.session.id] != null) t.append(thinkingNode());
+  addTail(t);
   if (atBottom) scrollDown();
   renderStatus();
+}
+
+// appendEntry adds one entry that arrived to the conversation on screen. A
+// compaction folds what came before it and a prompt replaces the one shown, so
+// either redraws the whole.
+function appendEntry(e) {
+  const t = $('transcript');
+  if (!t) return;
+  if (e.type === 'compaction' || e.type === 'prompt') return renderTranscript();
+  const atBottom = atEnd();
+  dropTail(t);
+  if (state.readFrom != null && e.seq > state.readFrom && !t.querySelector('.unread-mark')) {
+    t.append(el('div', 'unread-mark', 'unread'));
+  }
+  t.append(renderEntry(e));
+  addTail(t);
+  if (atBottom) scrollDown();
+  renderStatus();
+}
+
+// The tail of the conversation is what stands after its last entry: the answer
+// arriving, or the thinking row standing in for it while the agent works.
+function dropTail(t) {
+  for (const cls of ['.stream', '.thinking']) {
+    const n = t.querySelector(cls);
+    if (n) n.remove();
+  }
+}
+
+function addTail(t) {
+  if (state.streaming) t.append(streamNode());
+  else if (state.session && state.working[state.session.id] != null) t.append(thinkingNode());
+}
+
+// refreshTail redraws only the tail, for a turn starting or ending.
+function refreshTail() {
+  const t = $('transcript');
+  if (!t) return;
+  const atBottom = atEnd();
+  dropTail(t);
+  addTail(t);
+  if (atBottom) scrollDown();
+  renderStatus();
+}
+
+// onNextFrame runs fn once at the next frame, however often it is asked for
+// before then: tokens arrive faster than a screen draws, and those that land
+// within one frame are drawn together. Asked again for the same key, the
+// newest fn is the one that runs.
+const frames = new Map();
+function onNextFrame(key, fn) {
+  const waiting = frames.has(key);
+  frames.set(key, fn);
+  if (waiting) return;
+  requestAnimationFrame(() => {
+    const f = frames.get(key);
+    frames.delete(key);
+    if (f) f();
+  });
 }
 
 function renderStreaming() {
   const t = $('transcript');
   if (!t) return;
+  const atBottom = atEnd();
+  const n = t.querySelector('.stream');
   // The first word replaces the thinking row with the answer it was standing in for.
-  if (t.querySelector('.thinking')) { renderTranscript(); scrollDown(); return; }
-  let n = document.getElementById('streaming');
-  if (!n) { n = streamNode(); t.append(n); }
-  n.querySelector('.bub').innerHTML = renderMarkdown(state.streaming);
-  scrollDown();
+  if (!n) { dropTail(t); addTail(t); }
+  else paintStream(n._stream, state.streaming);
+  if (atBottom) scrollDown();
 }
 
 // thinkingNode stands where the agent's answer will appear, from the moment it
@@ -863,9 +947,37 @@ function thinkingNode() {
 }
 
 function streamNode() {
-  const w = el('div', 'msg'); w.id = 'streaming';
-  w.append(el('div', 'who', 'agent'), bubble({ role: 'assistant', text: state.streaming }));
+  const w = streamMessage(state.streaming);
+  w.id = 'streaming';
   return w;
+}
+
+// streamMessage is an answer still arriving. Its markdown is drawn in two parts
+// that lay out as one: the blocks that can no longer change, drawn once each,
+// and the block still arriving, drawn again as it grows. Drawing the whole
+// answer for every token cost the square of its length.
+function streamMessage(text) {
+  const w = el('div', 'msg stream');
+  const b = el('div', 'bub md');
+  const settled = el('div', 'settled');
+  const tail = el('div', 'tail');
+  b.append(settled, tail);
+  w.append(el('div', 'who', 'agent'), b);
+  w._stream = { settled, tail, upTo: 0 };
+  paintStream(w._stream, text);
+  return w;
+}
+
+function paintStream(s, text) {
+  text = String(text || '').replace(/\r\n?/g, '\n');
+  // A shorter answer than was settled is a new one in the same place.
+  if (text.length < s.upTo) { s.settled.innerHTML = ''; s.upTo = 0; }
+  const cut = s.upTo + markdownSettled(text.slice(s.upTo));
+  if (cut > s.upTo) {
+    s.settled.insertAdjacentHTML('beforeend', renderMarkdown(text.slice(s.upTo, cut)));
+    s.upTo = cut;
+  }
+  s.tail.innerHTML = renderMarkdown(text.slice(s.upTo));
 }
 
 // The agent writes markdown, so the agent's turn is rendered as markdown — the
@@ -1753,7 +1865,7 @@ function renderCandidateStream(col) {
   if (!col.stream) return renderCompare();
   const b = col.body;
   const atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 40;
-  col.stream.querySelector('.bub').innerHTML = renderMarkdown(col.streaming);
+  paintStream(col.stream._stream, col.streaming);
   if (atEnd) b.scrollTop = b.scrollHeight;
 }
 
@@ -1767,8 +1879,7 @@ function candidateColumn(col) {
   for (const e of sinceQuestion(col.entries)) body.append(renderEntry(e));
   col.stream = null;
   if (col.streaming) {
-    col.stream = el('div', 'msg');
-    col.stream.append(el('div', 'who', 'agent'), bubble({ role: 'assistant', text: col.streaming }));
+    col.stream = streamMessage(col.streaming);
     body.append(col.stream);
   } else if (state.working[s.id]) body.append(thinkingNode());
   col.body = body;
@@ -2340,6 +2451,12 @@ async function boot() {
   document.addEventListener('visibilitychange', onVisible);
   connect();
   route();
+  readStatus();
+}
+
+// readStatus reads the agent's status — the breaker, the credit, the sandbox —
+// into the banner and the foot of the rail.
+async function readStatus() {
   try {
     state.status = await api('/status');
     const b = state.status.breaker;

@@ -151,7 +151,7 @@ func buildCompactionInput(previous string, head []Entry) string {
 // there is nothing for a compaction to re-photograph (ADR-055).
 func (a *App) Compact(ctx context.Context, s *Session) error {
 	entries := a.store.Entries(s.ID)
-	before := projectedTokens(entries)
+	before := a.contextUsed(s.ID, entries)
 
 	var previous string
 	covered := 0
@@ -224,7 +224,7 @@ func (a *App) maybeCompact(ctx context.Context, s *Session) {
 	if s.Status != "active" || s.CompactAtTokens <= 0 {
 		return
 	}
-	if projectedTokens(a.store.Entries(s.ID)) < s.CompactAtTokens {
+	if a.contextUsed(s.ID, a.store.Entries(s.ID)) < s.CompactAtTokens {
 		return
 	}
 	_ = a.Compact(ctx, s)

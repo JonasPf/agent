@@ -274,6 +274,9 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// where the operating system can enforce it, that directory is the only one
 	// it can reach.
 	workspace := tc.App.ensureWorkspace(tc.SessionID)
+	// Whatever the tool did, it did it here: what the directory holds is
+	// measured again rather than read from what was kept.
+	defer tc.App.workspaceChanged(tc.SessionID)
 	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, t.Reads, nil)
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace

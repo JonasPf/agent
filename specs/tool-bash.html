@@ -72,6 +72,17 @@ overrun would be indistinguishable from a crash.</p>
 <p>A caller may raise <code>timeout_seconds</code>, but the registry's limit still bounds it: asking
 for more than the manifest allows buys a kill rather than a message.</p>
 
+<p>The command runs in a process group of its own, and a timeout ends the whole group. Killing the shell
+alone left whatever it had started holding the output open, and the call waited on that until the
+registry's limit.</p>
+
+<h2>What a command leaves running</h2>
+<p>A command may start something and return &mdash; a server, a watcher &mdash; and what it started
+holds the shell's output open for as long as it runs. The call does not wait on it: once the shell has
+exited, output is read for two seconds more, for what is written on the way out, and then the call
+returns with what was written. The process carries on in the session's directory, under the same
+sandbox. Its later output goes nowhere, so a command meant to keep running sends it to a file.</p>
+
 <h2>Limits</h2>
 <p>Output is capped at twenty thousand characters. A command that produces more has its output cut, and
 the cut is reported rather than silent — an unannounced truncation is a fact the model would reason
@@ -96,6 +107,8 @@ from as though it were the whole answer.</p>
 <li>Output beyond the cap is truncated, and the result says it was truncated and how much was dropped.</li>
 <li>A command that overruns is stopped by the tool and reports the limit it passed.</li>
 <li>The tool's own timeout is below the manifest's, so an overrun is always reported rather than killed.</li>
+<li>A timeout ends everything the command started, and the call returns within moments of it.</li>
+<li>A command that leaves a process running in the background returns once its shell exits, with what it wrote, and does not wait for that process.</li>
 <li>The command runs in the session's working directory, and a relative path resolves inside it.</li>
 <li>A command reaching outside the session's directory is refused by the sandbox, not by the tool.</li>
 <li><code>curl</code>, <code>wget</code>, <code>python3</code>, and <code>perl</code> are installed and run in the shell under the sandbox, and the description says they are there.</li>
