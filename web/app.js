@@ -1396,8 +1396,10 @@ async function chooseGrants(current, change) {
 
 // configEditor renders a configuration and returns a reader for it. It does not
 // save anything; what the caller does with it depends on whether the session has
-// taken a turn, which is when model, tools, and skills stop being editable.
-async function configEditor(v, current) {
+// taken a turn, which is when model, tools, and skills stop being editable. It
+// is drawn from several answers, and returns null, having drawn nothing more,
+// once the screen it was drawing for has been replaced.
+async function configEditor(v, current, gen = drawing) {
   const cfg = {
     model: current.model || null,
     enabled_tools: current.enabled_tools == null ? null : current.enabled_tools.slice(),
@@ -1421,6 +1423,7 @@ async function configEditor(v, current) {
   choice.onclick = () => chooseModel(cfg.model, id => { cfg.model = id; drawChoice(); });
   v.append(choice);
   await loadModels();
+  if (stale(gen)) return null;
   drawChoice();
 
   // A set nobody chose is the defaults: every tool, and every skill but those
@@ -1428,6 +1431,7 @@ async function configEditor(v, current) {
   // a skill added to disk later still reaches conversations that never chose.
   const picker = async (label, path, key) => {
     const data = await api(path);
+    if (stale(gen)) return;
     const items = data.tools || data.skills;
     const names = items.map(x => x.name);
     const defaults = items.filter(x => x.default_enabled !== false).map(x => x.name);
@@ -1458,13 +1462,16 @@ async function configEditor(v, current) {
     draw();
   };
   await picker('tools', '/tools', 'enabled_tools');
+  if (stale(gen)) return null;
   await picker('skills', '/skills', 'enabled_skills');
+  if (stale(gen)) return null;
 
   // The persona is the opening section of the prompt, and choosing one replaces
   // the built-in whole. That is said here rather than discovered later, because
   // a persona that leaves out the working rules is a different agent and nothing
   // downstream says why.
   const personas = ((await api('/personas').catch(() => null)) || {}).personas || [];
+  if (stale(gen)) return null;
   v.append(el('h2', null, 'persona'));
   v.append(el('p', 'note', 'Who the agent is. Choosing one replaces the built-in persona entirely, ' +
     'working rules included. Write and edit them under More → Personas.'));
@@ -1510,8 +1517,9 @@ async function configEditor(v, current) {
 // is fixed for its life, so the screen that describes one states it: the same
 // five headings the editor uses, so the two read alike, with nothing to press.
 // A different configuration is a different conversation, reached from Fork.
-async function configFacts(v, s) {
+async function configFacts(v, s, gen = drawing) {
   await loadModels();
+  if (stale(gen)) return false;
   v.append(el('h2', null, 'model'));
   const m = (state.models || []).find(x => x.id === s.model) || { id: s.model || '' };
   const line = el('div', 'fact fixed');
@@ -1526,6 +1534,7 @@ async function configFacts(v, s) {
   // known once they are fetched.
   const shown = async (label, path, chosen) => {
     const data = await api(path).catch(() => null) || {};
+    if (stale(gen)) return;
     const items = data.tools || data.skills || [];
     const names = chosen == null
       ? items.filter(x => x.default_enabled !== false).map(x => x.name)
@@ -1537,7 +1546,9 @@ async function configFacts(v, s) {
     v.append(wrap);
   };
   await shown('tools', '/tools', s.enabled_tools);
+  if (stale(gen)) return false;
   await shown('skills', '/skills', s.enabled_skills);
+  if (stale(gen)) return false;
 
   v.append(el('h2', null, 'persona'));
   v.append(el('span', 'pill fixed', s.persona || 'default'));
@@ -1550,6 +1561,7 @@ async function configFacts(v, s) {
     for (const n of grants) wrap.append(el('span', 'pill fixed', n));
     v.append(wrap);
   }
+  return true;
 }
 
 async function viewNew(v) {
@@ -1560,7 +1572,8 @@ async function viewNew(v) {
   // is the one last chosen, which the most recent conversation need not be on.
   const prefs = await api('/preferences').catch(() => null) || {};
   if (stale(gen)) return;
-  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }));
+  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }), gen);
+  if (!read || stale(gen)) return;
   const start = el('button', 'btn primary', 'Start conversation');
   start.onclick = async () => {
     const s = await post('/sessions', read());
@@ -1704,7 +1717,8 @@ async function viewFork(v) {
   v.append(el('p', 'note',
     'A fork copies this whole conversation into a new session. This one stays where it is, stays ' +
     'active, and keeps its jobs. The fork\'s configuration is chosen here and fixed once it exists.'));
-  const read = await configEditor(v, res.session);
+  const read = await configEditor(v, res.session, gen);
+  if (!read || stale(gen)) return;
   const go = el('button', 'btn primary', 'Create fork');
   go.onclick = async () => {
     const succ = await post('/sessions/' + id + '/fork', read());
@@ -2004,7 +2018,7 @@ async function viewSettings(v) {
   };
   v.append(save);
 
-  await configFacts(v, s);
+  if (!await configFacts(v, s, gen) || stale(gen)) return;
 
   v.append(el('h2', null, 'danger'));
   const d = el('button', 'btn danger', 'Delete conversation');
@@ -2078,17 +2092,17 @@ async function viewPanels(v) {
     const k = state.status.key;
     v.append(el('div', 's', `usage ${fmtMoney(k.usage)}${k.remaining != null ? ' · remaining ' + fmtMoney(k.remaining) : ''}`));
   }
-  await versionSection(v);
+  await versionSection(v, gen);
 }
 
 // Which build is answering, and what changed in it. The version is the commit
 // the image was built from, so what is on screen is what a rollback names. Both
 // are read once after an upgrade and never again, so they sit at the foot of
 // this panel and the changelog stays folded until it is asked for.
-async function versionSection(v) {
+async function versionSection(v, gen = drawing) {
   let info;
   try { info = await api('/version'); } catch (e) { return; }
-  if (!info) return;
+  if (!info || stale(gen)) return;
   v.append(el('h2', null, 'version'));
   const built = info.built_at ? ' · built ' + ago(info.built_at) : '';
   v.append(el('div', 's', (info.version || 'unknown') + built));
@@ -2305,7 +2319,7 @@ async function viewAuthored(v, kind) {
   const title = kind === 'skills' ? 'Skills' : 'Personas';
   // Each document, and a new one, has an address of its own, so the back button
   // returns to this list. A name holds no '+', so '+new' is never a document.
-  if (state.arg) return editAuthored(kind, state.arg === '+new' ? null : decodeURIComponent(state.arg));
+  if (state.arg) return editAuthored(kind, state.arg === '+new' ? null : decodeURIComponent(state.arg), gen);
   setHeader(title, true, [{ label: 'New ' + spec.one, fn: () => location.hash = '#' + kind + '/+new' }]);
   const data = await api(spec.path);
   if (stale(gen)) return;
@@ -2342,9 +2356,21 @@ function viewPersonas(v) { return viewAuthored(v, 'personas'); }
 // operator's. What ships in the image is read-only: writing a copy would shadow
 // the original until the next deployment brought it back, which is the one state
 // nothing on screen could explain.
-async function editAuthored(kind, name) {
+async function editAuthored(kind, name, gen = drawing) {
   const spec = AUTHORED[kind];
-  const doc = name ? await api(spec.path + '/' + encodeURIComponent(name)) : null;
+  let doc = null;
+  if (name) {
+    try { doc = await api(spec.path + '/' + encodeURIComponent(name)); }
+    catch (e) {
+      if (stale(gen)) return;
+      setHeader(name, true);
+      $('view').append(el('div', 'empty', 'There is no ' + spec.one + ' called ' + name + '.'));
+      return;
+    }
+  }
+  // Opened and left before its answer came back, the editor draws nothing:
+  // not over the screen that replaced it, and not its Delete in that header.
+  if (stale(gen)) return;
   const v = $('view');
   v.innerHTML = '';
   const editable = !doc || doc.editable;

@@ -2,6 +2,11 @@
 
 ## 2026-10-15
 
+- **Leaving a screen quickly no longer leaves bits of it behind.** On a slow
+  connection, moving on from a new conversation, a fork, a conversation's
+  details, More, or a skill before it finished loading could finish drawing
+  it underneath the next screen, header buttons included. A skill that no
+  longer exists now says so instead of showing a blank page.
 - **An odd character can no longer freeze a conversation.** An answer
   holding a particular invisible character could hang the page every time the
   conversation was opened. Such characters are now shown as �.

@@ -2205,3 +2205,59 @@ test('the session list marks a conversation that is still a candidate', () => {
   const tags = findAll(row, 'tag').map(t => t.textContent);
   assert.ok(tags.includes('comparing'), 'a candidate is not marked as one: ' + tags.join(', '));
 });
+
+// ---------- screens that answer late ----------
+
+// A screen is drawn from requests that answer in their own time. One opened
+// and left before its answers came back must paint nothing over the screen
+// that replaced it: not its sections, not its buttons, not its header. The
+// configuration editor, the details screen, the More panel's version line,
+// and a skill's editor each kept drawing into the pane after it had moved on,
+// the last one with a Delete in the header for a skill nobody was looking at.
+test('a screen still loading paints nothing over the one that replaced it', async () => {
+  const sessions = [session({ id: 'S1', title: 'Kiln firing log' })];
+  const routes = {
+    '/sessions': sessions, '/sessions/S1': { session: sessions[0] }, '/preferences': { model: 'x/y' },
+    '/models': [], '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [{ name: 'watering' }] },
+    '/personas': { personas: [{ name: 'default' }] },
+    '/skills/watering': { name: 'watering', description: 'When to water', body: 'Twice a week.', editable: true },
+    '/version': { version: 'abc1234', changelog: '## 2026-10-15\n' },
+    '/jobs': [],
+  };
+  // Each screen is left at the moment it is waiting on its late request:
+  // after the answers that start drawing it, before the ones that finish it.
+  const screens = [
+    ['new', undefined, '/tools', /Start conversation/],
+    ['fork', 'S1', '/tools', /Create fork/],
+    ['settings', 'S1', '/tools', /Delete conversation/],
+    ['skills', 'watering', '/skills/watering', /Twice a week/],
+    ['panels', undefined, '/version', /abc1234/],
+  ];
+  for (const [view, arg, late, marker] of screens) {
+    const ctx = load(routes);
+    const held = [];
+    const fetch = ctx.fetch;
+    ctx.fetch = (p, o) => p === '/jobs' ? fetch(p, o) : new Promise(r => held.push({ p, go: () => r(fetch(p, o)) }));
+    const tick = () => new Promise(r => setImmediate(r));
+    vm.runInContext(`state.view = ${JSON.stringify(view)}; state.arg = ${JSON.stringify(arg)};`, ctx);
+    const first = ctx.render();
+    for (let i = 0; i < 20 && !held.some(h => h.p === late); i++) {
+      held.splice(0).forEach(h => h.go());
+      await tick();
+    }
+    assert.ok(held.some(h => h.p === late), `${view} never asked for ${late}`);
+    vm.runInContext("state.view = 'jobs'; state.arg = undefined;", ctx);
+    await ctx.render();
+    for (let i = 0; i < 20; i++) {
+      held.splice(0).forEach(h => h.go());
+      await tick();
+    }
+    await first;
+    const pane = textOf(ctx._id('view'));
+    assert.match(pane, /No jobs scheduled/, `the jobs screen is not on screen after leaving ${view}`);
+    assert.doesNotMatch(pane, marker, `leaving ${view} early still painted it over the jobs screen`);
+    assert.strictEqual(ctx._id('title').textContent, 'Jobs', `leaving ${view} early took over the header`);
+    const acts = ctx._id('head-acts').children.map(b => b.textContent);
+    assert.ok(!acts.includes('Delete'), `leaving ${view} early left its Delete in the header`);
+  }
+});
