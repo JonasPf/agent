@@ -160,7 +160,7 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Update title, status, or the rolling summary.",
+        "summary": "Update title, status, or when the conversation compacts.",
         "requestBody": {
           "required": true,
           "content": {
@@ -181,6 +181,16 @@
                   "summary": {
                     "type": "string",
                     "description": "Edit the rolling summary."
+                  },
+                  "compact_at_tokens": {
+                    "type": "integer",
+                    "minimum": 2000,
+                    "description": "When this conversation compacts. Not part of the configuration: no prompt reads it, so it can change at any point."
+                  },
+                  "keep_verbatim_tokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "How much of the newest conversation a compaction keeps word for word. At most half of compact_at_tokens, as it stands after this request."
                   }
                 }
               }
@@ -200,6 +210,21 @@
           },
           "409": {
             "description": "Refused: the body carried model, enabled_tools, or enabled_skills. A session's configuration is fixed for its life; POST /sessions/{id}/rotate to continue the conversation under a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Refused: compact_at_tokens below 2,000, a negative keep_verbatim_tokens, or a tail more than half the threshold. Nothing in the request is applied.",
             "content": {
               "application/json": {
                 "schema": {
@@ -430,7 +455,7 @@
         "tags": [
           "sessions"
         ],
-        "summary": "Full-text search across all transcripts.",
+        "summary": "Full-text search across transcripts, or one transcript.",
         "parameters": [
           {
             "name": "q",
@@ -441,11 +466,19 @@
             }
           },
           {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Search this session only. Omitted, every session is searched."
+          },
+          {
             "name": "limit",
             "in": "query",
             "schema": {
               "type": "integer",
-              "default": 20
+              "default": 50
             }
           }
         ],
@@ -462,18 +495,33 @@
                       "session_id": {
                         "type": "string"
                       },
-                      "session_title": {
-                        "type": "string"
+                      "title": {
+                        "type": "string",
+                        "description": "The session's title."
                       },
-                      "entry_seq": {
-                        "type": "integer"
+                      "seq": {
+                        "type": "integer",
+                        "description": "The entry's sequence number in its transcript."
                       },
                       "snippet": {
-                        "type": "string"
+                        "type": "string",
+                        "description": "The words around the match, each match in square brackets."
+                      },
+                      "type": {
+                        "type": "string",
+                        "description": "The entry's type: message, event, compaction."
+                      },
+                      "role": {
+                        "type": "string",
+                        "description": "For a message: user, assistant, or tool."
                       },
                       "created_at": {
                         "type": "string",
                         "format": "date-time"
+                      },
+                      "compacted": {
+                        "type": "boolean",
+                        "description": "The session's newest compaction covers this entry, so the agent no longer sees it."
                       }
                     }
                   }
@@ -481,7 +529,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Each word of q is FTS5 syntax. Entries a compaction covers are still found, and say so."
       }
     },
     "/jobs": {
@@ -1461,6 +1510,67 @@
           }
         }
       }
+    },
+    "/sessions/{id}/compact": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "post": {
+        "tags": [
+          "sessions"
+        ],
+        "summary": "Compact now rather than at the threshold.",
+        "description": "Takes its place on the session's queue behind any turn in progress, so it never folds a conversation mid-turn. While it runs the session reports itself working and can be stopped like a turn. Answers when it is done.",
+        "responses": {
+          "200": {
+            "description": "Compacted. The compaction entry is in the transcript.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Nothing to compact: everything since the last compaction fits in keep_verbatim_tokens. No model call is made and nothing is written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The summariser failed or wrote a summary no smaller than what it covered. An error event records it and the conversation continues uncompacted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1584,6 +1694,14 @@
           "comparison": {
             "type": "string",
             "description": "The comparison this session is a candidate of, while that comparison is undecided. Absent on every other session: keeping one candidate clears it and deletes the rest."
+          },
+          "compact_at_tokens": {
+            "type": "integer",
+            "description": "Projected size at which this conversation compacts. Default 40,000. Changeable at any time with PATCH; a fork inherits it."
+          },
+          "keep_verbatim_tokens": {
+            "type": "integer",
+            "description": "How much of the newest conversation a compaction keeps word for word. Default 10,000; at most half of compact_at_tokens."
           }
         }
       },

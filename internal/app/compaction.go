@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,7 +20,31 @@ const (
 	// constant rather than a setting: nothing ever set it, and a number nobody
 	// tunes is a number that belongs in the code that depends on it.
 	defaultSummaryEvery = 4000
+	// Below this a conversation would fold every few exchanges, paying for a
+	// summary each time to save almost nothing.
+	minCompactAtTokens = 2000
 )
+
+// errNothingToCompact is a compaction asked for when there is nothing to fold:
+// everything since the last one fits in the tail kept word for word.
+var errNothingToCompact = errors.New("nothing to compact")
+
+// checkThresholds refuses a pair that cannot work. A tail more than half the
+// threshold leaves a compaction too little to fold, so the session would be over
+// its threshold again almost at once and compact on nearly every turn.
+func checkThresholds(compactAt, keep int) error {
+	if compactAt < minCompactAtTokens {
+		return fmt.Errorf("compact_at_tokens must be at least %d tokens", minCompactAtTokens)
+	}
+	if keep < 0 {
+		return fmt.Errorf("keep_verbatim_tokens cannot be negative")
+	}
+	if keep > compactAt/2 {
+		return fmt.Errorf("keep_verbatim_tokens (%d) must be at most half of compact_at_tokens (%d), "+
+			"or each compaction frees too little and the next follows almost at once", keep, compactAt)
+	}
+	return nil
+}
 
 // The summariser is asked to edit rather than to re-summarise. Material that has
 // been compacted ten times has passed through ten model calls, and a summary
@@ -162,7 +187,11 @@ func (a *App) Compact(ctx context.Context, s *Session) error {
 
 	split := splitPoint(entries, s.KeepVerbatimTokens)
 	if split <= covered {
-		return nil // nothing new to fold
+		since := "the whole conversation fits"
+		if covered > 0 {
+			since = "everything since the last compaction fits"
+		}
+		return fmt.Errorf("%w: %s in the %d tokens kept word for word", errNothingToCompact, since, s.KeepVerbatimTokens)
 	}
 
 	var head []Entry
@@ -174,7 +203,7 @@ func (a *App) Compact(ctx context.Context, s *Session) error {
 		}
 	}
 	if len(head) == 0 {
-		return nil
+		return fmt.Errorf("%w: what is left to fold holds no messages", errNothingToCompact)
 	}
 
 	res, err := a.or.Chat(ctx, ChatRequest{Model: s.Model, Messages: []ChatMessage{
@@ -182,6 +211,13 @@ func (a *App) Compact(ctx context.Context, s *Session) error {
 		{Role: "user", Content: buildCompactionInput(previous, head)},
 	}}, nil)
 	if err != nil {
+		// Stopped is not failed: the operator asked for it, and nothing was
+		// folded either way.
+		if ctx.Err() != nil {
+			a.appendEvent(s.ID, Entry{EventKind: "cancelled",
+				Text: "compaction stopped before it finished — nothing was folded"})
+			return err
+		}
 		a.appendEvent(s.ID, Entry{EventKind: "error",
 			Text: fmt.Sprintf("compaction failed: %v — the conversation continues uncompacted", err)})
 		return err
@@ -219,7 +255,8 @@ func ptrTime(t time.Time) *time.Time { return &t }
 
 // maybeCompact folds a session that has passed its size threshold. It runs only
 // between turns. A failure leaves the conversation running, over threshold and
-// visibly so, and is retried after the next turn.
+// visibly so, and is retried after the next turn; nothing to fold is not a
+// failure, and the error saying so is dropped here.
 func (a *App) maybeCompact(ctx context.Context, s *Session) {
 	if s.Status != "active" || s.CompactAtTokens <= 0 {
 		return

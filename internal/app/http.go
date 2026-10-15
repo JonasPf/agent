@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -260,10 +261,29 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		EnabledSkills optionalSet `json:"enabled_skills"`
 		GrantedEnv    optionalSet `json:"granted_env"`
 		Persona       *string     `json:"persona"`
+		// The thresholds are how the conversation is kept, not what it is: no
+		// prompt reads them, so they can change at any point in its life.
+		CompactAtTokens    *int `json:"compact_at_tokens"`
+		KeepVerbatimTokens *int `json:"keep_verbatim_tokens"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
 		return
+	}
+	// Checked before anything is applied, so a refused pair changes nothing.
+	compactAt, keep := s.CompactAtTokens, s.KeepVerbatimTokens
+	thresholds := in.CompactAtTokens != nil || in.KeepVerbatimTokens != nil
+	if in.CompactAtTokens != nil {
+		compactAt = *in.CompactAtTokens
+	}
+	if in.KeepVerbatimTokens != nil {
+		keep = *in.KeepVerbatimTokens
+	}
+	if thresholds {
+		if err := checkThresholds(compactAt, keep); err != nil {
+			fail(w, 400, "%v", err)
+			return
+		}
 	}
 	if in.Title != nil {
 		s.Title = *in.Title
@@ -278,6 +298,9 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "a session's model, tools, skills, grants, and persona are fixed for its life; "+
 			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
 		return
+	}
+	if thresholds {
+		s.CompactAtTokens, s.KeepVerbatimTokens = compactAt, keep
 	}
 	if in.Status != nil {
 		s.Status = *in.Status
@@ -375,8 +398,6 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, a.enrich(fork))
 }
 
-// hCompact folds a session now rather than at its threshold, for a conversation
-// that has grown expensive before it would have folded on its own.
 // A comparison is started from the conversation it forks, so it is one request
 // naming the models and the message. What comes back is the candidates, so the
 // screen can show them filling in without asking again which they are.
@@ -422,17 +443,36 @@ func (a *App) hKeep(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"session": a.enrich(s), "deleted": gone})
 }
 
+// hCompact folds a session now rather than at its threshold, for a conversation
+// that has grown expensive before it would have folded on its own. It takes its
+// place on the session's queue like a message: compaction happens only between
+// turns, so one asked for mid-turn folds when that turn ends, and while it runs
+// the session is working and can be stopped like any turn.
 func (a *App) hCompact(w http.ResponseWriter, r *http.Request) {
 	s := a.store.Session(r.PathValue("id"))
 	if s == nil {
 		fail(w, 404, "no such session")
 		return
 	}
-	if err := a.Compact(r.Context(), s); err != nil {
+	done := make(chan error, 1)
+	a.enqueue(s.ID, func(ctx context.Context) {
+		live := a.store.Session(s.ID)
+		if live == nil {
+			done <- fmt.Errorf("the session was deleted before it could compact")
+			return
+		}
+		done <- a.Compact(ctx, live)
+	})
+	err := <-done
+	switch {
+	case errors.Is(err, errNothingToCompact):
+		fail(w, 409, "%v", err)
+		return
+	case err != nil:
 		fail(w, 500, "%v", err)
 		return
 	}
-	writeJSON(w, 200, a.enrich(s))
+	writeJSON(w, 200, a.enrich(a.store.Session(s.ID)))
 }
 
 // hEditCompaction corrects a summary that left something out. The transcript is

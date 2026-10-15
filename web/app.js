@@ -88,13 +88,14 @@ const state = { view: null, session: null, entries: [], streaming: '', fileFolds
 
 function route() {
   const h = location.hash.slice(1) || 'sessions';
-  const [name, arg] = h.split('/');
+  const [name, arg, arg2] = h.split('/');
   // Where this screen was reached from, so a screen that finishes — an editor
   // that saved — can go back to it rather than push a second copy of it.
   state.from = state.here || '';
   state.here = '#' + h;
   state.view = name;
   state.arg = arg;
+  state.arg2 = arg2;
   drawer(false);
   closeMenu();
   closeDialog();
@@ -439,6 +440,7 @@ function render() {
     case 'skills': return viewSkills(v);
     case 'personas': return viewPersonas(v);
     case 'search': return viewSearch(v);
+    case 'history': return viewHistory(v);
     case 'settings': return viewSettings(v);
     case 'fork': return viewFork(v);
     case 'compare': return viewCompare(v);
@@ -569,6 +571,7 @@ async function viewSession(v) {
     { label: 'Jobs', fn: () => location.hash = '#jobs/' + id },
     { label: 'Files', fn: () => location.hash = '#files/' + id },
     { label: 'Copy', fn: () => copyConversation() },
+    { label: 'Search', fn: () => location.hash = '#search/' + id },
     { label: 'Compact', fn: () => compactNow(id) },
     { label: 'Fork', fn: () => location.hash = '#fork/' + id },
     { label: 'Compare', fn: () => location.hash = '#compare/' + id },
@@ -843,25 +846,39 @@ function atEnd() {
 // read afresh, and when what is folded changes; anything arriving afterwards is
 // added where it belongs instead, so a long conversation is not rebuilt — and a
 // result the reader opened not closed — for every step of a turn.
+//
+// After a compaction the conversation is drawn the way the agent reads it: the
+// summary, then the turns it carried over word for word, grouped and labelled,
+// then what was said since. What the summary stands for is not drawn; the
+// banner offers a search of it instead.
 function renderTranscript() {
   const t = $('transcript');
   if (!t) return;
   const atBottom = atEnd();
   t.innerHTML = '';
-  const covers = coveredThrough(state.entries);
+  const rows = transcriptRows(state.entries);
+  const carried = rows.filter(r => r.part === 'carried');
+  let group = null;
   let marked = state.readFrom == null;
-  for (const e of state.entries) {
-    const isFolded = covers > 0 && e.seq <= covers;
-    if (isFolded && !state.revealCompacted) continue;
-    if (!marked && e.seq > state.readFrom) {
-      t.append(el('div', 'unread-mark', 'unread'));
+  for (const { entry: e, part } of rows) {
+    let into = t;
+    if (part === 'carried') {
+      if (!group) {
+        group = el('div', 'verbatim');
+        const turns = carried.filter(r => r.entry.type === 'message' && r.entry.role === 'user').length;
+        group.append(el('div', 'verbatim-label',
+          `Carried over word for word · ${turns} turn${turns === 1 ? '' : 's'}`));
+        t.append(group);
+      }
+      into = group;
+    }
+    // The summary is not something to read as new: it stands for what came
+    // before it, so where reading stopped is placed by the turns around it.
+    if (!marked && part !== 'summary' && e.seq > state.readFrom) {
+      into.append(el('div', 'unread-mark', 'unread'));
       marked = true;
     }
-    const node = renderEntry(e);
-    // Revealed, a folded entry is dimmed behind a gutter rule so it can never be
-    // mistaken for something the agent can still see.
-    if (isFolded) node.classList.add('folded');
-    t.append(node);
+    into.append(part === 'summary' ? compactionEntry(e, { carried: carried.length }) : renderEntry(e));
   }
   addTail(t);
   if (atBottom) scrollDown();
@@ -993,22 +1010,35 @@ function bubble(e) {
 }
 
 // The transcript shows what the model sees. Entries a compaction covers are not
-// rendered by default: showing messages the agent can no longer read is exactly
-// the surprise the design forbids — you would read turn 12 and assume it knows.
-// They are still there, one click away, and still on disk.
+// drawn: showing messages the agent can no longer read is exactly the surprise
+// the design forbids — you would read turn 12 and assume it knows. They are
+// still on disk, found by search and read in the history.
 function coveredThrough(entries) {
   let covers = 0;
   for (const e of entries) if (e.type === 'compaction') covers = e.covers_through || 0;
   return covers;
 }
 
-function compactionEntry(e) {
+// compactionEntry is the banner a summary stands under. In the conversation it
+// says what the agent reads in place of what came before, and offers to edit
+// that and to search what it replaced; in the history it is a record, and
+// offers neither.
+function compactionEntry(e, opts) {
+  const o = opts || {};
   const n = el('div', 'compaction');
   const before = (e.tokens_before || 0).toLocaleString();
   const after = (e.tokens_after || 0).toLocaleString();
   n.append(el('div', 't',
     `⊙ COMPACTED · ${e.folded_turns || 0} turns · ${before} → ${after} tokens · cache reset`));
-  n.append(el('div', 'note', 'The agent no longer sees the messages above this point. This is what it sees instead:'));
+  if (o.history) {
+    n.append(el('div', 'note', 'Written here. The summary in force is the newest one; it stood for everything dimmed above it.'));
+    const body = el('div', 'bub md'); body.innerHTML = renderMarkdown(e.text || '');
+    n.append(body);
+    return n;
+  }
+  n.append(el('div', 'note', o.carried
+    ? 'Everything before this is folded into the summary below. The agent reads it in place of those messages, then the turns underneath, carried over word for word.'
+    : 'Everything before this is folded into the summary below. The agent reads it in place of those messages.'));
 
   const body = el('div', 'bub md'); body.innerHTML = renderMarkdown(e.text || '');
   n.append(body);
@@ -1026,10 +1056,9 @@ function compactionEntry(e) {
     };
     body.replaceWith(ta); bar.replaceWith(save);
   };
-  const reveal = el('button', 'btn', `Show ${e.folded_turns || 0} hidden turns`);
-  reveal.onclick = () => { state.revealCompacted = !state.revealCompacted; renderTranscript(); };
-  if (state.revealCompacted) reveal.textContent = 'Hide folded turns';
-  bar.append(edit, reveal);
+  const search = el('button', 'btn', 'Search earlier messages');
+  search.onclick = () => location.hash = '#search/' + state.session.id;
+  bar.append(edit, search);
   n.append(bar);
   return n;
 }
@@ -1137,11 +1166,15 @@ function promptEntry(e) {
 // Compacting on request folds the conversation now rather than at the threshold.
 // The summary it writes is editable where it lands, in the transcript, rather
 // than on a screen of its own.
+//
+// The request waits its turn behind any turn in progress, and the session says
+// it is working until it is done; a refusal — nothing to fold yet — says why.
 async function compactNow(id) {
   if (!confirm('Fold the older turns of this conversation into a summary? ' +
-               'Nothing is deleted — what is folded stays on disk and stays searchable.')) return;
-  await post('/sessions/' + id + '/compact', {});
-  location.hash = '#session/' + id;
+               'The newest turns are kept word for word. Nothing is deleted — what is folded stays on disk and stays searchable.')) return;
+  try { await post('/sessions/' + id + '/compact', {}); }
+  catch (e) { toast({ title: 'Not compacted', body: String(e.message) }); return; }
+  if (state.session && state.session.id === id) await loadStatus();
 }
 
 // ---------- session configuration ----------
@@ -1953,6 +1986,34 @@ async function viewSettings(v) {
   };
   v.append(rename);
 
+  // How the conversation is kept is not what it is: no prompt reads either
+  // number, so they change here, for this conversation alone, at any time.
+  v.append(el('h2', null, 'context'));
+  v.append(el('p', 'note',
+    'When what the agent is sent grows past the first number, the older turns are folded into a summary ' +
+    'and the newest are kept word for word, up to the second. The second can be at most half the first.'));
+  const num = (cls, label, value) => {
+    const w = el('label', 'field');
+    const i = el('input', 'text ' + cls);
+    i.type = 'number'; i.min = '0'; i.step = '1000'; i.value = String(value || 0);
+    w.append(el('span', 's', label), i);
+    v.append(w);
+    return i;
+  };
+  const compactAt = num('compact-at', 'compact at, in tokens', s.compact_at_tokens);
+  const keep = num('keep-verbatim', 'keep word for word, in tokens', s.keep_verbatim_tokens);
+  const save = el('button', 'btn', 'Save');
+  save.onclick = async () => {
+    const chosen = { compact_at_tokens: Number(compactAt.value), keep_verbatim_tokens: Number(keep.value) };
+    try { await patch('/sessions/' + id, chosen); }
+    catch (e) { toast({ title: 'Not saved', body: String(e.message) }); return; }
+    Object.assign(s, chosen);
+    if (state.session && state.session.id === id) Object.assign(state.session, chosen);
+    toast({ title: 'Saved', body: `compacts at ${chosen.compact_at_tokens.toLocaleString()} tokens, ` +
+      `keeping ${chosen.keep_verbatim_tokens.toLocaleString()} word for word` });
+  };
+  v.append(save);
+
   await configFacts(v, s);
 
   v.append(el('h2', null, 'danger'));
@@ -2381,32 +2442,103 @@ function backToList(kind) {
   else location.replace(list);
 }
 
+// Search reads the transcripts as they lie on disk, so what a compaction folded
+// away is found here as well, and says so. Opened from a conversation it looks
+// there first, and can widen to every conversation. A hit opens the history at
+// the entry, because the conversation itself no longer draws a folded one.
 async function viewSearch(v) {
-  setHeader('Search', true);
+  const gen = drawing;
+  const here = state.arg || '';
+  let scope = here;
+  setHeader('Search', true, here ? [{ label: 'History', fn: () => location.hash = '#history/' + here }] : []);
   const inp = el('input', 'text'); inp.type = 'search';
-  inp.placeholder = 'Search every transcript…';
   const out = el('div');
-  inp.onchange = async () => {
+  let asked = 0;
+  const run = async () => {
+    const q = ftsQuery(inp.value);
+    const mine = ++asked;
     out.innerHTML = '';
-    if (!inp.value.trim()) return;
-    let hits = [];
-    try { hits = await api('/search?q=' + encodeURIComponent(inp.value)) || []; }
-    catch (e) { out.append(el('div', 'empty', String(e.message))); return; }
+    if (!q) return;
+    let hits;
+    try { hits = await api('/search?q=' + encodeURIComponent(q) + (scope ? '&session=' + encodeURIComponent(scope) : '')) || []; }
+    catch (e) { if (mine === asked) out.append(el('div', 'empty', String(e.message))); return; }
+    if (mine !== asked) return;
     if (!hits.length) { out.append(el('div', 'empty', 'No matches.')); return; }
     const grid = el('div', 'cards');
+    for (const h of hits) grid.append(hitRow(h, !scope));
     out.append(grid);
-    for (const h of hits) {
-      const row = el('button', 'row-item');
-      const m = el('div', 'm');
-      m.append(el('div', 'n', h.title || h.session_id));
-      m.append(el('div', 's', h.snippet));
-      row.append(m);
-      row.onclick = () => location.hash = '#session/' + h.session_id;
-      grid.append(row);
-    }
   };
+  if (here) {
+    let title = 'This conversation';
+    try { const res = await api('/sessions/' + here); title = res.session.title || title; } catch (e) {}
+    if (stale(gen)) return;
+    const mine = el('button', 'pill on', title);
+    const all = el('button', 'pill', 'All conversations');
+    const pick = (to, on, off) => { scope = to; on.className = 'pill on'; off.className = 'pill'; inp.placeholder = placeholder(); run(); };
+    mine.onclick = () => pick(here, mine, all);
+    all.onclick = () => pick('', all, mine);
+    const scopes = el('div', 'scopes');
+    scopes.append(mine, all);
+    v.append(scopes);
+  }
+  const placeholder = () => scope ? 'Search this conversation…' : 'Search every transcript…';
+  inp.placeholder = placeholder();
+  // Typing searches as it goes; Enter searches at once.
+  let debounce = null;
+  inp.oninput = () => { clearTimeout(debounce); debounce = setTimeout(run, 250); };
+  inp.onchange = () => { clearTimeout(debounce); return run(); };
   v.append(inp, out);
   inp.focus();
+}
+
+// hitRow is one search result: who said it and when, the words around the
+// match with the match marked, and whether the agent can still see it.
+function hitRow(h, withTitle) {
+  const row = el('button', 'row-item hit-row');
+  const m = el('div', 'm');
+  const who = h.type === 'compaction' ? 'summary' : h.role === 'tool' ? 'tool result' : h.role ? speaker(h) : (h.type || 'entry');
+  m.append(el('div', 'n', (withTitle ? (h.title || h.session_id) + ' · ' : '') + who +
+    (h.created_at ? ' · ' + ago(h.created_at) : '')));
+  const snip = el('div', 's');
+  for (const p of snippetParts(h.snippet)) snip.append(p.hit ? el('mark', 'match', p.text) : document.createTextNode(p.text));
+  m.append(snip);
+  if (h.compacted) m.append(el('span', 'tag', 'compacted · the agent no longer sees this'));
+  row.append(m);
+  row.onclick = () => location.hash = '#history/' + h.session_id + '/' + h.seq;
+  return row;
+}
+
+// ---------- history ----------
+
+// The history is everything a conversation has stored, oldest first: folded
+// turns and superseded summaries included. It is what a search hit opens into.
+// What the agent no longer sees is dimmed, so it is never read as context, and
+// nothing here can be edited or sent.
+async function viewHistory(v) {
+  const gen = drawing;
+  const id = state.arg;
+  const [res, entries] = await Promise.all([api('/sessions/' + id), api('/sessions/' + id + '/transcript')]);
+  if (stale(gen)) return;
+  const s = res.session;
+  setHeader('History · ' + (s.title || 'Conversation'), true, [
+    { label: 'Conversation', fn: () => location.hash = '#session/' + id },
+    { label: 'Search', fn: () => location.hash = '#search/' + id },
+  ]);
+  const covers = coveredThrough(entries);
+  v.append(el('p', 'note', covers
+    ? 'Everything this conversation has stored, oldest first. Dimmed entries are folded into a summary: the agent no longer sees them.'
+    : 'Everything this conversation has stored, oldest first. Nothing has been folded away yet.'));
+  const target = state.arg2 ? Number(state.arg2) : null;
+  const t = el('div', 'history');
+  let hit = null;
+  for (const e of entries) {
+    const n = e.type === 'compaction' ? compactionEntry(e, { history: true }) : renderEntry(e);
+    if (covers > 0 && e.seq <= covers && e.type !== 'prompt') n.className += ' folded';
+    if (e.seq === target) { n.className += ' hit'; hit = n; }
+    t.append(n);
+  }
+  v.append(t);
+  if (hit) requestAnimationFrame(() => hit.scrollIntoView && hit.scrollIntoView({ block: 'center' }));
 }
 
 // ---------- notifications ----------

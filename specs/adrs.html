@@ -1917,6 +1917,43 @@ substitute the API — the one thing R5 allows to be substituted, alongside the 
 so the whole tool is covered end to end as a subprocess rather than in pure functions alone.</p>
 </div>
 
+<div class="adr" id="adr-060">
+<div class="meta">ADR-060 · accepted · builds on <a href="#adr-055">ADR-055</a></div>
+<h3>When a conversation compacts is the operator's, per session, at any time</h3>
+<h4>Context</h4>
+<p>Each session carried <code>compact_at_tokens</code> and <code>keep_verbatim_tokens</code>, fixed at
+creation to forty thousand and ten thousand, and nothing could set them: not the new-session screen,
+not the details screen, not the API. One conversation is a quick question and another is a week of
+work on one codebase, and the same threshold is wrong for at least one of them. The only reason they
+were fixed was that the prompt stated the threshold, and the prompt is written once
+(<a href="#adr-055">ADR-055</a>).</p>
+<p>Writing this up found a defect under it. A compaction is appended after the turns it keeps
+verbatim, and the projection sent only what followed the compaction entry, so the turns
+<code>keep_verbatim_tokens</code> promised to keep never reached the model. The screen drew them
+above the banner, where they read as the old turns the summary had replaced, under a note saying the
+agent could no longer see anything above it &mdash; which, through the defect, was true.</p>
+<h4>Decision</h4>
+<p>Both thresholds can be changed at any point in a session's life, from its details screen or with
+<code>PATCH /sessions/{id}</code>, and apply to that session alone. They are not configuration in the
+sense of <a href="#adr-055">ADR-055</a>: the prompt no longer states the threshold, only that the
+conversation compacts past a size the operator set, so changing it makes nothing the model was told
+untrue. A pair that cannot work is refused &mdash; a threshold under two thousand tokens, or a tail
+more than half the threshold, after which each compaction frees too little and the next follows almost
+at once. A fork starts with its origin's pair.</p>
+<p>A compaction is projected in place of what it covers: the summary first, then every entry after
+what it covers, whether written before the compaction or since. The conversation is drawn the same
+way &mdash; the summary, then the turns it carried over, grouped and labelled, then what came since
+&mdash; and what the summary covers is not drawn at all. It stays reachable by search, which opens a
+history of everything the session stored.</p>
+<h4>Consequences</h4>
+<p>The threshold a session compacts at is no longer something the model can read. It was a number the
+model had no use for: it cannot see its own token count, and what it needs to know &mdash; that
+earlier detail may be folded away and is still searchable &mdash; the prompt still says.</p>
+<p>Sessions created before this keep the number in their prompt, and it goes stale if they change it.
+They are not rewritten: a prompt is never rewritten, and a stale figure in a sentence the model has no
+use for is the smaller cost.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

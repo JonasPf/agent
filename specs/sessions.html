@@ -36,8 +36,8 @@ private one of its own, so a session is always something a person started and ca
 <tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
 <tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means every skill that is on by default (<a href="adrs.html#adr-050">ADR-050</a>). Fixed for the session's life.</td></tr>
 <tr><td><code>granted_env</code></td><td>Environment variable <em>names</em> this conversation's tools may read, beyond what every tool is promised. Never values: the value stays in the agent's own environment, so a grant can be exported and read without carrying a secret. Fixed for the session's life.</td></tr>
-<tr><td><code>compact_at_tokens</code></td><td>The projected size at which the conversation compacts. Default forty thousand.</td></tr>
-<tr><td><code>keep_verbatim_tokens</code></td><td>How much of the tail a compaction leaves untouched. Default ten thousand.</td></tr>
+<tr><td><code>compact_at_tokens</code></td><td>The projected size at which the conversation compacts. Default forty thousand. Not configuration: no prompt reads it, so it can be changed at any time (<a href="adrs.html#adr-060">ADR-060</a>).</td></tr>
+<tr><td><code>keep_verbatim_tokens</code></td><td>How much of the tail a compaction leaves untouched. Default ten thousand, and at most half of <code>compact_at_tokens</code>. Changeable at any time, like it.</td></tr>
 </table>
 
 <div class="ac">
@@ -54,6 +54,8 @@ private one of its own, so a session is always something a person started and ca
 <li>A session created without a model starts on the one last chosen, for a new session or a fork onto a different model, and the choice survives a restart. Before any choice, the most recent session's model; before any session, a named fallback.</li>
 <li>A session says which variables it may read, without saying what any of them hold.</li>
 <li>The configuration of one session does not affect any other.</li>
+<li>A session's compaction thresholds can be changed at any point in its life and apply to that session alone; a threshold under two thousand tokens, or a tail more than half the threshold, is refused and changes nothing.</li>
+<li>A fork starts with its origin's compaction thresholds.</li>
 <li>The system prompt as sent is retrievable for any session that has taken a turn.</li>
 <li>A session identifier addresses the same conversation for that conversation's whole life.</li>
 </ul>
@@ -276,7 +278,7 @@ flowchart LR
 
 <ol>
 <li>The newest <code>prompt</code> entry becomes the system message. Every earlier one is dropped.</li>
-<li>Only the newest <code>compaction</code> entry is sent, as an <code>assistant</code> message, in the position it was written. Every earlier one is dropped.</li>
+<li>Only the newest <code>compaction</code> entry is sent, as an <code>assistant</code> message, in place of what it covers: ahead of the turns it kept verbatim, although it is written after them. Every earlier one is dropped.</li>
 <li>Every entry at or before that compaction's <code>covers_through</code> is dropped, whatever its type.</li>
 <li>Entries of type <code>event</code> are dropped.</li>
 <li>Consecutive <code>job_check</code> events sharing a <code>job_id</code> and a <code>status</code> collapse into a single line carrying the repetition count and the elapsed span. Only a wake with a check produces these; a wake that acts produces messages, which are never collapsed.</li>
@@ -285,8 +287,12 @@ flowchart LR
 </ol>
 
 <p>Rules 1 to 3 are what make a compaction a projection rule rather than a rewrite. Nothing is edited
-and nothing is removed: the transcript grows by two entries, and the projection stops sending what they
-stand for.</p>
+and nothing is removed: the transcript grows by one entry, and the projection stops sending what it
+stands for.</p>
+
+<p>The turns a compaction keeps are found by sequence, not by position. A compaction is appended
+after them, so a projection that sent only what follows the entry sent the summary and dropped the
+very turns it was meant to keep (<a href="adrs.html#adr-060">ADR-060</a>).</p>
 
 <p>A compaction is projected as an <code>assistant</code> message because the alternatives are worse. The
 user role means the operator is speaking, and the operator did not say it. The system message is the
@@ -311,7 +317,7 @@ change" supports a conclusion that "checked once" does not.</p>
 <ul>
 <li>Projection is a pure function of a transcript; running it twice on the same input gives the same output.</li>
 <li>The system message sent is the newest prompt entry; earlier prompt entries appear nowhere in the request.</li>
-<li>A transcript with a compaction projects to that compaction's text followed by the entries after it, and nothing before it.</li>
+<li>A transcript with a compaction projects to that compaction's text followed by every entry after what it covers &mdash; the turns it kept verbatim, then what came since &mdash; and nothing it covers.</li>
 <li>A transcript with two compactions sends only the newer one.</li>
 <li>A compaction reaches the model as an assistant message, not as a user or system message.</li>
 <li>A user entry carrying a job id reaches the model marked as a wake, naming the job and saying the operator is not present.</li>
@@ -366,10 +372,14 @@ three options the agent just offered, a question waiting to be answered, the fil
 <p>They are independent, and together they are the whole trade between cost and retention. Each
 compaction frees the difference between them, so the conversation grows by about thirty thousand tokens
 between one compaction and the next. Setting the tail close to the threshold would compact constantly
-for very little gain; the default keeps the tail at about a quarter.</p>
+for very little gain; the default keeps the tail at about a quarter, and a tail of more than half the
+threshold is refused.</p>
 
-<p>Both are per-session, fixed when the session is created. A setting changed in configuration does not
-move underneath a conversation that is already running.</p>
+<p>Both are per-session. Every session starts with the defaults, a fork starts with its origin's, and
+either can be changed at any point from the session's details screen or the API &mdash; for that
+session alone, and taking effect after the next turn. They are how the conversation is kept rather than
+what it is, so changing one is not a change of configuration: the prompt says the conversation compacts
+but not at what size, and nothing the model was told becomes untrue (<a href="adrs.html#adr-060">ADR-060</a>).</p>
 
 <h3>Where the split goes</h3>
 
@@ -428,16 +438,15 @@ that were actually touched.
 
 <pre><code>      ON DISK (append-only)              SENT TO MODEL (projection)
       ─────────────────────              ──────────────────────────
-      prompt entry (superseded)
+      prompt entry              ·······▶  system message
       turn 1        ┐
-      turn 2        │  covered
-      ...           │
-      turn 36       ┘
-  ▶   PROMPT entry (refreshed)  ·······▶  system message
-  ▶   COMPACTION entry          ·······▶  the summary
-      turn 37                   ·······▶  turn 37
-      turn 38                   ·······▶  turn 38
-      turn 39                   ·······▶  turn 39
+      turn 2        │  covered            ┌▶  the summary
+      ...           │                     │
+      turn 36       ┘                     │
+      turn 37       ┐                     │   turn 37
+      turn 38       │  kept verbatim  ····│▶  turn 38
+      turn 39       ┘                     │   turn 39
+  ▶   COMPACTION entry          ··········┘
       turn 40                   ·······▶  turn 40</code></pre>
 
 <p>A compaction only appends. The covered entries stay on disk, stay in the full-text index, and stay
@@ -452,7 +461,10 @@ nothing to say &mdash; a session's prompt is written when the session is created
 every turn it ever takes (<a href="adrs.html#adr-055">ADR-055</a>).</p>
 
 <p>A compaction can be asked for rather than waited for, which folds the conversation now rather than in
-thirty thousand tokens.</p>
+thirty thousand tokens. It takes its place on the session's queue like a message, so one asked for
+while a turn is running folds when that turn ends; while it runs the session says it is working and can
+be stopped like a turn. When there is nothing to fold &mdash; everything since the last compaction fits
+the verbatim tail &mdash; it says so, calls no model, and writes nothing.</p>
 
 <h3>When it fails</h3>
 
@@ -481,8 +493,12 @@ screen — and it does not stop, lose anything, or fail a turn.</p>
 <li>The compaction text is editable, and an edit changes what the next turn sends.</li>
 <li>A compacted session still has exactly one prompt entry, the one written when it was created.</li>
 <li>Compaction can be requested, and takes effect immediately rather than at the threshold.</li>
+<li>A requested compaction waits for a turn in progress to end before it folds anything.</li>
+<li>A requested compaction with nothing to fold says so, calls no model, and writes nothing.</li>
 <li>Compaction happens only between turns, never during one.</li>
-<li>Both thresholds are configurable, are fixed per session at creation, and default to forty thousand and ten thousand projected tokens.</li>
+<li>Both thresholds default to forty thousand and ten thousand projected tokens, and each session's can be changed at any time (<a href="adrs.html#adr-060">ADR-060</a>).</li>
+<li>The prompt says that the conversation compacts, and does not state the threshold it compacts at.</li>
+<li>The turns a compaction kept verbatim reach the model after the summary and before what came since, including after the summary is edited.</li>
 <li>Growth counts the projected messages, so a session growing only in tool results still compacts.</li>
 </ul>
 </div>
@@ -726,6 +742,7 @@ transcript as one.
 <li>Search widened past the current session returns matches from others, and the widening is visible in the transcript.</li>
 <li>An entry a compaction covers is still returned by a search of its own session.</li>
 <li>Each result identifies its session and position so the user can open it.</li>
+<li>Each result says what kind of entry matched, who wrote it, when, and whether the session's newest compaction covers it.</li>
 <li>Event entries are searchable.</li>
 <li>The index is rebuildable from transcripts alone.</li>
 </ul>
