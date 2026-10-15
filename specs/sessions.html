@@ -671,6 +671,11 @@ continues with the files the conversation was working on, and neither session's 
 other. A compaction touches the directory not at all — the session is the same session, and its files
 are where it left them.</p>
 
+<p>A tool may write a link in its directory to anywhere: the sandbox confines what the tool opens,
+not where a link it writes points. The files the interface lists, downloads, uploads, and deletes are
+handled by the agent itself, which no sandbox confines, so the agent follows no link out of the
+session's directory on a tool's behalf.</p>
+
 <p>Deleting a session ends it, including a turn it is in the middle of. The turn is stopped before
 anything is removed, so a model call already under way is not paid for to produce an answer nobody can
 read, and whatever was still on its way to the transcript, the job table, or the directory when the
@@ -684,7 +689,7 @@ delete landed is refused rather than written into the place the delete just empt
 <li>A fork starts from a copy of its origin's directory; writes after that are independent.</li>
 <li>A compaction leaves the working directory unchanged.</li>
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>
-<li>A path that would leave the session's directory is refused.</li>
+<li>A path that would leave the session's directory is refused, whether it climbs out or passes through a link that points out. A link that stays inside reads as the file it names; deleting a link removes the link and never what it names; an upload never writes through one.</li>
 <li>Deleting a session deletes its directory.</li>
 <li>Deleting a session that is working stops its turn first, a job's wake included. Nothing that turn would have written afterwards brings back the session, its transcript, its jobs, or its directory.</li>
 <li>A session reports what it occupies on disk: its transcript and its working directory.</li>

@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **A conversation's files stay in its own folder.** A tool could leave a
+  link there pointing elsewhere on the server, and downloading or deleting
+  through it reached files outside the conversation. Links that lead out are
+  now refused, and an upload never writes through one.
 - **Two photos are two files.** A phone names every camera photo
   image.jpg, so attaching two used to keep only the last one, and an upload
   could quietly replace a file the agent had written. A name that is taken

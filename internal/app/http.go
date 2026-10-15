@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -979,12 +981,29 @@ func (a *App) hSessionFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	full, err := a.resolveInWorkspace(id, r.PathValue("path"))
+	rel, err := workspacePath(id, r.PathValue("path"))
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
-	http.ServeFile(w, r, full)
+	root, err := a.workspaceRoot(id)
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	defer root.Close()
+	f, err := root.Open(rel)
+	if err != nil {
+		failFile(w, err)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		fail(w, 400, "%s is a directory, not a file", rel)
+		return
+	}
+	http.ServeContent(w, r, path.Base(rel), info.ModTime(), f)
 }
 
 func (a *App) hDeleteSessionFile(w http.ResponseWriter, r *http.Request) {
@@ -993,17 +1012,37 @@ func (a *App) hDeleteSessionFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	full, err := a.resolveInWorkspace(id, r.PathValue("path"))
+	rel, err := workspacePath(id, r.PathValue("path"))
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
-	if err := os.Remove(full); err != nil {
-		fail(w, 404, "%v", err)
+	root, err := a.workspaceRoot(id)
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	defer root.Close()
+	// A link is removed as itself, never as what it names; a link on the way
+	// to the path that leads out of the directory is refused.
+	if err := root.Remove(rel); err != nil {
+		failFile(w, err)
 		return
 	}
 	a.workspaceChanged(id)
 	w.WriteHeader(204)
+}
+
+// failFile answers a file request the session's directory refused: a file
+// that is not there is not found, and anything else — a path through a link
+// that leads out of the directory among them — is a request that cannot be
+// served.
+func failFile(w http.ResponseWriter, err error) {
+	if errors.Is(err, fs.ErrNotExist) {
+		fail(w, 404, "%v", err)
+		return
+	}
+	fail(w, 400, "%v", err)
 }
 
 // hExportSession serves everything the session owns as one zip.
