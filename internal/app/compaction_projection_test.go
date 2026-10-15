@@ -50,6 +50,29 @@ func TestCompactionReplacesWhatItCovers(t *testing.T) {
 	}
 }
 
+// A compaction is appended after the turns it leaves verbatim. They are sent,
+// after the summary and before what came since, and an older compaction among
+// them is not.
+func TestTheTailWrittenBeforeTheCompactionIsSent(t *testing.T) {
+	entries := []Entry{
+		msg(1, "user", "old question"),
+		msg(2, "assistant", "old answer"),
+		compactionAt(3, 0, "OLDER SUMMARY"),
+		msg(4, "user", "kept question"),
+		msg(5, "assistant", "kept answer"),
+		compactionAt(6, 2, "## Decisions\n- the old thing"),
+		msg(7, "user", "new question"),
+	}
+	var got []string
+	for _, m := range Project(entries) {
+		got = append(got, contentOf(m))
+	}
+	want := []string{"## Decisions\n- the old thing", "kept question", "kept answer", "new question"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("projected %q; want %q", got, want)
+	}
+}
+
 // Compactions are cumulative, never stacked: only the newest is sent.
 func TestOnlyTheNewestCompactionIsSent(t *testing.T) {
 	entries := []Entry{

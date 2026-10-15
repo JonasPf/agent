@@ -56,7 +56,8 @@ func newestCompaction(entries []Entry) int {
 //
 //  1. The newest prompt entry is the system message; earlier ones are dropped.
 //     (The caller renders it; Project drops every prompt entry from the body.)
-//  2. Only the newest compaction is sent, as an assistant message.
+//  2. Only the newest compaction is sent, as an assistant message, in place of
+//     what it covers: ahead of the turns it left verbatim.
 //  3. Every entry at or before that compaction's CoversThrough is dropped.
 //  4. Entries of type event are dropped, except a failure.
 //  5. The trailing run of job ticks sharing job_id and status collapses into one
@@ -69,12 +70,16 @@ func Project(entries []Entry) []ChatMessage {
 	// Rules 2 and 3. Slicing before anything else means the collapse below sees
 	// only what is actually being sent, and a compaction can never land inside a
 	// run of ticks it was meant to cover.
+	//
+	// A compaction is written after the turns it leaves verbatim, so what it
+	// keeps is found by sequence, not by position: everything after what it
+	// covers, whether it was written before the compaction or since. Taking only
+	// what follows the entry dropped the very turns it was meant to keep.
 	if c := newestCompaction(entries); c >= 0 {
 		covers := entries[c].CoversThrough
-		kept := make([]Entry, 0, len(entries)-c)
-		kept = append(kept, entries[c])
-		for _, e := range entries[c+1:] {
-			if e.Seq > covers {
+		kept := []Entry{entries[c]}
+		for _, e := range entries {
+			if e.Seq > covers && e.Type != "compaction" {
 				kept = append(kept, e)
 			}
 		}

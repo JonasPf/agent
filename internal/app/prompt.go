@@ -93,11 +93,12 @@ resolved against it.
 Transcript entries are append-only. Events you see in the interface are not sent to you.
 This session's model, tools, and skills are fixed for its life; they change only by
 forking, which copies this conversation into a new session.
-At about %d projected tokens this session compacts: the oldest turns are replaced, in
-what you are sent, by a written summary of them. Nothing is deleted — what is folded
-away stays on disk and session_search still finds it, so look there rather than
-assuming something earlier in this conversation is lost.`,
-		sess.ID, sess.Model, a.sessionWorkspace(sess.ID), sess.CompactAtTokens)
+When this conversation grows past the size the operator set for it, it compacts: the
+oldest turns are replaced, in what you are sent, by a written summary of them, and the
+newest are kept word for word. Nothing is deleted — what is folded away stays on disk
+and session_search still finds it, so look there rather than assuming something
+earlier in this conversation is lost.`,
+		sess.ID, sess.Model, a.sessionWorkspace(sess.ID))
 
 	secs := []Section{{Name: "persona", Text: a.personas.Text(sess.Persona)}}
 	secs = append(secs,

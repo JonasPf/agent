@@ -101,7 +101,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <tr><td>Prompt entry</td><td>Persona, skills index, and full tool definitions, each collapsible with a token count. It sits at position zero and is the prompt for the session's whole life; nothing rewrites it and no section is editable.</td></tr>
 <tr><td>Messages</td><td>User and assistant turns, tool calls with their results. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links. What the operator typed is shown as they typed it.</td></tr>
 <tr><td>Events</td><td>Job checks, forks, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
-<tr><td>Compaction</td><td>A banner standing where the folded turns were. Says how many turns it replaced and the token count before and after, states that the agent no longer sees them, shows the summary, and offers to reveal them. Editable.</td></tr>
+<tr><td>Compaction</td><td>A banner standing where the agent's reading of the conversation begins, after the prompt. Says how many turns it replaced and the token count before and after, states that the agent reads the summary in place of everything before it, shows the summary, and offers to search what it folded away. The turns it kept word for word follow it, grouped and labelled as carried over; then what came since. What it covers is not drawn. Editable.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
 <tr><td>Status line</td><td>While the agent is working, how long it has been working, counting, and the way to stop it. Model, context used against the compaction threshold, live cache size and its countdown, tokens per second while streaming, session cost.</td></tr>
 <tr><td>Copy</td><td>A header action that puts the whole conversation on the clipboard as Markdown.</td></tr>
@@ -162,9 +162,10 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>A page shown again with its socket closed reconnects at once, and opens only one new socket.</li>
 <li>A page shown again makes one request before any other, and reconnects and reads the conversation only once it is answered.</li>
 <li>A page shown again, or a dropped socket retrying, whose password has lapsed makes that one request and reloads, opening no socket and asking for nothing else.</li>
-<li>A compacted session shows the compaction banner in place of the entries it covers, and does not render those entries by default.</li>
-<li>The banner names itself a compaction, says the agent can no longer see what is above it, and shows the turn count and the tokens before and after.</li>
-<li>The entries a compaction covers can be revealed in place, and when revealed are visually distinct from live context so they cannot be read as something the agent can see.</li>
+<li>A compacted session shows the prompt, then the newest compaction's banner, then the turns it kept word for word, then what came since: the order the agent reads them in.</li>
+<li>The entries a compaction covers, and every superseded compaction, are not drawn in the conversation at all, and nothing there offers to reveal them; the banner offers a search of this conversation instead.</li>
+<li>The turns a compaction kept word for word are grouped after its banner under a label saying they were carried over, and how many turns they are.</li>
+<li>The banner names itself a compaction, says the agent reads its summary in place of everything before it, and shows the turn count and the tokens before and after.</li>
 <li>The compaction summary is editable, and an edit changes what the next turn sends.</li>
 <li>A compaction says that it reset the cache.</li>
 <li>The status line shows the live cache size and counts down to its expiry, and shows it as expired when it is.</li>
@@ -207,12 +208,16 @@ always measured on the spot.</p>
 <li>All sessions are listed, newest activity first, with title, model, and unread count.</li>
 <li>A session can be created, renamed, archived, and deleted.</li>
 <li>Search finds text across all sessions and opens a result at its position.</li>
+<li>Search opened from a conversation looks in that conversation, and can be widened to every conversation in one tap. It searches as it is typed, each word matching as a prefix, and punctuation is looked for rather than read as syntax.</li>
+<li>Each search hit says who wrote it and when, marks what matched, and says so when the agent no longer sees it.</li>
+<li>A search hit opens the conversation's history at that entry: everything the session stored, oldest first, folded entries and superseded summaries included and dimmed, the hit picked out and scrolled to. Nothing in the history can be edited or sent.</li>
 <li>The list shows which sessions have jobs attached.</li>
 <li>Every session shows what it occupies on disk, so it is clear what deleting one frees.</li>
 <li>What a tool writes or an upload adds, and what a delete frees, shows in the session list on its next read; a session's context figure moves with every entry.</li>
 <li>A session can be forked in one action.</li>
 <li>A fork links back to its origin, and the origin links forward to it.</li>
-<li>A session can be compacted on request, from the session itself, without waiting for the threshold.</li>
+<li>A session can be compacted on request, from the session itself, without waiting for the threshold, from its header.</li>
+<li>A requested compaction that is refused says why.</li>
 <li>A conversation can be put to several models at once, with the models and the message chosen on one screen that says what asking that many models costs.</li>
 <li>The candidates of a comparison are shown together, each headed by its model, each filling in as it answers.</li>
 <li>A candidate still working with nothing of its answer yet shows it is thinking, in its own column; when it finishes, its column scrolls to the answer, and a redraw leaves every other column where its reader left it.</li>
@@ -229,7 +234,8 @@ always measured on the spot.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>The details screen states the session's model, tools, skills, grants, and persona, and states them as read: nothing on it changes any of them, and it says that a different configuration is reached by forking.</li>
-<li>The details screen offers only what a conversation can still be given or denied once it exists: a new title, and deletion. It does not repeat an action the conversation's header already carries.</li>
+<li>The details screen offers only what a conversation can still be given or denied once it exists: a new title, when it compacts, and deletion. It does not repeat an action the conversation's header already carries.</li>
+<li>The details screen sets the size at which this conversation compacts and how much it keeps word for word, says the second can be at most half the first, and says why when a pair is refused (<a href="adrs.html#adr-060">ADR-060</a>).</li>
 <li>The details screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
 <li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
 <li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>

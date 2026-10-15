@@ -112,6 +112,9 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	a.append(origin.ID, Entry{Type: "event", EventKind: "fork",
 		Text: fmt.Sprintf("copied into %s (%s)", fork.ID, why)})
 	fork.Title = origin.Title
+	// How the conversation is kept travels with it: a fork of a session given
+	// room to grow should not fold at the default on its next turn.
+	fork.CompactAtTokens, fork.KeepVerbatimTokens = origin.CompactAtTokens, origin.KeepVerbatimTokens
 	// The operator made the fork from a conversation in front of them; what it
 	// copied is not news.
 	if copied := a.store.Entries(fork.ID); len(copied) > 0 {

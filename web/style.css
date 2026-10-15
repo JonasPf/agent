@@ -707,8 +707,16 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
 .compaction > .note { margin: 0 0 .6rem; opacity: .75; font-size: .9em; }
 .compaction .row { display: flex; gap: .5rem; margin-top: .7rem; }
 
-/* A revealed fold is dimmed behind a gutter rule, so it can never be read as
-   something the agent can still see. */
+/* The turns a compaction kept word for word sit under the summary, grouped and
+   labelled, so they read as carried over rather than as the old turns it replaced. */
+.verbatim { border-left: 2px solid var(--accent); padding-left: 12px; margin: 0 0 1.25rem; }
+.verbatim-label {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--accent);
+  margin: 0 0 6px;
+}
+
+/* In the history, a folded entry is dimmed behind a gutter rule, so it can never
+   be read as something the agent can still see. */
 .folded {
   opacity: .45;
   border-left: 2px solid var(--line);
@@ -738,3 +746,12 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
 .candidate-body { padding: 4px 14px; min-width: 0; }
 .candidate-body .msg { margin: 10px 0; }
 .candidate-acts { padding: 10px 14px 4px; border-top: 1px solid var(--line); }
+
+/* Search. The scope is two pills over the box; a hit marks what matched, and the
+   history opens with that entry picked out. */
+.scopes { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; }
+.hit-row mark.match { background: var(--soft); color: var(--accent-2); padding: 0 1px; border-radius: 2px; }
+.hit-row .tag { margin-top: 6px; }
+.history .hit { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; opacity: 1; }
+label.field { display: block; margin: 0 0 10px; }
+label.field .s { display: block; margin-bottom: 4px; }

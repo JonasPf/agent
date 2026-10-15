@@ -507,10 +507,16 @@ func (s *Store) Entries(sessionID string) []Entry {
 }
 
 type SearchHit struct {
-	SessionID string `json:"session_id"`
-	Title     string `json:"title"`
-	Seq       int    `json:"seq"`
-	Snippet   string `json:"snippet"`
+	SessionID string    `json:"session_id"`
+	Title     string    `json:"title"`
+	Seq       int       `json:"seq"`
+	Snippet   string    `json:"snippet"`
+	Type      string    `json:"type,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitzero"`
+	// Compacted says the session's newest compaction covers this entry, so the
+	// agent no longer sees it — only the summary that stands for it.
+	Compacted bool `json:"compacted"`
 }
 
 // Search queries the full-text index. A sessionID scopes it to one conversation,
@@ -537,9 +543,43 @@ func (s *Store) Search(q, sessionID string, limit int) ([]SearchHit, error) {
 		if sess := s.Session(h.SessionID); sess != nil {
 			h.Title = sess.Title
 		}
+		s.describeHit(&h)
 		out = append(out, h)
 	}
 	return out, nil
+}
+
+// describeHit fills in what the index does not hold: who wrote the entry, when,
+// and whether a compaction has since taken it out of what the agent is sent.
+func (s *Store) describeHit(h *SearchHit) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	list := s.entries[h.SessionID]
+	covers := 0
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i].Type == "compaction" {
+			covers = list[i].CoversThrough
+			break
+		}
+	}
+	h.Compacted = covers > 0 && h.Seq <= covers
+	// A sequence number is its position, so the lookup is direct; a transcript
+	// that disagrees is searched rather than trusted.
+	at := -1
+	if h.Seq >= 0 && h.Seq < len(list) && list[h.Seq].Seq == h.Seq {
+		at = h.Seq
+	} else {
+		for i, e := range list {
+			if e.Seq == h.Seq {
+				at = i
+				break
+			}
+		}
+	}
+	if at >= 0 {
+		e := list[at]
+		h.Type, h.Role, h.CreatedAt = e.Type, e.Role, e.CreatedAt
+	}
 }
 
 // ---- jobs ----

@@ -274,9 +274,62 @@ function conversationText(entries, title) {
   return out.join('\n\n') + '\n';
 }
 
+// transcriptRows lays a conversation out the way the agent reads it. Before any
+// compaction that is everything, in order. After one it is the prompt, the
+// newest summary standing for everything it covers, the turns that summary
+// carried over word for word, and what was said since. A compaction is written
+// after the turns it keeps, so those are found by sequence: drawn where the
+// entry lies, they sat above the summary and read as the old turns it replaced.
+// What it covers is not drawn at all; search finds it, and the history shows it.
+function transcriptRows(entries) {
+  let c = -1;
+  for (let i = entries.length - 1; i >= 0; i--) if (entries[i].type === 'compaction') { c = i; break; }
+  if (c < 0) return entries.map(entry => ({ entry, part: 'live' }));
+  const summary = entries[c];
+  const covers = summary.covers_through || 0;
+  let prompt = null;
+  for (const e of entries) if (e.type === 'prompt') prompt = e;
+  const rows = [];
+  if (prompt) rows.push({ entry: prompt, part: 'live' });
+  rows.push({ entry: summary, part: 'summary' });
+  for (const e of entries) {
+    if (e.seq <= covers || e.type === 'compaction' || e.type === 'prompt') continue;
+    rows.push({ entry: e, part: e.seq < summary.seq ? 'carried' : 'live' });
+  }
+  return rows;
+}
+
+// ftsQuery turns what a person types into a search the index will take. Each
+// word is quoted, so punctuation and words like OR are looked for rather than
+// read as syntax, and matches as a prefix, so "repoint" finds "repointing". A
+// word with no letter or digit in it has nothing to match and is left out.
+function ftsQuery(text) {
+  return String(text || '').split(/\s+/)
+    .map(w => w.replace(/"/g, ''))
+    .filter(w => /[\p{L}\p{N}]/u.test(w))
+    .map(w => '"' + w + '"*')
+    .join(' ');
+}
+
+// snippetParts splits a search snippet at the brackets the index puts around
+// each match, so the page can mark them without reading the snippet as markup.
+function snippetParts(snippet) {
+  const out = [];
+  const re = /\[([^\]]*)\]/g;
+  let last = 0, m;
+  const text = String(snippet || '');
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push({ text: text.slice(last, m.index), hit: false });
+    out.push({ text: m[1], hit: true });
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push({ text: text.slice(last), hit: false });
+  return out;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { toolResult, resultBody, resultPreview, callBody, callPreview,
     eventLabel, eventDetail, eventTime, isFailure,
     speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds,
-    waitingLabel, conversationText };
+    waitingLabel, conversationText, transcriptRows, ftsQuery, snippetParts };
 }

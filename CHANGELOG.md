@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-15
+
+- **The newest turns now survive a compaction.** A compaction is meant to
+  fold the older part of a conversation into a summary and keep the most
+  recent turns word for word. Those recent turns were being dropped: the agent
+  saw the summary and nothing else. It now sees the summary followed by the
+  turns it kept, as intended.
+- **A compacted conversation reads the way the agent reads it.** The summary
+  now comes first, followed by the turns it carried over word for word,
+  grouped and labelled as such, then everything since. What the summary
+  replaced is no longer drawn, and the "show hidden turns" button is gone.
+- **Search your own history.** Search from a conversation's header, or from a
+  compaction's summary, looks in that conversation, can widen to all of them,
+  and searches as you type. Each result says who said it, when, and whether
+  the agent can still see it. Tapping one opens the conversation's full
+  history at that message, folded turns included and dimmed.
+- **Compacting on request is safer.** Compact, in a conversation's menu, now
+  waits for the agent to finish what it is doing rather than folding the
+  conversation underneath it, and with nothing to fold it says so instead of
+  quietly doing nothing.
+- **Choose when each conversation compacts.** A conversation's details screen
+  now sets the size it compacts at (forty thousand tokens unless you change
+  it) and how much it keeps word for word. It can be changed at any time, and
+  a fork keeps its original's settings.
+
 ## 2026-10-06
 
 - **Busy turns no longer slow every open page.** While the agent works
