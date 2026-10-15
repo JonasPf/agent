@@ -951,7 +951,7 @@ func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	rel, n, err := a.writeWorkspaceFile(id, filepath.Base(hdr.Filename), file)
+	rel, n, err := a.writeNewWorkspaceFile(id, filepath.Base(hdr.Filename), file)
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return

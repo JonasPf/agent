@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -143,14 +144,60 @@ func (a *App) writeWorkspaceFile(id, rel string, r io.Reader) (string, int64, er
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return "", 0, err
 	}
-	defer a.workspaceChanged(id)
 	f, err := os.Create(full)
 	if err != nil {
 		return "", 0, err
 	}
+	return a.fillWorkspaceFile(id, full, f, r)
+}
+
+// writeNewWorkspaceFile stores an upload under a name nothing in the directory
+// holds yet: the name it came with, then name-2, name-3, and so on. A phone
+// names every photo from its camera image.jpg, and an upload that replaced
+// what was there would lose the earlier photo, or a file a tool had written.
+// Each name is created exclusively, so two uploads of one name at once each get
+// a file of their own.
+func (a *App) writeNewWorkspaceFile(id, name string, r io.Reader) (string, int64, error) {
+	ext := path.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	if stem == "" {
+		stem, ext = name, ""
+	}
+	for n := 1; n <= 1000; n++ {
+		candidate := name
+		if n > 1 {
+			candidate = fmt.Sprintf("%s-%d%s", stem, n, ext)
+		}
+		full, err := a.resolveInWorkspace(id, candidate)
+		if err != nil {
+			return "", 0, err
+		}
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return "", 0, err
+		}
+		f, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", 0, err
+		}
+		return a.fillWorkspaceFile(id, full, f, r)
+	}
+	return "", 0, fmt.Errorf("a thousand files are already named like %s", name)
+}
+
+// fillWorkspaceFile copies an upload into a file just created for it, and
+// refuses it, removing the file, once it passes the limit.
+func (a *App) fillWorkspaceFile(id, full string, f *os.File, r io.Reader) (string, int64, error) {
+	defer a.workspaceChanged(id)
 	defer f.Close()
 	n, err := io.Copy(f, io.LimitReader(r, maxUpload+1))
 	if err != nil {
+		// A transfer that broke off leaves no half a file behind to be read as
+		// the whole of one.
+		f.Close()
+		_ = os.Remove(full)
 		return "", 0, err
 	}
 	if n > maxUpload {
@@ -158,7 +205,7 @@ func (a *App) writeWorkspaceFile(id, rel string, r io.Reader) (string, int64, er
 		_ = os.Remove(full)
 		return "", 0, fmt.Errorf("files larger than 250 MB are refused")
 	}
-	rel, _ = filepath.Rel(a.sessionWorkspace(id), full)
+	rel, _ := filepath.Rel(a.sessionWorkspace(id), full)
 	return filepath.ToSlash(rel), n, nil
 }
 

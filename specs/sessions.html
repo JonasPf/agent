@@ -680,7 +680,7 @@ delete landed is refused rather than written into the place the delete just empt
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A session's tools run in that session's directory, and no other session's tools can read it.</li>
-<li>A file uploaded to a session is written there, and its tools see it immediately.</li>
+<li>A file uploaded to a session is written there, and its tools see it immediately. It never replaces a file already there: a taken name gets a number, and the answer names the path it landed at.</li>
 <li>A fork starts from a copy of its origin's directory; writes after that are independent.</li>
 <li>A compaction leaves the working directory unchanged.</li>
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>

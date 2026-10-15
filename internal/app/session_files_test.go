@@ -3,11 +3,13 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -332,5 +334,84 @@ func TestAFileOfExactlyTheLimitIsNotRefusedForItsEnvelope(t *testing.T) {
 	s := newSession(t, a)
 	if w := declaredUpload(t, a, s.ID, maxUpload+512); w.Code == 413 {
 		t.Errorf("a file of exactly the limit was refused: %s", w.Body.String())
+	}
+}
+
+// An upload never replaces what is already there. A phone names every photo
+// from its camera image.jpg, so two photos attached to one message used to be
+// one photo, the second, under a message naming it twice; and a file a tool
+// had written was lost to an upload that happened to share its name. A name
+// already taken gets a number, and the answer says where the file landed.
+func TestAnUploadNeverReplacesAFileAlreadyThere(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	landed := func(w *httptest.ResponseRecorder) string {
+		t.Helper()
+		if w.Code != 201 {
+			t.Fatalf("upload: status %d (%s)", w.Code, w.Body.String())
+		}
+		var out struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out.Path
+	}
+	first := landed(upload(t, a, s.ID, "image.jpg", "FIRST PHOTO"))
+	second := landed(upload(t, a, s.ID, "image.jpg", "SECOND PHOTO"))
+	third := landed(upload(t, a, s.ID, "image.jpg", "THIRD PHOTO"))
+	if first != "image.jpg" || second != "image-2.jpg" || third != "image-3.jpg" {
+		t.Errorf("uploads of one name landed at %q, %q, %q; want image.jpg, image-2.jpg, image-3.jpg", first, second, third)
+	}
+	for path, want := range map[string]string{first: "FIRST PHOTO", second: "SECOND PHOTO", third: "THIRD PHOTO"} {
+		if got := callAPI(t, a, "GET", "/sessions/"+s.ID+"/files/"+path, nil).Body.String(); got != want {
+			t.Errorf("%s holds %q, want %q", path, got, want)
+		}
+	}
+
+	// What a tool wrote is no different from what was uploaded before.
+	if err := os.WriteFile(filepath.Join(a.sessionWorkspace(s.ID), "notes"), []byte("THE AGENT'S NOTES"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := landed(upload(t, a, s.ID, "notes", "an upload")); got != "notes-2" {
+		t.Errorf("an upload over a tool's file landed at %q, want notes-2", got)
+	}
+	if got := callAPI(t, a, "GET", "/sessions/"+s.ID+"/files/notes", nil).Body.String(); got != "THE AGENT'S NOTES" {
+		t.Errorf("the tool's file now holds %q", got)
+	}
+}
+
+// Attachments upload side by side, so two of one name can arrive together.
+// Each still gets a name of its own.
+func TestUploadsOfOneNameAtOnceEachKeepTheirOwnFile(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	const n = 8
+	paths := make(chan string, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			w := upload(t, a, s.ID, "image.jpg", fmt.Sprintf("PHOTO %d", i))
+			var out struct {
+				Path string `json:"path"`
+			}
+			_ = json.Unmarshal(w.Body.Bytes(), &out)
+			paths <- out.Path
+		}(i)
+	}
+	wg.Wait()
+	close(paths)
+	seen := map[string]bool{}
+	for p := range paths {
+		if seen[p] {
+			t.Errorf("two uploads landed at %q", p)
+		}
+		seen[p] = true
+	}
+	if len(seen) != n {
+		t.Errorf("%d uploads landed at %d names", n, len(seen))
 	}
 }

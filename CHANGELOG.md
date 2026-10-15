@@ -2,6 +2,11 @@
 
 ## 2026-10-15
 
+- **Two photos are two files.** A phone names every camera photo
+  image.jpg, so attaching two used to keep only the last one, and an upload
+  could quietly replace a file the agent had written. A name that is taken
+  now gets a number (image-2.jpg), and the message names each file where it
+  landed.
 - **Archiving is gone.** Nothing in the interface could archive a
   conversation, so the archived section of the list only ever held what the
   API had put there. Conversations are now simply kept or deleted, in one
