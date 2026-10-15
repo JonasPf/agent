@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -73,8 +74,8 @@ func TestASessionSaysWhatItsCacheHoldsAndWhenItExpires(t *testing.T) {
 	if c := sessionCache(t, a, s.ID).Session.Cache; c != nil {
 		t.Fatalf("a session that has made no call reports a cache: %+v", c)
 	}
-	// The first message follows no recent one, so no marker is written and no
-	// cache is held. The second follows the first within five minutes.
+	// An operator who has just written is talking, so the turn writes a
+	// marker; what the session holds is what its last call sent.
 	say(t, a, s.ID, "First.")
 	say(t, a, s.ID, "Second.")
 	c := sessionCache(t, a, s.ID).Session.Cache
@@ -121,5 +122,44 @@ func TestACompactionResetsTheCache(t *testing.T) {
 	}
 	if c := sessionCache(t, a, s.ID).Session.Cache; c != nil {
 		t.Errorf("after a compaction the session still reports a cache: %+v", c)
+	}
+}
+
+// The operator who has just sent a message is talking now, so the turn it
+// starts is cached like any other: its tool rounds follow it seconds apart and
+// read what the first round wrote. The gate used to look for a recent message
+// before this one was stored, so the first message of a conversation, and the
+// first after five quiet minutes, wrote no marker and every round of that turn
+// paid full price.
+func TestTheFirstMessageAfterAPauseIsCached(t *testing.T) {
+	a := newTestApp(t)
+	srv, seen := recordingModel(t, "noted")
+	a.or = NewOpenRouter("test-key")
+	a.or.base = srv.URL
+	s, err := a.NewSession(SessionConfig{Model: "anthropic/claude-test"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Whether any call a message made carried the marker. A first message is
+	// followed by a call that titles the conversation, which caches nothing.
+	marked := func(text string) bool {
+		before := len(*seen)
+		say(t, a, s.ID, text)
+		for _, body := range (*seen)[before:] {
+			if strings.Contains(body, "cache_control") {
+				return true
+			}
+		}
+		return false
+	}
+	if !marked("The very first message.") {
+		t.Error("the first message of a conversation wrote no cache marker")
+	}
+
+	// Ten quiet minutes, then the operator is back.
+	a.append(s.ID, Entry{Type: "message", Role: "user", Text: "Earlier.", CreatedAt: time.Now().Add(-10 * time.Minute)})
+	a.append(s.ID, Entry{Type: "message", Role: "assistant", Text: "Long ago.", CreatedAt: time.Now().Add(-10 * time.Minute)})
+	if !marked("I'm back.") {
+		t.Error("the first message after a pause wrote no cache marker")
 	}
 }

@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **The first message after a break is cheaper.** The first message of a
+  conversation, or the first after five quiet minutes, wasn't cached, so each
+  step of the agent's work on it paid full price for everything sent before.
+  It is cached now, like every other message.
 - **See what the cache is saving you.** The line under a conversation now
   shows how much of it the provider has cached and how long that lasts,
   counting down, and says when it has expired. It also estimates what the

@@ -27,12 +27,6 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 
 	msgs := []ChatMessage{a.systemChatMessage(s, promptEntry.Sections)}
 	msgs = append(msgs, Project(a.store.Entries(s.ID))...)
-	ttl := ""
-	if needsExplicitCacheMarker(s.Model) {
-		ttl = a.cacheTTL(s)
-		msgs = withCacheMarker(msgs, ttl)
-	}
-	marked := hasCacheMarker(msgs)
 
 	user := Entry{Type: "message", Role: "user", Text: opts.UserText, JobID: opts.JobID,
 		DueAt: opts.DueAt}
@@ -42,10 +36,24 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 	// Every entry is stored as it is produced. A run is never held back pending
 	// an outcome: what the agent did is what the transcript says it did.
 	emit := func(e Entry) Entry { return a.append(s.ID, e) }
+	stored := emit(user)
+
+	// The gate asks whether a further call is expected while a cache would
+	// live, so it is asked once this turn's own message is stored: an operator
+	// who has just written is talking now. Asked before, the first message of
+	// a conversation, and the first after a pause, wrote no marker, and every
+	// round of that turn paid full price for what the round before had sent.
+	ttl := ""
+	if needsExplicitCacheMarker(s.Model) {
+		ttl = a.cacheTTL(s)
+		msgs = withCacheMarker(msgs, ttl)
+	}
+	marked := hasCacheMarker(msgs)
+
 	// The turn's own user message reaches the model through the projection, like
 	// every earlier one. Building it here as well was how a job wake arrived
 	// stripped of the marker that says the operator is not there to read a reply.
-	if m, ok := toMessage(emit(user)); ok {
+	if m, ok := toMessage(stored); ok {
 		msgs = append(msgs, m)
 	}
 

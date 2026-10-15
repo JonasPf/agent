@@ -530,7 +530,10 @@ prefix themselves, and a marker would add nothing.</p>
 <p>The one way to lose money is to write a cache that nobody reads, so a marker is placed only when
 another call is expected before it expires: a short lifetime when the operator was talking recently, a
 long one when a job that makes a model call is due, and no marker at all otherwise. An agent sitting
-idle overnight writes nothing and pays no premium for it.</p>
+idle overnight writes nothing and pays no premium for it. The message that starts a turn counts as the
+operator talking: the gate is asked once it is stored, so the first message of a conversation, or the
+first after a pause, is cached like any other, and the rounds of its turn read what the first one
+wrote.</p>
 
 <h3>A compaction resets it</h3>
 
@@ -558,6 +561,7 @@ countdown would print the same number beside every message and tell the reader n
 <ul>
 <li>A request carries at most one cache marker, at the end of the message list.</li>
 <li>No marker is written when no further call is expected before it would expire.</li>
+<li>A turn the operator starts writes a marker, the first of a conversation and the first after a pause included.</li>
 <li>No marker is written for a provider that caches without one.</li>
 <li>The first call after a compaction reports no cache hit; the call after that reports one.</li>
 <li>The interface shows the live cache size and a countdown to its expiry, and shows it as expired when it is. A session reports both as <code>cache</code>: the tokens its last call sent and, where the agent's own marker chose the lifetime, when that call's prefix lapses. A provider that caches without a marker is reported holding the prefix, with no expiry. A compaction clears it.</li>
