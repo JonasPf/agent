@@ -573,8 +573,9 @@ countdown would print the same number beside every message and tell the reader n
 <h2>Forking</h2>
 
 <p>A fork copies a conversation into a new session. Everything comes across: the whole transcript,
-compactions and all, and a copy of the working directory. The original is untouched, stays active,
-and keeps its jobs.</p>
+compactions and all, and a copy of the working directory. The one entry it does not copy is the
+origin's prompt: a session has exactly one prompt entry, and the fork writes its own, from its own
+configuration, ahead of the copy. The original is untouched, stays active, and keeps its jobs.</p>
 
 <p>It is the only way to change a configuration, and it is also how a conversation is branched — two
 directions explored from the same point, both readable, neither disturbing the other.</p>
@@ -596,7 +597,7 @@ still running. A fork that should carry the schedule creates it again, deliberat
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A fork copies every transcript entry of its origin, in order, including compaction and prompt entries.</li>
+<li>A fork copies every transcript entry of its origin, in order, compactions included, except the origin's prompt entry; it has one prompt entry, its own, written from its configuration.</li>
 <li>A fork of a compacted conversation sends the model what its origin sends: each compaction it copies covers the copies of the entries it covered, wherever the copy puts them.</li>
 <li>A fork starts from a copy of its origin's working directory; writes after that are independent.</li>
 <li>The origin stays active, keeps its jobs, and is modified only by one <code>fork</code> event.</li>
