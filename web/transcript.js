@@ -291,6 +291,10 @@ function transcriptRows(entries) {
   for (const e of entries) if (e.type === 'prompt') prompt = e;
   const rows = [];
   if (prompt) rows.push({ entry: prompt, part: 'live' });
+  // A fork's seeding event is its own, written ahead of the copy, so a
+  // compaction the copy carries covers it by position without standing for it.
+  const seed = entries.find(e => e.type === 'event' && e.event_kind === 'forked_from');
+  if (seed && seed.seq <= covers) rows.push({ entry: seed, part: 'live' });
   rows.push({ entry: summary, part: 'summary' });
   for (const e of entries) {
     if (e.seq <= covers || e.type === 'compaction' || e.type === 'prompt') continue;

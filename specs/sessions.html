@@ -594,6 +594,7 @@ still running. A fork that should carry the schedule creates it again, deliberat
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A fork copies every transcript entry of its origin, in order, including compaction and prompt entries.</li>
+<li>A fork of a compacted conversation sends the model what its origin sends: each compaction it copies covers the copies of the entries it covered, wherever the copy puts them.</li>
 <li>A fork starts from a copy of its origin's working directory; writes after that are independent.</li>
 <li>The origin stays active, keeps its jobs, and is modified only by one <code>fork</code> event.</li>
 <li>The fork records its origin, and the interface links both ways.</li>

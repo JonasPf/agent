@@ -175,6 +175,25 @@ test('a compacted conversation is shown the way the agent reads it', () => {
     [[0, 'live'], [6, 'summary'], [4, 'carried'], [5, 'carried'], [7, 'live']]);
 });
 
+// A fork says once where it came from, in the event that seeded it. That event
+// is the fork's own, written before the copy, so a compaction the copy carries
+// covers it by position without standing for it: it is drawn after the prompt
+// whatever the compaction covers, and never more than once.
+test('a compacted fork still says where it was copied from', () => {
+  const fork = [
+    compacted[0],
+    { seq: 1, type: 'event', event_kind: 'forked_from', carried_from: 'ORIGIN', text: 'copied from ORIGIN (fork): 8 entries', created_at: at },
+    m(2, 'user', 'FOLDED question'),
+    m(3, 'assistant', 'FOLDED answer'),
+    m(4, 'user', 'KEPT question'),
+    m(5, 'assistant', 'KEPT answer'),
+    { seq: 6, type: 'compaction', covers_through: 3, text: 'SUMMARY', created_at: at },
+  ];
+  const rows = transcriptRows(fork);
+  assert.deepStrictEqual(rows.map(r => [r.entry.seq, r.part]),
+    [[0, 'live'], [1, 'live'], [6, 'summary'], [4, 'carried'], [5, 'carried']]);
+});
+
 // ---- the search box ----
 
 test('what a person types is searched as words, each matching as a prefix', () => {

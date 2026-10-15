@@ -100,6 +100,7 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 		e.Usage = nil
 		copied = append(copied, e)
 	}
+	renumberCovers(copied, len(a.store.Entries(fork.ID)))
 	// In one write, and without an event per entry: the fork is on no page
 	// yet, and what it copies is not news — announced one by one, a copied
 	// reply read as a new one. Pages hear the list moved, below.
@@ -123,6 +124,27 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	_ = a.store.PutSession(fork)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return fork, nil
+}
+
+// renumberCovers moves what each copied compaction covers to where the copy
+// puts it. A copy is written from position base on, behind the fork's own
+// prompt and seeding event, so every entry lands at a different position from
+// the one it held; a compaction left covering its old number would cover the
+// wrong entries, and the last of the ones it folded would be read again. It
+// now covers through the copy of the last entry it covered in the origin.
+func renumberCovers(copied []Entry, base int) {
+	for i := range copied {
+		if copied[i].Type != "compaction" {
+			continue
+		}
+		covers := 0
+		for j, e := range copied {
+			if e.Seq <= copied[i].CoversThrough {
+				covers = base + j
+			}
+		}
+		copied[i].CoversThrough = covers
+	}
 }
 
 // firstLine keeps a title to one short line whatever the model returns.

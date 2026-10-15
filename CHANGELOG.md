@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **A fork of a compacted conversation reads what the original reads.** The
+  copy brought one already-summarised message back into the agent's view,
+  and could break the fork outright when that message was a tool's result.
+  A compacted fork also now says where it was copied from.
 - **Deleting a conversation that is working deletes it.** The agent used to
   finish whatever it was doing first, still paying for it, and the
   conversation then reappeared in the list as a broken stub. Deleting now
