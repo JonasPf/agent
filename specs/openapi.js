@@ -800,7 +800,7 @@ window.OPENAPI_SPEC = {
         "tags": [
           "skills"
         ],
-        "summary": "Write a skill.",
+        "summary": "Write a new skill.",
         "description": "The operator writes skills; the agent cannot. The file is stored outside the image, so it survives a deployment. A name that collides with a skill shipping in the image is refused.",
         "requestBody": {
           "required": true,
@@ -817,7 +817,7 @@ window.OPENAPI_SPEC = {
             "description": "Stored."
           },
           "409": {
-            "description": "Refused: the name collides with a shipped skill, or a required field is missing."
+            "description": "Refused, with what is on disk unchanged: the name is already taken — by one of the operator's, or by one that ships with the agent — or a required field is missing. A skill is changed by a PUT to its own address."
           }
         }
       }
@@ -902,7 +902,7 @@ window.OPENAPI_SPEC = {
         "tags": [
           "personas"
         ],
-        "summary": "Write a persona.",
+        "summary": "Write a new persona.",
         "description": "A persona is the opening section of the system prompt. A session that chooses one gets it in place of the built-in persona entirely.",
         "requestBody": {
           "required": true,
@@ -919,7 +919,7 @@ window.OPENAPI_SPEC = {
             "description": "Stored."
           },
           "409": {
-            "description": "Refused: the name is the built-in persona's, or a required field is missing."
+            "description": "Refused, with what is on disk unchanged: the name is already taken — by one of the operator's, or by one that ships with the agent — or a required field is missing. A persona is changed by a PUT to its own address."
           }
         }
       }

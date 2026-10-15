@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **A new skill or persona cannot overwrite an old one.** Saving a new one
+  under a name already in use used to replace the existing one without a
+  word. It is now refused, saying the name is taken; open the existing one to
+  change it.
 - **A conversation's files stay in its own folder.** A tool could leave a
   link there pointing elsewhere on the server, and downloading or deleting
   through it reached files outside the conversation. Links that lead out are

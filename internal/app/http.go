@@ -843,6 +843,11 @@ func (a *App) hSaveSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	if name := r.PathValue("name"); name != "" {
 		in.Name = name
+	} else if a.skills.Get(in.Name) != nil {
+		// A POST is a new skill. Under a name already taken it would replace
+		// one without a word; a skill is changed by a PUT to its own address.
+		fail(w, 409, "a skill named %q already exists; open it to change it, or choose another name", in.Name)
+		return
 	}
 	// A skill nobody chose is in every conversation, so a new one arrives on by
 	// default the way a shipped one does.
@@ -907,6 +912,9 @@ func (a *App) hSavePersona(w http.ResponseWriter, r *http.Request) {
 	}
 	if name := r.PathValue("name"); name != "" {
 		in.Name = name
+	} else if in.Name != "" && a.personas.Get(in.Name) != nil {
+		fail(w, 409, "a persona named %q already exists; open it to change it, or choose another name", in.Name)
+		return
 	}
 	if err := a.personas.Save(in.Name, in.Description, in.Body); err != nil {
 		fail(w, 409, "%v", err)
