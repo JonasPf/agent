@@ -2,6 +2,9 @@
 
 ## 2026-10-15
 
+- **An old link to a deleted conversation says so.** It used to open a blank
+  page under the previous conversation's header, whose buttons still acted on
+  that conversation. It now explains that the conversation no longer exists.
 - **An open conversation keeps its header up to date.** The title it gets
   after its first answer, and its cost and context after each turn, used to
   appear only after leaving and coming back; the header said "New session"

@@ -824,6 +824,29 @@ test('the header and status line follow the conversation while it is open', asyn
   assert.match(textOf(ctx._id('statusline')), /702 \/ 40,000/, 'the end of a turn did not move the context');
 });
 
+// A link can outlive what it names: a conversation deleted on another device,
+// a fork's origin, a notification tapped late. Opening one used to leave the
+// pane blank under the previous conversation's header — its title, and actions
+// that still acted on it — with the refusal thrown and caught by nothing.
+test('a conversation that no longer exists says so, under a header of its own', async () => {
+  const there = session({ id: 'S1', title: 'Kiln firing log' });
+  const ctx = load({ '/sessions/S1': { session: there }, '/sessions/S1/transcript': [], '/sessions': [there] });
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => /^\/sessions\/GONE/.test(p)
+    ? Promise.resolve({ ok: false, status: 404, text: async () => '{"error":"no such session"}' })
+    : fetch(p, o);
+  ctx.location.hash = '#session/S1';
+  await ctx.route();
+  assert.strictEqual(ctx._id('title').textContent, 'Kiln firing log');
+
+  ctx.location.hash = '#session/GONE';
+  await ctx.route();
+  assert.notStrictEqual(ctx._id('title').textContent, 'Kiln firing log', 'the header still names the conversation left');
+  assert.deepStrictEqual(ctx._id('head-acts').children.map(b => b.textContent), [], 'the header still offers the last conversation\'s actions');
+  assert.match(textOf(ctx._id('view')), /no longer exists|does not exist/i, 'the pane does not say what happened');
+  assert.strictEqual(vm.runInContext('state.session', ctx), null, 'the page still holds the conversation it left');
+});
+
 // ---------- unread ----------
 
 const said = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-09-29T10:00:00Z' });

@@ -456,12 +456,33 @@ let drawing = 0;
 const stale = gen => gen !== drawing;
 
 function render() {
-  drawing++;
+  const gen = ++drawing;
   $('foot').innerHTML = '';
   closeMenu();
   const v = $('view');
   v.className = 'wide' + (ROOMY.includes(state.view || 'sessions') ? ' roomy' : '');
   v.innerHTML = '';
+  // A screen whose answers were refused says so in its own place, rather
+  // than leaving the pane empty under the header of the screen before it.
+  return Promise.resolve(draw(v)).catch(err => { if (!stale(gen)) unreachable(v, err); });
+}
+
+// unreachable is what a screen shows when what it was asked to draw cannot be
+// read. A link outlives what it names, so the commonest case — a conversation
+// deleted since — is said plainly.
+function unreachable(v, err) {
+  const msg = String((err && err.message) || err || '');
+  if (state.view === 'session') state.session = null;
+  $('foot').innerHTML = '';
+  v.innerHTML = '';
+  const gone = /no such session/i.test(msg);
+  setHeader(gone ? 'Not found' : 'Not loaded', true);
+  v.append(el('div', 'empty', gone
+    ? 'This conversation no longer exists. It may have been deleted, here or on another device.'
+    : 'This screen could not be loaded: ' + msg));
+}
+
+function draw(v) {
   switch (state.view) {
     case 'session': return viewSession(v);
     case 'panels': return viewPanels(v);
