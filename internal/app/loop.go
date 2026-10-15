@@ -76,11 +76,18 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 			return err
 		}
 
-		s.Cost += res.Usage.Cost
-		s.PromptTokens += res.Usage.PromptTokens
-		s.CachedTokens += res.Usage.CachedTokens
-		noteCache(s, ttl, marked, res.Usage, time.Now())
-		_ = a.store.PutSession(s)
+		usageNow := res.Usage
+		ns, err := a.store.UpdateSession(s.ID, func(x *Session) {
+			x.Cost += usageNow.Cost
+			x.PromptTokens += usageNow.PromptTokens
+			x.CachedTokens += usageNow.CachedTokens
+			noteCache(x, ttl, marked, usageNow, time.Now())
+		})
+		if err != nil {
+			// The session is gone; there is nobody to finish the turn for.
+			return err
+		}
+		s = ns
 
 		usage := res.Usage
 		assistant := Entry{Type: "message", Role: "assistant", Text: res.Text,

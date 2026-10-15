@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **Changes made at the same moment no longer trip over each other.** A
+  conversation renamed or read while the agent was working on it could, rarely,
+  lose the change or show figures half updated, and a title the agent wrote
+  could replace one you had just chosen. Every change is now applied in turn.
 - **The first message after a break is cheaper.** The first message of a
   conversation, or the first after five quiet minutes, wasn't cached, so each
   step of the agent's work on it paid full price for everything sent before.

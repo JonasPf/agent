@@ -119,10 +119,13 @@ tasks:
       - task: test:go
       - task: test:web
 
+  # Under the race detector: a session is changed by a turn, the operator, and
+  # every page at once, and a race between them reads as nothing in particular
+  # until it corrupts something. The detector makes one a failing test.
   test:go:
     deps: [build:tools]
     cmds:
-      - go test ./...
+      - go test -race ./...
 
   test:web:
     cmds:

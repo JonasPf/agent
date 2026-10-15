@@ -229,8 +229,6 @@ func (a *App) Compact(ctx context.Context, s *Session) error {
 		return fmt.Errorf("summary not smaller than what it covers")
 	}
 
-	s.Cost += res.Usage.Cost
-
 	// The figures are stored rather than recomputed later, so the banner cannot
 	// drift if the estimator changes. TokensAfter is measured on the list this
 	// compaction is about to produce — projecting the stored entries here would
@@ -245,11 +243,14 @@ func (a *App) Compact(ctx context.Context, s *Session) error {
 	folded.TokensAfter = projectedTokens(append(a.store.Entries(s.ID), folded))
 	a.append(s.ID, folded)
 
-	s.LastCompactedAt = ptrTime(time.Now())
-	// The head of what is sent is rewritten, so nothing cached of it is of
-	// further use; the next call writes the prefix afresh.
-	s.Cache = nil
-	_ = a.store.PutSession(s)
+	now := time.Now()
+	_, _ = a.store.UpdateSession(s.ID, func(x *Session) {
+		x.Cost += res.Usage.Cost
+		x.LastCompactedAt = ptrTime(now)
+		// The head of what is sent is rewritten, so nothing cached of it is of
+		// further use; the next call writes the prefix afresh.
+		x.Cache = nil
+	})
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return nil
 }
@@ -261,7 +262,8 @@ func ptrTime(t time.Time) *time.Time { return &t }
 // visibly so, and is retried after the next turn; nothing to fold is not a
 // failure, and the error saying so is dropped here.
 func (a *App) maybeCompact(ctx context.Context, s *Session) {
-	if s.CompactAtTokens <= 0 {
+	// Read as it stands now: the threshold may have moved during the turn.
+	if s = a.store.Session(s.ID); s == nil || s.CompactAtTokens <= 0 {
 		return
 	}
 	if a.contextUsed(s.ID, a.store.Entries(s.ID)) < s.CompactAtTokens {

@@ -309,15 +309,20 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if in.Title != nil {
-		s.Title = title
+	updated, err := a.store.UpdateSession(s.ID, func(x *Session) {
+		if in.Title != nil {
+			x.Title = title
+		}
+		if thresholds {
+			x.CompactAtTokens, x.KeepVerbatimTokens = compactAt, keep
+		}
+	})
+	if err != nil {
+		fail(w, 404, "%v", err)
+		return
 	}
-	if thresholds {
-		s.CompactAtTokens, s.KeepVerbatimTokens = compactAt, keep
-	}
-	_ = a.store.PutSession(s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
-	writeJSON(w, 200, a.enrich(s))
+	writeJSON(w, 200, a.enrich(updated))
 }
 
 func (a *App) hDeleteSession(w http.ResponseWriter, r *http.Request) {
@@ -450,7 +455,12 @@ func (a *App) hKeep(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "%v", err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"session": a.enrich(s), "deleted": gone})
+	// Keeping changed the session; what is answered is the session it left.
+	kept := a.store.Session(s.ID)
+	if kept == nil {
+		kept = s
+	}
+	writeJSON(w, 200, map[string]any{"session": a.enrich(kept), "deleted": gone})
 }
 
 // hCompact folds a session now rather than at its threshold, for a conversation

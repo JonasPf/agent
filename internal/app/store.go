@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,6 +31,9 @@ type Store struct {
 	// afterwards is refused here rather than recreating the session under its
 	// old identifier.
 	deleted map[string]bool
+	// metaMu puts writes of meta.json in order, so the file always ends up
+	// holding the newest session published.
+	metaMu sync.Mutex
 }
 
 // errSessionDeleted is a write that arrived after its session was deleted.
@@ -368,15 +372,62 @@ func (s *Store) indexAll(sessions map[string][]Entry) error {
 
 // ---- sessions ----
 
+// A session the store has published is never changed again. A turn counting
+// its cost, the operator renaming it, a page reading it through, and every page
+// listing it all touch it at once; changed in place, each read the others'
+// writes half made. So a change copies the session under the lock and
+// publishes the copy, and whoever holds a session holds one nothing changes
+// under it.
+
+// PutSession publishes a copy of sess, which stays the caller's. It is how a
+// session is first published; a session already published is changed with
+// UpdateSession, which cannot lose a change made at the same time.
 func (s *Store) PutSession(sess *Session) error {
+	c := *sess
 	s.mu.Lock()
-	if s.deleted[sess.ID] {
+	if s.deleted[c.ID] {
 		s.mu.Unlock()
 		return errSessionDeleted
 	}
-	s.sessions[sess.ID] = sess
+	s.sessions[c.ID] = &c
 	s.mu.Unlock()
-	return s.writeMeta(sess)
+	return s.flushMeta(c.ID)
+}
+
+// UpdateSession changes a session by applying fn to a copy of the one
+// published, then publishes and writes that copy. Changes made at once are
+// applied one after another, each to what the one before published, so none
+// is lost. It answers with what it published.
+func (s *Store) UpdateSession(id string, fn func(*Session)) (*Session, error) {
+	s.mu.Lock()
+	cur := s.sessions[id]
+	if s.deleted[id] || cur == nil {
+		s.mu.Unlock()
+		if cur == nil && !s.deleted[id] {
+			return nil, fmt.Errorf("no session %s", id)
+		}
+		return nil, errSessionDeleted
+	}
+	c := *cur
+	fn(&c)
+	s.sessions[id] = &c
+	s.mu.Unlock()
+	return &c, s.flushMeta(id)
+}
+
+// flushMeta writes the session as it is now published. Writes are put in
+// order, and each writes what is published when its turn comes, so the file
+// ends up holding the newest whatever order the changes finish in.
+func (s *Store) flushMeta(id string) error {
+	s.metaMu.Lock()
+	defer s.metaMu.Unlock()
+	s.mu.RLock()
+	cur := s.sessions[id]
+	s.mu.RUnlock()
+	if cur == nil {
+		return nil
+	}
+	return s.writeMeta(cur)
 }
 
 func (s *Store) writeMeta(sess *Session) error {
@@ -412,9 +463,11 @@ func (s *Store) MarkRead(id string, through int) (bool, error) {
 			break
 		}
 	}
-	sess.ReadThrough = through
+	c := *sess
+	c.ReadThrough = through
+	s.sessions[id] = &c
 	s.mu.Unlock()
-	return cleared, s.writeMeta(sess)
+	return cleared, s.flushMeta(id)
 }
 
 func (s *Store) Session(id string) *Session {
@@ -466,7 +519,9 @@ func (s *Store) Append(sessionID string, e Entry) (Entry, error) {
 	s.entries[sessionID] = append(list, e)
 	sess := s.sessions[sessionID]
 	if sess != nil {
-		sess.LastActiveAt = e.CreatedAt
+		c := *sess
+		c.LastActiveAt = e.CreatedAt
+		s.sessions[sessionID] = &c
 	}
 	s.mu.Unlock()
 
@@ -482,7 +537,7 @@ func (s *Store) Append(sessionID string, e Entry) (Entry, error) {
 	}
 	s.index(sessionID, e)
 	if sess != nil {
-		_ = s.writeMeta(sess)
+		_ = s.flushMeta(sessionID)
 	}
 	return e, nil
 }
@@ -516,7 +571,9 @@ func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
 	s.entries[sessionID] = append(list, out...)
 	sess := s.sessions[sessionID]
 	if sess != nil {
-		sess.LastActiveAt = out[len(out)-1].CreatedAt
+		c := *sess
+		c.LastActiveAt = out[len(out)-1].CreatedAt
+		s.sessions[sessionID] = &c
 	}
 	s.mu.Unlock()
 
@@ -539,7 +596,7 @@ func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
 		_ = s.indexAll(map[string][]Entry{sessionID: out})
 	}
 	if sess != nil {
-		_ = s.writeMeta(sess)
+		_ = s.flushMeta(sessionID)
 	}
 	return out, nil
 }

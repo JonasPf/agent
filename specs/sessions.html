@@ -698,6 +698,7 @@ delete landed is refused rather than written into the place the delete just empt
 <li>Deleting a session deletes its directory.</li>
 <li>Deleting a session that is working stops its turn first, a job's wake included. Nothing that turn would have written afterwards brings back the session, its transcript, its jobs, or its directory.</li>
 <li>A session reports what it occupies on disk: its transcript and its working directory.</li>
+<li>A session changed from several sides at once &mdash; a turn counting its cost, the operator renaming it or moving where it compacts, a page reading it through &mdash; keeps every change, in memory and on disk. A title the model writes for it never lands over one the operator chose meanwhile.</li>
 </ul>
 </div>
 
