@@ -27,7 +27,7 @@
 <div class="wrap">
 
 <h1>API</h1>
-<p class="lede">The gateway's HTTP surface. The machine-readable document is <a href="openapi.json"><code>openapi.json</code></a>.</p>
+<p class="lede">The gateway's HTTP surface. The machine-readable document is <a href="openapi.yaml"><code>openapi.yaml</code></a>, the one source for the reference below; a test fails when a route is served that it does not describe, or described that is not served. View it with <code>task spec</code>, which serves these pages at http://localhost:8000.</p>
 
 <p>There is no authentication. Reaching the gateway over the tailnet is the only access control, as
 described in <a href="adrs.html#adr-005">ADR-005</a>.</p>
@@ -45,7 +45,7 @@ than by replaying.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A client that disconnects and reconnects recovers current state from the HTTP endpoints alone.</li>
-<li>Token deltas carry the session and entry they belong to.</li>
+<li>Token deltas carry the session they belong to. The entry they become is appended, and announced, when the answer is complete.</li>
 <li>The socket requires no authentication handshake.</li>
 </ul>
 </div>
@@ -57,10 +57,9 @@ than by replaying.</p>
 <footer><a href="mock.html">← UI mock</a> · <a href="adrs.html">Decisions →</a></footer>
 </div>
 <script src="vendor/swagger-ui-bundle.js"></script>
-<script src="openapi.js"></script>
 <script>
 SwaggerUIBundle({
-  spec: window.OPENAPI_SPEC,
+  url: 'openapi.yaml',
   dom_id: '#swagger',
   deepLinking: true,
   defaultModelsExpandDepth: 0,

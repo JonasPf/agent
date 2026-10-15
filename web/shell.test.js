@@ -64,7 +64,7 @@ function findAll(n, cls, out) {
 }
 
 const session = over => Object.assign({
-  id: 'S1', title: 'Greenhouse sensors', model: 'x/y', status: 'active', entry_count: 3,
+  id: 'S1', title: 'Greenhouse sensors', model: 'x/y', entry_count: 3,
   context_used: 10, compact_at_tokens: 40000, cost: 0, disk_bytes: 0,
   last_active_at: new Date().toISOString(), unread: 0
 }, over);
@@ -146,18 +146,34 @@ function load(routes) {
 
 // ---------- the rail ----------
 
-test('the rail lists every conversation, active ones first', async () => {
+// A conversation is kept or deleted; there is no third state to sort it into,
+// so the rail is one list, newest activity first, and nothing on it is set
+// apart as archived.
+test('the rail lists every conversation, newest activity first', async () => {
   const ctx = load({
     '/sessions': [
-      session({ id: 'A', title: 'Old', status: 'archived', last_active_at: '2026-09-01T00:00:00Z' }),
-      session({ id: 'B', title: 'Newer', last_active_at: '2026-09-05T00:00:00Z' }),
-      session({ id: 'C', title: 'Newest', last_active_at: '2026-09-06T00:00:00Z' }),
-    ]
+      session({ id: 'A', title: 'Old', last_active_at: '2026-09-01T00:00:00Z' }),
+      session({ id: 'B', title: 'Newest', last_active_at: '2026-09-06T00:00:00Z' }),
+      session({ id: 'C', title: 'Newer', last_active_at: '2026-09-05T00:00:00Z' }),
+    ].map(s => { delete s.status; return s; })
   });
   await ctx.renderSidebar();
   const rows = findAll(ctx._id('side-list'), 'side-item');
   assert.deepStrictEqual(rows.map(r => find(r, 'n').textContent), ['Newest', 'Newer', 'Old']);
-  assert.ok(String(rows[2].className).split(/\s+/).includes('arch'), 'an archived conversation is not marked as one');
+  for (const r of rows) {
+    assert.ok(!String(r.className).split(/\s+/).includes('arch'), 'a conversation is set apart as archived');
+    assert.doesNotMatch(textOf(r), /archived/, 'a conversation is labelled archived');
+  }
+});
+
+test('the conversation list is one list, with no archived section', async () => {
+  const ctx = load({
+    '/sessions': [session({ id: 'A', title: 'One' }), session({ id: 'B', title: 'Two' })].map(s => { delete s.status; return s; })
+  });
+  const v = ctx._id('view');
+  await ctx.viewSessions(v);
+  assert.strictEqual(findAll(v, 'row-item').length, 2, 'not every conversation is listed');
+  assert.doesNotMatch(textOf(v), /archived/i, 'the list still has an archived section');
 });
 
 // The rail is on screen while a conversation is, so it has to say which of its
@@ -737,6 +753,128 @@ test('an entry arriving is added without redrawing the conversation', async () =
   assert.strictEqual(pre.hidden, false, 'a result the reader had opened closed again');
   assert.match(textOf(t), /It reads 41%\./, 'the new entry is not on screen');
   assert.ok(find(t, 'thinking'), 'working again shows no thinking row');
+});
+
+// A conversation opened while it is working hears its entries over the socket
+// before the transcript it asked for has come back. The transcript was read
+// before they were written, so they are not in it, and the page used to replace
+// what it held with that transcript and lose them: the message just sent and
+// the answer to it missing until the socket next reconnected.
+test('an entry that arrives while the conversation is loading is kept', async () => {
+  const entries = [
+    { seq: 0, type: 'prompt', sections: [], text: 'system prompt', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-06T10:00:00Z' },
+  ];
+  const ctx = conversationScreen(session({ id: 'S1' }), entries);
+  const held = [];
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => /\/transcript$/.test(p) ? new Promise(r => held.push(() => r(fetch(p, o)))) : fetch(p, o);
+  const opening = ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(held.length, 1, 'the transcript was not asked for');
+
+  const late = [
+    { seq: 2, type: 'message', role: 'user', text: 'RACE: and the other one?', created_at: '2026-10-06T10:00:02Z' },
+    { seq: 3, type: 'message', role: 'assistant', text: 'RACE: it reads 39%.', created_at: '2026-10-06T10:00:03Z' },
+  ];
+  for (const entry of late) ctx.handle({ kind: 'entry', session_id: 'S1', entry });
+  held.splice(0).forEach(f => f());
+  await opening;
+
+  const seqs = JSON.parse(vm.runInContext('JSON.stringify(state.entries.map(e => e.seq))', ctx));
+  assert.deepStrictEqual(seqs, [0, 1, 2, 3], 'what arrived while loading was lost or doubled');
+  const text = textOf(ctx._id('transcript'));
+  assert.match(text, /and the other one\?/, 'the message sent while loading is not on screen');
+  assert.match(text, /it reads 39%/, 'the answer that arrived while loading is not on screen');
+
+  // Heard again — a socket that delivered it twice, a catch-up overlapping it —
+  // an entry is still shown once.
+  ctx.handle({ kind: 'entry', session_id: 'S1', entry: late[1] });
+  assert.deepStrictEqual(JSON.parse(vm.runInContext('JSON.stringify(state.entries.map(e => e.seq))', ctx)), [0, 1, 2, 3], 'an entry heard twice was added twice');
+  assert.strictEqual((textOf(ctx._id('transcript')).match(/it reads 39%/g) || []).length, 1, 'an entry heard twice is drawn twice');
+});
+
+// The header and the status line describe the conversation as it stands. A
+// first message earns it a title and every turn moves its cost and context,
+// and both used to keep the figures the conversation was opened with — "New
+// session", $0.0000, 0 tokens — however long it stayed open.
+test('the header and status line follow the conversation while it is open', async () => {
+  const opened = session({ id: 'S1', title: 'New session', cost: 0, context_used: 0 });
+  const routes = { '/sessions/S1': { session: opened }, '/sessions/S1/transcript': [], '/sessions': [opened] };
+  const ctx = load(routes);
+  ctx.location.hash = '#session/S1';
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  await ctx.viewSession(node('div'));
+  assert.strictEqual(ctx._id('title').textContent, 'New session');
+
+  // The first answer titles it: the list moves, and the rail reads it.
+  const titled = session({ id: 'S1', title: 'Kiln firing log', cost: 0.0026, context_used: 331 });
+  routes['/sessions'] = [titled];
+  ctx.handle({ kind: 'sessions' });
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(ctx._id('title').textContent, 'Kiln firing log', 'the header kept the title it opened with');
+  assert.match(textOf(ctx._id('statusline')), /\$0\.0026/, 'the status line kept the cost it opened with');
+  assert.match(textOf(ctx._id('statusline')), /331 \/ 40,000/, 'the status line kept the context it opened with');
+
+  // The turn ends after its cost is counted, and the page reads it then too.
+  routes['/sessions/S1'] = { session: session({ id: 'S1', title: 'Kiln firing log', cost: 0.0051, context_used: 702 }) };
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  await new Promise(r => setImmediate(r));
+  assert.match(textOf(ctx._id('statusline')), /\$0\.0051/, 'the end of a turn did not move the cost');
+  assert.match(textOf(ctx._id('statusline')), /702 \/ 40,000/, 'the end of a turn did not move the context');
+});
+
+// A link can outlive what it names: a conversation deleted on another device,
+// a fork's origin, a notification tapped late. Opening one used to leave the
+// pane blank under the previous conversation's header — its title, and actions
+// that still acted on it — with the refusal thrown and caught by nothing.
+test('a conversation that no longer exists says so, under a header of its own', async () => {
+  const there = session({ id: 'S1', title: 'Kiln firing log' });
+  const ctx = load({ '/sessions/S1': { session: there }, '/sessions/S1/transcript': [], '/sessions': [there] });
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => /^\/sessions\/GONE/.test(p)
+    ? Promise.resolve({ ok: false, status: 404, text: async () => '{"error":"no such session"}' })
+    : fetch(p, o);
+  ctx.location.hash = '#session/S1';
+  await ctx.route();
+  assert.strictEqual(ctx._id('title').textContent, 'Kiln firing log');
+
+  ctx.location.hash = '#session/GONE';
+  await ctx.route();
+  assert.notStrictEqual(ctx._id('title').textContent, 'Kiln firing log', 'the header still names the conversation left');
+  assert.deepStrictEqual(ctx._id('head-acts').children.map(b => b.textContent), [], 'the header still offers the last conversation\'s actions');
+  assert.match(textOf(ctx._id('view')), /no longer exists|does not exist/i, 'the pane does not say what happened');
+  assert.strictEqual(vm.runInContext('state.session', ctx), null, 'the page still holds the conversation it left');
+});
+
+// Opening a section of the prompt opens that section. It used to draw the
+// whole conversation again to do it, closing every tool result the reader had
+// opened further down.
+test('opening a prompt section leaves the rest of the conversation as it was', async () => {
+  const entries = [
+    { seq: 0, type: 'prompt', sections: [{ name: 'persona', text: 'PERSONA TEXT', tokens: 5 }], text: 'system prompt', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 2, type: 'message', role: 'tool', tool_name: 'clock', tool_result: '{"ok":true,"content":"10:00"}', created_at: '2026-10-06T10:00:01Z' },
+  ];
+  const ctx = conversationScreen(session({ id: 'S1' }), entries);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.slice();
+  const pre = find(t, 'tool').children.find(c => c.tagName === 'pre');
+  pre.hidden = false;
+
+  const opened = () => {
+    const sec = find(find(t, 'prompt'), 'sec');
+    const body = sec.children.find(c => c.tagName === 'pre');
+    return body ? body.children.map(c => c.textContent).join('') : null;
+  };
+  const toggle = () => find(find(t, 'prompt'), 'sec').children[0].children.find(c => c.tagName === 'button');
+  toggle().onclick();
+  assert.strictEqual(opened(), 'PERSONA TEXT', 'the section did not open');
+  for (const n of shown) assert.ok(t.children.includes(n), 'opening a section drew the conversation again');
+  assert.strictEqual(pre.hidden, false, 'opening a section closed a tool result the reader had opened');
+  toggle().onclick();
+  assert.strictEqual(opened(), null, 'the section did not close again');
 });
 
 // ---------- unread ----------
@@ -2188,4 +2326,201 @@ test('the session list marks a conversation that is still a candidate', () => {
   const row = ctx.sessionRow(session({ id: 'C1', comparison: 'G1' }));
   const tags = findAll(row, 'tag').map(t => t.textContent);
   assert.ok(tags.includes('comparing'), 'a candidate is not marked as one: ' + tags.join(', '));
+});
+
+// ---------- screens that answer late ----------
+
+// A screen is drawn from requests that answer in their own time. One opened
+// and left before its answers came back must paint nothing over the screen
+// that replaced it: not its sections, not its buttons, not its header. The
+// configuration editor, the details screen, the More panel's version line,
+// and a skill's editor each kept drawing into the pane after it had moved on,
+// the last one with a Delete in the header for a skill nobody was looking at.
+test('a screen still loading paints nothing over the one that replaced it', async () => {
+  const sessions = [session({ id: 'S1', title: 'Kiln firing log' })];
+  const routes = {
+    '/sessions': sessions, '/sessions/S1': { session: sessions[0] }, '/preferences': { model: 'x/y' },
+    '/models': [], '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [{ name: 'watering' }] },
+    '/personas': { personas: [{ name: 'default' }] },
+    '/skills/watering': { name: 'watering', description: 'When to water', body: 'Twice a week.', editable: true },
+    '/version': { version: 'abc1234', changelog: '## 2026-10-15\n' },
+    '/jobs': [],
+  };
+  // Each screen is left at the moment it is waiting on its late request:
+  // after the answers that start drawing it, before the ones that finish it.
+  const screens = [
+    ['new', undefined, '/tools', /Start conversation/],
+    ['fork', 'S1', '/tools', /Create fork/],
+    ['settings', 'S1', '/tools', /Delete conversation/],
+    ['skills', 'watering', '/skills/watering', /Twice a week/],
+    ['panels', undefined, '/version', /abc1234/],
+  ];
+  for (const [view, arg, late, marker] of screens) {
+    const ctx = load(routes);
+    const held = [];
+    const fetch = ctx.fetch;
+    ctx.fetch = (p, o) => p === '/jobs' ? fetch(p, o) : new Promise(r => held.push({ p, go: () => r(fetch(p, o)) }));
+    const tick = () => new Promise(r => setImmediate(r));
+    vm.runInContext(`state.view = ${JSON.stringify(view)}; state.arg = ${JSON.stringify(arg)};`, ctx);
+    const first = ctx.render();
+    for (let i = 0; i < 20 && !held.some(h => h.p === late); i++) {
+      held.splice(0).forEach(h => h.go());
+      await tick();
+    }
+    assert.ok(held.some(h => h.p === late), `${view} never asked for ${late}`);
+    vm.runInContext("state.view = 'jobs'; state.arg = undefined;", ctx);
+    await ctx.render();
+    for (let i = 0; i < 20; i++) {
+      held.splice(0).forEach(h => h.go());
+      await tick();
+    }
+    await first;
+    const pane = textOf(ctx._id('view'));
+    assert.match(pane, /No jobs scheduled/, `the jobs screen is not on screen after leaving ${view}`);
+    assert.doesNotMatch(pane, marker, `leaving ${view} early still painted it over the jobs screen`);
+    assert.strictEqual(ctx._id('title').textContent, 'Jobs', `leaving ${view} early took over the header`);
+    const acts = ctx._id('head-acts').children.map(b => b.textContent);
+    assert.ok(!acts.includes('Delete'), `leaving ${view} early left its Delete in the header`);
+  }
+});
+
+// ---------- creating, once ----------
+
+// A tap that lands twice — a double click, a phone registering one touch as
+// two — used to create two conversations, or two forks, from one screen. The
+// button stops offering while its request is out; a refusal says why and
+// offers it again.
+test('starting a conversation or a fork is one action, however often it is pressed', async () => {
+  const there = session({ id: 'S1', title: 'Kiln firing log' });
+  for (const [view, arg, label, path] of [
+    ['new', undefined, 'Start conversation', '/sessions'],
+    ['fork', 'S1', 'Create fork', '/sessions/S1/fork'],
+  ]) {
+    const routes = {
+      '/sessions': [there], '/sessions/S1': { session: there }, '/preferences': { model: 'x/y' }, '/models': [],
+      '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [] }, '/personas': { personas: [] },
+    };
+    routes['POST ' + path] = { id: 'S2' };
+    const ctx = load(routes);
+    vm.runInContext(`state.view = ${JSON.stringify(view)}; state.arg = ${JSON.stringify(arg)};`, ctx);
+    await ctx.render();
+    const button = findAll(ctx._id('view'), 'btn').find(b => b.textContent === label);
+    assert.ok(button, `${view} offers no ${label}`);
+    const presses = [button.onclick(), button.onclick()];
+    await Promise.all(presses);
+    const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === path);
+    assert.strictEqual(sent.length, 1, `two presses of ${label} sent ${sent.length} requests`);
+    assert.strictEqual(ctx.location.hash, '#session/S2');
+  }
+});
+
+test('a refused start says why and can be pressed again', async () => {
+  const ctx = load({
+    '/sessions': [], '/preferences': { model: 'x/y' }, '/models': [],
+    '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [] }, '/personas': { personas: [] },
+  });
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => (o && o.method === 'POST' && p === '/sessions')
+    ? Promise.resolve({ ok: false, status: 500, text: async () => '{"error":"disk full"}' })
+    : fetch(p, o);
+  vm.runInContext("state.view = 'new';", ctx);
+  await ctx.render();
+  const button = findAll(ctx._id('view'), 'btn').find(b => b.textContent === 'Start conversation');
+  await button.onclick();
+  const toast = ctx.document.body.children.find(c => c.className === 'toast');
+  assert.ok(toast && /disk full/.test(textOf(toast)), 'a refused start did not say why');
+  assert.ok(!button.disabled, 'a refused start cannot be pressed again');
+});
+
+// ---------- a model's facts ----------
+
+// A model's facts — price in and out, context, the indices — are a wrapping
+// row of small figures under its name. The class each figure carried was also
+// the class of the dashed, full-width card a fixed configuration is drawn in,
+// so every figure was drawn as a card of its own, one under another, on the
+// new-conversation screen, the details screen, and in the model dialog.
+test('a model fact is a figure in a row, not a card of its own', () => {
+  const ctx = load({});
+  const facts = ctx.factList({ id: 'x/y', name: 'X: Y', prompt_price: 0.000002, completion_price: 0.00001, context_length: 1000000 });
+  assert.ok(facts.children.length >= 3, 'no facts were drawn');
+  const v = node('div');
+  const classes = new Set();
+  for (const f of facts.children) for (const c of String(f.className).split(/\s+/).filter(Boolean)) classes.add(c);
+  for (const c of classes) {
+    const m = CSS.match(new RegExp('^\\.' + c + '\\s*\\{([^}]*)\\}', 'm'));
+    if (!m) continue;
+    assert.doesNotMatch(m[1], /width:\s*100%/, `.${c}, the class of a single fact, is drawn full width`);
+    assert.doesNotMatch(m[1], /border:/, `.${c}, the class of a single fact, is drawn as a bordered card`);
+  }
+});
+
+// ---------- the cache, made visible ----------
+
+// Caching changes what a conversation costs, so it is shown rather than
+// inferred (ADR-042): the status line carries the live cache's size and counts
+// down to its expiry, says when it has expired, and says what the next call is
+// expected to cost and whether it will read the cache; each answer says what
+// its own call read from the cache, measured, and says so plainly when it read
+// nothing.
+const priced = [{ id: 'anthropic/claude-test', name: 'Claude Test', prompt_price: 0.000003, completion_price: 0.000015, cache_read_price: 0.0000003 }];
+const prompted = [
+  { seq: 0, type: 'prompt', sections: [{ name: 'persona', text: 'P', tokens: 4000 }], text: 'system prompt', created_at: '2026-10-15T10:00:00Z' },
+  { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-15T10:00:00Z' },
+  { seq: 2, type: 'message', role: 'assistant', text: 'It reads 41%.', created_at: '2026-10-15T10:00:02Z',
+    usage: { prompt_tokens: 6000, cached_tokens: 5400, completion_tokens: 8, cost: 0.002 } },
+  { seq: 3, type: 'message', role: 'user', text: 'And now?', created_at: '2026-10-15T10:01:00Z' },
+  { seq: 4, type: 'message', role: 'assistant', text: 'Still 41%.', created_at: '2026-10-15T10:01:02Z',
+    usage: { prompt_tokens: 6100, cached_tokens: 0, completion_tokens: 6, cost: 0.004 } },
+];
+
+function cachedScreen(cache) {
+  const sess = session({ id: 'S1', model: 'anthropic/claude-test', context_used: 2000, cache });
+  const ctx = load({ '/sessions/S1': { session: sess }, '/sessions/S1/transcript': prompted, '/models': priced, '/sessions': [sess] });
+  ctx.location.hash = '#session/S1';
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  return ctx;
+}
+
+test('the status line counts down to the live cache, and says what the next call costs', async () => {
+  const expires = new Date(Date.now() + (4 * 60 + 12) * 1000).toISOString();
+  const ctx = cachedScreen({ tokens: 6716, expires_at: expires, kept_by: 'agent' });
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  const line = textOf(ctx._id('statusline'));
+  assert.match(line, /cache/, 'the status line does not mention the cache');
+  assert.match(line, /6,716 tok/, 'the status line does not say how large the cache is');
+  assert.match(line, /4:1\d/, 'the status line does not count down to the cache expiring');
+  // 6,000 tokens next: 6,000 of them, at most what the cache holds, read at
+  // the cache's price.
+  assert.match(line, /~\$0\.0018 · cached/, 'the status line does not price the next call from the cache, or say it will be cached');
+});
+
+test('an expired cache says so, and the next call is priced uncached', async () => {
+  const ctx = cachedScreen({ tokens: 6716, expires_at: new Date(Date.now() - 1000).toISOString(), kept_by: 'agent' });
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  const line = textOf(ctx._id('statusline'));
+  assert.match(line, /cache expired/, 'an expired cache is not shown as expired');
+  assert.match(line, /~\$0\.0180 · not cached/, 'the next call is not priced in full, or not said to be uncached');
+});
+
+test('a provider that caches on its own is shown holding it, with no countdown invented', async () => {
+  const ctx = cachedScreen({ tokens: 3000, kept_by: 'provider' });
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  const line = textOf(ctx._id('statusline'));
+  assert.match(line, /3,000 tok/);
+  assert.match(line, /provider/, 'a provider-kept cache does not say who keeps it');
+  assert.doesNotMatch(line, /\d+:\d\d/, 'a countdown was invented for a lifetime nobody reported');
+});
+
+test('each answer says what its call read from the cache, and says so when it read nothing', async () => {
+  const ctx = cachedScreen(null);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const answers = t.children.filter(c => /It reads|Still 41/.test(textOf(c)));
+  assert.strictEqual(answers.length, 2);
+  assert.match(textOf(answers[0]), /90% cached/, 'an answer does not say what its call read from the cache');
+  assert.match(textOf(answers[1]), /no cache hit/, 'an answer that read nothing from the cache does not say so');
+  for (const a of answers) assert.doesNotMatch(find(a, 'cachehit').textContent, /\d+:\d\d|expire|left/, 'an answer shows a cache lifetime');
 });

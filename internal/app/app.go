@@ -225,6 +225,18 @@ func (a *App) StopTurn(sessionID string) bool {
 	return true
 }
 
+// stopAll ends every turn a session has queued or in flight, for a session
+// that is going away: nothing it was about to do is wanted any more.
+func (a *App) stopAll(sessionID string) {
+	a.qmu.Lock()
+	list := a.running[sessionID]
+	delete(a.running, sessionID)
+	a.qmu.Unlock()
+	for _, h := range list {
+		h.cancel()
+	}
+}
+
 // dropTurn takes a turn off its session's list. The caller holds qmu.
 func (a *App) dropTurn(sessionID string, h *turnHandle) {
 	list := a.running[sessionID]

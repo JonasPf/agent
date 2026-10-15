@@ -2,6 +2,86 @@
 
 ## 2026-10-15
 
+- **Changes made at the same moment no longer trip over each other.** A
+  conversation renamed or read while the agent was working on it could, rarely,
+  lose the change or show figures half updated, and a title the agent wrote
+  could replace one you had just chosen. Every change is now applied in turn.
+- **The first message after a break is cheaper.** The first message of a
+  conversation, or the first after five quiet minutes, wasn't cached, so each
+  step of the agent's work on it paid full price for everything sent before.
+  It is cached now, like every other message.
+- **See what the cache is saving you.** The line under a conversation now
+  shows how much of it the provider has cached and how long that lasts,
+  counting down, and says when it has expired. It also estimates what the
+  next message will cost and whether it will be read from the cache. Each
+  answer notes how much of its call came from the cache, or that none did.
+- **A model's prices fit on one line again.** Each figure about a model —
+  price in, price out, context, and the rest — was drawn as a box of its own,
+  stacked down the screen. They are a compact row under the model's name
+  again.
+- **A double tap starts one conversation.** Pressing Start conversation or
+  Create fork twice used to make two. The button now waits for the first
+  press, and if the agent refuses, it says why and lets you try again.
+- **Opening part of the prompt leaves the rest alone.** Expanding a section
+  of a conversation's prompt used to redraw the whole conversation, closing
+  any tool results you had opened, and opened that section in every other
+  conversation too. It now opens just that section, just there.
+- **An old link to a deleted conversation says so.** It used to open a blank
+  page under the previous conversation's header, whose buttons still acted on
+  that conversation. It now explains that the conversation no longer exists.
+- **An open conversation keeps its header up to date.** The title it gets
+  after its first answer, and its cost and context after each turn, used to
+  appear only after leaving and coming back; the header said "New session"
+  and the cost stayed at nothing. They now update as they change.
+- **Nothing goes missing when you open a busy conversation.** Opening a
+  conversation while the agent was answering, on a slow connection, could
+  leave your message or its reply off the screen until the page reconnected.
+  Everything that arrives while it loads is now shown.
+- **Leaving a screen quickly no longer leaves bits of it behind.** On a slow
+  connection, moving on from a new conversation, a fork, a conversation's
+  details, More, or a skill before it finished loading could finish drawing
+  it underneath the next screen, header buttons included. A skill that no
+  longer exists now says so instead of showing a blank page.
+- **An odd character can no longer freeze a conversation.** An answer
+  holding a particular invisible character could hang the page every time the
+  conversation was opened. Such characters are now shown as �.
+- **Cron schedules fire when cron would.** "0 9 1 * 1" now means the first
+  of the month and every Monday, as in any crontab, rather than only a Monday
+  that falls on the first, which could be months away. Sunday may be written
+  as 7, and "1/6" in the hours means 1, 7, 13, and 19.
+- **The agent can search for follow-up.** When the agent searched its own
+  history for a word with a hyphen or a dot in it, such as follow-up or
+  notes.md, the search failed with a database error. It now finds them, the
+  same way the search screen always has.
+- **A new skill or persona cannot overwrite an old one.** Saving a new one
+  under a name already in use used to replace the existing one without a
+  word. It is now refused, saying the name is taken; open the existing one to
+  change it.
+- **A conversation's files stay in its own folder.** A tool could leave a
+  link there pointing elsewhere on the server, and downloading or deleting
+  through it reached files outside the conversation. Links that lead out are
+  now refused, and an upload never writes through one.
+- **Two photos are two files.** A phone names every camera photo
+  image.jpg, so attaching two used to keep only the last one, and an upload
+  could quietly replace a file the agent had written. A name that is taken
+  now gets a number (image-2.jpg), and the message names each file where it
+  landed.
+- **Archiving is gone.** Nothing in the interface could archive a
+  conversation, so the archived section of the list only ever held what the
+  API had put there. Conversations are now simply kept or deleted, in one
+  list, newest first.
+- **A refused change to a conversation changes nothing.** A rename sent
+  together with something that cannot change was refused but still renamed
+  the conversation. A blank title is now refused by the agent itself, not
+  only by the details screen.
+- **A fork of a compacted conversation reads what the original reads.** The
+  copy brought one already-summarised message back into the agent's view,
+  and could break the fork outright when that message was a tool's result.
+  A compacted fork also now says where it was copied from.
+- **Deleting a conversation that is working deletes it.** The agent used to
+  finish whatever it was doing first, still paying for it, and the
+  conversation then reappeared in the list as a broken stub. Deleting now
+  stops the work at once, and the conversation and its jobs stay gone.
 - **The newest turns now survive a compaction.** A compaction is meant to
   fold the older part of a conversation into a summary and keep the most
   recent turns word for word. Those recent turns were being dropped: the agent

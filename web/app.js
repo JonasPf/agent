@@ -212,7 +212,7 @@ async function catchUp() {
   if (res.session.working_seconds == null) delete state.working[id];
   else if (state.working[id] == null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
   if (whole) {
-    state.entries = entries || [];
+    state.entries = withArrivals(entries || [], state.entries);
     renderTranscript();
   } else {
     // The socket may have delivered some of these while they were on their way.
@@ -228,6 +228,9 @@ function handle(e) {
   if (e.kind === 'entry' || e.kind === 'transient') {
     if (e.kind === 'entry') announce(e.entry, e.session_id);
     if (state.view === 'session' && e.session_id === state.arg) {
+      // Heard twice — a socket delivering it again, a catch-up that already
+      // fetched it — an entry is still held, and drawn, once.
+      if (e.kind === 'entry' && held(e.entry)) return;
       if (e.kind === 'entry') state.entries.push(e.entry);
       if (e.kind === 'entry' && !document.hidden) readThrough(e.session_id, e.entry.seq);
       state.streaming = '';
@@ -263,7 +266,9 @@ function handle(e) {
     // turn that has ended goes to its answer: that is what was waited for.
     if (state.view === 'session' && e.session_id === state.arg) {
       refreshTail();
-      if (e.kind === 'idle') scrollDown();
+      // A turn's cost is counted as it ends, after the answer that moved
+      // the list, so the conversation is read once more then.
+      if (e.kind === 'idle') { scrollDown(); loadStatus().catch(() => {}); }
     }
     const col = comparing(e.session_id);
     if (col) {
@@ -281,6 +286,26 @@ function handle(e) {
     if (e.kind !== 'jobs') renderSidebar();
     if (e.kind === 'status') { loadStatus(); readStatus(); }
   }
+}
+
+// held says whether the conversation on screen already holds an entry. Entries
+// arrive in order, so one at or before the last held is one already heard.
+function held(entry) {
+  const last = state.entries[state.entries.length - 1];
+  return !!last && entry.seq <= last.seq;
+}
+
+// withArrivals is a transcript just fetched with whatever the socket delivered
+// while it was on its way: the entries written after the transcript was read,
+// which it cannot hold, kept in order and each once.
+function withArrivals(fetched, arrived) {
+  const top = fetched.length ? fetched[fetched.length - 1].seq : -1;
+  const later = [];
+  for (const e of (arrived || []).slice().sort((a, b) => a.seq - b.seq)) {
+    const prev = later.length ? later[later.length - 1].seq : top;
+    if (e.seq > prev) later.push(e);
+  }
+  return fetched.concat(later);
 }
 
 // readThrough tells the agent the operator has been shown a conversation up to
@@ -370,9 +395,15 @@ async function renderSidebar() {
   // Two redraws can be in flight; the older answer arriving last must not win.
   if (mine !== sideDrawing) return;
   state.sessions = sessions;
+  // The list carries the conversation on screen too, as it now stands: its
+  // title once the first answer has given it one, its cost and context as
+  // each turn moves them. The header and status line take them from here
+  // rather than asking again.
+  const open = state.view === 'session' && state.session && state.session.id === state.arg &&
+    (sessions || []).find(x => x.id === state.session.id);
+  if (open) showSession(open);
   list.innerHTML = '';
-  const ordered = sortSessions((sessions || []).filter(s => s.status === 'active'), 'recent')
-    .concat(sortSessions((sessions || []).filter(s => s.status !== 'active'), 'recent'));
+  const ordered = sortSessions(sessions || [], 'recent');
   if (!ordered.length) { list.append(el('div', 's', 'No conversations yet.')); return; }
   for (const s of ordered) list.append(sideItem(s));
 }
@@ -382,12 +413,11 @@ async function renderSidebar() {
 // about a session lives on its row in the list view.
 function sideItem(s) {
   const on = state.view === 'session' && state.arg === s.id;
-  const b = el('button', 'side-item' + (on ? ' on' : '') + (s.status === 'active' ? '' : ' arch'));
+  const b = el('button', 'side-item' + (on ? ' on' : ''));
   const m = el('div', 'm');
   m.append(el('div', 'n', s.title || 'Untitled'));
   const bits = [ago(s.last_active_at)];
   if (s.job_count) bits.push(s.job_count + ' job' + (s.job_count > 1 ? 's' : ''));
-  if (s.status !== 'active') bits.push('archived');
   m.append(el('div', 's', bits.join(' · ')));
   b.append(m);
   if (s.unread) b.append(el('span', 'badge', String(s.unread)));
@@ -426,12 +456,33 @@ let drawing = 0;
 const stale = gen => gen !== drawing;
 
 function render() {
-  drawing++;
+  const gen = ++drawing;
   $('foot').innerHTML = '';
   closeMenu();
   const v = $('view');
   v.className = 'wide' + (ROOMY.includes(state.view || 'sessions') ? ' roomy' : '');
   v.innerHTML = '';
+  // A screen whose answers were refused says so in its own place, rather
+  // than leaving the pane empty under the header of the screen before it.
+  return Promise.resolve(draw(v)).catch(err => { if (!stale(gen)) unreachable(v, err); });
+}
+
+// unreachable is what a screen shows when what it was asked to draw cannot be
+// read. A link outlives what it names, so the commonest case — a conversation
+// deleted since — is said plainly.
+function unreachable(v, err) {
+  const msg = String((err && err.message) || err || '');
+  if (state.view === 'session') state.session = null;
+  $('foot').innerHTML = '';
+  v.innerHTML = '';
+  const gone = /no such session/i.test(msg);
+  setHeader(gone ? 'Not found' : 'Not loaded', true);
+  v.append(el('div', 'empty', gone
+    ? 'This conversation no longer exists. It may have been deleted, here or on another device.'
+    : 'This screen could not be loaded: ' + msg));
+}
+
+function draw(v) {
   switch (state.view) {
     case 'session': return viewSession(v);
     case 'panels': return viewPanels(v);
@@ -494,15 +545,7 @@ async function viewSessions(v) {
   const list = await api('/sessions');
   if (stale(gen)) return;
   state.sessions = list;
-  const active = list.filter(s => s.status === 'active');
-  const archived = list.filter(s => s.status !== 'active');
-  const section = (label, items) => {
-    if (!items.length) return;
-    v.append(el('h2', null, label));
-    sortSessions(items, state.sort).forEach(s => v.append(sessionRow(s)));
-  };
-  section('active', active);
-  section('archived', archived);
+  sortSessions(list, state.sort).forEach(s => v.append(sessionRow(s)));
   if (!list.length) v.append(el('div', 'empty', 'No conversations yet. Start one to give the agent something to hold.'));
 }
 
@@ -547,12 +590,15 @@ function sessionRow(s) {
 
 async function viewSession(v) {
   const gen = drawing;
+  // What arrives over the socket while the transcript is on its way collects
+  // here, to be kept: the transcript was read before it was written.
+  state.entries = [];
   // Neither waits on the other: on a phone each is a round trip of its own.
   const [res, entries] = await Promise.all([
     api('/sessions/' + state.arg), api('/sessions/' + state.arg + '/transcript')]);
   if (stale(gen)) return;
   state.session = res.session;
-  state.entries = entries;
+  state.entries = withArrivals(entries, state.entries);
   const id = state.session.id;
   // Where reading stopped, fixed for as long as the conversation is open: the
   // line stays put while the operator reads down from it.
@@ -677,6 +723,9 @@ async function viewSession(v) {
   const hint = el('div', 'hint', 'Enter sends · Shift+Enter for a new line');
   foot.append(status, chips, form, hint);
   renderStatus();
+  // The next call is priced from the catalogue, which the agent keeps; it is
+  // not waited for, and the line is drawn again once it is here.
+  loadModels().then(() => { if (!stale(gen)) renderStatus(); }).catch(() => {});
   if (!scrollToUnread()) scrollDown();
   // A conversation is opened to say something, so on a keyboard the cursor is
   // already there. On a touch screen focus would raise the keyboard over what
@@ -771,19 +820,31 @@ function renderStatus() {
   add('', `${s.context_used.toLocaleString()} / ${s.compact_at_tokens.toLocaleString()} tok`);
   add('cost', fmtMoney(s.cost));
   if (s.cache_hit_rate) add('cached', Math.round(s.cache_hit_rate * 100) + '%');
+  // The cache is what makes the next call cheap or not, so the line says
+  // what is held, how long it has left, and what the next call should cost.
+  const cache = cacheState(s.cache, Date.now());
+  if (cache) line.append(el('span', 'cache', cacheLabel(cache)));
+  const prompt = [...state.entries].reverse().find(e => e.type === 'prompt');
+  const promptTokens = prompt ? (prompt.sections || []).reduce((a, x) => a + (x.tokens || 0), 0) : 0;
+  const next = nextCall(promptTokens, s.context_used, cache, (state.models || []).find(m => m.id === s.model));
+  if (next.cost != null) add('next', '~' + fmtMoney(next.cost) + (next.cached ? ' · cached' : ' · not cached'));
+  if (cache && cache.by === 'agent' && cache.live) tickWorking();
   const last = [...state.entries].reverse().find(e => e.usage && e.usage.tokens_per_second);
   if (last) add('', last.usage.tokens_per_second.toFixed(1) + ' tok/s');
   if (state.streaming && since == null) line.append(el('span', 'gen', 'generating'));
 }
 
 // tickWorking redraws the status line once a second while the conversation on
-// screen is waiting on the agent, and stops by itself when it is not.
+// screen is waiting on the agent or its cache is counting down, and stops by
+// itself when neither is: the draw after a cache lapses says it has expired.
 let workingTicker = null;
 function tickWorking() {
   if (workingTicker) return;
   workingTicker = setInterval(() => {
     const s = state.session;
-    if (state.view !== 'session' || !s || state.working[s.id] == null) {
+    const cache = s && cacheState(s.cache, Date.now() - 1000);
+    const counting = cache && cache.by === 'agent' && cache.live;
+    if (state.view !== 'session' || !s || (state.working[s.id] == null && !counting)) {
       clearInterval(workingTicker);
       workingTicker = null;
       return;
@@ -824,8 +885,18 @@ function copyBySelection(text) {
 
 async function loadStatus() {
   if (!state.session) return;
-  const res = await api('/sessions/' + state.session.id);
-  state.session = res.session;
+  const id = state.session.id;
+  const res = await api('/sessions/' + id);
+  // Read for a conversation since left, the answer is not this one's.
+  if (!state.session || state.session.id !== id) return;
+  showSession(res.session);
+}
+
+// showSession takes a fresher reading of the conversation on screen into the
+// header and the status line. Whether it is working is the socket's to say.
+function showSession(fresh) {
+  state.session = Object.assign({}, state.session, fresh);
+  if (state.view === 'session' && state.arg === state.session.id) $('title').textContent = state.session.title || 'Conversation';
   renderStatus();
 }
 
@@ -1117,6 +1188,7 @@ function renderEntry(e) {
   // is said once, in the seeding event at the top, rather than on every bubble.
   const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
   const who = el('div', 'who', speaker(e));
+  const hit = e.role === 'assistant' ? cacheHit(e.usage) : '';
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
   who.append(el('span', 'at', messageTime(e.created_at)));
@@ -1138,6 +1210,7 @@ function renderEntry(e) {
     n.append(head, pre);
     w.append(n);
   }
+  if (hit) w.append(el('div', 'cachehit', hit));
   return w;
 }
 
@@ -1151,13 +1224,22 @@ function promptEntry(e) {
     const sec = el('div', 'sec');
     const row = el('div', 'row');
     row.append(el('div', 'n', s.name.replace(/_/g, ' ')), el('div', 'tok', s.tokens.toLocaleString()));
-    const key = e.seq + ':' + s.name;
-    const open = !!state.collapsed[key];
-    const toggle = el('button', null, open ? 'collapse' : 'expand');
-    toggle.onclick = () => { state.collapsed[key] = !open; renderTranscript(); };
+    // Kept per conversation, so a section opened in one is not open in all.
+    const key = (state.session ? state.session.id : '') + ':' + e.seq + ':' + s.name;
+    const toggle = el('button');
+    let body = null;
+    // A section opens and closes where it is. Drawing the conversation again
+    // to do it closed every tool result the reader had opened below.
+    const show = open => {
+      state.collapsed[key] = open;
+      toggle.textContent = open ? 'collapse' : 'expand';
+      if (open && !body) { body = el('pre'); body.append(sessionLinks(s.text)); sec.append(body); }
+      if (!open && body) { body.remove(); body = null; }
+    };
+    toggle.onclick = () => show(!state.collapsed[key]);
     row.append(toggle);
     sec.append(row);
-    if (open) { const pre = el('pre'); pre.append(sessionLinks(s.text)); sec.append(pre); }
+    show(!!state.collapsed[key]);
     box.append(sec);
   }
   return box;
@@ -1406,8 +1488,10 @@ async function chooseGrants(current, change) {
 
 // configEditor renders a configuration and returns a reader for it. It does not
 // save anything; what the caller does with it depends on whether the session has
-// taken a turn, which is when model, tools, and skills stop being editable.
-async function configEditor(v, current) {
+// taken a turn, which is when model, tools, and skills stop being editable. It
+// is drawn from several answers, and returns null, having drawn nothing more,
+// once the screen it was drawing for has been replaced.
+async function configEditor(v, current, gen = drawing) {
   const cfg = {
     model: current.model || null,
     enabled_tools: current.enabled_tools == null ? null : current.enabled_tools.slice(),
@@ -1431,6 +1515,7 @@ async function configEditor(v, current) {
   choice.onclick = () => chooseModel(cfg.model, id => { cfg.model = id; drawChoice(); });
   v.append(choice);
   await loadModels();
+  if (stale(gen)) return null;
   drawChoice();
 
   // A set nobody chose is the defaults: every tool, and every skill but those
@@ -1438,6 +1523,7 @@ async function configEditor(v, current) {
   // a skill added to disk later still reaches conversations that never chose.
   const picker = async (label, path, key) => {
     const data = await api(path);
+    if (stale(gen)) return;
     const items = data.tools || data.skills;
     const names = items.map(x => x.name);
     const defaults = items.filter(x => x.default_enabled !== false).map(x => x.name);
@@ -1468,13 +1554,16 @@ async function configEditor(v, current) {
     draw();
   };
   await picker('tools', '/tools', 'enabled_tools');
+  if (stale(gen)) return null;
   await picker('skills', '/skills', 'enabled_skills');
+  if (stale(gen)) return null;
 
   // The persona is the opening section of the prompt, and choosing one replaces
   // the built-in whole. That is said here rather than discovered later, because
   // a persona that leaves out the working rules is a different agent and nothing
   // downstream says why.
   const personas = ((await api('/personas').catch(() => null)) || {}).personas || [];
+  if (stale(gen)) return null;
   v.append(el('h2', null, 'persona'));
   v.append(el('p', 'note', 'Who the agent is. Choosing one replaces the built-in persona entirely, ' +
     'working rules included. Write and edit them under More → Personas.'));
@@ -1520,11 +1609,12 @@ async function configEditor(v, current) {
 // is fixed for its life, so the screen that describes one states it: the same
 // five headings the editor uses, so the two read alike, with nothing to press.
 // A different configuration is a different conversation, reached from Fork.
-async function configFacts(v, s) {
+async function configFacts(v, s, gen = drawing) {
   await loadModels();
+  if (stale(gen)) return false;
   v.append(el('h2', null, 'model'));
   const m = (state.models || []).find(x => x.id === s.model) || { id: s.model || '' };
-  const line = el('div', 'fact fixed');
+  const line = el('div', 'choice-fixed');
   const text = el('div', 'm');
   text.append(el('div', 'n', m.name ? modelName(m) : (m.id || 'none')));
   if (m.name) text.append(el('div', 's ident', m.id));
@@ -1536,6 +1626,7 @@ async function configFacts(v, s) {
   // known once they are fetched.
   const shown = async (label, path, chosen) => {
     const data = await api(path).catch(() => null) || {};
+    if (stale(gen)) return;
     const items = data.tools || data.skills || [];
     const names = chosen == null
       ? items.filter(x => x.default_enabled !== false).map(x => x.name)
@@ -1547,7 +1638,9 @@ async function configFacts(v, s) {
     v.append(wrap);
   };
   await shown('tools', '/tools', s.enabled_tools);
+  if (stale(gen)) return false;
   await shown('skills', '/skills', s.enabled_skills);
+  if (stale(gen)) return false;
 
   v.append(el('h2', null, 'persona'));
   v.append(el('span', 'pill fixed', s.persona || 'default'));
@@ -1560,6 +1653,7 @@ async function configFacts(v, s) {
     for (const n of grants) wrap.append(el('span', 'pill fixed', n));
     v.append(wrap);
   }
+  return true;
 }
 
 async function viewNew(v) {
@@ -1570,14 +1664,30 @@ async function viewNew(v) {
   // is the one last chosen, which the most recent conversation need not be on.
   const prefs = await api('/preferences').catch(() => null) || {};
   if (stale(gen)) return;
-  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }));
+  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }), gen);
+  if (!read || stale(gen)) return;
   const start = el('button', 'btn primary', 'Start conversation');
-  start.onclick = async () => {
+  oneAtATime(start, 'Not started', async () => {
     const s = await post('/sessions', read());
     location.hash = '#session/' + s.id;
-  };
+  });
   const done = el('div', 'finish'); done.append(start);
   v.append(done);
+}
+
+// oneAtATime makes a button that creates something a single action. A tap that
+// lands twice would otherwise create two, so the button stops offering while
+// its request is out; a refusal says why, and offers it again.
+function oneAtATime(button, refused, fn) {
+  button.onclick = async () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await fn(); }
+    catch (e) {
+      button.disabled = false;
+      toast({ title: refused, body: String(e.message) });
+    }
+  };
 }
 
 // ---------- files ----------
@@ -1714,12 +1824,13 @@ async function viewFork(v) {
   v.append(el('p', 'note',
     'A fork copies this whole conversation into a new session. This one stays where it is, stays ' +
     'active, and keeps its jobs. The fork\'s configuration is chosen here and fixed once it exists.'));
-  const read = await configEditor(v, res.session);
+  const read = await configEditor(v, res.session, gen);
+  if (!read || stale(gen)) return;
   const go = el('button', 'btn primary', 'Create fork');
-  go.onclick = async () => {
+  oneAtATime(go, 'Not forked', async () => {
     const succ = await post('/sessions/' + id + '/fork', read());
     location.hash = '#session/' + succ.id;
-  };
+  });
   const done = el('div', 'finish'); done.append(go);
   v.append(done);
 }
@@ -2014,7 +2125,7 @@ async function viewSettings(v) {
   };
   v.append(save);
 
-  await configFacts(v, s);
+  if (!await configFacts(v, s, gen) || stale(gen)) return;
 
   v.append(el('h2', null, 'danger'));
   const d = el('button', 'btn danger', 'Delete conversation');
@@ -2088,17 +2199,17 @@ async function viewPanels(v) {
     const k = state.status.key;
     v.append(el('div', 's', `usage ${fmtMoney(k.usage)}${k.remaining != null ? ' · remaining ' + fmtMoney(k.remaining) : ''}`));
   }
-  await versionSection(v);
+  await versionSection(v, gen);
 }
 
 // Which build is answering, and what changed in it. The version is the commit
 // the image was built from, so what is on screen is what a rollback names. Both
 // are read once after an upgrade and never again, so they sit at the foot of
 // this panel and the changelog stays folded until it is asked for.
-async function versionSection(v) {
+async function versionSection(v, gen = drawing) {
   let info;
   try { info = await api('/version'); } catch (e) { return; }
-  if (!info) return;
+  if (!info || stale(gen)) return;
   v.append(el('h2', null, 'version'));
   const built = info.built_at ? ' · built ' + ago(info.built_at) : '';
   v.append(el('div', 's', (info.version || 'unknown') + built));
@@ -2315,7 +2426,7 @@ async function viewAuthored(v, kind) {
   const title = kind === 'skills' ? 'Skills' : 'Personas';
   // Each document, and a new one, has an address of its own, so the back button
   // returns to this list. A name holds no '+', so '+new' is never a document.
-  if (state.arg) return editAuthored(kind, state.arg === '+new' ? null : decodeURIComponent(state.arg));
+  if (state.arg) return editAuthored(kind, state.arg === '+new' ? null : decodeURIComponent(state.arg), gen);
   setHeader(title, true, [{ label: 'New ' + spec.one, fn: () => location.hash = '#' + kind + '/+new' }]);
   const data = await api(spec.path);
   if (stale(gen)) return;
@@ -2352,9 +2463,21 @@ function viewPersonas(v) { return viewAuthored(v, 'personas'); }
 // operator's. What ships in the image is read-only: writing a copy would shadow
 // the original until the next deployment brought it back, which is the one state
 // nothing on screen could explain.
-async function editAuthored(kind, name) {
+async function editAuthored(kind, name, gen = drawing) {
   const spec = AUTHORED[kind];
-  const doc = name ? await api(spec.path + '/' + encodeURIComponent(name)) : null;
+  let doc = null;
+  if (name) {
+    try { doc = await api(spec.path + '/' + encodeURIComponent(name)); }
+    catch (e) {
+      if (stale(gen)) return;
+      setHeader(name, true);
+      $('view').append(el('div', 'empty', 'There is no ' + spec.one + ' called ' + name + '.'));
+      return;
+    }
+  }
+  // Opened and left before its answer came back, the editor draws nothing:
+  // not over the screen that replaced it, and not its Delete in that header.
+  if (stale(gen)) return;
   const v = $('view');
   v.innerHTML = '';
   const editable = !doc || doc.editable;
@@ -2455,7 +2578,9 @@ async function viewSearch(v) {
   const out = el('div');
   let asked = 0;
   const run = async () => {
-    const q = ftsQuery(inp.value);
+    // The agent reads a search as words, punctuation and all, so what was
+    // typed is what is asked for.
+    const q = inp.value.trim();
     const mine = ++asked;
     out.innerHTML = '';
     if (!q) return;

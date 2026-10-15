@@ -10,7 +10,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
-const { transcriptRows, ftsQuery, snippetParts } = require('./transcript.js');
+const { transcriptRows, snippetParts } = require('./transcript.js');
 
 const WEB = __dirname;
 
@@ -89,7 +89,7 @@ function button(n, label) {
 }
 
 const session = over => Object.assign({
-  id: 'S1', title: 'Boiler', model: 'x/y', status: 'active', entry_count: 3,
+  id: 'S1', title: 'Boiler', model: 'x/y', entry_count: 3,
   context_used: 30000, compact_at_tokens: 40000, keep_verbatim_tokens: 10000, cost: 0, disk_bytes: 0,
   last_active_at: new Date().toISOString(), unread: 0
 }, over);
@@ -175,13 +175,26 @@ test('a compacted conversation is shown the way the agent reads it', () => {
     [[0, 'live'], [6, 'summary'], [4, 'carried'], [5, 'carried'], [7, 'live']]);
 });
 
-// ---- the search box ----
-
-test('what a person types is searched as words, each matching as a prefix', () => {
-  assert.strictEqual(ftsQuery('boiler press'), '"boiler"* "press"*');
-  assert.strictEqual(ftsQuery('  "AND" OR - x(y) '), '"AND"* "OR"* "x(y)"*');
-  assert.strictEqual(ftsQuery('   '), '');
+// A fork says once where it came from, in the event that seeded it. That event
+// is the fork's own, written before the copy, so a compaction the copy carries
+// covers it by position without standing for it: it is drawn after the prompt
+// whatever the compaction covers, and never more than once.
+test('a compacted fork still says where it was copied from', () => {
+  const fork = [
+    compacted[0],
+    { seq: 1, type: 'event', event_kind: 'forked_from', carried_from: 'ORIGIN', text: 'copied from ORIGIN (fork): 8 entries', created_at: at },
+    m(2, 'user', 'FOLDED question'),
+    m(3, 'assistant', 'FOLDED answer'),
+    m(4, 'user', 'KEPT question'),
+    m(5, 'assistant', 'KEPT answer'),
+    { seq: 6, type: 'compaction', covers_through: 3, text: 'SUMMARY', created_at: at },
+  ];
+  const rows = transcriptRows(fork);
+  assert.deepStrictEqual(rows.map(r => [r.entry.seq, r.part]),
+    [[0, 'live'], [1, 'live'], [6, 'summary'], [4, 'carried'], [5, 'carried']]);
 });
+
+// ---- the search box ----
 
 test('a snippet marks what matched and nothing else', () => {
   assert.deepStrictEqual(snippetParts('…the [boiler] was [low]'), [
@@ -290,7 +303,9 @@ const hits = [
 ];
 
 test('search from a conversation looks in that conversation, and opens a hit where it was said', async () => {
-  const q = '/search?q=' + encodeURIComponent('"boiler"*') + '&session=S1';
+  // What was typed is what is asked for: the agent reads it as words, so the
+  // page does not translate it into the index's own syntax first.
+  const q = '/search?q=' + encodeURIComponent('boiler') + '&session=S1';
   const ctx = load({ '/sessions/S1': { session: session() }, [q]: hits });
   vm.runInContext("state.view = 'search'; state.arg = 'S1';", ctx);
   const v = node('div');

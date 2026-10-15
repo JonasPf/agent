@@ -54,3 +54,64 @@ func TestChosenTitleSurvivesTheFirstTurn(t *testing.T) {
 		t.Errorf("a chosen title was overwritten with %q", s.Title)
 	}
 }
+
+func sessionTitle(t *testing.T, a *App, id string) string {
+	t.Helper()
+	var got struct {
+		Session struct {
+			Title string `json:"title"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal(callAPI(t, a, "GET", "/sessions/"+id, nil).Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	return got.Session.Title
+}
+
+// A request that is refused changes nothing, even the part of it that would
+// have been allowed on its own. A rename sent with a new model used to be
+// refused for the model and applied for the title, in memory, and written to
+// disk by whatever saved the session next.
+func TestARefusedChangeChangesNothing(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	before := sessionTitle(t, a, s.ID)
+	if w := callAPI(t, a, "PATCH", "/sessions/"+s.ID, map[string]any{"title": "Renamed", "model": "other/model"}); w.Code != 409 {
+		t.Fatalf("PATCH title with model: status %d, want 409 (%s)", w.Code, w.Body.String())
+	}
+	if got := sessionTitle(t, a, s.ID); got != before {
+		t.Errorf("a refused PATCH renamed the session to %q", got)
+	}
+	// What a later save writes is what the session holds, so a change left in
+	// memory would reach disk here.
+	if w := callAPI(t, a, "PATCH", "/sessions/"+s.ID, map[string]any{"compact_at_tokens": 50000}); w.Code != 200 {
+		t.Fatalf("PATCH thresholds: status %d (%s)", w.Code, w.Body.String())
+	}
+	reopened := newTestAppAt(t, a.cfg.DataDir)
+	if got := reopened.store.Session(s.ID).Title; got != before {
+		t.Errorf("the refused rename reached disk as %q", got)
+	}
+}
+
+// A conversation with no title is harder to find than one with a stale title,
+// so a blank is refused rather than stored, by the agent and not only by the
+// screen that sends it.
+func TestABlankTitleIsRefused(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	before := sessionTitle(t, a, s.ID)
+	for _, blank := range []string{"", "   ", "\n\t"} {
+		if w := callAPI(t, a, "PATCH", "/sessions/"+s.ID, map[string]any{"title": blank}); w.Code != 400 {
+			t.Errorf("PATCH title %q: status %d, want 400 (%s)", blank, w.Code, w.Body.String())
+		}
+	}
+	if got := sessionTitle(t, a, s.ID); got != before {
+		t.Errorf("a blank rename left the title %q", got)
+	}
+	if w := callAPI(t, a, "PATCH", "/sessions/"+s.ID, map[string]any{"title": "  Kiln log  "}); w.Code != 200 {
+		t.Fatalf("PATCH title: status %d (%s)", w.Code, w.Body.String())
+	}
+	if got := sessionTitle(t, a, s.ID); got != "Kiln log" {
+		t.Errorf("title after renaming is %q, want it trimmed to %q", got, "Kiln log")
+	}
+}

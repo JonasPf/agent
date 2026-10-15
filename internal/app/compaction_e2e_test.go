@@ -210,8 +210,4 @@ func TestForkCopiesTheWholeConversationAndLeavesTheOriginActive(t *testing.T) {
 		t.Fatal("the fork's prompt was not written under its own configuration")
 	}
 
-	reloaded := a.store.Session(origin.ID)
-	if reloaded.Status != "active" {
-		t.Fatalf("the origin was archived by being forked: %q", reloaded.Status)
-	}
 }

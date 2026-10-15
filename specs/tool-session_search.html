@@ -27,7 +27,7 @@ position, and a snippet for each match.</p>
 
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
-<tr><td><code>query</code></td><td>The search terms. Required.</td></tr>
+<tr><td><code>query</code></td><td>Words to look for. Each matches as a prefix, and punctuation is looked for as written rather than read as query syntax. Required.</td></tr>
 <tr><td><code>session</code></td><td>Where to look. Defaults to the current session. A session identifier searches that one; <code>all</code> searches every session.</td></tr>
 <tr><td><code>limit</code></td><td>Maximum matches. Optional; twenty by default.</td></tr>
 </table>
@@ -58,6 +58,7 @@ would read like a call that failed to run.</p>
 <li>An entry covered by a compaction is still returned by a search of its own session.</li>
 <li>Each result identifies its session and position.</li>
 <li>A query matching nothing reports that, distinguishably from a failure.</li>
+<li>A query holding punctuation, or a word a full-text index reads as syntax &mdash; <code>follow-up</code>, <code>notes.md</code>, <code>AND</code> &mdash; is searched for as written, not refused.</li>
 <li>An empty query is refused.</li>
 <li>Event entries are searchable.</li>
 <li>Eval cases cover both an unscoped search and a deliberate widening.</li>

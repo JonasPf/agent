@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -114,9 +115,9 @@ func (a *App) sessionDiskBytes(id string, fresh bool) int64 {
 	return dirBytes(a.store.sessionDir(id)) + a.workspaceBytes(id, fresh)
 }
 
-// resolveInWorkspace joins a relative path to a session's working directory and
-// refuses anything that would leave it.
-func (a *App) resolveInWorkspace(id, rel string) (string, error) {
+// workspacePath cleans a path a request names into one relative to a session's
+// working directory, and refuses one that is empty or climbs out of it.
+func workspacePath(id, rel string) (string, error) {
 	if !validSessionID(id) {
 		return "", fmt.Errorf("no such session")
 	}
@@ -125,41 +126,105 @@ func (a *App) resolveInWorkspace(id, rel string) (string, error) {
 	if clean == "" || clean == "." {
 		return "", fmt.Errorf("a file name is required")
 	}
-	full := filepath.Join(a.sessionWorkspace(id), filepath.FromSlash(clean))
-	root := a.sessionWorkspace(id) + string(os.PathSeparator)
-	if !strings.HasPrefix(full, root) {
-		return "", fmt.Errorf("path leaves the session's working directory")
+	return clean, nil
+}
+
+// workspaceRoot opens a session's working directory as a root: whatever is
+// opened, created, or removed through it stays inside, a link on the way
+// included. A tool may write a link in its directory to anywhere, because the
+// sandbox confines what the tool opens and not where its links point; these
+// files are served by the agent, which no sandbox confines, so the confinement
+// has to be here.
+func (a *App) workspaceRoot(id string) (*os.Root, error) {
+	if !validSessionID(id) {
+		return nil, fmt.Errorf("no such session")
 	}
-	return full, nil
+	return os.OpenRoot(a.ensureWorkspace(id))
 }
 
 // writeWorkspaceFile stores one file in a session's working directory, creating
 // any directories its name implies.
 func (a *App) writeWorkspaceFile(id, rel string, r io.Reader) (string, int64, error) {
-	full, err := a.resolveInWorkspace(id, rel)
+	clean, err := workspacePath(id, rel)
 	if err != nil {
 		return "", 0, err
 	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+	root, err := a.workspaceRoot(id)
+	if err != nil {
 		return "", 0, err
 	}
+	defer root.Close()
+	if err := root.MkdirAll(path.Dir(clean), 0o755); err != nil {
+		return "", 0, err
+	}
+	f, err := root.Create(clean)
+	if err != nil {
+		return "", 0, err
+	}
+	return a.fillWorkspaceFile(id, root, clean, f, r)
+}
+
+// writeNewWorkspaceFile stores an upload under a name nothing in the directory
+// holds yet: the name it came with, then name-2, name-3, and so on. A phone
+// names every photo from its camera image.jpg, and an upload that replaced
+// what was there would lose the earlier photo, or a file a tool had written.
+// Each name is created exclusively, so two uploads of one name at once each get
+// a file of their own, and a link already holding the name is never written
+// through.
+func (a *App) writeNewWorkspaceFile(id, name string, r io.Reader) (string, int64, error) {
+	clean, err := workspacePath(id, name)
+	if err != nil {
+		return "", 0, err
+	}
+	root, err := a.workspaceRoot(id)
+	if err != nil {
+		return "", 0, err
+	}
+	defer root.Close()
+	if err := root.MkdirAll(path.Dir(clean), 0o755); err != nil {
+		return "", 0, err
+	}
+	ext := path.Ext(clean)
+	stem := strings.TrimSuffix(clean, ext)
+	if path.Base(stem) == path.Dir(stem) || strings.HasSuffix(stem, "/") || path.Base(clean) == ext {
+		stem, ext = clean, ""
+	}
+	for n := 1; n <= 1000; n++ {
+		candidate := clean
+		if n > 1 {
+			candidate = fmt.Sprintf("%s-%d%s", stem, n, ext)
+		}
+		f, err := root.OpenFile(candidate, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", 0, err
+		}
+		return a.fillWorkspaceFile(id, root, candidate, f, r)
+	}
+	return "", 0, fmt.Errorf("a thousand files are already named like %s", name)
+}
+
+// fillWorkspaceFile copies an upload into a file just created for it, and
+// refuses it, removing the file, once it passes the limit.
+func (a *App) fillWorkspaceFile(id string, root *os.Root, rel string, f *os.File, r io.Reader) (string, int64, error) {
 	defer a.workspaceChanged(id)
-	f, err := os.Create(full)
-	if err != nil {
-		return "", 0, err
-	}
 	defer f.Close()
 	n, err := io.Copy(f, io.LimitReader(r, maxUpload+1))
 	if err != nil {
+		// A transfer that broke off leaves no half a file behind to be read as
+		// the whole of one.
+		f.Close()
+		_ = root.Remove(rel)
 		return "", 0, err
 	}
 	if n > maxUpload {
 		f.Close()
-		_ = os.Remove(full)
+		_ = root.Remove(rel)
 		return "", 0, fmt.Errorf("files larger than 250 MB are refused")
 	}
-	rel, _ = filepath.Rel(a.sessionWorkspace(id), full)
-	return filepath.ToSlash(rel), n, nil
+	return rel, n, nil
 }
 
 // copyTree copies a directory recursively. A missing source is not an error: a
@@ -204,6 +269,9 @@ func copyTree(src, dst string) error {
 // DeleteSession removes a conversation and everything it owns: its transcript,
 // its metadata, its jobs, and its working directory.
 func (a *App) DeleteSession(id string) error {
+	// Its turns stop first, so a model call already under way is not paid for
+	// to produce an answer nobody can read.
+	a.stopAll(id)
 	if err := a.store.DeleteSession(id); err != nil {
 		return err
 	}

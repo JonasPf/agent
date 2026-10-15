@@ -153,7 +153,6 @@ body.drawer #scrim { opacity: 1; pointer-events: auto; }
 .side-item .n { font-size: 13.5px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-item.on .n { color: var(--fg); }
 .side-item .s { font-size: 11px; color: var(--muted); margin-top: 1px; }
-.side-item.arch .n { color: var(--muted); font-weight: 500; }
 
 .side-foot { border-top: 1px solid var(--line); padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
 .side-foot .l { display: flex; gap: 8px; align-items: baseline; font-size: 11px; color: var(--muted); }
@@ -266,14 +265,14 @@ p.note { color: var(--muted); font-size: 13px; margin: 0 0 16px; max-width: 62ch
 .choice .facts { flex-basis: 100%; }
 /* A configuration that is fixed reads as the choice screens do, one shade
    back, and never lights up under the pointer: there is nothing to press. */
-.fact {
+.choice-fixed {
   display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; width: 100%; text-align: left;
   background: var(--sunk); border: 1px dashed var(--line-2); border-radius: var(--r);
   padding: 10px 14px; color: var(--fg-2);
 }
-.fact .m { flex: 1; min-width: 0; }
-.fact .n { font-weight: 600; }
-.fact .facts { flex-basis: 100%; }
+.choice-fixed .m { flex: 1; min-width: 0; }
+.choice-fixed .n { font-weight: 600; }
+.choice-fixed .facts { flex-basis: 100%; }
 .pill.fixed { border-style: dashed; background: var(--sunk); color: var(--muted); }
 .pill.fixed:hover { border-color: var(--line-2); }
 
@@ -755,3 +754,7 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
 .history .hit { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; opacity: 1; }
 label.field { display: block; margin: 0 0 10px; }
 label.field .s { display: block; margin-bottom: 4px; }
+
+/* What one call read from the cache, under the answer it produced: a figure to
+   check, not part of what was said. */
+.cachehit { font-size: 11px; color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }

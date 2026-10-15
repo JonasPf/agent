@@ -31,7 +31,6 @@ private one of its own, so a session is always something a person started and ca
 <tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste. It addresses the same conversation for as long as the conversation exists.</td></tr>
 <tr><td><code>title</code></td><td>Generated from the first user message, and editable from the session's details at any time. A title given by hand is kept: nothing regenerates over it.</td></tr>
 <tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life. A conversation that names none starts on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</td></tr>
-<tr><td><code>status</code></td><td><code>active</code> or <code>archived</code>. Archiving is something a person does when they are finished; nothing archives a session automatically.</td></tr>
 <tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
 <tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
 <tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means every skill that is on by default (<a href="adrs.html#adr-050">ADR-050</a>). Fixed for the session's life.</td></tr>
@@ -531,7 +530,10 @@ prefix themselves, and a marker would add nothing.</p>
 <p>The one way to lose money is to write a cache that nobody reads, so a marker is placed only when
 another call is expected before it expires: a short lifetime when the operator was talking recently, a
 long one when a job that makes a model call is due, and no marker at all otherwise. An agent sitting
-idle overnight writes nothing and pays no premium for it.</p>
+idle overnight writes nothing and pays no premium for it. The message that starts a turn counts as the
+operator talking: the gate is asked once it is stored, so the first message of a conversation, or the
+first after a pause, is cached like any other, and the rounds of its turn read what the first one
+wrote.</p>
 
 <h3>A compaction resets it</h3>
 
@@ -559,9 +561,10 @@ countdown would print the same number beside every message and tell the reader n
 <ul>
 <li>A request carries at most one cache marker, at the end of the message list.</li>
 <li>No marker is written when no further call is expected before it would expire.</li>
+<li>A turn the operator starts writes a marker, the first of a conversation and the first after a pause included.</li>
 <li>No marker is written for a provider that caches without one.</li>
 <li>The first call after a compaction reports no cache hit; the call after that reports one.</li>
-<li>The interface shows the live cache size and a countdown to its expiry, and shows it as expired when it is.</li>
+<li>The interface shows the live cache size and a countdown to its expiry, and shows it as expired when it is. A session reports both as <code>cache</code>: the tokens its last call sent and, where the agent's own marker chose the lifetime, when that call's prefix lapses. A provider that caches without a marker is reported holding the prefix, with no expiry. A compaction clears it.</li>
 <li>Each assistant message reports the cached proportion of the call that produced it, from what the provider reported.</li>
 <li>A compaction states in the transcript that it reset the cache.</li>
 </ul>
@@ -570,14 +573,15 @@ countdown would print the same number beside every message and tell the reader n
 <h2>Forking</h2>
 
 <p>A fork copies a conversation into a new session. Everything comes across: the whole transcript,
-compactions and all, and a copy of the working directory. The original is untouched, stays active,
-and keeps its jobs.</p>
+compactions and all, and a copy of the working directory. The one entry it does not copy is the
+origin's prompt: a session has exactly one prompt entry, and the fork writes its own, from its own
+configuration, ahead of the copy. The original is untouched, stays active, and keeps its jobs.</p>
 
 <p>It is the only way to change a configuration, and it is also how a conversation is branched — two
 directions explored from the same point, both readable, neither disturbing the other.</p>
 
 <p>The fork gets a new identifier, and records the origin in <code>forked_from</code>. No identifier
-ever comes to address different content. The origin is not archived, not redirected, and not modified
+ever comes to address different content. The origin is not redirected and not modified
 beyond one <code>fork</code> event saying where the copy went.</p>
 
 <div class="note">
@@ -593,7 +597,8 @@ still running. A fork that should carry the schedule creates it again, deliberat
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A fork copies every transcript entry of its origin, in order, including compaction and prompt entries.</li>
+<li>A fork copies every transcript entry of its origin, in order, compactions included, except the origin's prompt entry; it has one prompt entry, its own, written from its configuration.</li>
+<li>A fork of a compacted conversation sends the model what its origin sends: each compaction it copies covers the copies of the entries it covered, wherever the copy puts them.</li>
 <li>A fork starts from a copy of its origin's working directory; writes after that are independent.</li>
 <li>The origin stays active, keeps its jobs, and is modified only by one <code>fork</code> event.</li>
 <li>The fork records its origin, and the interface links both ways.</li>
@@ -671,17 +676,29 @@ continues with the files the conversation was working on, and neither session's 
 other. A compaction touches the directory not at all — the session is the same session, and its files
 are where it left them.</p>
 
+<p>A tool may write a link in its directory to anywhere: the sandbox confines what the tool opens,
+not where a link it writes points. The files the interface lists, downloads, uploads, and deletes are
+handled by the agent itself, which no sandbox confines, so the agent follows no link out of the
+session's directory on a tool's behalf.</p>
+
+<p>Deleting a session ends it, including a turn it is in the middle of. The turn is stopped before
+anything is removed, so a model call already under way is not paid for to produce an answer nobody can
+read, and whatever was still on its way to the transcript, the job table, or the directory when the
+delete landed is refused rather than written into the place the delete just emptied.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A session's tools run in that session's directory, and no other session's tools can read it.</li>
-<li>A file uploaded to a session is written there, and its tools see it immediately.</li>
+<li>A file uploaded to a session is written there, and its tools see it immediately. It never replaces a file already there: a taken name gets a number, and the answer names the path it landed at.</li>
 <li>A fork starts from a copy of its origin's directory; writes after that are independent.</li>
 <li>A compaction leaves the working directory unchanged.</li>
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>
-<li>A path that would leave the session's directory is refused.</li>
+<li>A path that would leave the session's directory is refused, whether it climbs out or passes through a link that points out. A link that stays inside reads as the file it names; deleting a link removes the link and never what it names; an upload never writes through one.</li>
 <li>Deleting a session deletes its directory.</li>
+<li>Deleting a session that is working stops its turn first, a job's wake included. Nothing that turn would have written afterwards brings back the session, its transcript, its jobs, or its directory.</li>
 <li>A session reports what it occupies on disk: its transcript and its working directory.</li>
+<li>A session changed from several sides at once &mdash; a turn counting its cost, the operator renaming it or moving where it compacts, a page reading it through &mdash; keeps every change, in memory and on disk. A title the model writes for it never lands over one the operator chose meanwhile.</li>
 </ul>
 </div>
 

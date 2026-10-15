@@ -56,14 +56,28 @@ func nextCron(expr string, from time.Time) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, err
 	}
-	dows, err := cronField(f[4], 0, 6)
+	// Seven is Sunday as well as zero, as it is in every crontab.
+	dows, err := cronField(f[4], 0, 7)
 	if err != nil {
 		return time.Time{}, err
 	}
+	if dows[7] {
+		dows[0] = true
+	}
+	// The two day fields combine as they do in cron: when both are restricted
+	// a day either one names fires, so "0 9 1 * 1" is the first of the month
+	// and every Monday; when either is a star, the other alone decides. A field
+	// is a star when it starts with one, a step over a star included.
+	either := !strings.HasPrefix(f[2], "*") && !strings.HasPrefix(f[4], "*")
+	day := func(t time.Time) bool {
+		if either {
+			return doms[t.Day()] || dows[int(t.Weekday())]
+		}
+		return doms[t.Day()] && dows[int(t.Weekday())]
+	}
 	t := from.Truncate(time.Minute).Add(time.Minute)
 	for i := 0; i < 366*24*60; i++ {
-		if months[int(t.Month())] && doms[t.Day()] && dows[int(t.Weekday())] &&
-			hours[t.Hour()] && mins[t.Minute()] {
+		if months[int(t.Month())] && day(t) && hours[t.Hour()] && mins[t.Minute()] {
 			return t, nil
 		}
 		t = t.Add(time.Minute)
@@ -75,7 +89,8 @@ func cronField(spec string, lo, hi int) (map[int]bool, error) {
 	out := map[int]bool{}
 	for _, part := range strings.Split(spec, ",") {
 		step := 1
-		if base, st, ok := strings.Cut(part, "/"); ok {
+		base, st, hasStep := strings.Cut(part, "/")
+		if hasStep {
 			n, err := strconv.Atoi(st)
 			if err != nil || n <= 0 {
 				return nil, fmt.Errorf("bad step in %q", spec)
@@ -98,6 +113,11 @@ func cronField(spec string, lo, hi int) (map[int]bool, error) {
 					return nil, fmt.Errorf("bad value in %q", spec)
 				}
 				start, end = n, n
+				// A step from a single value runs to the end of the range:
+				// 1/6 in the hours is 1, 7, 13, and 19.
+				if hasStep {
+					end = hi
+				}
 			}
 		}
 		if start < lo || end > hi || start > end {

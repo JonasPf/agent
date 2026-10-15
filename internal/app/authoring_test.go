@@ -253,3 +253,35 @@ func TestTheOperatorsRootsAreOutsideEveryPathAToolCanWrite(t *testing.T) {
 		}
 	}
 }
+
+// Writing a new skill or persona is creating one. Given a name already taken
+// it is refused, and what is on disk is left as it was: it used to be written
+// over without a word, so "New skill" under an old name lost the old one. A
+// document is changed by opening it, which is a PUT to its own address.
+func TestANewDocumentNeverReplacesOneOfTheSameName(t *testing.T) {
+	a := newTestApp(t)
+	for _, kind := range []string{"skills", "personas"} {
+		first := map[string]any{"name": "watering", "description": "first", "body": "WRITTEN CAREFULLY"}
+		if w := callAPI(t, a, "POST", "/"+kind, first); w.Code != 200 {
+			t.Fatalf("POST /%s: status %d (%s)", kind, w.Code, w.Body.String())
+		}
+		again := map[string]any{"name": "watering", "description": "second", "body": "oops"}
+		w := callAPI(t, a, "POST", "/"+kind, again)
+		if w.Code != 409 {
+			t.Errorf("POST /%s under a taken name: status %d, want 409 (%s)", kind, w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), "already") {
+			t.Errorf("POST /%s under a taken name does not say why: %s", kind, w.Body.String())
+		}
+		if got := callAPI(t, a, "GET", "/"+kind+"/watering", nil).Body.String(); !strings.Contains(got, "WRITTEN CAREFULLY") {
+			t.Errorf("the %s on disk was replaced: %s", kind, got)
+		}
+		edit := map[string]any{"description": "edited", "body": "EDITED IN PLACE"}
+		if w := callAPI(t, a, "PUT", "/"+kind+"/watering", edit); w.Code != 200 {
+			t.Errorf("PUT /%s/watering: status %d (%s)", kind, w.Code, w.Body.String())
+		}
+		if got := callAPI(t, a, "GET", "/"+kind+"/watering", nil).Body.String(); !strings.Contains(got, "EDITED IN PLACE") {
+			t.Errorf("opening the %s and saving it did not change it: %s", kind, got)
+		}
+	}
+}

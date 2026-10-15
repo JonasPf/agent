@@ -61,13 +61,15 @@ middle.</p>
 <li>The conversation list is a rail beside the pane where there is room for one, and a drawer behind a single button where there is not &mdash; the same list either way, never two.</li>
 <li>Opening the drawer, dismissing it, and going anywhere from it each leave exactly one thing on screen.</li>
 <li>With the rail pinned open the pane offers no back button and the drawer no handle.</li>
-<li>The rail names every conversation, marks the one being read, carries its unread count, and separates archived conversations from active ones.</li>
+<li>The rail names every conversation, newest activity first, marks the one being read, and carries its unread count. A conversation is kept or deleted; nothing sets one apart as archived.</li>
 <li>The rail states the credit remaining and whether tools are sandboxed, without opening a screen to ask.</li>
 <li>The page's first request on coming back is answered without waiting on OpenRouter; the credit shown is the last figure the agent heard, and the rail updates when a fresher one arrives.</li>
 <li>The rail links Jobs, Tools, Skills, and More; personas are reached from More.</li>
 <li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
+<li>An address naming a conversation that no longer exists opens a screen saying so, under a header of its own that offers nothing acting on another conversation; a screen whose answers are refused for any other reason says that instead of staying blank.</li>
 <li>Saving or deleting a skill or persona returns to the list it was opened from without adding the list to the history a second time.</li>
 <li>A screen still loading when another is opened paints nothing: the pane shows the conversation the address names, with one composer under it.</li>
+<li>Whatever screen was left before its answers came back &mdash; a new conversation, a fork, a conversation's details, the More panel, a skill or persona &mdash; adds no section, button, or header action to the screen that replaced it.</li>
 <li>A view's actions are one list, whether laid along the header or folded behind one button.</li>
 <li>A transcript is held to a reading column; a list of jobs, tools, files, or skills takes the full width available.</li>
 <li>Nothing in the interface is laid out at a fixed page width.</li>
@@ -143,7 +145,8 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>Assistant output streams token by token.</li>
 <li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
 <li>Context usage is shown against the session's compaction threshold, not the model's window.</li>
-<li>The estimated cost of the next call is shown, and whether it will be cached.</li>
+<li>The header's title and the status line's figures follow the conversation while it is open: the title its first answer gives it, and the cost and context each turn moves, show without opening it again.</li>
+<li>The estimated cost of the next call is shown, and whether it will be cached: the prompt and the conversation as they would be sent now, at the model's prices, with what a live cache holds priced as a read.</li>
 <li>An event is laid out as a log line — clock, kind, detail — with no speaker and no bubble, so it cannot be read as a message or a tool result.</li>
 <li>A session identifier appearing in an event or a prompt section is a link to that session.</li>
 <li>The session list is ordered by last activity, and can be reordered by disk used, largest first.</li>
@@ -164,18 +167,22 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>A page shown again, or a dropped socket retrying, whose password has lapsed makes that one request and reloads, opening no socket and asking for nothing else.</li>
 <li>A compacted session shows the prompt, then the newest compaction's banner, then the turns it kept word for word, then what came since: the order the agent reads them in.</li>
 <li>The entries a compaction covers, and every superseded compaction, are not drawn in the conversation at all, and nothing there offers to reveal them; the banner offers a search of this conversation instead.</li>
+<li>A fork's seeding event, which says where it was copied from, is drawn after the prompt even when a compaction the fork carries covers its position: it is the fork's own record, not something the summary stands for.</li>
 <li>The turns a compaction kept word for word are grouped after its banner under a label saying they were carried over, and how many turns they are.</li>
 <li>The banner names itself a compaction, says the agent reads its summary in place of everything before it, and shows the turn count and the tokens before and after.</li>
 <li>The compaction summary is editable, and an edit changes what the next turn sends.</li>
 <li>A compaction says that it reset the cache.</li>
 <li>The status line shows the live cache size and counts down to its expiry, and shows it as expired when it is.</li>
+<li>A provider that caches on its own, without the agent's marker, reports no lifetime; its cache is shown as held by the provider, and no countdown is invented for it.</li>
 <li>Each assistant message shows the cached proportion of the call that produced it, from what the provider reported, and says so plainly when there was no hit.</li>
 <li>No cache lifetime is shown per message.</li>
 <li>Expanding the tool section shows every tool definition as the model receives it.</li>
+<li>Opening or closing a section of the prompt changes that section alone, in that conversation alone: nothing else is drawn again, and a tool result the reader opened stays open.</li>
 <li>An assistant message renders its markdown: headings, bullet and numbered lists, tables, block quotes, rules, emphasis, inline code, and fenced code blocks that keep their lines.</li>
 <li>A turn still streaming renders as markdown while it arrives, including a fenced block whose closing fence has not been sent yet.</li>
 <li>A message the operator typed, and a wake carrying a job's stored prompt, are shown verbatim and are never rendered.</li>
 <li>Markup in model output is shown as text and never becomes markup: a link renders only when it points at the web, an address, or this app, and an image renders as a link rather than a fetch.</li>
+<li>Any character model output holds is drawn as text, a NUL included, which is shown as a replacement character: nothing in an answer can stop the conversation drawing.</li>
 <li>A keyboard sends the composer with Enter and breaks the line with shift-Enter; a touch screen breaks the line with Enter and sends from the button. The platform's own combination sends on either.</li>
 <li>A key that ends a composition &mdash; an accent, a kana, a candidate &mdash; sends nothing.</li>
 <li>Opening a conversation on a keyboard puts the cursor in the composer without scrolling the transcript; on a touch screen nothing is focused, so no keyboard rises.</li>
@@ -186,6 +193,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>While a conversation is working and nothing of the answer has arrived yet, the transcript shows the agent thinking where the answer will appear; the first word of the answer replaces it, and it goes when the turn ends.</li>
 <li>When a turn ends, the conversation scrolls to its answer, even if the reader had scrolled away while it worked.</li>
 <li>An entry arriving is added without drawing again what is already on screen; a tool result the reader opened stays open.</li>
+<li>A conversation opened while it is working shows every entry, each once: what the socket delivers while the transcript is on its way is kept beside it, and an entry heard twice is drawn once.</li>
 <li>An answer arriving reads exactly as the finished answer will, is drawn at most once a frame, and draws again only the block still growing; a reader who has scrolled up is left where they are.</li>
 <li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
 </ul>
@@ -206,7 +214,7 @@ always measured on the spot.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>All sessions are listed, newest activity first, with title, model, and unread count.</li>
-<li>A session can be created, renamed, archived, and deleted.</li>
+<li>A session can be created, renamed, and deleted.</li>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>Search opened from a conversation looks in that conversation, and can be widened to every conversation in one tap. It searches as it is typed, each word matching as a prefix, and punctuation is looked for rather than read as syntax.</li>
 <li>Each search hit says who wrote it and when, marks what matched, and says so when the agent no longer sees it.</li>
@@ -239,6 +247,7 @@ always measured on the spot.</p>
 <li>The details screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
 <li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
 <li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
+<li>A model's figures &mdash; prices, context, indices &mdash; are one wrapping row of small figures under its name, wherever a model is named: never a card each.</li>
 <li>Wherever a screen names a model, its figures come from the catalogue as the agent currently holds it, fetched when the screen is drawn, so the configuration and the model dialog never show one model at two prices.</li>
 <li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
@@ -248,6 +257,7 @@ always measured on the spot.</p>
 <li>Forking opens a configuration screen carrying the origin's settings, and creates the fork when it is confirmed.</li>
 <li>The fork screen says that the whole conversation is copied and that the origin keeps its jobs.</li>
 <li>Starting a conversation reaches the same screen, prefilled with the most recent session's tools, skills, and grants, on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</li>
+<li>Starting a conversation and creating a fork are each one action: the button stops offering while its request is out, so a press that lands twice creates one, and a refusal says why and offers it again.</li>
 <li>No screen offers to edit the configuration of a session that already exists.</li>
 <li>Enable-all and disable-all act on the whole list in one tap.</li>
 </ul>
@@ -270,6 +280,7 @@ they are there.</p>
 <ul>
 <li>A file can be uploaded from a phone, including from the camera and the photo library.</li>
 <li>An uploaded file is written to the session's working directory and appears in its file list.</li>
+<li>An upload never replaces a file already there: a name already taken gets a number &mdash; <code>image.jpg</code>, then <code>image-2.jpg</code> &mdash; and the message names each file where it landed. Two photos from a phone's camera, both called <code>image.jpg</code>, are two files.</li>
 <li>The file list shows every file and directory the session holds as a tree, empty directories included. A file shows its size and age and can be downloaded or deleted; a directory shows what it holds and folds and unfolds when tapped.</li>
 <li>A tree of more than a hundred entries opens with its directories folded; a smaller one opens in full.</li>
 <li>A file attached from the composer shows as a chip with its upload progress, and stays until the message is sent or it is taken off.</li>
@@ -398,6 +409,7 @@ wording differs.</p>
 <li>A skill or persona the operator wrote is created, edited, and deleted in the interface, with its name, its one-line description, and its body.</li>
 <li>One that ships in the image is shown read-only, and says so rather than offering an edit that would fail.</li>
 <li>A save that is refused says why and leaves what is on disk unchanged.</li>
+<li>A new skill or persona under a name already taken is refused, and the one of that name is kept: a document is changed by opening it, never by writing a new one over it.</li>
 <li>A job's run log is readable from the job, without opening the conversation it fires into.</li>
 <li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>

@@ -42,12 +42,14 @@ func (a *App) Compare(origin *Session, text string, models []string) (string, []
 		if err != nil {
 			return "", nil, err
 		}
-		c.Comparison = group
-		// Three rows under one title cannot be told apart in a list, so a
-		// candidate is titled by the model that makes it different. Keeping one
-		// puts the conversation's own title back.
-		c.Title = origin.Title + " · " + shortModel(m)
-		if err := a.store.PutSession(c); err != nil {
+		c, err = a.store.UpdateSession(c.ID, func(x *Session) {
+			x.Comparison = group
+			// Three rows under one title cannot be told apart in a list, so a
+			// candidate is titled by the model that makes it different. Keeping
+			// one puts the conversation's own title back.
+			x.Title = origin.Title + " · " + shortModel(m)
+		})
+		if err != nil {
 			return "", nil, err
 		}
 		cands = append(cands, c)
@@ -97,14 +99,18 @@ func (a *App) Keep(winner *Session) ([]string, error) {
 		gone = append(gone, d.Model+" in "+d.ID)
 	}
 
-	winner.Comparison = ""
-	winner.Title = untitledCandidate(winner.Title)
-	if origin := a.store.Session(winner.ForkedFrom); origin != nil {
-		winner.Title = origin.Title
+	origin := a.store.Session(winner.ForkedFrom)
+	if origin != nil {
 		a.appendEvent(origin.ID, Entry{EventKind: "kept", Text: fmt.Sprintf(
 			"kept %s in %s; deleted %s", winner.Model, winner.ID, describeDiscarded(gone))})
 	}
-	if err := a.store.PutSession(winner); err != nil {
+	if _, err := a.store.UpdateSession(winner.ID, func(x *Session) {
+		x.Comparison = ""
+		x.Title = untitledCandidate(x.Title)
+		if origin != nil {
+			x.Title = origin.Title
+		}
+	}); err != nil {
 		return nil, err
 	}
 	a.appendEvent(winner.ID, Entry{EventKind: "kept", Text: fmt.Sprintf(

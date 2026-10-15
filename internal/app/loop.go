@@ -27,9 +27,6 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 
 	msgs := []ChatMessage{a.systemChatMessage(s, promptEntry.Sections)}
 	msgs = append(msgs, Project(a.store.Entries(s.ID))...)
-	if needsExplicitCacheMarker(s.Model) {
-		msgs = withCacheMarker(msgs, a.cacheTTL(s))
-	}
 
 	user := Entry{Type: "message", Role: "user", Text: opts.UserText, JobID: opts.JobID,
 		DueAt: opts.DueAt}
@@ -39,10 +36,24 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 	// Every entry is stored as it is produced. A run is never held back pending
 	// an outcome: what the agent did is what the transcript says it did.
 	emit := func(e Entry) Entry { return a.append(s.ID, e) }
+	stored := emit(user)
+
+	// The gate asks whether a further call is expected while a cache would
+	// live, so it is asked once this turn's own message is stored: an operator
+	// who has just written is talking now. Asked before, the first message of
+	// a conversation, and the first after a pause, wrote no marker, and every
+	// round of that turn paid full price for what the round before had sent.
+	ttl := ""
+	if needsExplicitCacheMarker(s.Model) {
+		ttl = a.cacheTTL(s)
+		msgs = withCacheMarker(msgs, ttl)
+	}
+	marked := hasCacheMarker(msgs)
+
 	// The turn's own user message reaches the model through the projection, like
 	// every earlier one. Building it here as well was how a job wake arrived
 	// stripped of the marker that says the operator is not there to read a reply.
-	if m, ok := toMessage(emit(user)); ok {
+	if m, ok := toMessage(stored); ok {
 		msgs = append(msgs, m)
 	}
 
@@ -65,10 +76,18 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 			return err
 		}
 
-		s.Cost += res.Usage.Cost
-		s.PromptTokens += res.Usage.PromptTokens
-		s.CachedTokens += res.Usage.CachedTokens
-		_ = a.store.PutSession(s)
+		usageNow := res.Usage
+		ns, err := a.store.UpdateSession(s.ID, func(x *Session) {
+			x.Cost += usageNow.Cost
+			x.PromptTokens += usageNow.PromptTokens
+			x.CachedTokens += usageNow.CachedTokens
+			noteCache(x, ttl, marked, usageNow, time.Now())
+		})
+		if err != nil {
+			// The session is gone; there is nobody to finish the turn for.
+			return err
+		}
+		s = ns
 
 		usage := res.Usage
 		assistant := Entry{Type: "message", Role: "assistant", Text: res.Text,
@@ -140,6 +159,46 @@ func withCacheMarker(msgs []ChatMessage, ttl string) []ChatMessage {
 	return out
 }
 
+// hasCacheMarker says whether a request carries the marker withCacheMarker
+// writes. It is not written when there is nothing it could be attached to.
+func hasCacheMarker(msgs []ChatMessage) bool {
+	if len(msgs) == 0 {
+		return false
+	}
+	parts, ok := msgs[len(msgs)-1].Content.([]any)
+	if !ok {
+		return false
+	}
+	for _, p := range parts {
+		if m, ok := p.(map[string]any); ok && m["cache_control"] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// noteCache records what a call left the provider holding, for the status
+// line's count of it. A call that carried the agent's marker wrote or read the
+// prefix it names and restarted its lifetime; a provider that caches on its own
+// holds what was sent, for as long as it chooses. A call to a provider that
+// needs a marker and was sent none leaves whatever was held to lapse as it
+// would have.
+func noteCache(s *Session, ttl string, marked bool, u Usage, now time.Time) {
+	if u.PromptTokens <= 0 {
+		return
+	}
+	switch {
+	case !needsExplicitCacheMarker(s.Model):
+		s.Cache = &SessionCache{Tokens: u.PromptTokens, KeptBy: "provider"}
+	case marked:
+		d, err := time.ParseDuration(ttl)
+		if err != nil {
+			return
+		}
+		s.Cache = &SessionCache{Tokens: u.PromptTokens, ExpiresAt: now.Add(d), KeptBy: "agent"}
+	}
+}
+
 // needsExplicitCacheMarker is false for providers that cache automatically.
 func needsExplicitCacheMarker(model string) bool {
 	return strings.HasPrefix(model, "anthropic/") || strings.HasPrefix(model, "google/")
@@ -207,8 +266,12 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 			// said. The transcript has to tell the two apart, or a stop reads
 			// as the agent breaking.
 			if ctx.Err() != nil {
+				// A session deleted under its turn has nobody left to tell.
+				if a.store.Session(live.ID) == nil {
+					return
+				}
 				a.appendEvent(live.ID, Entry{EventKind: "cancelled",
-					Text: stoppedWhere(a.store.Entries(live.ID)[before:])})
+					Text: stoppedWhere(a.entriesSince(live.ID, before))})
 				a.hub.Broadcast(wsEvent{Kind: "sessions"})
 				return
 			}

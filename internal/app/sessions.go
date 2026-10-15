@@ -45,7 +45,6 @@ func (a *App) NewSession(cfg SessionConfig, forkedFrom string) (*Session, error)
 		ID:                 newID(),
 		Title:              "New session",
 		SessionConfig:      cfg,
-		Status:             "active",
 		ForkedFrom:         forkedFrom,
 		CompactAtTokens:    compactAt,
 		KeepVerbatimTokens: keep,
@@ -100,6 +99,7 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 		e.Usage = nil
 		copied = append(copied, e)
 	}
+	renumberCovers(copied, len(a.store.Entries(fork.ID)))
 	// In one write, and without an event per entry: the fork is on no page
 	// yet, and what it copies is not news — announced one by one, a copied
 	// reply read as a new one. Pages hear the list moved, below.
@@ -111,18 +111,45 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	// which still exists and is still running.
 	a.append(origin.ID, Entry{Type: "event", EventKind: "fork",
 		Text: fmt.Sprintf("copied into %s (%s)", fork.ID, why)})
-	fork.Title = origin.Title
-	// How the conversation is kept travels with it: a fork of a session given
-	// room to grow should not fold at the default on its next turn.
-	fork.CompactAtTokens, fork.KeepVerbatimTokens = origin.CompactAtTokens, origin.KeepVerbatimTokens
-	// The operator made the fork from a conversation in front of them; what it
-	// copied is not news.
+	readThrough := 0
 	if copied := a.store.Entries(fork.ID); len(copied) > 0 {
-		fork.ReadThrough = copied[len(copied)-1].Seq
+		readThrough = copied[len(copied)-1].Seq
 	}
-	_ = a.store.PutSession(fork)
+	fork, err = a.store.UpdateSession(fork.ID, func(x *Session) {
+		x.Title = origin.Title
+		// How the conversation is kept travels with it: a fork of a session
+		// given room to grow should not fold at the default on its next turn.
+		x.CompactAtTokens, x.KeepVerbatimTokens = origin.CompactAtTokens, origin.KeepVerbatimTokens
+		// The operator made the fork from a conversation in front of them;
+		// what it copied is not news.
+		x.ReadThrough = readThrough
+	})
+	if err != nil {
+		return nil, err
+	}
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return fork, nil
+}
+
+// renumberCovers moves what each copied compaction covers to where the copy
+// puts it. A copy is written from position base on, behind the fork's own
+// prompt and seeding event, so every entry lands at a different position from
+// the one it held; a compaction left covering its old number would cover the
+// wrong entries, and the last of the ones it folded would be read again. It
+// now covers through the copy of the last entry it covered in the origin.
+func renumberCovers(copied []Entry, base int) {
+	for i := range copied {
+		if copied[i].Type != "compaction" {
+			continue
+		}
+		covers := 0
+		for j, e := range copied {
+			if e.Seq <= copied[i].CoversThrough {
+				covers = base + j
+			}
+		}
+		copied[i].CoversThrough = covers
+	}
 }
 
 // firstLine keeps a title to one short line whatever the model returns.
@@ -144,6 +171,16 @@ func (a *App) append(sessionID string, e Entry) Entry {
 		a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	}
 	return out
+}
+
+// entriesSince is what a session has written from position before onwards. A
+// session deleted in the meantime has written nothing a caller can still use.
+func (a *App) entriesSince(sessionID string, before int) []Entry {
+	entries := a.store.Entries(sessionID)
+	if before > len(entries) {
+		return nil
+	}
+	return entries[before:]
 }
 
 // countsAsUnread is what the unread count counts: something the agent said. A
@@ -222,11 +259,17 @@ func (a *App) titleIfNeeded(ctx context.Context, s *Session, firstUserText strin
 	res, err := a.or.Chat(ctx, ChatRequest{Model: s.Model, Messages: []ChatMessage{
 		{Role: "user", Content: "Title this conversation in at most six words. Reply with the title alone, no quotes.\n\n" + truncate(firstUserText, 1000)},
 	}}, nil)
-	s.Title = firstLine(res.Text)
-	if err != nil || s.Title == "" {
-		s.Title = firstLine(firstUserText)
+	title := firstLine(res.Text)
+	if err != nil || title == "" {
+		title = firstLine(firstUserText)
 	}
-	s.Cost += res.Usage.Cost
-	_ = a.store.PutSession(s)
+	_, _ = a.store.UpdateSession(s.ID, func(x *Session) {
+		x.Cost += res.Usage.Cost
+		// A title the operator chose while this one was being written is
+		// theirs, and stands.
+		if x.Title == "New session" || x.Title == "" {
+			x.Title = title
+		}
+	})
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 }

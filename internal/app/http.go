@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -255,8 +257,6 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Title         *string     `json:"title"`
 		Model         *string     `json:"model"`
-		Status        *string     `json:"status"`
-		Summary       *string     `json:"summary"`
 		EnabledTools  optionalSet `json:"enabled_tools"`
 		EnabledSkills optionalSet `json:"enabled_skills"`
 		GrantedEnv    optionalSet `json:"granted_env"`
@@ -270,7 +270,20 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "%v", err)
 		return
 	}
-	// Checked before anything is applied, so a refused pair changes nothing.
+	// Everything that can refuse the request is decided before anything is
+	// applied, so a refused request changes nothing — not even the part of it
+	// that would have been allowed on its own.
+	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present ||
+		in.Persona != nil {
+		// A configuration is chosen before the session exists and fixed once it
+		// does. There is one answer here, not two. Grants are part of it: a
+		// conversation that could be handed a credential halfway through is one
+		// whose reach cannot be read from how it started. So is the persona: it
+		// is a section of the prompt, and the prompt is written once.
+		fail(w, 409, "a session's model, tools, skills, grants, and persona are fixed for its life; "+
+			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
+		return
+	}
 	compactAt, keep := s.CompactAtTokens, s.KeepVerbatimTokens
 	thresholds := in.CompactAtTokens != nil || in.KeepVerbatimTokens != nil
 	if in.CompactAtTokens != nil {
@@ -285,29 +298,30 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A conversation with no title is harder to find again than one whose
+	// title has gone stale, so a blank is not a rename.
+	var title string
 	if in.Title != nil {
-		s.Title = *in.Title
+		if title = strings.TrimSpace(*in.Title); title == "" {
+			fail(w, 400, "a title cannot be blank")
+			return
+		}
 	}
-	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present ||
-		in.Persona != nil {
-		// A configuration is chosen before the session exists and fixed once it
-		// does. There is one answer here, not two. Grants are part of it: a
-		// conversation that could be handed a credential halfway through is one
-		// whose reach cannot be read from how it started. So is the persona: it
-		// is a section of the prompt, and the prompt is written once.
-		fail(w, 409, "a session's model, tools, skills, grants, and persona are fixed for its life; "+
-			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
+
+	updated, err := a.store.UpdateSession(s.ID, func(x *Session) {
+		if in.Title != nil {
+			x.Title = title
+		}
+		if thresholds {
+			x.CompactAtTokens, x.KeepVerbatimTokens = compactAt, keep
+		}
+	})
+	if err != nil {
+		fail(w, 404, "%v", err)
 		return
 	}
-	if thresholds {
-		s.CompactAtTokens, s.KeepVerbatimTokens = compactAt, keep
-	}
-	if in.Status != nil {
-		s.Status = *in.Status
-	}
-	_ = a.store.PutSession(s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
-	writeJSON(w, 200, a.enrich(s))
+	writeJSON(w, 200, a.enrich(updated))
 }
 
 func (a *App) hDeleteSession(w http.ResponseWriter, r *http.Request) {
@@ -440,7 +454,12 @@ func (a *App) hKeep(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "%v", err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"session": a.enrich(s), "deleted": gone})
+	// Keeping changed the session; what is answered is the session it left.
+	kept := a.store.Session(s.ID)
+	if kept == nil {
+		kept = s
+	}
+	writeJSON(w, 200, map[string]any{"session": a.enrich(kept), "deleted": gone})
 }
 
 // hCompact folds a session now rather than at its threshold, for a conversation
@@ -833,6 +852,11 @@ func (a *App) hSaveSkill(w http.ResponseWriter, r *http.Request) {
 	}
 	if name := r.PathValue("name"); name != "" {
 		in.Name = name
+	} else if a.skills.Get(in.Name) != nil {
+		// A POST is a new skill. Under a name already taken it would replace
+		// one without a word; a skill is changed by a PUT to its own address.
+		fail(w, 409, "a skill named %q already exists; open it to change it, or choose another name", in.Name)
+		return
 	}
 	// A skill nobody chose is in every conversation, so a new one arrives on by
 	// default the way a shipped one does.
@@ -897,6 +921,9 @@ func (a *App) hSavePersona(w http.ResponseWriter, r *http.Request) {
 	}
 	if name := r.PathValue("name"); name != "" {
 		in.Name = name
+	} else if in.Name != "" && a.personas.Get(in.Name) != nil {
+		fail(w, 409, "a persona named %q already exists; open it to change it, or choose another name", in.Name)
+		return
 	}
 	if err := a.personas.Save(in.Name, in.Description, in.Body); err != nil {
 		fail(w, 409, "%v", err)
@@ -943,7 +970,7 @@ func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	rel, n, err := a.writeWorkspaceFile(id, filepath.Base(hdr.Filename), file)
+	rel, n, err := a.writeNewWorkspaceFile(id, filepath.Base(hdr.Filename), file)
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
@@ -971,12 +998,29 @@ func (a *App) hSessionFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	full, err := a.resolveInWorkspace(id, r.PathValue("path"))
+	rel, err := workspacePath(id, r.PathValue("path"))
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
-	http.ServeFile(w, r, full)
+	root, err := a.workspaceRoot(id)
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	defer root.Close()
+	f, err := root.Open(rel)
+	if err != nil {
+		failFile(w, err)
+		return
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		fail(w, 400, "%s is a directory, not a file", rel)
+		return
+	}
+	http.ServeContent(w, r, path.Base(rel), info.ModTime(), f)
 }
 
 func (a *App) hDeleteSessionFile(w http.ResponseWriter, r *http.Request) {
@@ -985,17 +1029,37 @@ func (a *App) hDeleteSessionFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	full, err := a.resolveInWorkspace(id, r.PathValue("path"))
+	rel, err := workspacePath(id, r.PathValue("path"))
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
-	if err := os.Remove(full); err != nil {
-		fail(w, 404, "%v", err)
+	root, err := a.workspaceRoot(id)
+	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	defer root.Close()
+	// A link is removed as itself, never as what it names; a link on the way
+	// to the path that leads out of the directory is refused.
+	if err := root.Remove(rel); err != nil {
+		failFile(w, err)
 		return
 	}
 	a.workspaceChanged(id)
 	w.WriteHeader(204)
+}
+
+// failFile answers a file request the session's directory refused: a file
+// that is not there is not found, and anything else — a path through a link
+// that leads out of the directory among them — is a request that cannot be
+// served.
+func failFile(w http.ResponseWriter, err error) {
+	if errors.Is(err, fs.ErrNotExist) {
+		fail(w, 404, "%v", err)
+		return
+	}
+	fail(w, 400, "%v", err)
 }
 
 // hExportSession serves everything the session owns as one zip.

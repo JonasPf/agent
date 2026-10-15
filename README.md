@@ -36,6 +36,7 @@ nothing here is required.
 | `task db:clear` | Move sessions, jobs, and session files to `.backups/<stamp>` and start fresh |
 | `task db:restore` | Put the newest backup back |
 | `task db:status` | What the running agent holds |
+| `task spec` | Serve the specs at http://localhost:8000 |
 | `task tools:reload` | Reload tools from disk without a restart |
 
 `db:clear` refuses while the agent is running. Everything above the `db:` rows runs in the test

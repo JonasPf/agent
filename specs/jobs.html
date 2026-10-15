@@ -32,7 +32,7 @@ context is already present without being restated.</p>
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><code>session_id</code></td><td>The conversation this job runs in. Required.</td></tr>
-<tr><td><code>schedule</code></td><td>When it wakes: an interval (<code>30m</code>), a cron expression (<code>0 9 * * *</code>), or a single absolute time. Required.</td></tr>
+<tr><td><code>schedule</code></td><td>When it wakes: an interval (<code>30m</code>), a cron expression (<code>0 9 * * *</code>), or a single absolute time. Required. A cron expression means what it means in a crontab: with both day fields restricted a day either names fires, so <code>0 9 1 * 1</code> is the first of the month and every Monday; with either a star the other alone decides; <code>7</code> is Sunday as well as <code>0</code>; and <code>1/6</code> steps from 1 to the end of the range.</td></tr>
 <tr><td><code>prompt</code></td><td>What the agent is asked when it acts. Required.</td></tr>
 <tr><td><code>check</code></td><td>Optional. A shell command run before the prompt; exit status zero means act, anything else means skip this wake. Absent means always act.</td></tr>
 <tr><td><code>after_acting</code></td><td>What becomes of the job once it has acted: <code>stop</code> or <code>continue</code>. Defaults to <code>continue</code>.</td></tr>
@@ -143,6 +143,7 @@ Ending it is the operator's call, and it takes one tap.
 <li>A reminder scheduled arbitrarily far ahead fires, and is never deleted before its time.</li>
 <li>A job with <code>after_acting</code> of <code>stop</code> is marked done after the first wake on which it acts, and not before, and never wakes again.</li>
 <li>Any cadence is accepted. "Remind me every ten minutes" creates one job that wakes every ten minutes.</li>
+<li>A cron schedule wakes when cron would fire it: either day field fires when both are restricted, the other decides when one is a star, <code>7</code> is Sunday, and a step from a value runs to the end of its range.</li>
 <li>Creating a job answers with what it will cost: wakes a day, tokens a turn, tokens a day, and money where the price is known.</li>
 <li>A gated job estimates no daily cost, and says what a wake that fires costs.</li>
 <li>A job that wakes once is priced once rather than per day.</li>

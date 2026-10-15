@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const { toolResult, resultBody, resultPreview, callBody, callPreview,
         eventLabel, eventDetail, eventTime, isFailure,
         speaker, bubbleClass, messageTime, runTime, lateBy, jobCost,
-        waitingLabel, conversationText } = require('./transcript.js');
+        waitingLabel, conversationText, cacheState, cacheLabel, nextCall, cacheHit } = require('./transcript.js');
 
 // ---- waiting ----
 
@@ -356,4 +356,22 @@ test("a copied conversation carries a tool call's logs", () => {
 
 test('a call that logged nothing copies no empty logs section', () => {
   assert.doesNotMatch(conversationText(convo, 'Greenhouse sensors'), /logs/i);
+});
+
+// ---- the cache ----
+
+test('a cache nothing is known about is not shown, and a call nobody measured says nothing', () => {
+  assert.strictEqual(cacheState(null, Date.now()), null);
+  assert.strictEqual(cacheState({ tokens: 0, kept_by: 'agent' }, Date.now()), null);
+  assert.strictEqual(cacheLabel(null), '');
+  assert.strictEqual(cacheHit(undefined), '');
+  assert.strictEqual(cacheHit({ prompt_tokens: 0 }), '');
+});
+
+test('the next call is not priced without a price, and a model with no cache price pays the full one', () => {
+  const live = cacheState({ tokens: 5000, expires_at: new Date(Date.now() + 60000).toISOString(), kept_by: 'agent' }, Date.now());
+  assert.strictEqual(nextCall(1000, 1000, live, null).cost, null);
+  assert.strictEqual(nextCall(1000, 1000, live, { prompt_price: 0.000001 }).cost, 0.002);
+  assert.strictEqual(cacheLabel(cacheState({ tokens: 5000, expires_at: new Date(Date.now() + 3599000).toISOString(), kept_by: 'agent' }, Date.now())),
+    'cache 5,000 tok · 59:59');
 });
