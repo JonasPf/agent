@@ -212,7 +212,7 @@ async function catchUp() {
   if (res.session.working_seconds == null) delete state.working[id];
   else if (state.working[id] == null) state.working[id] = Date.now() - res.session.working_seconds * 1000;
   if (whole) {
-    state.entries = entries || [];
+    state.entries = withArrivals(entries || [], state.entries);
     renderTranscript();
   } else {
     // The socket may have delivered some of these while they were on their way.
@@ -228,6 +228,9 @@ function handle(e) {
   if (e.kind === 'entry' || e.kind === 'transient') {
     if (e.kind === 'entry') announce(e.entry, e.session_id);
     if (state.view === 'session' && e.session_id === state.arg) {
+      // Heard twice — a socket delivering it again, a catch-up that already
+      // fetched it — an entry is still held, and drawn, once.
+      if (e.kind === 'entry' && held(e.entry)) return;
       if (e.kind === 'entry') state.entries.push(e.entry);
       if (e.kind === 'entry' && !document.hidden) readThrough(e.session_id, e.entry.seq);
       state.streaming = '';
@@ -281,6 +284,26 @@ function handle(e) {
     if (e.kind !== 'jobs') renderSidebar();
     if (e.kind === 'status') { loadStatus(); readStatus(); }
   }
+}
+
+// held says whether the conversation on screen already holds an entry. Entries
+// arrive in order, so one at or before the last held is one already heard.
+function held(entry) {
+  const last = state.entries[state.entries.length - 1];
+  return !!last && entry.seq <= last.seq;
+}
+
+// withArrivals is a transcript just fetched with whatever the socket delivered
+// while it was on its way: the entries written after the transcript was read,
+// which it cannot hold, kept in order and each once.
+function withArrivals(fetched, arrived) {
+  const top = fetched.length ? fetched[fetched.length - 1].seq : -1;
+  const later = [];
+  for (const e of (arrived || []).slice().sort((a, b) => a.seq - b.seq)) {
+    const prev = later.length ? later[later.length - 1].seq : top;
+    if (e.seq > prev) later.push(e);
+  }
+  return fetched.concat(later);
 }
 
 // readThrough tells the agent the operator has been shown a conversation up to
@@ -537,12 +560,15 @@ function sessionRow(s) {
 
 async function viewSession(v) {
   const gen = drawing;
+  // What arrives over the socket while the transcript is on its way collects
+  // here, to be kept: the transcript was read before it was written.
+  state.entries = [];
   // Neither waits on the other: on a phone each is a round trip of its own.
   const [res, entries] = await Promise.all([
     api('/sessions/' + state.arg), api('/sessions/' + state.arg + '/transcript')]);
   if (stale(gen)) return;
   state.session = res.session;
-  state.entries = entries;
+  state.entries = withArrivals(entries, state.entries);
   const id = state.session.id;
   // Where reading stopped, fixed for as long as the conversation is open: the
   // line stays put while the operator reads down from it.

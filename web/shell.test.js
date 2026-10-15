@@ -755,6 +755,45 @@ test('an entry arriving is added without redrawing the conversation', async () =
   assert.ok(find(t, 'thinking'), 'working again shows no thinking row');
 });
 
+// A conversation opened while it is working hears its entries over the socket
+// before the transcript it asked for has come back. The transcript was read
+// before they were written, so they are not in it, and the page used to replace
+// what it held with that transcript and lose them: the message just sent and
+// the answer to it missing until the socket next reconnected.
+test('an entry that arrives while the conversation is loading is kept', async () => {
+  const entries = [
+    { seq: 0, type: 'prompt', sections: [], text: 'system prompt', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-06T10:00:00Z' },
+  ];
+  const ctx = conversationScreen(session({ id: 'S1' }), entries);
+  const held = [];
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => /\/transcript$/.test(p) ? new Promise(r => held.push(() => r(fetch(p, o)))) : fetch(p, o);
+  const opening = ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(held.length, 1, 'the transcript was not asked for');
+
+  const late = [
+    { seq: 2, type: 'message', role: 'user', text: 'RACE: and the other one?', created_at: '2026-10-06T10:00:02Z' },
+    { seq: 3, type: 'message', role: 'assistant', text: 'RACE: it reads 39%.', created_at: '2026-10-06T10:00:03Z' },
+  ];
+  for (const entry of late) ctx.handle({ kind: 'entry', session_id: 'S1', entry });
+  held.splice(0).forEach(f => f());
+  await opening;
+
+  const seqs = JSON.parse(vm.runInContext('JSON.stringify(state.entries.map(e => e.seq))', ctx));
+  assert.deepStrictEqual(seqs, [0, 1, 2, 3], 'what arrived while loading was lost or doubled');
+  const text = textOf(ctx._id('transcript'));
+  assert.match(text, /and the other one\?/, 'the message sent while loading is not on screen');
+  assert.match(text, /it reads 39%/, 'the answer that arrived while loading is not on screen');
+
+  // Heard again — a socket that delivered it twice, a catch-up overlapping it —
+  // an entry is still shown once.
+  ctx.handle({ kind: 'entry', session_id: 'S1', entry: late[1] });
+  assert.deepStrictEqual(JSON.parse(vm.runInContext('JSON.stringify(state.entries.map(e => e.seq))', ctx)), [0, 1, 2, 3], 'an entry heard twice was added twice');
+  assert.strictEqual((textOf(ctx._id('transcript')).match(/it reads 39%/g) || []).length, 1, 'an entry heard twice is drawn twice');
+});
+
 // ---------- unread ----------
 
 const said = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-09-29T10:00:00Z' });

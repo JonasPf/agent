@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **Nothing goes missing when you open a busy conversation.** Opening a
+  conversation while the agent was answering, on a slow connection, could
+  leave your message or its reply off the screen until the page reconnected.
+  Everything that arrives while it loads is now shown.
 - **Leaving a screen quickly no longer leaves bits of it behind.** On a slow
   connection, moving on from a new conversation, a fork, a conversation's
   details, More, or a skill before it finished loading could finish drawing
