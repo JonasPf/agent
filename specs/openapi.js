@@ -432,7 +432,8 @@ window.OPENAPI_SPEC = {
             "required": true,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "Words to look for. Each word matches as a prefix, and punctuation is looked for as written rather than read as query syntax: follow-up, notes.md, and AND are all searched for as they stand. A query holding no letter or digit matches nothing."
           },
           {
             "name": "limit",
@@ -445,7 +446,7 @@ window.OPENAPI_SPEC = {
         ],
         "responses": {
           "200": {
-            "description": "Matches.",
+            "description": "Matches; an empty list when nothing matches.",
             "content": {
               "application/json": {
                 "schema": {

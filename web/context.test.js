@@ -10,7 +10,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
-const { transcriptRows, ftsQuery, snippetParts } = require('./transcript.js');
+const { transcriptRows, snippetParts } = require('./transcript.js');
 
 const WEB = __dirname;
 
@@ -196,12 +196,6 @@ test('a compacted fork still says where it was copied from', () => {
 
 // ---- the search box ----
 
-test('what a person types is searched as words, each matching as a prefix', () => {
-  assert.strictEqual(ftsQuery('boiler press'), '"boiler"* "press"*');
-  assert.strictEqual(ftsQuery('  "AND" OR - x(y) '), '"AND"* "OR"* "x(y)"*');
-  assert.strictEqual(ftsQuery('   '), '');
-});
-
 test('a snippet marks what matched and nothing else', () => {
   assert.deepStrictEqual(snippetParts('…the [boiler] was [low]'), [
     { text: '…the ', hit: false }, { text: 'boiler', hit: true }, { text: ' was ', hit: false }, { text: 'low', hit: true }]);
@@ -309,7 +303,9 @@ const hits = [
 ];
 
 test('search from a conversation looks in that conversation, and opens a hit where it was said', async () => {
-  const q = '/search?q=' + encodeURIComponent('"boiler"*') + '&session=S1';
+  // What was typed is what is asked for: the agent reads it as words, so the
+  // page does not translate it into the index's own syntax first.
+  const q = '/search?q=' + encodeURIComponent('boiler') + '&session=S1';
   const ctx = load({ '/sessions/S1': { session: session() }, [q]: hits });
   vm.runInContext("state.view = 'search'; state.arg = 'S1';", ctx);
   const v = node('div');

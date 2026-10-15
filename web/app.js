@@ -2445,7 +2445,9 @@ async function viewSearch(v) {
   const out = el('div');
   let asked = 0;
   const run = async () => {
-    const q = ftsQuery(inp.value);
+    // The agent reads a search as words, punctuation and all, so what was
+    // typed is what is asked for.
+    const q = inp.value.trim();
     const mine = ++asked;
     out.innerHTML = '';
     if (!q) return;

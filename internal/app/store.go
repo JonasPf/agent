@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	_ "modernc.org/sqlite"
 )
@@ -568,18 +569,22 @@ type SearchHit struct {
 // which is what lets a session reach back below its own compactions; empty
 // searches every session.
 func (s *Store) Search(q, sessionID string, limit int) ([]SearchHit, error) {
+	out := []SearchHit{}
+	match := matchWords(q)
+	if match == "" {
+		return out, nil
+	}
 	query := `select session_id, seq, snippet(entry_fts, 2, '[', ']', '…', 12) from entry_fts where entry_fts match ? limit ?`
-	args := []any{q, limit}
+	args := []any{match, limit}
 	if sessionID != "" {
 		query = `select session_id, seq, snippet(entry_fts, 2, '[', ']', '…', 12) from entry_fts where entry_fts match ? and session_id = ? limit ?`
-		args = []any{q, sessionID, limit}
+		args = []any{match, sessionID, limit}
 	}
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []SearchHit
 	for rows.Next() {
 		var h SearchHit
 		if err := rows.Scan(&h.SessionID, &h.Seq, &h.Snippet); err != nil {
@@ -592,6 +597,24 @@ func (s *Store) Search(q, sessionID string, limit int) ([]SearchHit, error) {
 		out = append(out, h)
 	}
 	return out, nil
+}
+
+// matchWords turns the words a person or the agent is looking for into a
+// query the index takes. Each word is quoted, so punctuation and words like
+// AND are looked for rather than read as syntax — a hyphen is otherwise a
+// column filter and a dot an error — and each matches as a prefix, so
+// "repoint" finds "repointing". A word holding no letter or digit has nothing
+// to match and is left out.
+func matchWords(q string) string {
+	var parts []string
+	for _, w := range strings.Fields(q) {
+		w = strings.ReplaceAll(w, `"`, "")
+		if !strings.ContainsFunc(w, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+			continue
+		}
+		parts = append(parts, `"`+w+`"*`)
+	}
+	return strings.Join(parts, " ")
 }
 
 // describeHit fills in what the index does not hold: who wrote the entry, when,

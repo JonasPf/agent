@@ -303,18 +303,6 @@ function transcriptRows(entries) {
   return rows;
 }
 
-// ftsQuery turns what a person types into a search the index will take. Each
-// word is quoted, so punctuation and words like OR are looked for rather than
-// read as syntax, and matches as a prefix, so "repoint" finds "repointing". A
-// word with no letter or digit in it has nothing to match and is left out.
-function ftsQuery(text) {
-  return String(text || '').split(/\s+/)
-    .map(w => w.replace(/"/g, ''))
-    .filter(w => /[\p{L}\p{N}]/u.test(w))
-    .map(w => '"' + w + '"*')
-    .join(' ');
-}
-
 // snippetParts splits a search snippet at the brackets the index puts around
 // each match, so the page can mark them without reading the snippet as markup.
 function snippetParts(snippet) {
@@ -335,5 +323,5 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { toolResult, resultBody, resultPreview, callBody, callPreview,
     eventLabel, eventDetail, eventTime, isFailure,
     speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds,
-    waitingLabel, conversationText, transcriptRows, ftsQuery, snippetParts };
+    waitingLabel, conversationText, transcriptRows, snippetParts };
 }

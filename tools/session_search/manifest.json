@@ -8,7 +8,7 @@
     "properties": {
       "query": {
         "type": "string",
-        "description": "FTS5 query."
+        "description": "Words to look for. Each word matches as a prefix, and punctuation is looked for as written: \"follow-up\", \"notes.md\", and \"AND\" are all fine."
       },
       "limit": {
         "type": "integer"

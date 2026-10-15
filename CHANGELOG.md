@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **The agent can search for follow-up.** When the agent searched its own
+  history for a word with a hyphen or a dot in it, such as follow-up or
+  notes.md, the search failed with a database error. It now finds them, the
+  same way the search screen always has.
 - **A new skill or persona cannot overwrite an old one.** Saving a new one
   under a name already in use used to replace the existing one without a
   word. It is now refused, saying the name is taken; open the existing one to
