@@ -87,6 +87,11 @@ tasks:
           --env-file .env \
           agent:dev
 
+  spec:
+    desc: Serve the specs at http://localhost:8000, where the API page can load openapi.yaml
+    cmds:
+      - python3 -m http.server 8000 -d specs
+
   fmt:
     desc: Format the Go sources in place
     cmds:

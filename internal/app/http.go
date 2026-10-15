@@ -257,7 +257,6 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Title         *string     `json:"title"`
 		Model         *string     `json:"model"`
-		Summary       *string     `json:"summary"`
 		EnabledTools  optionalSet `json:"enabled_tools"`
 		EnabledSkills optionalSet `json:"enabled_skills"`
 		GrantedEnv    optionalSet `json:"granted_env"`

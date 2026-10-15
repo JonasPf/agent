@@ -38,6 +38,7 @@ not a faster version of the check, it is a compile error. Use the tasks.
 | **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
 | **Reset** | `task db:clear` | Moves sessions, jobs, and per-session files to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
 | **Inspect** | `task db:status` | What the running agent currently holds. |
+| **Specs** | `task spec` | Serves `specs/` at http://localhost:8000, where the API page loads `openapi.yaml`. Not part of `check`. |
 | **Reload tools** | `task tools:reload` | Asks the running agent to reload tools from disk. |
 
 ### Before committing
@@ -138,8 +139,10 @@ the same system and must not diverge. **Every change to behavior must be
 reflected in the specs in the same change** — update the relevant spec
 document(s) alongside the code. The specs are HTML: `architecture.html`,
 `sessions.html`, `jobs.html`, `tools.html` (with one `tool-<name>.html` per
-tool), `skills.html`, `webui.html` (with `mock.html`), `api.html` (with
-`openapi.json`), and `adrs.html` for decision records.
+tool), `skills.html`, `webui.html` (with `mock.html`), `api.html` (rendering
+`openapi.yaml`, the one API document: a route added or removed without it
+fails a test), and `adrs.html` for decision records. `task spec` serves them at
+http://localhost:8000.
 
 **The spec has priority unless explicitly stated otherwise.** When the code and
 the spec disagree, treat the spec as the source of truth and bring the code into

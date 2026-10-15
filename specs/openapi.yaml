@@ -1,0 +1,1255 @@
+openapi: 3.0.3
+info:
+  title: Agent API
+  version: "1.0.0"
+  description: >-
+    The agent's HTTP surface, as `internal/app/http.go` registers it; a test
+    fails when a route is added or removed without this file following. The
+    agent asks for no authentication: whatever stands in front of it decides
+    who reaches it. A WebSocket at /ws carries every change as it happens, and
+    everything it carries can also be read from the endpoints below.
+tags:
+  - name: sessions
+  - name: files
+  - name: jobs
+  - name: tools
+  - name: skills
+  - name: personas
+  - name: system
+
+paths:
+  /sessions:
+    get:
+      tags: [sessions]
+      summary: Every session, most recently active first.
+      responses:
+        "200":
+          description: The sessions, with their derived figures.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Session"}
+    post:
+      tags: [sessions]
+      summary: Start a conversation.
+      description: >-
+        A configuration field left out is taken from the session named by
+        `from`, or the agent's defaults. Naming a model makes it the one the
+        next conversation starts on.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/Config"
+                - type: object
+                  properties:
+                    from: {type: string, description: A session whose configuration to start from.}
+      responses:
+        "201":
+          description: The session created.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Session"}
+
+  /sessions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [sessions]
+      summary: One session, its disk use measured now.
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: {$ref: "#/components/schemas/Session"}
+        "404": {$ref: "#/components/responses/Error"}
+    patch:
+      tags: [sessions]
+      summary: Rename a session, or change when it compacts.
+      description: >-
+        Nothing here shapes the prompt. The model, tools, skills, grants, and
+        persona are fixed for a session's life and are refused; fork to change
+        them. Every refusal is decided before anything is applied, so a refused
+        request changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string, description: Trimmed; a blank title is refused.}
+                compact_at_tokens: {type: integer, minimum: 2000}
+                keep_verbatim_tokens:
+                  type: integer
+                  minimum: 0
+                  description: At most half of compact_at_tokens, as it stands after this request.
+      responses:
+        "200":
+          description: The session as changed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Session"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409":
+          description: The body named a configuration field.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+    delete:
+      tags: [sessions]
+      summary: Delete a session, its transcript, files, and jobs.
+      description: A turn it is working on is stopped first, and nothing that turn writes afterwards brings it back.
+      responses:
+        "204": {description: Deleted.}
+
+  /sessions/{id}/transcript:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [sessions]
+      summary: Every entry the session has stored, oldest first.
+      parameters:
+        - name: from
+          in: query
+          schema: {type: integer, minimum: 0}
+          description: Only the entries from this position on, for a page that already holds those before it.
+      responses:
+        "200":
+          description: The entries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Entry"}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/messages:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Send the operator's message; the turn it starts runs in the background.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string}
+      responses:
+        "202": {description: Queued behind anything the session is already doing.}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Stop the turn the session is working on.
+      responses:
+        "200":
+          description: Stopped.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stopped: {type: boolean}
+        "404": {$ref: "#/components/responses/Error"}
+        "409":
+          description: The session is not working on anything.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /sessions/{id}/read:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Mark the session read through an entry.
+      description: A read point only moves forward. Only a read that cleared an unread count tells pages to read the list again.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                through: {type: integer, description: The last entry shown. Absent, the newest.}
+      responses:
+        "200":
+          description: Whether the read cleared anything.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cleared: {type: boolean}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/fork:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Copy the conversation into a new session, under a configuration of its own.
+      description: >-
+        Every entry but the origin's prompt is copied, with the working
+        directory. A field left out keeps the origin's. The origin keeps its
+        jobs.
+      requestBody:
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Config"}
+      responses:
+        "201":
+          description: The fork.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Session"}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/compare:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Put one message to several models, each in a fork of this session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, models]
+              properties:
+                text: {type: string}
+                models:
+                  type: array
+                  minItems: 2
+                  items: {type: string}
+      responses:
+        "201":
+          description: The comparison and its candidates.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  comparison: {type: string}
+                  candidates:
+                    type: array
+                    items: {$ref: "#/components/schemas/Session"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/keep:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Keep this candidate of a comparison and delete the others.
+      responses:
+        "200":
+          description: The kept session, and what was deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: {$ref: "#/components/schemas/Session"}
+                  deleted:
+                    type: array
+                    items: {type: string}
+        "404": {$ref: "#/components/responses/Error"}
+        "409":
+          description: The session is not a candidate of an undecided comparison.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /sessions/{id}/compact:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Compact now rather than at the threshold.
+      description: Waits behind any turn the session is working on.
+      responses:
+        "200":
+          description: Compacted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Session"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409":
+          description: Nothing to compact, and why.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/compaction:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    put:
+      tags: [sessions]
+      summary: Correct the newest compaction's summary.
+      description: Appends a compaction covering the same range, which supersedes the old one; what the summariser wrote stays on disk.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text: {type: string}
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Session"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409":
+          description: The session has not compacted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /sessions/{id}/files:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [files]
+      summary: Everything in the session's working directory, directories included.
+      responses:
+        "200":
+          description: The tree, flattened.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/FileEntry"}
+        "404": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [files]
+      summary: Upload a file into the working directory.
+      description: >-
+        Never replaces a file already there: a taken name gets a number
+        (image.jpg, image-2.jpg). Files over 250 MB are refused.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: {type: string, format: binary}
+      responses:
+        "201":
+          description: Where the file landed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: {type: string}
+                  bytes: {type: integer}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/files/{path}:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+      - name: path
+        in: path
+        required: true
+        schema: {type: string}
+        description: A path in the working directory, slashes included. No path, and no link, leads out of it.
+    get:
+      tags: [files]
+      summary: Download a file, as stored.
+      responses:
+        "200":
+          description: The file's bytes.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [files]
+      summary: Delete a file, or an empty directory. A link is deleted as itself.
+      responses:
+        "204": {description: Deleted.}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/export:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    get:
+      tags: [files]
+      summary: The whole session as one zip.
+      description: meta.json, transcript.jsonl, jobs.json, job_runs.json, and files/.
+      responses:
+        "200":
+          description: The archive.
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /sessions/import:
+    post:
+      tags: [files]
+      summary: Restore a session from an archive, under the identifier it carries.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: {type: string, format: binary}
+          application/zip:
+            schema: {type: string, format: binary}
+      responses:
+        "201":
+          description: The session restored.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Session"}
+        "400": {$ref: "#/components/responses/Error"}
+        "409":
+          description: A session with that identifier is already here.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "413": {$ref: "#/components/responses/Error"}
+
+  /search:
+    get:
+      tags: [sessions]
+      summary: Full-text search across transcripts, or one transcript.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: {type: string}
+          description: >-
+            Words to look for. Each matches as a prefix, and punctuation is
+            looked for as written: follow-up, notes.md, and AND are all searched
+            as they stand.
+        - name: session
+          in: query
+          schema: {type: string}
+          description: Search this session only. Absent, every session.
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: The matches; an empty list when nothing matches.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/SearchHit"}
+        "400": {$ref: "#/components/responses/Error"}
+
+  /jobs:
+    get:
+      tags: [jobs]
+      summary: Every job, each with what it is estimated to cost.
+      parameters:
+        - name: session_id
+          in: query
+          schema: {type: string}
+          description: Only this session's jobs.
+      responses:
+        "200":
+          description: The jobs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Job"}
+    post:
+      tags: [jobs]
+      summary: Schedule a job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/JobSpec"}
+      responses:
+        "201":
+          description: The job.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Job"}
+        "400": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [jobs]
+      summary: Delete every finished job, with its run log. Nothing else is deleted in bulk.
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema: {type: string, enum: [done]}
+        - name: session_id
+          in: query
+          schema: {type: string}
+          description: Only this session's finished jobs.
+      responses:
+        "200":
+          description: How many were deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted: {type: integer}
+        "400": {$ref: "#/components/responses/Error"}
+
+  /jobs/{id}:
+    parameters:
+      - $ref: "#/components/parameters/JobID"
+    get:
+      tags: [jobs]
+      summary: One job.
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Job"}
+        "404": {$ref: "#/components/responses/Error"}
+    patch:
+      tags: [jobs]
+      summary: Change a job's schedule, check, prompt, or what happens after it acts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schedule: {type: string}
+                check: {type: string}
+                prompt: {type: string}
+                after_acting: {type: string, enum: [stop, continue]}
+      responses:
+        "200":
+          description: The job as changed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Job"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [jobs]
+      summary: Delete a job.
+      responses:
+        "204": {description: Deleted.}
+
+  /jobs/{id}/runs:
+    parameters:
+      - $ref: "#/components/parameters/JobID"
+    get:
+      tags: [jobs]
+      summary: Every wake the job has had, newest first.
+      responses:
+        "200":
+          description: The runs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/JobRun"}
+
+  /tools:
+    get:
+      tags: [tools]
+      summary: Every loaded tool, what it may reach, and what failed to load.
+      parameters:
+        - name: session_id
+          in: query
+          schema: {type: string}
+          description: Say whether each tool is enabled in this session.
+      responses:
+        "200":
+          description: The tools.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items: {$ref: "#/components/schemas/Tool"}
+                  failures:
+                    type: array
+                    items: {$ref: "#/components/schemas/LoadFailure"}
+
+  /tools/reload:
+    post:
+      tags: [tools]
+      summary: Load tools from disk again. A tool added reaches sessions started after it.
+      responses:
+        "200":
+          description: What loaded and what did not.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loaded:
+                    type: array
+                    items: {type: string}
+                  failures:
+                    type: array
+                    items: {$ref: "#/components/schemas/LoadFailure"}
+
+  /tools/{name}/panel.js:
+    parameters:
+      - $ref: "#/components/parameters/ToolName"
+    get:
+      tags: [tools]
+      summary: A tool's own panel, an ES module the interface imports.
+      responses:
+        "200":
+          description: The module.
+          content:
+            text/javascript:
+              schema: {type: string}
+        "404": {description: The tool has no panel.}
+
+  /tools/{name}/call:
+    parameters:
+      - $ref: "#/components/parameters/ToolName"
+    post:
+      tags: [tools]
+      summary: Run a tool, for its panel to read and write its own data.
+      parameters:
+        - name: session_id
+          in: query
+          schema: {type: string}
+          description: The session whose working directory the tool runs in.
+      requestBody:
+        content:
+          application/json:
+            schema: {type: object, description: The tool's arguments.}
+      responses:
+        "200":
+          description: What the tool answered.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ToolResult"}
+        "404": {$ref: "#/components/responses/Error"}
+
+  /skills:
+    get:
+      tags: [skills]
+      summary: Every skill, shipped and written, and what failed to load.
+      parameters:
+        - name: session_id
+          in: query
+          schema: {type: string}
+          description: Say whether each skill is enabled in this session.
+      responses:
+        "200":
+          description: The skills.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  skills:
+                    type: array
+                    items: {$ref: "#/components/schemas/Skill"}
+                  failures:
+                    type: array
+                    items: {$ref: "#/components/schemas/LoadFailure"}
+    post:
+      tags: [skills]
+      summary: Write a new skill.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SkillWrite"}
+      responses:
+        "200":
+          description: The skill written.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillDoc"}
+        "409":
+          description: >-
+            Refused, with what is on disk unchanged: the name is taken, by one of
+            the operator's or one that ships with the agent, or a field is
+            missing. A skill is changed by a PUT to its own address.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /skills/{name}:
+    parameters:
+      - $ref: "#/components/parameters/DocName"
+    get:
+      tags: [skills]
+      summary: One skill, body included.
+      responses:
+        "200":
+          description: The skill.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillDoc"}
+        "404": {description: No such skill.}
+    put:
+      tags: [skills]
+      summary: Write one of the operator's skills. One that ships with the agent is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SkillWrite"}
+      responses:
+        "200":
+          description: The skill written.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SkillDoc"}
+        "409": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [skills]
+      summary: Delete one of the operator's skills.
+      responses:
+        "204": {description: Deleted.}
+        "409": {$ref: "#/components/responses/Error"}
+
+  /personas:
+    get:
+      tags: [personas]
+      summary: Every persona, the built-in among them, and what failed to load.
+      responses:
+        "200":
+          description: The personas.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  personas:
+                    type: array
+                    items: {$ref: "#/components/schemas/Persona"}
+                  failures:
+                    type: array
+                    items: {$ref: "#/components/schemas/LoadFailure"}
+    post:
+      tags: [personas]
+      summary: Write a new persona.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PersonaWrite"}
+      responses:
+        "200":
+          description: The persona written.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PersonaDoc"}
+        "409":
+          description: >-
+            Refused, with what is on disk unchanged: the name is taken, the
+            built-in's included, or a field is missing. A persona is changed by
+            a PUT to its own address.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
+  /personas/{name}:
+    parameters:
+      - $ref: "#/components/parameters/DocName"
+    get:
+      tags: [personas]
+      summary: One persona, body included.
+      responses:
+        "200":
+          description: The persona.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PersonaDoc"}
+        "404": {description: No such persona.}
+    put:
+      tags: [personas]
+      summary: Write one of the operator's personas. The built-in is refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PersonaWrite"}
+      responses:
+        "200":
+          description: The persona written.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PersonaDoc"}
+        "409": {$ref: "#/components/responses/Error"}
+    delete:
+      tags: [personas]
+      summary: Delete one of the operator's personas.
+      responses:
+        "204": {description: Deleted.}
+        "409": {$ref: "#/components/responses/Error"}
+
+  /models:
+    get:
+      tags: [system]
+      summary: The tool-calling models the gateway offers, kept for a day.
+      parameters:
+        - name: q
+          in: query
+          schema: {type: string}
+          description: Only models whose identifier or name holds every word.
+      responses:
+        "200":
+          description: The models.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Model"}
+        "502": {$ref: "#/components/responses/Error"}
+
+  /preferences:
+    get:
+      tags: [system]
+      summary: What the next conversation starts on.
+      responses:
+        "200":
+          description: The model last chosen.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  model: {type: string}
+
+  /env:
+    get:
+      tags: [system]
+      summary: The variable names a session could be granted. Names only, never values; the model key is never listed.
+      responses:
+        "200":
+          description: The names.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    from_env_file: {type: boolean, description: Written in the agent's .env, rather than only in its environment.}
+
+  /status:
+    get:
+      tags: [system]
+      summary: The breaker, the sandbox, and the credit last heard. Never waits on the gateway.
+      responses:
+        "200":
+          description: The agent's state.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  breaker:
+                    type: object
+                    properties:
+                      open: {type: boolean}
+                      reason: {type: string}
+                      opened_at: {type: string, format: date-time}
+                  sandbox: {$ref: "#/components/schemas/Sandbox"}
+                  workspace: {type: string}
+                  key:
+                    type: object
+                    description: Absent until the gateway has been heard from.
+                    properties:
+                      label: {type: string}
+                      usage: {type: number}
+                      limit: {type: number, nullable: true}
+                      remaining: {type: number, nullable: true}
+
+  /version:
+    get:
+      tags: [system]
+      summary: Which build is answering, and what changed in it.
+      responses:
+        "200":
+          description: The build.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: string}
+                  built_at: {type: string, format: date-time}
+                  changelog: {type: string, description: CHANGELOG.md from its first dated section on.}
+
+  /ws:
+    get:
+      tags: [system]
+      summary: A WebSocket of every change, as it happens.
+      description: >-
+        Each message is one JSON object: `kind`, and `session_id`, `entry`, or
+        `text` as the kind needs. `entry` carries an entry as it is appended;
+        `delta` a piece of an answer as it streams; `turn_start` and
+        `turn_end` each model call; `working` and `idle` the first turn queued
+        and the last one ended; `sessions`, `jobs`, `skills`, `personas`, and
+        `status` that a list moved and should be read again. A client that
+        missed messages recovers by reading the endpoints, not by replay.
+      responses:
+        "101": {description: Switching to the WebSocket protocol.}
+
+components:
+  parameters:
+    SessionID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    JobID:
+      name: id
+      in: path
+      required: true
+      schema: {type: string}
+    ToolName:
+      name: name
+      in: path
+      required: true
+      schema: {type: string}
+    DocName:
+      name: name
+      in: path
+      required: true
+      schema: {type: string}
+
+  responses:
+    Error:
+      description: Refused, and why.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: {type: string}
+
+    Config:
+      type: object
+      description: >-
+        What shapes a session's prompt, chosen before it exists and fixed for
+        its life. An absent field is inherited; a null set means every tool, or
+        every skill on by default.
+      properties:
+        model: {type: string}
+        enabled_tools: {type: array, nullable: true, items: {type: string}}
+        enabled_skills: {type: array, nullable: true, items: {type: string}}
+        granted_env: {type: array, nullable: true, items: {type: string}, description: Variable names this session's tools may read.}
+        persona: {type: string, description: Empty is the built-in.}
+
+    Session:
+      allOf:
+        - $ref: "#/components/schemas/Config"
+        - type: object
+          properties:
+            id: {type: string}
+            title: {type: string}
+            cache:
+              type: object
+              nullable: true
+              description: What the provider holds since the last call; cleared by a compaction.
+              properties:
+                tokens: {type: integer, description: The tokens the last call sent.}
+                expires_at: {type: string, format: date-time, description: Present only when the agent's own marker chose the lifetime.}
+                kept_by: {type: string, enum: [agent, provider]}
+            read_through: {type: integer, description: The last entry the operator was shown.}
+            unread: {type: integer}
+            forked_from: {type: string}
+            comparison: {type: string, description: Set while the session is a candidate of an undecided comparison.}
+            compact_at_tokens: {type: integer}
+            keep_verbatim_tokens: {type: integer}
+            last_compacted_at: {type: string, format: date-time, nullable: true}
+            cost: {type: number, description: Dollars, as reported by the gateway.}
+            prompt_tokens: {type: integer}
+            cached_tokens: {type: integer}
+            created_at: {type: string, format: date-time}
+            last_active_at: {type: string, format: date-time}
+            entry_count: {type: integer}
+            disk_bytes: {type: integer, description: Transcript and working directory.}
+            context_used: {type: integer, description: Tokens the conversation would send now, measured against compact_at_tokens.}
+            job_count: {type: integer}
+            cache_hit_rate: {type: number}
+            working_seconds: {type: number, description: How long the session has been working; absent when it is not.}
+
+    Entry:
+      type: object
+      description: One line of a transcript. Entries are appended and never changed.
+      properties:
+        seq: {type: integer}
+        type: {type: string, enum: [prompt, message, event, compaction]}
+        role: {type: string, enum: [user, assistant, tool]}
+        text: {type: string}
+        tool_calls:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              name: {type: string}
+              arguments: {type: string}
+        tool_call_id: {type: string}
+        tool_name: {type: string}
+        tool_result: {type: object, description: "The tool's answer: ok, content, error."}
+        stderr: {type: string}
+        job_id: {type: string, description: Set when a job's wake produced the entry.}
+        due_at: {type: string, format: date-time}
+        status: {type: string, enum: [fired, not_fired]}
+        event_kind: {type: string}
+        usage:
+          type: object
+          properties:
+            prompt_tokens: {type: integer}
+            completion_tokens: {type: integer}
+            cached_tokens: {type: integer}
+            cost: {type: number}
+            tokens_per_second: {type: number}
+        sections:
+          type: array
+          description: A prompt entry's sections.
+          items:
+            type: object
+            properties:
+              name: {type: string}
+              text: {type: string}
+              tokens: {type: integer}
+        carried_from: {type: string, description: The session a fork copied the entry from.}
+        covers_through: {type: integer, description: The last entry a compaction stands for.}
+        folded_turns: {type: integer}
+        tokens_before: {type: integer}
+        tokens_after: {type: integer}
+        created_at: {type: string, format: date-time}
+
+    SearchHit:
+      type: object
+      properties:
+        session_id: {type: string}
+        title: {type: string}
+        seq: {type: integer}
+        snippet: {type: string, description: The words around the match, each match in square brackets.}
+        type: {type: string}
+        role: {type: string}
+        created_at: {type: string, format: date-time}
+        compacted: {type: boolean, description: A compaction has folded the entry away, so the agent no longer sees it.}
+
+    FileEntry:
+      type: object
+      properties:
+        path: {type: string}
+        bytes: {type: integer}
+        modified_at: {type: string, format: date-time}
+        dir: {type: boolean}
+
+    JobSpec:
+      type: object
+      required: [session_id, schedule, prompt]
+      properties:
+        session_id: {type: string}
+        schedule: {type: string, description: "An interval (30m), a cron expression (0 9 * * *), or an RFC 3339 instant."}
+        check: {type: string, description: A shell command; exit status zero means act.}
+        prompt: {type: string}
+        after_acting: {type: string, enum: [stop, continue], default: continue}
+
+    Job:
+      allOf:
+        - $ref: "#/components/schemas/JobSpec"
+        - type: object
+          properties:
+            id: {type: string}
+            status: {type: string, enum: [scheduled, done]}
+            estimate:
+              type: object
+              properties:
+                wakes_per_day: {type: number}
+                tokens_per_turn: {type: integer}
+                tokens_per_day: {type: integer}
+                cost_per_day: {type: number}
+                cost_per_month: {type: number}
+                priced: {type: boolean}
+                gated: {type: boolean}
+                note: {type: string}
+            run_count: {type: integer}
+            fail_count: {type: integer}
+            next_run_at: {type: string, format: date-time}
+            last_status: {type: string}
+            created_at: {type: string, format: date-time}
+
+    JobRun:
+      type: object
+      properties:
+        id: {type: string}
+        job_id: {type: string}
+        session_id: {type: string}
+        at: {type: string, format: date-time}
+        due_at: {type: string, format: date-time}
+        outcome: {type: string, enum: [fired, skipped, failed]}
+        message: {type: string}
+
+    Tool:
+      type: object
+      properties:
+        name: {type: string}
+        description: {type: string}
+        db_prefix: {type: string}
+        timeout_seconds: {type: integer}
+        parameters: {type: object, description: The JSON Schema the model receives.}
+        has_panel: {type: boolean}
+        builtin: {type: boolean}
+        loaded_at: {type: string, format: date-time}
+        enabled: {type: boolean}
+        reach:
+          type: object
+          description: What the sandbox lets the tool touch. Absent for a builtin, which runs inside the agent.
+          properties:
+            enforced: {type: boolean}
+            reason: {type: string}
+            read_write: {type: array, items: {type: string}}
+            read: {type: array, items: {type: string}}
+            tool_read: {type: array, items: {type: string}}
+            tool_env: {type: array, items: {type: string}}
+            files: {type: array, items: {type: string}}
+            network_enforced: {type: boolean}
+            network_reason: {type: string}
+            ports: {type: array, items: {type: integer}}
+            tool_api_port: {type: integer}
+            operator_port: {type: integer}
+
+    ToolResult:
+      type: object
+      properties:
+        ok: {type: boolean}
+        content: {type: string}
+        error: {type: string}
+
+    LoadFailure:
+      type: object
+      properties:
+        dir: {type: string}
+        reason: {type: string}
+
+    Skill:
+      type: object
+      properties:
+        name: {type: string}
+        description: {type: string}
+        bytes: {type: integer}
+        default_enabled: {type: boolean}
+        enabled: {type: boolean}
+        editable: {type: boolean, description: False for one that ships with the agent.}
+
+    SkillDoc:
+      type: object
+      properties:
+        name: {type: string}
+        description: {type: string}
+        body: {type: string}
+        default_enabled: {type: boolean}
+        editable: {type: boolean}
+
+    SkillWrite:
+      type: object
+      required: [description, body]
+      properties:
+        name: {type: string, description: Letters, digits, hyphens, and underscores. Taken from the address on a PUT.}
+        description: {type: string}
+        body: {type: string}
+        default_enabled: {type: boolean, default: true}
+
+    Persona:
+      type: object
+      properties:
+        name: {type: string}
+        description: {type: string}
+        bytes: {type: integer}
+        editable: {type: boolean, description: False for the built-in.}
+
+    PersonaDoc:
+      type: object
+      properties:
+        name: {type: string}
+        description: {type: string}
+        body: {type: string}
+        editable: {type: boolean}
+
+    PersonaWrite:
+      type: object
+      required: [description, body]
+      properties:
+        name: {type: string, description: Taken from the address on a PUT.}
+        description: {type: string}
+        body: {type: string}
+
+    Model:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        description: {type: string}
+        created: {type: integer}
+        context_length: {type: integer}
+        max_completion_tokens: {type: integer}
+        input_modalities: {type: array, items: {type: string}}
+        prompt_price: {type: number, description: Dollars per token.}
+        completion_price: {type: number}
+        cache_read_price: {type: number}
+        reasoning: {type: boolean}
+        intelligence_index: {type: number, description: Absent when nobody measured it; never zero for unmeasured.}
+        coding_index: {type: number}
+        agentic_index: {type: number}
+
+    Sandbox:
+      type: object
+      properties:
+        mechanism: {type: string, description: landlock, or none where nothing is enforced.}
+        reason: {type: string}
+        read_paths: {type: array, items: {type: string}}
+        network: {type: string}
+        network_reason: {type: string}
+        ports: {type: array, items: {type: integer}}
+        ports_note: {type: string}
+        operator_port: {type: integer}
+        tool_api_port: {type: integer}
