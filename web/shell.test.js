@@ -847,6 +847,36 @@ test('a conversation that no longer exists says so, under a header of its own', 
   assert.strictEqual(vm.runInContext('state.session', ctx), null, 'the page still holds the conversation it left');
 });
 
+// Opening a section of the prompt opens that section. It used to draw the
+// whole conversation again to do it, closing every tool result the reader had
+// opened further down.
+test('opening a prompt section leaves the rest of the conversation as it was', async () => {
+  const entries = [
+    { seq: 0, type: 'prompt', sections: [{ name: 'persona', text: 'PERSONA TEXT', tokens: 5 }], text: 'system prompt', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-06T10:00:00Z' },
+    { seq: 2, type: 'message', role: 'tool', tool_name: 'clock', tool_result: '{"ok":true,"content":"10:00"}', created_at: '2026-10-06T10:00:01Z' },
+  ];
+  const ctx = conversationScreen(session({ id: 'S1' }), entries);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const shown = t.children.slice();
+  const pre = find(t, 'tool').children.find(c => c.tagName === 'pre');
+  pre.hidden = false;
+
+  const opened = () => {
+    const sec = find(find(t, 'prompt'), 'sec');
+    const body = sec.children.find(c => c.tagName === 'pre');
+    return body ? body.children.map(c => c.textContent).join('') : null;
+  };
+  const toggle = () => find(find(t, 'prompt'), 'sec').children[0].children.find(c => c.tagName === 'button');
+  toggle().onclick();
+  assert.strictEqual(opened(), 'PERSONA TEXT', 'the section did not open');
+  for (const n of shown) assert.ok(t.children.includes(n), 'opening a section drew the conversation again');
+  assert.strictEqual(pre.hidden, false, 'opening a section closed a tool result the reader had opened');
+  toggle().onclick();
+  assert.strictEqual(opened(), null, 'the section did not close again');
+});
+
 // ---------- unread ----------
 
 const said = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-09-29T10:00:00Z' });

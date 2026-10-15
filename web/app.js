@@ -1207,13 +1207,22 @@ function promptEntry(e) {
     const sec = el('div', 'sec');
     const row = el('div', 'row');
     row.append(el('div', 'n', s.name.replace(/_/g, ' ')), el('div', 'tok', s.tokens.toLocaleString()));
-    const key = e.seq + ':' + s.name;
-    const open = !!state.collapsed[key];
-    const toggle = el('button', null, open ? 'collapse' : 'expand');
-    toggle.onclick = () => { state.collapsed[key] = !open; renderTranscript(); };
+    // Kept per conversation, so a section opened in one is not open in all.
+    const key = (state.session ? state.session.id : '') + ':' + e.seq + ':' + s.name;
+    const toggle = el('button');
+    let body = null;
+    // A section opens and closes where it is. Drawing the conversation again
+    // to do it closed every tool result the reader had opened below.
+    const show = open => {
+      state.collapsed[key] = open;
+      toggle.textContent = open ? 'collapse' : 'expand';
+      if (open && !body) { body = el('pre'); body.append(sessionLinks(s.text)); sec.append(body); }
+      if (!open && body) { body.remove(); body = null; }
+    };
+    toggle.onclick = () => show(!state.collapsed[key]);
     row.append(toggle);
     sec.append(row);
-    if (open) { const pre = el('pre'); pre.append(sessionLinks(s.text)); sec.append(pre); }
+    show(!!state.collapsed[key]);
     box.append(sec);
   }
   return box;

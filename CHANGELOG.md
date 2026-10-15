@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **Opening part of the prompt leaves the rest alone.** Expanding a section
+  of a conversation's prompt used to redraw the whole conversation, closing
+  any tool results you had opened, and opened that section in every other
+  conversation too. It now opens just that section, just there.
 - **An old link to a deleted conversation says so.** It used to open a blank
   page under the previous conversation's header, whose buttons still acted on
   that conversation. It now explains that the conversation no longer exists.
