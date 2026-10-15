@@ -169,7 +169,8 @@ window.OPENAPI_SPEC = {
                 "type": "object",
                 "properties": {
                   "title": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "A new title. Surrounding whitespace is trimmed; a blank title is refused."
                   },
                   "status": {
                     "type": "string",
@@ -195,7 +196,7 @@ window.OPENAPI_SPEC = {
             }
           },
           "409": {
-            "description": "Refused: the body carried model, enabled_tools, or enabled_skills. A session's configuration is fixed for its life; POST /sessions/{id}/fork to copy the conversation into a new session under a new one.",
+            "description": "Refused: the body carried model, enabled_tools, enabled_skills, granted_env, or persona. A session's configuration is fixed for its life; POST /sessions/{id}/fork to copy the conversation into a new session under a new one. Nothing in the request is applied, a title sent alongside included.",
             "content": {
               "application/json": {
                 "schema": {
@@ -208,6 +209,21 @@ window.OPENAPI_SPEC = {
                 }
               }
             }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Refused: a blank title, compact_at_tokens below 2,000, a negative keep_verbatim_tokens, or a tail more than half the threshold. Nothing in the request is applied."
           }
         },
         "description": "This endpoint changes nothing that shapes the system prompt, so it can never invalidate a cached prefix. Model, tools, and skills are not accepted here at all: they are fixed for the life of a session and move only through a rotation."

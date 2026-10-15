@@ -270,7 +270,20 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "%v", err)
 		return
 	}
-	// Checked before anything is applied, so a refused pair changes nothing.
+	// Everything that can refuse the request is decided before anything is
+	// applied, so a refused request changes nothing — not even the part of it
+	// that would have been allowed on its own.
+	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present ||
+		in.Persona != nil {
+		// A configuration is chosen before the session exists and fixed once it
+		// does. There is one answer here, not two. Grants are part of it: a
+		// conversation that could be handed a credential halfway through is one
+		// whose reach cannot be read from how it started. So is the persona: it
+		// is a section of the prompt, and the prompt is written once.
+		fail(w, 409, "a session's model, tools, skills, grants, and persona are fixed for its life; "+
+			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
+		return
+	}
 	compactAt, keep := s.CompactAtTokens, s.KeepVerbatimTokens
 	thresholds := in.CompactAtTokens != nil || in.KeepVerbatimTokens != nil
 	if in.CompactAtTokens != nil {
@@ -285,19 +298,18 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A conversation with no title is harder to find again than one whose
+	// title has gone stale, so a blank is not a rename.
+	var title string
 	if in.Title != nil {
-		s.Title = *in.Title
+		if title = strings.TrimSpace(*in.Title); title == "" {
+			fail(w, 400, "a title cannot be blank")
+			return
+		}
 	}
-	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present ||
-		in.Persona != nil {
-		// A configuration is chosen before the session exists and fixed once it
-		// does. There is one answer here, not two. Grants are part of it: a
-		// conversation that could be handed a credential halfway through is one
-		// whose reach cannot be read from how it started. So is the persona: it
-		// is a section of the prompt, and the prompt is written once.
-		fail(w, 409, "a session's model, tools, skills, grants, and persona are fixed for its life; "+
-			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
-		return
+
+	if in.Title != nil {
+		s.Title = title
 	}
 	if thresholds {
 		s.CompactAtTokens, s.KeepVerbatimTokens = compactAt, keep

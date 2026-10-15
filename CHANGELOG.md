@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **A refused change to a conversation changes nothing.** A rename sent
+  together with something that cannot change was refused but still renamed
+  the conversation. A blank title is now refused by the agent itself, not
+  only by the details screen.
 - **A fork of a compacted conversation reads what the original reads.** The
   copy brought one already-summarised message back into the agent's view,
   and could break the fork outright when that message was a tool's result.
