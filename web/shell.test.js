@@ -794,6 +794,36 @@ test('an entry that arrives while the conversation is loading is kept', async ()
   assert.strictEqual((textOf(ctx._id('transcript')).match(/it reads 39%/g) || []).length, 1, 'an entry heard twice is drawn twice');
 });
 
+// The header and the status line describe the conversation as it stands. A
+// first message earns it a title and every turn moves its cost and context,
+// and both used to keep the figures the conversation was opened with — "New
+// session", $0.0000, 0 tokens — however long it stayed open.
+test('the header and status line follow the conversation while it is open', async () => {
+  const opened = session({ id: 'S1', title: 'New session', cost: 0, context_used: 0 });
+  const routes = { '/sessions/S1': { session: opened }, '/sessions/S1/transcript': [], '/sessions': [opened] };
+  const ctx = load(routes);
+  ctx.location.hash = '#session/S1';
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  await ctx.viewSession(node('div'));
+  assert.strictEqual(ctx._id('title').textContent, 'New session');
+
+  // The first answer titles it: the list moves, and the rail reads it.
+  const titled = session({ id: 'S1', title: 'Kiln firing log', cost: 0.0026, context_used: 331 });
+  routes['/sessions'] = [titled];
+  ctx.handle({ kind: 'sessions' });
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(ctx._id('title').textContent, 'Kiln firing log', 'the header kept the title it opened with');
+  assert.match(textOf(ctx._id('statusline')), /\$0\.0026/, 'the status line kept the cost it opened with');
+  assert.match(textOf(ctx._id('statusline')), /331 \/ 40,000/, 'the status line kept the context it opened with');
+
+  // The turn ends after its cost is counted, and the page reads it then too.
+  routes['/sessions/S1'] = { session: session({ id: 'S1', title: 'Kiln firing log', cost: 0.0051, context_used: 702 }) };
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  await new Promise(r => setImmediate(r));
+  assert.match(textOf(ctx._id('statusline')), /\$0\.0051/, 'the end of a turn did not move the cost');
+  assert.match(textOf(ctx._id('statusline')), /702 \/ 40,000/, 'the end of a turn did not move the context');
+});
+
 // ---------- unread ----------
 
 const said = (seq, role, text) => ({ seq, type: 'message', role, text, created_at: '2026-09-29T10:00:00Z' });

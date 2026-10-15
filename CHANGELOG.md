@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **An open conversation keeps its header up to date.** The title it gets
+  after its first answer, and its cost and context after each turn, used to
+  appear only after leaving and coming back; the header said "New session"
+  and the cost stayed at nothing. They now update as they change.
 - **Nothing goes missing when you open a busy conversation.** Opening a
   conversation while the agent was answering, on a slow connection, could
   leave your message or its reply off the screen until the page reconnected.

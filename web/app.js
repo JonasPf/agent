@@ -266,7 +266,9 @@ function handle(e) {
     // turn that has ended goes to its answer: that is what was waited for.
     if (state.view === 'session' && e.session_id === state.arg) {
       refreshTail();
-      if (e.kind === 'idle') scrollDown();
+      // A turn's cost is counted as it ends, after the answer that moved
+      // the list, so the conversation is read once more then.
+      if (e.kind === 'idle') { scrollDown(); loadStatus().catch(() => {}); }
     }
     const col = comparing(e.session_id);
     if (col) {
@@ -393,6 +395,13 @@ async function renderSidebar() {
   // Two redraws can be in flight; the older answer arriving last must not win.
   if (mine !== sideDrawing) return;
   state.sessions = sessions;
+  // The list carries the conversation on screen too, as it now stands: its
+  // title once the first answer has given it one, its cost and context as
+  // each turn moves them. The header and status line take them from here
+  // rather than asking again.
+  const open = state.view === 'session' && state.session && state.session.id === state.arg &&
+    (sessions || []).find(x => x.id === state.session.id);
+  if (open) showSession(open);
   list.innerHTML = '';
   const ordered = sortSessions(sessions || [], 'recent');
   if (!ordered.length) { list.append(el('div', 's', 'No conversations yet.')); return; }
@@ -840,8 +849,18 @@ function copyBySelection(text) {
 
 async function loadStatus() {
   if (!state.session) return;
-  const res = await api('/sessions/' + state.session.id);
-  state.session = res.session;
+  const id = state.session.id;
+  const res = await api('/sessions/' + id);
+  // Read for a conversation since left, the answer is not this one's.
+  if (!state.session || state.session.id !== id) return;
+  showSession(res.session);
+}
+
+// showSession takes a fresher reading of the conversation on screen into the
+// header and the status line. Whether it is working is the socket's to say.
+function showSession(fresh) {
+  state.session = Object.assign({}, state.session, fresh);
+  if (state.view === 'session' && state.arg === state.session.id) $('title').textContent = state.session.title || 'Conversation';
   renderStatus();
 }
 
