@@ -32,8 +32,14 @@ jobs:
     # testenv/Dockerfile describes this same environment, which is where `task
     # check` runs when the host is not Linux. A change to one belongs in the
     # other.
+    #
+    # --init makes PID 1 Docker's own tini rather than the `tail -f /dev/null`
+    # the runner keeps the container alive with, which never collects an exited
+    # process. The runtime image's PID 1 is tini too, and a test of what a
+    # background process leaves behind is only true here if this one is.
     container:
       image: golang:1.25-bookworm
+      options: --init
     steps:
       - uses: actions/checkout@v4
 

@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **A finished background job reads as finished.** A script the agent started
+  in the background and then checked on kept answering "still running" after
+  it had ended, so a conversation could poll it for hours without ever moving
+  on. Finished processes are now cleaned up, and a check sees them gone.
 - **Changes made at the same moment no longer trip over each other.** A
   conversation renamed or read while the agent was working on it could, rarely,
   lose the change or show figures half updated, and a title the agent wrote

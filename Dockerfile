@@ -119,7 +119,7 @@ RUN apt-get update \
       curl wget python3 perl \
       poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
       python3-pip python3-venv python3-numpy python3-pil \
-      unzip jq \
+      unzip jq tini \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent runs as one user, and it is not root. The data and workspace
@@ -163,4 +163,10 @@ EXPOSE 7770
 # so the health check depends on nothing but the agent.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
   CMD ["/app/agent", "-health"]
-ENTRYPOINT ["/app/agent"]
+# tini is PID 1 and the agent its child. A process a command leaves in the
+# background outlives the shell that started it, and when it exits only PID 1
+# can collect it. The agent never did: it waits for the tools it starts and for
+# nothing else, so every such process stayed a zombie, and a zombie still
+# answers `kill -0` — a session polling a finished script was told "still
+# running" for three hours.
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/agent"]
