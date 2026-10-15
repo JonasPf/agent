@@ -671,6 +671,11 @@ continues with the files the conversation was working on, and neither session's 
 other. A compaction touches the directory not at all — the session is the same session, and its files
 are where it left them.</p>
 
+<p>Deleting a session ends it, including a turn it is in the middle of. The turn is stopped before
+anything is removed, so a model call already under way is not paid for to produce an answer nobody can
+read, and whatever was still on its way to the transcript, the job table, or the directory when the
+delete landed is refused rather than written into the place the delete just emptied.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -681,6 +686,7 @@ are where it left them.</p>
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>
 <li>A path that would leave the session's directory is refused.</li>
 <li>Deleting a session deletes its directory.</li>
+<li>Deleting a session that is working stops its turn first, a job's wake included. Nothing that turn would have written afterwards brings back the session, its transcript, its jobs, or its directory.</li>
 <li>A session reports what it occupies on disk: its transcript and its working directory.</li>
 </ul>
 </div>

@@ -143,14 +143,14 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 	before := len(a.store.Entries(sess.ID))
 	if err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, DueAt: due}); err != nil {
 		if ctx.Err() != nil {
-			s.stoppedWake(j, sess, due, a.store.Entries(sess.ID)[before:])
+			s.stoppedWake(j, sess, due, a.entriesSince(sess.ID, before))
 			return
 		}
 		s.jobFailed(j, err)
 		return
 	}
 	j.LastStatus = "fired"
-	s.logRun(j, sess.ID, due, jobFired, saidBy(a.store.Entries(sess.ID)[before:]))
+	s.logRun(j, sess.ID, due, jobFired, saidBy(a.entriesSince(sess.ID, before)))
 	s.succeeded(j)
 	s.reschedule(j, true)
 }

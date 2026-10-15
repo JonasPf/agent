@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **Deleting a conversation that is working deletes it.** The agent used to
+  finish whatever it was doing first, still paying for it, and the
+  conversation then reappeared in the list as a broken stub. Deleting now
+  stops the work at once, and the conversation and its jobs stay gone.
 - **The newest turns now survive a compaction.** A compaction is meant to
   fold the older part of a conversation into a summary and keep the most
   recent turns word for word. Those recent turns were being dropped: the agent

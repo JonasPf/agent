@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,6 +24,20 @@ type Store struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	entries  map[string][]Entry // in-memory mirror of the transcripts
+	// deleted holds the sessions deleted since the store opened. A turn or a
+	// job can still be finishing when its session goes, and what it writes
+	// afterwards is refused here rather than recreating the session under its
+	// old identifier.
+	deleted map[string]bool
+}
+
+// errSessionDeleted is a write that arrived after its session was deleted.
+var errSessionDeleted = errors.New("the session was deleted")
+
+func (s *Store) wasDeleted(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.deleted[id]
 }
 
 const schema = `
@@ -144,7 +159,8 @@ func OpenStore(dir string) (*Store, error) {
 	if err := migrate(db); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, db: db, sessions: map[string]*Session{}, entries: map[string][]Entry{}}
+	s := &Store{dir: dir, db: db, sessions: map[string]*Session{}, entries: map[string][]Entry{},
+		deleted: map[string]bool{}}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -313,6 +329,11 @@ func indexBody(e Entry) string {
 }
 
 func (s *Store) index(sessionID string, e Entry) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.deleted[sessionID] {
+		return
+	}
 	if body := indexBody(e); body != "" {
 		_, _ = s.db.Exec(`insert into entry_fts(session_id, seq, body) values(?,?,?)`, sessionID, e.Seq, body)
 	}
@@ -348,12 +369,23 @@ func (s *Store) indexAll(sessions map[string][]Entry) error {
 
 func (s *Store) PutSession(sess *Session) error {
 	s.mu.Lock()
+	if s.deleted[sess.ID] {
+		s.mu.Unlock()
+		return errSessionDeleted
+	}
 	s.sessions[sess.ID] = sess
 	s.mu.Unlock()
 	return s.writeMeta(sess)
 }
 
 func (s *Store) writeMeta(sess *Session) error {
+	// Held through the write, so a delete waits for it and then removes what
+	// it wrote, rather than a late write recreating the directory after it.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.deleted[sess.ID] {
+		return errSessionDeleted
+	}
 	if err := os.MkdirAll(s.sessionDir(sess.ID), 0o755); err != nil {
 		return err
 	}
@@ -368,7 +400,7 @@ func (s *Store) writeMeta(sess *Session) error {
 func (s *Store) MarkRead(id string, through int) (bool, error) {
 	s.mu.Lock()
 	sess := s.sessions[id]
-	if sess == nil || through <= sess.ReadThrough {
+	if sess == nil || s.deleted[id] || through <= sess.ReadThrough {
 		s.mu.Unlock()
 		return false, nil
 	}
@@ -405,8 +437,11 @@ func (s *Store) DeleteSession(id string) error {
 	s.mu.Lock()
 	delete(s.sessions, id)
 	delete(s.entries, id)
+	s.deleted[id] = true
 	s.mu.Unlock()
 	_, _ = s.db.Exec(`delete from entry_fts where session_id=?`, id)
+	// After the mark, so a job written back by a wake still finishing is
+	// either refused or already in the table to be deleted here.
 	_, _ = s.db.Exec(`delete from jobs where session_id=?`, id)
 	_, _ = s.db.Exec(`delete from job_runs where session_id=?`, id)
 	return os.RemoveAll(s.sessionDir(id))
@@ -415,6 +450,10 @@ func (s *Store) DeleteSession(id string) error {
 // Append writes an entry to the transcript. Entries are never modified once written.
 func (s *Store) Append(sessionID string, e Entry) (Entry, error) {
 	s.mu.Lock()
+	if s.deleted[sessionID] {
+		s.mu.Unlock()
+		return e, errSessionDeleted
+	}
 	list := s.entries[sessionID]
 	e.Seq = len(list)
 	if e.CreatedAt.IsZero() {
@@ -457,6 +496,10 @@ func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
 	}
 	now := time.Now()
 	s.mu.Lock()
+	if s.deleted[sessionID] {
+		s.mu.Unlock()
+		return nil, errSessionDeleted
+	}
 	list := s.entries[sessionID]
 	out := make([]Entry, len(in))
 	for i, e := range in {
@@ -491,7 +534,9 @@ func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
 	if _, err := f.Write(buf.Bytes()); err != nil {
 		return out, err
 	}
-	_ = s.indexAll(map[string][]Entry{sessionID: out})
+	if !s.wasDeleted(sessionID) {
+		_ = s.indexAll(map[string][]Entry{sessionID: out})
+	}
 	if sess != nil {
 		_ = s.writeMeta(sess)
 	}
@@ -585,6 +630,14 @@ func (s *Store) describeHit(h *SearchHit) {
 // ---- jobs ----
 
 func (s *Store) PutJob(j *Job) error {
+	// A wake still finishing when its session was deleted would otherwise put
+	// the job back, to fail every tick against a session that is gone. The
+	// lock is held through the write, so a delete cannot land between the two.
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.deleted[j.SessionID] {
+		return errSessionDeleted
+	}
 	_, err := s.db.Exec(`insert or replace into jobs
 	 (id,session_id,schedule,check_cmd,prompt,after_acting,status,run_count,fail_count,next_run_at,last_status,created_at)
 	 values(?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -715,6 +768,11 @@ func (s *Store) MoveJobs(from, to string) error {
 // ---- job runs ----
 
 func (s *Store) PutJobRun(r JobRun) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.deleted[r.SessionID] {
+		return errSessionDeleted
+	}
 	if r.ID == "" {
 		r.ID = newID()
 	}
@@ -762,6 +820,11 @@ func (s *Store) DB() *sql.DB { return s.db }
 // transcript, and its place in the search index. Everything derived is rebuilt
 // here, so an imported conversation is indistinguishable from one that was held.
 func (s *Store) ImportSession(sess *Session, entries []Entry) error {
+	// An archive of a session deleted here is that session coming back on
+	// purpose.
+	s.mu.Lock()
+	delete(s.deleted, sess.ID)
+	s.mu.Unlock()
 	if err := os.MkdirAll(s.sessionDir(sess.ID), 0o755); err != nil {
 		return err
 	}

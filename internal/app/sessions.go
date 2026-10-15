@@ -146,6 +146,16 @@ func (a *App) append(sessionID string, e Entry) Entry {
 	return out
 }
 
+// entriesSince is what a session has written from position before onwards. A
+// session deleted in the meantime has written nothing a caller can still use.
+func (a *App) entriesSince(sessionID string, before int) []Entry {
+	entries := a.store.Entries(sessionID)
+	if before > len(entries) {
+		return nil
+	}
+	return entries[before:]
+}
+
 // countsAsUnread is what the unread count counts: something the agent said. A
 // turn that only called tools said nothing, and neither did a tool or an event.
 func countsAsUnread(e Entry) bool {

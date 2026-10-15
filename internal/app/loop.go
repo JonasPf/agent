@@ -207,8 +207,12 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 			// said. The transcript has to tell the two apart, or a stop reads
 			// as the agent breaking.
 			if ctx.Err() != nil {
+				// A session deleted under its turn has nobody left to tell.
+				if a.store.Session(live.ID) == nil {
+					return
+				}
 				a.appendEvent(live.ID, Entry{EventKind: "cancelled",
-					Text: stoppedWhere(a.store.Entries(live.ID)[before:])})
+					Text: stoppedWhere(a.entriesSince(live.ID, before))})
 				a.hub.Broadcast(wsEvent{Kind: "sessions"})
 				return
 			}

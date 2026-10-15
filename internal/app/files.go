@@ -204,6 +204,9 @@ func copyTree(src, dst string) error {
 // DeleteSession removes a conversation and everything it owns: its transcript,
 // its metadata, its jobs, and its working directory.
 func (a *App) DeleteSession(id string) error {
+	// Its turns stop first, so a model call already under way is not paid for
+	// to produce an answer nobody can read.
+	a.stopAll(id)
 	if err := a.store.DeleteSession(id); err != nil {
 		return err
 	}
