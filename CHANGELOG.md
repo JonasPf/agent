@@ -2,6 +2,9 @@
 
 ## 2026-10-15
 
+- **An odd character can no longer freeze a conversation.** An answer
+  holding a particular invisible character could hang the page every time the
+  conversation was opened. Such characters are now shown as �.
 - **Cron schedules fire when cron would.** "0 9 1 * 1" now means the first
   of the month and every Monday, as in any crontab, rather than only a Monday
   that falls on the first, which could be months away. Sunday may be written

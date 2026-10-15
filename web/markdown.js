@@ -30,12 +30,15 @@ const HELD = /\u0000(\d+)\u0000/;
 
 // inline renders one line's spans. Code and links are held aside as finished
 // HTML before emphasis runs, so a * inside a snippet or a URL is never read as
-// markup. The placeholder is a NUL, which the source text cannot contain.
+// markup. The placeholder is a NUL. Model output can hold a NUL of its own, so
+// each one in the source is shown as the replacement character first: left
+// in, one shaped like a placeholder was read as one, and inside a code span
+// named the span itself and never stopped being restored.
 function inline(src) {
   const held = [];
   const hold = html => MARK + (held.push(html) - 1) + MARK;
 
-  let s = String(src == null ? '' : src)
+  let s = String(src == null ? '' : src).replace(/\u0000/g, '\uFFFD')
     .replace(/`([^`]+)`/g, (m, c) => hold('<code>' + escapeHTML(c) + '</code>'));
   s = escapeHTML(s);
 

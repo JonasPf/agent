@@ -177,6 +177,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>A turn still streaming renders as markdown while it arrives, including a fenced block whose closing fence has not been sent yet.</li>
 <li>A message the operator typed, and a wake carrying a job's stored prompt, are shown verbatim and are never rendered.</li>
 <li>Markup in model output is shown as text and never becomes markup: a link renders only when it points at the web, an address, or this app, and an image renders as a link rather than a fetch.</li>
+<li>Any character model output holds is drawn as text, a NUL included, which is shown as a replacement character: nothing in an answer can stop the conversation drawing.</li>
 <li>A keyboard sends the composer with Enter and breaks the line with shift-Enter; a touch screen breaks the line with Enter and sends from the button. The platform's own combination sends on either.</li>
 <li>A key that ends a composition &mdash; an accent, a kana, a candidate &mdash; sends nothing.</li>
 <li>Opening a conversation on a keyboard puts the cursor in the composer without scrolling the transcript; on a touch screen nothing is focused, so no keyboard rises.</li>

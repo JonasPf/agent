@@ -158,3 +158,31 @@ test('most of a long answer settles while it arrives', () => {
   const doc = Array.from({ length: 30 }, (_, i) => 'Paragraph ' + i + ' says something.').join('\n\n');
   assert.ok(markdownSettled(doc) > doc.length * 0.9, 'a long answer settled almost none of itself');
 });
+
+// The renderer holds finished fragments aside behind a NUL-numbered marker.
+// Model output can carry a NUL of its own, and one shaped like a marker used
+// to be read as one: inside a code span it named the span itself, and the
+// renderer looped for ever, freezing the page each time the conversation was
+// opened; elsewhere it printed "undefined". Run apart, so a loop is a failure
+// rather than a hung suite.
+test('a NUL in model output is shown, and never read as a marker', () => {
+  const { spawnSync } = require('child_process');
+  const script = `
+    const { renderMarkdown } = require(${JSON.stringify(require.resolve('./markdown.js'))});
+    process.stdout.write(JSON.stringify([
+      renderMarkdown('\`\\u00000\\u0000\`'),
+      renderMarkdown('ok \\u00005\\u0000 here'),
+      renderMarkdown('**a \\u00000\\u0000** [x](https://example.com)'),
+    ]));`;
+  const run = spawnSync(process.execPath, ['-e', script], { timeout: 3000, encoding: 'utf8' });
+  assert.strictEqual(run.signal, null, 'the renderer never returned');
+  assert.strictEqual(run.status, 0, run.stderr);
+  const [code, text, mixed] = JSON.parse(run.stdout);
+  for (const html of [code, text, mixed]) {
+    assert.doesNotMatch(html, /undefined/, 'a stray marker rendered as undefined: ' + html);
+    assert.doesNotMatch(html, /\u0000/, 'a NUL reached the page: ' + html);
+  }
+  assert.match(code, /<code>�0�<\/code>/);
+  assert.match(text, /ok �5� here/);
+  assert.match(mixed, /<a href="https:\/\/example.com"/);
+});
