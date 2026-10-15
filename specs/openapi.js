@@ -37,17 +37,6 @@ window.OPENAPI_SPEC = {
         "summary": "List sessions, most recently active first.",
         "parameters": [
           {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "active",
-                "archived"
-              ]
-            }
-          },
-          {
             "name": "limit",
             "in": "query",
             "schema": {
@@ -160,7 +149,7 @@ window.OPENAPI_SPEC = {
         "tags": [
           "sessions"
         ],
-        "summary": "Update title or status.",
+        "summary": "Update the title, or when the conversation compacts.",
         "requestBody": {
           "required": true,
           "content": {
@@ -171,13 +160,6 @@ window.OPENAPI_SPEC = {
                   "title": {
                     "type": "string",
                     "description": "A new title. Surrounding whitespace is trimmed; a blank title is refused."
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "active",
-                      "archived"
-                    ]
                   }
                 }
               }
@@ -1333,13 +1315,6 @@ window.OPENAPI_SPEC = {
           },
           "model": {
             "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "archived"
-            ]
           },
           "enabled_tools": {
             "type": "array",

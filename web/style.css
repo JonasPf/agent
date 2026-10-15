@@ -153,7 +153,6 @@ body.drawer #scrim { opacity: 1; pointer-events: auto; }
 .side-item .n { font-size: 13.5px; font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-item.on .n { color: var(--fg); }
 .side-item .s { font-size: 11px; color: var(--muted); margin-top: 1px; }
-.side-item.arch .n { color: var(--muted); font-weight: 500; }
 
 .side-foot { border-top: 1px solid var(--line); padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); }
 .side-foot .l { display: flex; gap: 8px; align-items: baseline; font-size: 11px; color: var(--muted); }

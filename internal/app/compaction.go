@@ -258,7 +258,7 @@ func ptrTime(t time.Time) *time.Time { return &t }
 // visibly so, and is retried after the next turn; nothing to fold is not a
 // failure, and the error saying so is dropped here.
 func (a *App) maybeCompact(ctx context.Context, s *Session) {
-	if s.Status != "active" || s.CompactAtTokens <= 0 {
+	if s.CompactAtTokens <= 0 {
 		return
 	}
 	if a.contextUsed(s.ID, a.store.Entries(s.ID)) < s.CompactAtTokens {

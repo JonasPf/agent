@@ -89,7 +89,7 @@ function button(n, label) {
 }
 
 const session = over => Object.assign({
-  id: 'S1', title: 'Boiler', model: 'x/y', status: 'active', entry_count: 3,
+  id: 'S1', title: 'Boiler', model: 'x/y', entry_count: 3,
   context_used: 30000, compact_at_tokens: 40000, keep_verbatim_tokens: 10000, cost: 0, disk_bytes: 0,
   last_active_at: new Date().toISOString(), unread: 0
 }, over);

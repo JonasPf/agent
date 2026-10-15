@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **Archiving is gone.** Nothing in the interface could archive a
+  conversation, so the archived section of the list only ever held what the
+  API had put there. Conversations are now simply kept or deleted, in one
+  list, newest first.
 - **A refused change to a conversation changes nothing.** A rename sent
   together with something that cannot change was refused but still renamed
   the conversation. A blank title is now refused by the agent itself, not

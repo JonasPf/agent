@@ -61,7 +61,7 @@ middle.</p>
 <li>The conversation list is a rail beside the pane where there is room for one, and a drawer behind a single button where there is not &mdash; the same list either way, never two.</li>
 <li>Opening the drawer, dismissing it, and going anywhere from it each leave exactly one thing on screen.</li>
 <li>With the rail pinned open the pane offers no back button and the drawer no handle.</li>
-<li>The rail names every conversation, marks the one being read, carries its unread count, and separates archived conversations from active ones.</li>
+<li>The rail names every conversation, newest activity first, marks the one being read, and carries its unread count. A conversation is kept or deleted; nothing sets one apart as archived.</li>
 <li>The rail states the credit remaining and whether tools are sandboxed, without opening a screen to ask.</li>
 <li>The page's first request on coming back is answered without waiting on OpenRouter; the credit shown is the last figure the agent heard, and the rail updates when a fresher one arrives.</li>
 <li>The rail links Jobs, Tools, Skills, and More; personas are reached from More.</li>
@@ -207,7 +207,7 @@ always measured on the spot.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>All sessions are listed, newest activity first, with title, model, and unread count.</li>
-<li>A session can be created, renamed, archived, and deleted.</li>
+<li>A session can be created, renamed, and deleted.</li>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>Search opened from a conversation looks in that conversation, and can be widened to every conversation in one tap. It searches as it is typed, each word matching as a prefix, and punctuation is looked for rather than read as syntax.</li>
 <li>Each search hit says who wrote it and when, marks what matched, and says so when the agent no longer sees it.</li>

@@ -45,7 +45,6 @@ func (a *App) NewSession(cfg SessionConfig, forkedFrom string) (*Session, error)
 		ID:                 newID(),
 		Title:              "New session",
 		SessionConfig:      cfg,
-		Status:             "active",
 		ForkedFrom:         forkedFrom,
 		CompactAtTokens:    compactAt,
 		KeepVerbatimTokens: keep,

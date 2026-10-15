@@ -37,17 +37,6 @@
         "summary": "List sessions, most recently active first.",
         "parameters": [
           {
-            "name": "status",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "active",
-                "archived"
-              ]
-            }
-          },
-          {
             "name": "limit",
             "in": "query",
             "schema": {
@@ -154,13 +143,13 @@
             "$ref": "#/components/responses/NotFound"
           }
         },
-        "description": "An archived session is returned as it was. Follow continued_by to reach the live session of its chain."
+        "description": "A session is never superseded, so an identifier always addresses the conversation it named."
       },
       "patch": {
         "tags": [
           "sessions"
         ],
-        "summary": "Update title, status, or when the conversation compacts.",
+        "summary": "Update the title, or when the conversation compacts.",
         "requestBody": {
           "required": true,
           "content": {
@@ -171,13 +160,6 @@
                   "title": {
                     "type": "string",
                     "description": "A new title. Surrounding whitespace is trimmed; a blank title is refused."
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "active",
-                      "archived"
-                    ]
                   },
                   "summary": {
                     "type": "string",
@@ -1603,13 +1585,6 @@
           },
           "model": {
             "type": "string"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "active",
-              "archived"
-            ]
           },
           "enabled_tools": {
             "type": "array",

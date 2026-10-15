@@ -115,7 +115,6 @@ type Session struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	SessionConfig
-	Status string `json:"status"` // active | archived
 	// ReadThrough is the last sequence number the operator was shown. What is
 	// unread is derived from it rather than counted, so a reminder, a reply, and
 	// a read racing one another can never leave the count wrong.

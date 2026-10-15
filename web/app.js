@@ -371,8 +371,7 @@ async function renderSidebar() {
   if (mine !== sideDrawing) return;
   state.sessions = sessions;
   list.innerHTML = '';
-  const ordered = sortSessions((sessions || []).filter(s => s.status === 'active'), 'recent')
-    .concat(sortSessions((sessions || []).filter(s => s.status !== 'active'), 'recent'));
+  const ordered = sortSessions(sessions || [], 'recent');
   if (!ordered.length) { list.append(el('div', 's', 'No conversations yet.')); return; }
   for (const s of ordered) list.append(sideItem(s));
 }
@@ -382,12 +381,11 @@ async function renderSidebar() {
 // about a session lives on its row in the list view.
 function sideItem(s) {
   const on = state.view === 'session' && state.arg === s.id;
-  const b = el('button', 'side-item' + (on ? ' on' : '') + (s.status === 'active' ? '' : ' arch'));
+  const b = el('button', 'side-item' + (on ? ' on' : ''));
   const m = el('div', 'm');
   m.append(el('div', 'n', s.title || 'Untitled'));
   const bits = [ago(s.last_active_at)];
   if (s.job_count) bits.push(s.job_count + ' job' + (s.job_count > 1 ? 's' : ''));
-  if (s.status !== 'active') bits.push('archived');
   m.append(el('div', 's', bits.join(' · ')));
   b.append(m);
   if (s.unread) b.append(el('span', 'badge', String(s.unread)));
@@ -494,15 +492,7 @@ async function viewSessions(v) {
   const list = await api('/sessions');
   if (stale(gen)) return;
   state.sessions = list;
-  const active = list.filter(s => s.status === 'active');
-  const archived = list.filter(s => s.status !== 'active');
-  const section = (label, items) => {
-    if (!items.length) return;
-    v.append(el('h2', null, label));
-    sortSessions(items, state.sort).forEach(s => v.append(sessionRow(s)));
-  };
-  section('active', active);
-  section('archived', archived);
+  sortSessions(list, state.sort).forEach(s => v.append(sessionRow(s)));
   if (!list.length) v.append(el('div', 'empty', 'No conversations yet. Start one to give the agent something to hold.'));
 }
 

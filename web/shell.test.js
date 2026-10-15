@@ -64,7 +64,7 @@ function findAll(n, cls, out) {
 }
 
 const session = over => Object.assign({
-  id: 'S1', title: 'Greenhouse sensors', model: 'x/y', status: 'active', entry_count: 3,
+  id: 'S1', title: 'Greenhouse sensors', model: 'x/y', entry_count: 3,
   context_used: 10, compact_at_tokens: 40000, cost: 0, disk_bytes: 0,
   last_active_at: new Date().toISOString(), unread: 0
 }, over);
@@ -146,18 +146,34 @@ function load(routes) {
 
 // ---------- the rail ----------
 
-test('the rail lists every conversation, active ones first', async () => {
+// A conversation is kept or deleted; there is no third state to sort it into,
+// so the rail is one list, newest activity first, and nothing on it is set
+// apart as archived.
+test('the rail lists every conversation, newest activity first', async () => {
   const ctx = load({
     '/sessions': [
-      session({ id: 'A', title: 'Old', status: 'archived', last_active_at: '2026-09-01T00:00:00Z' }),
-      session({ id: 'B', title: 'Newer', last_active_at: '2026-09-05T00:00:00Z' }),
-      session({ id: 'C', title: 'Newest', last_active_at: '2026-09-06T00:00:00Z' }),
-    ]
+      session({ id: 'A', title: 'Old', last_active_at: '2026-09-01T00:00:00Z' }),
+      session({ id: 'B', title: 'Newest', last_active_at: '2026-09-06T00:00:00Z' }),
+      session({ id: 'C', title: 'Newer', last_active_at: '2026-09-05T00:00:00Z' }),
+    ].map(s => { delete s.status; return s; })
   });
   await ctx.renderSidebar();
   const rows = findAll(ctx._id('side-list'), 'side-item');
   assert.deepStrictEqual(rows.map(r => find(r, 'n').textContent), ['Newest', 'Newer', 'Old']);
-  assert.ok(String(rows[2].className).split(/\s+/).includes('arch'), 'an archived conversation is not marked as one');
+  for (const r of rows) {
+    assert.ok(!String(r.className).split(/\s+/).includes('arch'), 'a conversation is set apart as archived');
+    assert.doesNotMatch(textOf(r), /archived/, 'a conversation is labelled archived');
+  }
+});
+
+test('the conversation list is one list, with no archived section', async () => {
+  const ctx = load({
+    '/sessions': [session({ id: 'A', title: 'One' }), session({ id: 'B', title: 'Two' })].map(s => { delete s.status; return s; })
+  });
+  const v = ctx._id('view');
+  await ctx.viewSessions(v);
+  assert.strictEqual(findAll(v, 'row-item').length, 2, 'not every conversation is listed');
+  assert.doesNotMatch(textOf(v), /archived/i, 'the list still has an archived section');
 });
 
 // The rail is on screen while a conversation is, so it has to say which of its

@@ -255,7 +255,6 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Title         *string     `json:"title"`
 		Model         *string     `json:"model"`
-		Status        *string     `json:"status"`
 		Summary       *string     `json:"summary"`
 		EnabledTools  optionalSet `json:"enabled_tools"`
 		EnabledSkills optionalSet `json:"enabled_skills"`
@@ -313,9 +312,6 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if thresholds {
 		s.CompactAtTokens, s.KeepVerbatimTokens = compactAt, keep
-	}
-	if in.Status != nil {
-		s.Status = *in.Status
 	}
 	_ = a.store.PutSession(s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
