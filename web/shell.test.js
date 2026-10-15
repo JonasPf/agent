@@ -2383,3 +2383,51 @@ test('a screen still loading paints nothing over the one that replaced it', asyn
     assert.ok(!acts.includes('Delete'), `leaving ${view} early left its Delete in the header`);
   }
 });
+
+// ---------- creating, once ----------
+
+// A tap that lands twice — a double click, a phone registering one touch as
+// two — used to create two conversations, or two forks, from one screen. The
+// button stops offering while its request is out; a refusal says why and
+// offers it again.
+test('starting a conversation or a fork is one action, however often it is pressed', async () => {
+  const there = session({ id: 'S1', title: 'Kiln firing log' });
+  for (const [view, arg, label, path] of [
+    ['new', undefined, 'Start conversation', '/sessions'],
+    ['fork', 'S1', 'Create fork', '/sessions/S1/fork'],
+  ]) {
+    const routes = {
+      '/sessions': [there], '/sessions/S1': { session: there }, '/preferences': { model: 'x/y' }, '/models': [],
+      '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [] }, '/personas': { personas: [] },
+    };
+    routes['POST ' + path] = { id: 'S2' };
+    const ctx = load(routes);
+    vm.runInContext(`state.view = ${JSON.stringify(view)}; state.arg = ${JSON.stringify(arg)};`, ctx);
+    await ctx.render();
+    const button = findAll(ctx._id('view'), 'btn').find(b => b.textContent === label);
+    assert.ok(button, `${view} offers no ${label}`);
+    const presses = [button.onclick(), button.onclick()];
+    await Promise.all(presses);
+    const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === path);
+    assert.strictEqual(sent.length, 1, `two presses of ${label} sent ${sent.length} requests`);
+    assert.strictEqual(ctx.location.hash, '#session/S2');
+  }
+});
+
+test('a refused start says why and can be pressed again', async () => {
+  const ctx = load({
+    '/sessions': [], '/preferences': { model: 'x/y' }, '/models': [],
+    '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [] }, '/personas': { personas: [] },
+  });
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => (o && o.method === 'POST' && p === '/sessions')
+    ? Promise.resolve({ ok: false, status: 500, text: async () => '{"error":"disk full"}' })
+    : fetch(p, o);
+  vm.runInContext("state.view = 'new';", ctx);
+  await ctx.render();
+  const button = findAll(ctx._id('view'), 'btn').find(b => b.textContent === 'Start conversation');
+  await button.onclick();
+  const toast = ctx.document.body.children.find(c => c.className === 'toast');
+  assert.ok(toast && /disk full/.test(textOf(toast)), 'a refused start did not say why');
+  assert.ok(!button.disabled, 'a refused start cannot be pressed again');
+});

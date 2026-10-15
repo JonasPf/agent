@@ -1650,12 +1650,27 @@ async function viewNew(v) {
   const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }), gen);
   if (!read || stale(gen)) return;
   const start = el('button', 'btn primary', 'Start conversation');
-  start.onclick = async () => {
+  oneAtATime(start, 'Not started', async () => {
     const s = await post('/sessions', read());
     location.hash = '#session/' + s.id;
-  };
+  });
   const done = el('div', 'finish'); done.append(start);
   v.append(done);
+}
+
+// oneAtATime makes a button that creates something a single action. A tap that
+// lands twice would otherwise create two, so the button stops offering while
+// its request is out; a refusal says why, and offers it again.
+function oneAtATime(button, refused, fn) {
+  button.onclick = async () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await fn(); }
+    catch (e) {
+      button.disabled = false;
+      toast({ title: refused, body: String(e.message) });
+    }
+  };
 }
 
 // ---------- files ----------
@@ -1795,10 +1810,10 @@ async function viewFork(v) {
   const read = await configEditor(v, res.session, gen);
   if (!read || stale(gen)) return;
   const go = el('button', 'btn primary', 'Create fork');
-  go.onclick = async () => {
+  oneAtATime(go, 'Not forked', async () => {
     const succ = await post('/sessions/' + id + '/fork', read());
     location.hash = '#session/' + succ.id;
-  };
+  });
   const done = el('div', 'finish'); done.append(go);
   v.append(done);
 }

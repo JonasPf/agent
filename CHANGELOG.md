@@ -2,6 +2,9 @@
 
 ## 2026-10-15
 
+- **A double tap starts one conversation.** Pressing Start conversation or
+  Create fork twice used to make two. The button now waits for the first
+  press, and if the agent refuses, it says why and lets you try again.
 - **Opening part of the prompt leaves the rest alone.** Expanding a section
   of a conversation's prompt used to redraw the whole conversation, closing
   any tool results you had opened, and opened that section in every other
