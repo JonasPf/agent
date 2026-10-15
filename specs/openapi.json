@@ -1679,6 +1679,30 @@
           "keep_verbatim_tokens": {
             "type": "integer",
             "description": "How much of the newest conversation a compaction keeps word for word. Default 10,000; at most half of compact_at_tokens."
+          },
+          "cache": {
+            "type": "object",
+            "nullable": true,
+            "description": "What the provider holds of this conversation since its last call; absent when nothing is known to be held, and cleared by a compaction.",
+            "properties": {
+              "tokens": {
+                "type": "integer",
+                "description": "The tokens the last call sent."
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the prefix lapses. Present only when the agent's own cache marker chose the lifetime."
+              },
+              "kept_by": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "provider"
+                ],
+                "description": "agent: held by the agent's marker, with a known lifetime. provider: cached by the provider on its own, which reports no lifetime."
+              }
+            }
           }
         }
       },

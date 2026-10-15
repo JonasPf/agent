@@ -27,9 +27,12 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 
 	msgs := []ChatMessage{a.systemChatMessage(s, promptEntry.Sections)}
 	msgs = append(msgs, Project(a.store.Entries(s.ID))...)
+	ttl := ""
 	if needsExplicitCacheMarker(s.Model) {
-		msgs = withCacheMarker(msgs, a.cacheTTL(s))
+		ttl = a.cacheTTL(s)
+		msgs = withCacheMarker(msgs, ttl)
 	}
+	marked := hasCacheMarker(msgs)
 
 	user := Entry{Type: "message", Role: "user", Text: opts.UserText, JobID: opts.JobID,
 		DueAt: opts.DueAt}
@@ -68,6 +71,7 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 		s.Cost += res.Usage.Cost
 		s.PromptTokens += res.Usage.PromptTokens
 		s.CachedTokens += res.Usage.CachedTokens
+		noteCache(s, ttl, marked, res.Usage, time.Now())
 		_ = a.store.PutSession(s)
 
 		usage := res.Usage
@@ -138,6 +142,46 @@ func withCacheMarker(msgs []ChatMessage, ttl string) []ChatMessage {
 	last.Content = []any{map[string]any{"type": "text", "text": text,
 		"cache_control": map[string]any{"type": "ephemeral", "ttl": ttl}}}
 	return out
+}
+
+// hasCacheMarker says whether a request carries the marker withCacheMarker
+// writes. It is not written when there is nothing it could be attached to.
+func hasCacheMarker(msgs []ChatMessage) bool {
+	if len(msgs) == 0 {
+		return false
+	}
+	parts, ok := msgs[len(msgs)-1].Content.([]any)
+	if !ok {
+		return false
+	}
+	for _, p := range parts {
+		if m, ok := p.(map[string]any); ok && m["cache_control"] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// noteCache records what a call left the provider holding, for the status
+// line's count of it. A call that carried the agent's marker wrote or read the
+// prefix it names and restarted its lifetime; a provider that caches on its own
+// holds what was sent, for as long as it chooses. A call to a provider that
+// needs a marker and was sent none leaves whatever was held to lapse as it
+// would have.
+func noteCache(s *Session, ttl string, marked bool, u Usage, now time.Time) {
+	if u.PromptTokens <= 0 {
+		return
+	}
+	switch {
+	case !needsExplicitCacheMarker(s.Model):
+		s.Cache = &SessionCache{Tokens: u.PromptTokens, KeptBy: "provider"}
+	case marked:
+		d, err := time.ParseDuration(ttl)
+		if err != nil {
+			return
+		}
+		s.Cache = &SessionCache{Tokens: u.PromptTokens, ExpiresAt: now.Add(d), KeptBy: "agent"}
+	}
 }
 
 // needsExplicitCacheMarker is false for providers that cache automatically.

@@ -246,6 +246,9 @@ func (a *App) Compact(ctx context.Context, s *Session) error {
 	a.append(s.ID, folded)
 
 	s.LastCompactedAt = ptrTime(time.Now())
+	// The head of what is sent is rewritten, so nothing cached of it is of
+	// further use; the next call writes the prefix afresh.
+	s.Cache = nil
 	_ = a.store.PutSession(s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return nil

@@ -1392,6 +1392,30 @@ window.OPENAPI_SPEC = {
             "type": "string",
             "nullable": true,
             "description": "The session this one was copied from, if any. A fork does not supersede its origin, so there is no forward pointer."
+          },
+          "cache": {
+            "type": "object",
+            "nullable": true,
+            "description": "What the provider holds of this conversation since its last call; absent when nothing is known to be held, and cleared by a compaction.",
+            "properties": {
+              "tokens": {
+                "type": "integer",
+                "description": "The tokens the last call sent."
+              },
+              "expires_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When the prefix lapses. Present only when the agent's own cache marker chose the lifetime."
+              },
+              "kept_by": {
+                "type": "string",
+                "enum": [
+                  "agent",
+                  "provider"
+                ],
+                "description": "agent: held by the agent's marker, with a known lifetime. provider: cached by the provider on its own, which reports no lifetime."
+              }
+            }
           }
         }
       },

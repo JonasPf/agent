@@ -109,12 +109,27 @@ type SessionConfig struct {
 	GrantedEnv []string `json:"granted_env,omitempty"`
 }
 
+// SessionCache is what a session's provider holds of it: the prefix its last
+// call sent, and, where the agent wrote the cache marker itself and so chose
+// the lifetime, when that prefix lapses. A provider that caches on its own
+// reports no lifetime, and none is invented for it.
+type SessionCache struct {
+	Tokens    int       `json:"tokens"`
+	ExpiresAt time.Time `json:"expires_at,omitzero"`
+	// KeptBy is "agent" for a prefix held by the agent's own marker, and
+	// "provider" for one the provider keeps without being asked.
+	KeptBy string `json:"kept_by"`
+}
+
 // Session metadata. Stored as meta.json beside the transcript, so SQLite is derived.
 // The config is embedded, so it flattens into the same JSON object it always was.
 type Session struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	SessionConfig
+	// Cache is what the provider holds of this conversation since its last
+	// call, or nil when nothing is known to be held.
+	Cache *SessionCache `json:"cache,omitempty"`
 	// ReadThrough is the last sequence number the operator was shown. What is
 	// unread is derived from it rather than counted, so a reminder, a reply, and
 	// a read racing one another can never leave the count wrong.

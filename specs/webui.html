@@ -146,7 +146,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
 <li>Context usage is shown against the session's compaction threshold, not the model's window.</li>
 <li>The header's title and the status line's figures follow the conversation while it is open: the title its first answer gives it, and the cost and context each turn moves, show without opening it again.</li>
-<li>The estimated cost of the next call is shown, and whether it will be cached.</li>
+<li>The estimated cost of the next call is shown, and whether it will be cached: the prompt and the conversation as they would be sent now, at the model's prices, with what a live cache holds priced as a read.</li>
 <li>An event is laid out as a log line — clock, kind, detail — with no speaker and no bubble, so it cannot be read as a message or a tool result.</li>
 <li>A session identifier appearing in an event or a prompt section is a link to that session.</li>
 <li>The session list is ordered by last activity, and can be reordered by disk used, largest first.</li>
@@ -173,6 +173,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>The compaction summary is editable, and an edit changes what the next turn sends.</li>
 <li>A compaction says that it reset the cache.</li>
 <li>The status line shows the live cache size and counts down to its expiry, and shows it as expired when it is.</li>
+<li>A provider that caches on its own, without the agent's marker, reports no lifetime; its cache is shown as held by the provider, and no countdown is invented for it.</li>
 <li>Each assistant message shows the cached proportion of the call that produced it, from what the provider reported, and says so plainly when there was no hit.</li>
 <li>No cache lifetime is shown per message.</li>
 <li>Expanding the tool section shows every tool definition as the model receives it.</li>

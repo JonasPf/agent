@@ -2453,3 +2453,74 @@ test('a model fact is a figure in a row, not a card of its own', () => {
     assert.doesNotMatch(m[1], /border:/, `.${c}, the class of a single fact, is drawn as a bordered card`);
   }
 });
+
+// ---------- the cache, made visible ----------
+
+// Caching changes what a conversation costs, so it is shown rather than
+// inferred (ADR-042): the status line carries the live cache's size and counts
+// down to its expiry, says when it has expired, and says what the next call is
+// expected to cost and whether it will read the cache; each answer says what
+// its own call read from the cache, measured, and says so plainly when it read
+// nothing.
+const priced = [{ id: 'anthropic/claude-test', name: 'Claude Test', prompt_price: 0.000003, completion_price: 0.000015, cache_read_price: 0.0000003 }];
+const prompted = [
+  { seq: 0, type: 'prompt', sections: [{ name: 'persona', text: 'P', tokens: 4000 }], text: 'system prompt', created_at: '2026-10-15T10:00:00Z' },
+  { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-15T10:00:00Z' },
+  { seq: 2, type: 'message', role: 'assistant', text: 'It reads 41%.', created_at: '2026-10-15T10:00:02Z',
+    usage: { prompt_tokens: 6000, cached_tokens: 5400, completion_tokens: 8, cost: 0.002 } },
+  { seq: 3, type: 'message', role: 'user', text: 'And now?', created_at: '2026-10-15T10:01:00Z' },
+  { seq: 4, type: 'message', role: 'assistant', text: 'Still 41%.', created_at: '2026-10-15T10:01:02Z',
+    usage: { prompt_tokens: 6100, cached_tokens: 0, completion_tokens: 6, cost: 0.004 } },
+];
+
+function cachedScreen(cache) {
+  const sess = session({ id: 'S1', model: 'anthropic/claude-test', context_used: 2000, cache });
+  const ctx = load({ '/sessions/S1': { session: sess }, '/sessions/S1/transcript': prompted, '/models': priced, '/sessions': [sess] });
+  ctx.location.hash = '#session/S1';
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  return ctx;
+}
+
+test('the status line counts down to the live cache, and says what the next call costs', async () => {
+  const expires = new Date(Date.now() + (4 * 60 + 12) * 1000).toISOString();
+  const ctx = cachedScreen({ tokens: 6716, expires_at: expires, kept_by: 'agent' });
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  const line = textOf(ctx._id('statusline'));
+  assert.match(line, /cache/, 'the status line does not mention the cache');
+  assert.match(line, /6,716 tok/, 'the status line does not say how large the cache is');
+  assert.match(line, /4:1\d/, 'the status line does not count down to the cache expiring');
+  // 6,000 tokens next: 6,000 of them, at most what the cache holds, read at
+  // the cache's price.
+  assert.match(line, /~\$0\.0018 · cached/, 'the status line does not price the next call from the cache, or say it will be cached');
+});
+
+test('an expired cache says so, and the next call is priced uncached', async () => {
+  const ctx = cachedScreen({ tokens: 6716, expires_at: new Date(Date.now() - 1000).toISOString(), kept_by: 'agent' });
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  const line = textOf(ctx._id('statusline'));
+  assert.match(line, /cache expired/, 'an expired cache is not shown as expired');
+  assert.match(line, /~\$0\.0180 · not cached/, 'the next call is not priced in full, or not said to be uncached');
+});
+
+test('a provider that caches on its own is shown holding it, with no countdown invented', async () => {
+  const ctx = cachedScreen({ tokens: 3000, kept_by: 'provider' });
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  const line = textOf(ctx._id('statusline'));
+  assert.match(line, /3,000 tok/);
+  assert.match(line, /provider/, 'a provider-kept cache does not say who keeps it');
+  assert.doesNotMatch(line, /\d+:\d\d/, 'a countdown was invented for a lifetime nobody reported');
+});
+
+test('each answer says what its call read from the cache, and says so when it read nothing', async () => {
+  const ctx = cachedScreen(null);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const answers = t.children.filter(c => /It reads|Still 41/.test(textOf(c)));
+  assert.strictEqual(answers.length, 2);
+  assert.match(textOf(answers[0]), /90% cached/, 'an answer does not say what its call read from the cache');
+  assert.match(textOf(answers[1]), /no cache hit/, 'an answer that read nothing from the cache does not say so');
+  for (const a of answers) assert.doesNotMatch(find(a, 'cachehit').textContent, /\d+:\d\d|expire|left/, 'an answer shows a cache lifetime');
+});

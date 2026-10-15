@@ -560,7 +560,7 @@ countdown would print the same number beside every message and tell the reader n
 <li>No marker is written when no further call is expected before it would expire.</li>
 <li>No marker is written for a provider that caches without one.</li>
 <li>The first call after a compaction reports no cache hit; the call after that reports one.</li>
-<li>The interface shows the live cache size and a countdown to its expiry, and shows it as expired when it is.</li>
+<li>The interface shows the live cache size and a countdown to its expiry, and shows it as expired when it is. A session reports both as <code>cache</code>: the tokens its last call sent and, where the agent's own marker chose the lifetime, when that call's prefix lapses. A provider that caches without a marker is reported holding the prefix, with no expiry. A compaction clears it.</li>
 <li>Each assistant message reports the cached proportion of the call that produced it, from what the provider reported.</li>
 <li>A compaction states in the transcript that it reset the cache.</li>
 </ul>

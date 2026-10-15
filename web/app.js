@@ -723,6 +723,9 @@ async function viewSession(v) {
   const hint = el('div', 'hint', 'Enter sends · Shift+Enter for a new line');
   foot.append(status, chips, form, hint);
   renderStatus();
+  // The next call is priced from the catalogue, which the agent keeps; it is
+  // not waited for, and the line is drawn again once it is here.
+  loadModels().then(() => { if (!stale(gen)) renderStatus(); }).catch(() => {});
   if (!scrollToUnread()) scrollDown();
   // A conversation is opened to say something, so on a keyboard the cursor is
   // already there. On a touch screen focus would raise the keyboard over what
@@ -817,19 +820,31 @@ function renderStatus() {
   add('', `${s.context_used.toLocaleString()} / ${s.compact_at_tokens.toLocaleString()} tok`);
   add('cost', fmtMoney(s.cost));
   if (s.cache_hit_rate) add('cached', Math.round(s.cache_hit_rate * 100) + '%');
+  // The cache is what makes the next call cheap or not, so the line says
+  // what is held, how long it has left, and what the next call should cost.
+  const cache = cacheState(s.cache, Date.now());
+  if (cache) line.append(el('span', 'cache', cacheLabel(cache)));
+  const prompt = [...state.entries].reverse().find(e => e.type === 'prompt');
+  const promptTokens = prompt ? (prompt.sections || []).reduce((a, x) => a + (x.tokens || 0), 0) : 0;
+  const next = nextCall(promptTokens, s.context_used, cache, (state.models || []).find(m => m.id === s.model));
+  if (next.cost != null) add('next', '~' + fmtMoney(next.cost) + (next.cached ? ' · cached' : ' · not cached'));
+  if (cache && cache.by === 'agent' && cache.live) tickWorking();
   const last = [...state.entries].reverse().find(e => e.usage && e.usage.tokens_per_second);
   if (last) add('', last.usage.tokens_per_second.toFixed(1) + ' tok/s');
   if (state.streaming && since == null) line.append(el('span', 'gen', 'generating'));
 }
 
 // tickWorking redraws the status line once a second while the conversation on
-// screen is waiting on the agent, and stops by itself when it is not.
+// screen is waiting on the agent or its cache is counting down, and stops by
+// itself when neither is: the draw after a cache lapses says it has expired.
 let workingTicker = null;
 function tickWorking() {
   if (workingTicker) return;
   workingTicker = setInterval(() => {
     const s = state.session;
-    if (state.view !== 'session' || !s || state.working[s.id] == null) {
+    const cache = s && cacheState(s.cache, Date.now() - 1000);
+    const counting = cache && cache.by === 'agent' && cache.live;
+    if (state.view !== 'session' || !s || (state.working[s.id] == null && !counting)) {
       clearInterval(workingTicker);
       workingTicker = null;
       return;
@@ -1173,6 +1188,7 @@ function renderEntry(e) {
   // is said once, in the seeding event at the top, rather than on every bubble.
   const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
   const who = el('div', 'who', speaker(e));
+  const hit = e.role === 'assistant' ? cacheHit(e.usage) : '';
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
   who.append(el('span', 'at', messageTime(e.created_at)));
@@ -1194,6 +1210,7 @@ function renderEntry(e) {
     n.append(head, pre);
     w.append(n);
   }
+  if (hit) w.append(el('div', 'cachehit', hit));
   return w;
 }
 

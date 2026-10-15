@@ -2,6 +2,11 @@
 
 ## 2026-10-15
 
+- **See what the cache is saving you.** The line under a conversation now
+  shows how much of it the provider has cached and how long that lasts,
+  counting down, and says when it has expired. It also estimates what the
+  next message will cost and whether it will be read from the cache. Each
+  answer notes how much of its call came from the cache, or that none did.
 - **A model's prices fit on one line again.** Each figure about a model —
   price in, price out, context, and the rest — was drawn as a box of its own,
   stacked down the screen. They are a compact row under the model's name

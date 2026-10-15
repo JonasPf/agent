@@ -303,6 +303,48 @@ function transcriptRows(entries) {
   return rows;
 }
 
+// cacheState is the live cache as the status line shows it: how much of the
+// conversation the provider holds, and, where the agent's own marker chose the
+// lifetime, how long it has left. A provider that caches on its own reports no
+// lifetime, so none is counted. Null when nothing is known to be held.
+function cacheState(cache, now) {
+  if (!cache || !(cache.tokens > 0)) return null;
+  if (cache.kept_by === 'provider') return { tokens: cache.tokens, live: true, by: 'provider' };
+  const left = (new Date(cache.expires_at) - now) / 1000;
+  return { tokens: cache.tokens, live: left > 0, left: Math.max(0, left), by: 'agent' };
+}
+
+// cacheLabel says what cacheState found, counting down in minutes and seconds.
+function cacheLabel(c) {
+  if (!c) return '';
+  const size = c.tokens.toLocaleString() + ' tok';
+  if (c.by === 'provider') return 'cache ' + size + ' · kept by the provider';
+  if (!c.live) return 'cache expired';
+  const secs = Math.ceil(c.left);
+  return 'cache ' + size + ' · ' + Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+}
+
+// nextCall estimates the next call: the prompt and the conversation as the
+// agent would send them now, and what that costs at the model's prices. While
+// the cache is live the part of it the cache holds is priced as a read.
+function nextCall(promptTokens, contextUsed, cache, model) {
+  const tokens = (promptTokens || 0) + (contextUsed || 0);
+  const cached = !!(cache && cache.live);
+  if (!model || model.prompt_price == null) return { tokens, cached, cost: null };
+  const read = model.cache_read_price != null ? model.cache_read_price : model.prompt_price;
+  const hit = cached ? Math.min(cache.tokens, tokens) : 0;
+  return { tokens, cached, cost: hit * read + (tokens - hit) * model.prompt_price };
+}
+
+// cacheHit is what one call read from the cache, as the provider measured it,
+// and says plainly when it read nothing. A lifetime is not a call's to show.
+function cacheHit(usage) {
+  if (!usage || !(usage.prompt_tokens > 0)) return '';
+  if (!usage.cached_tokens) return 'no cache hit';
+  return Math.round(100 * usage.cached_tokens / usage.prompt_tokens) + '% cached · ' +
+    usage.cached_tokens.toLocaleString() + ' of ' + usage.prompt_tokens.toLocaleString() + ' tok';
+}
+
 // snippetParts splits a search snippet at the brackets the index puts around
 // each match, so the page can mark them without reading the snippet as markup.
 function snippetParts(snippet) {
@@ -323,5 +365,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { toolResult, resultBody, resultPreview, callBody, callPreview,
     eventLabel, eventDetail, eventTime, isFailure,
     speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds,
-    waitingLabel, conversationText, transcriptRows, snippetParts };
+    waitingLabel, conversationText, transcriptRows, snippetParts,
+    cacheState, cacheLabel, nextCall, cacheHit };
 }
