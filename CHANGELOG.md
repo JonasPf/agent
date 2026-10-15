@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **Cron schedules fire when cron would.** "0 9 1 * 1" now means the first
+  of the month and every Monday, as in any crontab, rather than only a Monday
+  that falls on the first, which could be months away. Sunday may be written
+  as 7, and "1/6" in the hours means 1, 7, 13, and 19.
 - **The agent can search for follow-up.** When the agent searched its own
   history for a word with a hyphen or a dot in it, such as follow-up or
   notes.md, the search failed with a database error. It now finds them, the
