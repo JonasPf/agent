@@ -2431,3 +2431,25 @@ test('a refused start says why and can be pressed again', async () => {
   assert.ok(toast && /disk full/.test(textOf(toast)), 'a refused start did not say why');
   assert.ok(!button.disabled, 'a refused start cannot be pressed again');
 });
+
+// ---------- a model's facts ----------
+
+// A model's facts — price in and out, context, the indices — are a wrapping
+// row of small figures under its name. The class each figure carried was also
+// the class of the dashed, full-width card a fixed configuration is drawn in,
+// so every figure was drawn as a card of its own, one under another, on the
+// new-conversation screen, the details screen, and in the model dialog.
+test('a model fact is a figure in a row, not a card of its own', () => {
+  const ctx = load({});
+  const facts = ctx.factList({ id: 'x/y', name: 'X: Y', prompt_price: 0.000002, completion_price: 0.00001, context_length: 1000000 });
+  assert.ok(facts.children.length >= 3, 'no facts were drawn');
+  const v = node('div');
+  const classes = new Set();
+  for (const f of facts.children) for (const c of String(f.className).split(/\s+/).filter(Boolean)) classes.add(c);
+  for (const c of classes) {
+    const m = CSS.match(new RegExp('^\\.' + c + '\\s*\\{([^}]*)\\}', 'm'));
+    if (!m) continue;
+    assert.doesNotMatch(m[1], /width:\s*100%/, `.${c}, the class of a single fact, is drawn full width`);
+    assert.doesNotMatch(m[1], /border:/, `.${c}, the class of a single fact, is drawn as a bordered card`);
+  }
+});

@@ -1597,7 +1597,7 @@ async function configFacts(v, s, gen = drawing) {
   if (stale(gen)) return false;
   v.append(el('h2', null, 'model'));
   const m = (state.models || []).find(x => x.id === s.model) || { id: s.model || '' };
-  const line = el('div', 'fact fixed');
+  const line = el('div', 'choice-fixed');
   const text = el('div', 'm');
   text.append(el('div', 'n', m.name ? modelName(m) : (m.id || 'none')));
   if (m.name) text.append(el('div', 's ident', m.id));

@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+- **A model's prices fit on one line again.** Each figure about a model —
+  price in, price out, context, and the rest — was drawn as a box of its own,
+  stacked down the screen. They are a compact row under the model's name
+  again.
 - **A double tap starts one conversation.** Pressing Start conversation or
   Create fork twice used to make two. The button now waits for the first
   press, and if the agent refuses, it says why and lets you try again.
