@@ -2,6 +2,9 @@
 
 ## 2026-10-16
 
+- **The revert button is easier to spot.** The faint grey ↶ beside each of
+  your messages is now a ↩️ emoji on a small button with its own border, and
+  a little bigger on a phone. It does the same thing as before.
 - **See which provider wrote each answer.** One model is run by many
   providers, and the gateway picks one per message. When one of them breaks,
   its answers come out as garbage while the others are fine. Each answer now
