@@ -2467,7 +2467,7 @@ const prompted = [
   { seq: 0, type: 'prompt', sections: [{ name: 'persona', text: 'P', tokens: 4000 }], text: 'system prompt', created_at: '2026-10-15T10:00:00Z' },
   { seq: 1, type: 'message', role: 'user', text: 'Check the sensor.', created_at: '2026-10-15T10:00:00Z' },
   { seq: 2, type: 'message', role: 'assistant', text: 'It reads 41%.', created_at: '2026-10-15T10:00:02Z',
-    usage: { prompt_tokens: 6000, cached_tokens: 5400, completion_tokens: 8, cost: 0.002 } },
+    usage: { prompt_tokens: 6000, cached_tokens: 5400, completion_tokens: 8, cost: 0.002, provider: 'Decart' } },
   { seq: 3, type: 'message', role: 'user', text: 'And now?', created_at: '2026-10-15T10:01:00Z' },
   { seq: 4, type: 'message', role: 'assistant', text: 'Still 41%.', created_at: '2026-10-15T10:01:02Z',
     usage: { prompt_tokens: 6100, cached_tokens: 0, completion_tokens: 6, cost: 0.004 } },
@@ -2523,4 +2523,18 @@ test('each answer says what its call read from the cache, and says so when it re
   assert.match(textOf(answers[0]), /90% cached/, 'an answer does not say what its call read from the cache');
   assert.match(textOf(answers[1]), /no cache hit/, 'an answer that read nothing from the cache does not say so');
   for (const a of answers) assert.doesNotMatch(find(a, 'cachehit').textContent, /\d+:\d\d|expire|left/, 'an answer shows a cache lifetime');
+});
+
+// One model is served by many providers, chosen call by call, and a broken
+// deployment at one of them answers in garbage while the rest answer well. So
+// each answer names the provider that produced it, beside what its call read
+// from the cache; an answer recorded before providers were, names none.
+test('each answer names the provider that served its call', async () => {
+  const ctx = cachedScreen(null);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const answers = t.children.filter(c => /It reads|Still 41/.test(textOf(c)));
+  assert.strictEqual(answers.length, 2);
+  assert.match(find(answers[0], 'cachehit').textContent, /90% cached.* · Decart$/, 'an answer does not name the provider that served it');
+  assert.strictEqual(find(answers[1], 'cachehit').textContent, 'no cache hit', 'an answer with no recorded provider names one, or says it has none');
 });

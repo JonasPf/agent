@@ -1194,7 +1194,7 @@ function renderEntry(e, opts) {
   // is said once, in the seeding event at the top, rather than on every bubble.
   const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
   const who = el('div', 'who', speaker(e));
-  const hit = e.role === 'assistant' ? cacheHit(e.usage) : '';
+  const hit = e.role === 'assistant' ? callLine(e.usage) : '';
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
   who.append(el('span', 'at', messageTime(e.created_at)));

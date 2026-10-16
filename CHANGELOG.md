@@ -2,6 +2,11 @@
 
 ## 2026-10-16
 
+- **See which provider wrote each answer.** One model is run by many
+  providers, and the gateway picks one per message. When one of them breaks,
+  its answers come out as garbage while the others are fine. Each answer now
+  names its provider on the small line under it, next to the cache figure, so
+  a run of nonsense can be traced to who produced it. Older answers name none.
 - **Take a conversation back to an earlier message.** Each message you sent,
   and each job's wake, now has a small ↶ beside its time. Tapping it asks
   first, then removes that message and everything after it from the

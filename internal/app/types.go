@@ -83,6 +83,11 @@ type Usage struct {
 	CachedTokens     int     `json:"cached_tokens"`
 	Cost             float64 `json:"cost"`
 	TokensPerSecond  float64 `json:"tokens_per_second"`
+	// Provider is who the gateway routed the call to. One model is served by
+	// many providers, chosen call by call, and a broken deployment at one of
+	// them answers in garbage while the rest answer well; nothing else in the
+	// transcript tells the two apart.
+	Provider string `json:"provider,omitempty"`
 }
 
 type Section struct {

@@ -369,6 +369,14 @@ function cacheHit(usage) {
     usage.cached_tokens.toLocaleString() + ' of ' + usage.prompt_tokens.toLocaleString() + ' tok';
 }
 
+// callLine is what an answer says about the call that produced it: what it
+// read from the cache, and which provider the gateway routed it to. One model
+// is served by many providers, and a broken one is told from the rest only by
+// its name.
+function callLine(usage) {
+  return [cacheHit(usage), usage && usage.provider].filter(Boolean).join(' · ');
+}
+
 // snippetParts splits a search snippet at the brackets the index puts around
 // each match, so the page can mark them without reading the snippet as markup.
 function snippetParts(snippet) {
@@ -390,5 +398,5 @@ if (typeof module !== 'undefined' && module.exports) {
     eventLabel, eventDetail, eventTime, isFailure,
     speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds,
     waitingLabel, conversationText, transcriptRows, snippetParts, takenBack, liveEntries,
-    cacheState, cacheLabel, nextCall, cacheHit };
+    cacheState, cacheLabel, nextCall, cacheHit, callLine };
 }

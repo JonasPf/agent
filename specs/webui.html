@@ -154,6 +154,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <ul>
 <li>Assistant output streams token by token.</li>
 <li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
+<li>Each answer names the provider that served the call producing it, beside what that call read from the cache (<a href="architecture.html">Architecture</a>).</li>
 <li>Context usage is shown against the session's compaction threshold, not the model's window.</li>
 <li>The header's title and the status line's figures follow the conversation while it is open: the title its first answer gives it, and the cost and context each turn moves, show without opening it again.</li>
 <li>The estimated cost of the next call is shown, and whether it will be cached: the prompt and the conversation as they would be sent now, at the model's prices, with what a live cache holds priced as a read.</li>
