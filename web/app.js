@@ -634,6 +634,8 @@ async function viewSession(v) {
   const status = el('div', 'status'); status.id = 'statusline';
   const form = el('form', 'composer');
   const ta = el('textarea'); ta.rows = 1; ta.placeholder = 'Message the agent';
+  // A revert puts the message it took back here.
+  state.composer = ta;
   ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
   // A keyboard sends on Enter, because that is what a keyboard expects. A touch
   // screen has no comfortable shift, so there Enter is a newline and the button
@@ -949,7 +951,7 @@ function renderTranscript() {
       into.append(el('div', 'unread-mark', 'unread'));
       marked = true;
     }
-    into.append(part === 'summary' ? compactionEntry(e, { carried: carried.length }) : renderEntry(e));
+    into.append(part === 'summary' ? compactionEntry(e, { carried: carried.length }) : renderEntry(e, { revert: true }));
   }
   addTail(t);
   if (atBottom) scrollDown();
@@ -957,18 +959,18 @@ function renderTranscript() {
 }
 
 // appendEntry adds one entry that arrived to the conversation on screen. A
-// compaction folds what came before it and a prompt replaces the one shown, so
-// either redraws the whole.
+// compaction folds what came before it, a prompt replaces the one shown, and a
+// revert takes back what came after a message, so each redraws the whole.
 function appendEntry(e) {
   const t = $('transcript');
   if (!t) return;
-  if (e.type === 'compaction' || e.type === 'prompt') return renderTranscript();
+  if (e.type === 'compaction' || e.type === 'prompt' || (e.type === 'event' && e.event_kind === 'revert')) return renderTranscript();
   const atBottom = atEnd();
   dropTail(t);
   if (state.readFrom != null && e.seq > state.readFrom && !t.querySelector('.unread-mark')) {
     t.append(el('div', 'unread-mark', 'unread'));
   }
-  t.append(renderEntry(e));
+  t.append(renderEntry(e, { revert: true }));
   addTail(t);
   if (atBottom) scrollDown();
   renderStatus();
@@ -1134,7 +1136,11 @@ function compactionEntry(e, opts) {
   return n;
 }
 
-function renderEntry(e) {
+// renderEntry draws one entry. In the conversation itself, opts.revert, a
+// message that started a turn carries the way back to before it; nothing else
+// that draws entries — the history, a comparison's columns — offers one.
+function renderEntry(e, opts) {
+  const o = opts || {};
   if (e.type === 'compaction') return compactionEntry(e);
   if (e.type === 'prompt') return promptEntry(e);
   if (e.type === 'event') {
@@ -1192,6 +1198,15 @@ function renderEntry(e) {
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
   who.append(el('span', 'at', messageTime(e.created_at)));
+  if (o.revert && e.role === 'user') {
+    const back = el('button', 'revert', '↶');
+    back.type = 'button';
+    back.title = 'Revert to before this message';
+    back.setAttribute('aria-label', 'Revert to before this message');
+    // A wake's speaker opens its job; the way back is not a way to the job.
+    back.onclick = ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); confirmRevert(e); };
+    who.append(back);
+  }
   w.append(who);
   if (e.text) w.append(bubble(e));
   for (const c of (e.tool_calls || [])) {
@@ -1257,6 +1272,63 @@ async function compactNow(id) {
   try { await post('/sessions/' + id + '/compact', {}); }
   catch (e) { toast({ title: 'Not compacted', body: String(e.message) }); return; }
   if (state.session && state.session.id === id) await loadStatus();
+}
+
+// Reverting takes the conversation back to before a message that started a
+// turn. It asks first, in a dialog, because what it takes back leaves the
+// screen and the agent's reading of the conversation; it says what it does not
+// undo, because a file the reverted turns wrote is still there for the agent
+// to find. Nothing is erased: the history and search still reach it.
+function confirmRevert(e) {
+  const s = state.session;
+  if (!s) return;
+  const id = s.id;
+  const typed = !e.job_id;
+  const d = openDialog('Revert to before this message?');
+  if (state.working[id] != null) {
+    d.body.append(el('p', null, 'The agent is working on this conversation. Stop the turn, or let it finish, then revert.'));
+    return;
+  }
+  const after = liveEntries(state.entries).filter(x => x.seq > e.seq);
+  const n = after.length;
+  const what = (typed ? 'Your message' : 'This wake') + ' from ' + messageTime(e.created_at);
+  d.body.append(el('p', null, n
+    ? `${what} and the ${n} entr${n === 1 ? 'y' : 'ies'} after it leave the conversation. The agent will no longer see them.`
+    : `${what} leaves the conversation. The agent will no longer see it.`));
+  if (after.some(x => x.type === 'compaction')) {
+    d.body.append(el('p', null, 'A compaction written since is undone with them, and the turns it folded are sent in full again.'));
+  }
+  d.body.append(el('p', null, 'Not undone: files the agent wrote or changed stay as they are, and jobs it created stay scheduled.'));
+  if (typed) d.body.append(el('p', null, 'Your message goes back into the composer, to change and send again.'));
+  d.body.append(el('p', 'note', 'Nothing is erased: the history and search still reach what is taken back.'));
+  const cancel = el('button', 'btn', 'Cancel');
+  cancel.onclick = () => closeDialog();
+  const go = el('button', 'btn danger', 'Revert');
+  go.onclick = async () => {
+    // One press is one revert: a second, landing while the first is out, would
+    // be refused as naming a message already taken back.
+    if (go.disabled) return;
+    go.disabled = true;
+    try { await post('/sessions/' + id + '/revert', { seq: e.seq }); }
+    catch (err) {
+      closeDialog();
+      toast({ title: 'Not reverted', body: String(err.message) });
+      return;
+    }
+    closeDialog();
+    // What is being typed is the operator's and is kept; Up still recalls the
+    // message reverted.
+    const ta = state.composer;
+    if (typed && ta && !ta.value.trim() && state.session && state.session.id === id) {
+      ta.value = e.text || '';
+      if (ta.oninput) ta.oninput();
+      if (hasKeyboard()) ta.focus({ preventScroll: true });
+    }
+    // The socket brings the revert to every page; this one reads it now
+    // rather than waiting on a socket that may be down.
+    catchUp();
+  };
+  d.foot.append(cancel, el('span', 'sp'), go);
 }
 
 // ---------- session configuration ----------
@@ -2627,7 +2699,8 @@ function hitRow(h, withTitle) {
   const snip = el('div', 's');
   for (const p of snippetParts(h.snippet)) snip.append(p.hit ? el('mark', 'match', p.text) : document.createTextNode(p.text));
   m.append(snip);
-  if (h.compacted) m.append(el('span', 'tag', 'compacted · the agent no longer sees this'));
+  if (h.reverted) m.append(el('span', 'tag', 'reverted · the agent no longer sees this'));
+  else if (h.compacted) m.append(el('span', 'tag', 'compacted · the agent no longer sees this'));
   row.append(m);
   row.onclick = () => location.hash = '#history/' + h.session_id + '/' + h.seq;
   return row;
@@ -2649,16 +2722,19 @@ async function viewHistory(v) {
     { label: 'Conversation', fn: () => location.hash = '#session/' + id },
     { label: 'Search', fn: () => location.hash = '#search/' + id },
   ]);
-  const covers = coveredThrough(entries);
-  v.append(el('p', 'note', covers
-    ? 'Everything this conversation has stored, oldest first. Dimmed entries are folded into a summary: the agent no longer sees them.'
+  // The summary in force is the newest a revert has not taken back.
+  const covers = coveredThrough(liveEntries(entries));
+  const gone = takenBack(entries);
+  const dims = [covers && 'folded into a summary', gone.size && 'taken back by a revert'].filter(Boolean);
+  v.append(el('p', 'note', dims.length
+    ? 'Everything this conversation has stored, oldest first. Dimmed entries are ' + dims.join(' or ') + ': the agent no longer sees them.'
     : 'Everything this conversation has stored, oldest first. Nothing has been folded away yet.'));
   const target = state.arg2 ? Number(state.arg2) : null;
   const t = el('div', 'history');
   let hit = null;
   for (const e of entries) {
     const n = e.type === 'compaction' ? compactionEntry(e, { history: true }) : renderEntry(e);
-    if (covers > 0 && e.seq <= covers && e.type !== 'prompt') n.className += ' folded';
+    if (gone.has(e.seq) || (covers > 0 && e.seq <= covers && e.type !== 'prompt')) n.className += ' folded';
     if (e.seq === target) { n.className += ' hit'; hit = n; }
     t.append(n);
   }

@@ -241,15 +241,36 @@ function copyStamp(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// ---- reverting ----
+
+// takenBack is every entry a revert took back: from the message each revert
+// names up to the revert itself. They stay on disk, in search, and in the
+// history; the agent no longer reads them, so the conversation does not draw
+// them.
+function takenBack(entries) {
+  const gone = new Set();
+  for (const r of entries || []) {
+    if (r.type !== 'event' || r.event_kind !== 'revert') continue;
+    for (const e of entries) if (e.seq >= r.reverts_from && e.seq < r.seq) gone.add(e.seq);
+  }
+  return gone;
+}
+
+// liveEntries is the conversation without what reverts took back.
+function liveEntries(entries) {
+  const gone = takenBack(entries);
+  return gone.size ? (entries || []).filter(e => !gone.has(e.seq)) : (entries || []);
+}
+
 // conversationText is the whole conversation as Markdown, to paste somewhere
 // else: every message in full, each call with its arguments, each result kept
 // to a readable length, and each compaction's summary where it stands. What was
 // said by neither party — the prompt and the event log — is left out. Folded
 // turns are included: the conversation is what happened, not what the model
-// can still see.
+// can still see. What a revert took back is not: the operator took it back.
 function conversationText(entries, title) {
   const out = ['# ' + (title || 'Conversation')];
-  for (const e of entries || []) {
+  for (const e of liveEntries(entries)) {
     if (e.type === 'compaction') {
       out.push(`---\n\n*Compacted: ${e.folded_turns || 0} turns folded into this summary.*\n\n${e.text || ''}\n\n---`);
       continue;
@@ -281,7 +302,10 @@ function conversationText(entries, title) {
 // after the turns it keeps, so those are found by sequence: drawn where the
 // entry lies, they sat above the summary and read as the old turns it replaced.
 // What it covers is not drawn at all; search finds it, and the history shows it.
+// Nor is what a revert took back, which is read past before anything else, so a
+// compaction it took back is not the one in force.
 function transcriptRows(entries) {
+  entries = liveEntries(entries);
   let c = -1;
   for (let i = entries.length - 1; i >= 0; i--) if (entries[i].type === 'compaction') { c = i; break; }
   if (c < 0) return entries.map(entry => ({ entry, part: 'live' }));
@@ -365,6 +389,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = { toolResult, resultBody, resultPreview, callBody, callPreview,
     eventLabel, eventDetail, eventTime, isFailure,
     speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds,
-    waitingLabel, conversationText, transcriptRows, snippetParts,
+    waitingLabel, conversationText, transcriptRows, snippetParts, takenBack, liveEntries,
     cacheState, cacheLabel, nextCall, cacheHit };
 }

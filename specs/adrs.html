@@ -1954,6 +1954,39 @@ They are not rewritten: a prompt is never rewritten, and a stale figure in a sen
 use for is the smaller cost.</p>
 </div>
 
+<div class="adr" id="adr-061">
+<div class="meta">ADR-061 · accepted · builds on <a href="#adr-060">ADR-060</a></div>
+<h3>A revert is a projection rule; nothing it takes back is deleted</h3>
+<h4>Context</h4>
+<p>A conversation that goes somewhere unwanted &mdash; a misread question, a tool run against the
+wrong file, an answer built on a wrong premise &mdash; carries that turn in every call after it. The
+only remedies were to argue with it in later turns, which keeps the mistake in context and pays for it
+on every call, or to fork from a point that does not exist, since a fork copies everything. The
+operator asked for a way to take a conversation back to an earlier message.</p>
+<p>The obvious implementation truncates the transcript. It breaks three things the system relies on:
+the transcript is append-only and a sequence number is a position, so after a truncation and a new
+message the same number names different content &mdash; a search hit, a read point, or a page holding
+the conversation would all point at the wrong entry; the search index would have to be pruned to
+match; and a revert made by mistake would be unrecoverable.</p>
+<h4>Decision</h4>
+<p>A revert appends one <code>revert</code> event naming the first entry it takes back, and the
+projection drops every entry from that one up to the event, before any other rule. A compaction or a
+summary edit written in that span is taken back with it, so the rules that follow see the conversation
+exactly as it was before the message. The cut is only ever at a user message, the start of a turn, so
+what is left is always a conversation a provider accepts. A revert while the session is working is
+refused rather than queued: the turn under way would write after the revert.</p>
+<p>Nothing is removed. The taken-back entries stay on disk and in the index; the conversation does not
+draw them, the history shows them dimmed, and search says the agent no longer sees them &mdash; the
+same treatment as what a compaction covers.</p>
+<h4>Consequences</h4>
+<p>A revert does not free disk or erase text. Something pasted by mistake, a secret say, is still in
+the transcript after a revert, and deleting the session remains the way to remove it.</p>
+<p>A revert does not undo the world. The working directory, jobs, and cost are outside the
+conversation and stay as the reverted turns left them, so the agent can meet a file it has no memory
+of writing. The confirmation says this before anything is reverted, rather than the system pretending
+the turns never ran.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

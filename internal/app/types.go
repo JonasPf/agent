@@ -31,6 +31,11 @@ type Entry struct {
 	// text instead, so a compaction is a rule rather than a rewrite: the covered
 	// entries are still on disk, still searchable, and still readable.
 	CoversThrough int `json:"covers_through,omitempty"`
+	// RevertsFrom is the first sequence number a revert event takes back. The
+	// projection drops everything from it up to the event, so a revert is a
+	// rule like a compaction: what it took back is still on disk and still
+	// searchable. It is always a user message, so it is never zero.
+	RevertsFrom int `json:"reverts_from,omitempty"`
 	// FoldedTurns, TokensBefore, and TokensAfter are what the banner reports.
 	// They are stored rather than recomputed so the figures shown cannot drift
 	// if the estimator changes.

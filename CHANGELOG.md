@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-16
+
+- **Take a conversation back to an earlier message.** Each message you sent,
+  and each job's wake, now has a small ↶ beside its time. Tapping it asks
+  first, then removes that message and everything after it from the
+  conversation, and puts your message back in the box so you can change it
+  and send again. Files the agent wrote and jobs it created are not undone,
+  and the warning says so. Nothing is erased: search and the history still
+  find what was taken back.
+
 ## 2026-10-15
 
 - **A finished background job reads as finished.** A script the agent started

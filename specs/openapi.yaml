@@ -331,6 +331,43 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
 
+  /sessions/{id}/revert:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+    post:
+      tags: [sessions]
+      summary: Take the conversation back to before a user message.
+      description: >-
+        Appends one revert event naming the entry; from then on the projection drops that entry and
+        everything after it up to the event. Nothing on disk is removed: what was taken back stays in
+        the transcript and the search index. The working directory and jobs are left as they are.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seq]
+              properties:
+                seq: {type: integer, description: The user message to revert to before. It and everything after it are taken back.}
+      responses:
+        "200":
+          description: Reverted.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Session"}
+        "400":
+          description: The entry is not a user message still in the conversation.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409":
+          description: The session is working; stop the turn first.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+
   /sessions/{id}/files:
     parameters:
       - $ref: "#/components/parameters/SessionID"
@@ -1059,6 +1096,7 @@ components:
               tokens: {type: integer}
         carried_from: {type: string, description: The session a fork copied the entry from.}
         covers_through: {type: integer, description: The last entry a compaction stands for.}
+        reverts_from: {type: integer, description: The first entry a revert event takes back; it and everything up to the event are no longer sent.}
         folded_turns: {type: integer}
         tokens_before: {type: integer}
         tokens_after: {type: integer}
@@ -1075,6 +1113,7 @@ components:
         role: {type: string}
         created_at: {type: string, format: date-time}
         compacted: {type: boolean, description: A compaction has folded the entry away, so the agent no longer sees it.}
+        reverted: {type: boolean, description: A revert has taken the entry back, so the agent no longer sees it.}
 
     FileEntry:
       type: object

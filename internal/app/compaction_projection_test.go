@@ -21,7 +21,7 @@ func contentOf(m ChatMessage) string {
 	return s
 }
 
-// The whole of rule 3: what a compaction covers is not sent, and what it says
+// The whole of rule 4: what a compaction covers is not sent, and what it says
 // is sent in its place.
 func TestCompactionReplacesWhatItCovers(t *testing.T) {
 	entries := []Entry{
@@ -126,7 +126,7 @@ func TestProjectionIsStillPure(t *testing.T) {
 	}
 }
 
-// Rule 1: the newest prompt entry is the system message and any earlier one is
+// Rule 2: the newest prompt entry is the system message and any earlier one is
 // dropped. A session written today has exactly one (ADR-055); the rule still
 // holds over a transcript recorded before that, which is what this pins.
 func TestNewestPromptWins(t *testing.T) {
