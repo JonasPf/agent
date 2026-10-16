@@ -31,6 +31,11 @@ type Entry struct {
 	// text instead, so a compaction is a rule rather than a rewrite: the covered
 	// entries are still on disk, still searchable, and still readable.
 	CoversThrough int `json:"covers_through,omitempty"`
+	// RevertsFrom is the first sequence number a revert event takes back. The
+	// projection drops everything from it up to the event, so a revert is a
+	// rule like a compaction: what it took back is still on disk and still
+	// searchable. It is always a user message, so it is never zero.
+	RevertsFrom int `json:"reverts_from,omitempty"`
 	// FoldedTurns, TokensBefore, and TokensAfter are what the banner reports.
 	// They are stored rather than recomputed so the figures shown cannot drift
 	// if the estimator changes.
@@ -78,6 +83,11 @@ type Usage struct {
 	CachedTokens     int     `json:"cached_tokens"`
 	Cost             float64 `json:"cost"`
 	TokensPerSecond  float64 `json:"tokens_per_second"`
+	// Provider is who the gateway routed the call to. One model is served by
+	// many providers, chosen call by call, and a broken deployment at one of
+	// them answers in garbage while the rest answer well; nothing else in the
+	// transcript tells the two apart.
+	Provider string `json:"provider,omitempty"`
 }
 
 type Section struct {

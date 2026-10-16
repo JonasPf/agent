@@ -137,18 +137,28 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 // the one it held; a compaction left covering its old number would cover the
 // wrong entries, and the last of the ones it folded would be read again. It
 // now covers through the copy of the last entry it covered in the origin.
+//
+// A revert is moved the same way: it takes back from the copy of the message
+// it named, so what it took back in the origin stays taken back in the fork.
 func renumberCovers(copied []Entry, base int) {
 	for i := range copied {
-		if copied[i].Type != "compaction" {
-			continue
-		}
-		covers := 0
-		for j, e := range copied {
-			if e.Seq <= copied[i].CoversThrough {
-				covers = base + j
+		switch {
+		case copied[i].Type == "compaction":
+			covers := 0
+			for j, e := range copied {
+				if e.Seq <= copied[i].CoversThrough {
+					covers = base + j
+				}
+			}
+			copied[i].CoversThrough = covers
+		case isRevert(copied[i]):
+			for j, e := range copied {
+				if e.Seq >= copied[i].RevertsFrom {
+					copied[i].RevertsFrom = base + j
+					break
+				}
 			}
 		}
-		copied[i].CoversThrough = covers
 	}
 }
 
@@ -189,10 +199,11 @@ func countsAsUnread(e Entry) bool {
 	return e.Type == "message" && e.Role == "assistant" && strings.TrimSpace(e.Text) != ""
 }
 
-// unreadAfter counts the assistant messages after a read point.
+// unreadAfter counts the assistant messages after a read point. One a revert
+// took back is not there to read.
 func unreadAfter(entries []Entry, through int) int {
 	n := 0
-	for _, e := range entries {
+	for _, e := range liveEntries(entries) {
 		if e.Seq > through && countsAsUnread(e) {
 			n++
 		}

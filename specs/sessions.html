@@ -205,7 +205,7 @@ and affordable.</p>
 <table>
 <tr><th>Type</th><th>Written by</th><th>Shown to user</th><th>Sent to model</th></tr>
 <tr><td><code>message</code></td><td>user, assistant, tool result</td><td>yes</td><td>yes</td></tr>
-<tr><td><code>event</code></td><td>system: job checks, forks, failures</td><td>yes</td><td>no</td></tr>
+<tr><td><code>event</code></td><td>system: job checks, forks, failures, reverts</td><td>yes</td><td>no</td></tr>
 <tr><td><code>prompt</code></td><td>system, at creation and at each compaction</td><td>yes</td><td>as the system message, newest only</td></tr>
 <tr><td><code>compaction</code></td><td>system, at the size threshold</td><td>yes</td><td>yes, in place of what it covers</td></tr>
 </table>
@@ -229,6 +229,7 @@ justification, and it is the test every event has to pass.</p>
 <tr><td><code>cancelled</code></td><td>The operator stopped a turn, and where it had got to: part way through, or before the agent began. Nothing else tells a conversation that was stopped from one that failed, or from one that simply had nothing more to say.</td></tr>
 <tr><td><code>fork</code></td><td>This conversation was copied into a new session. Written in the origin, which is otherwise unchanged and would show no trace.</td></tr>
 <tr><td><code>forked_from</code></td><td>This session began as a copy of another, at a named point in it.</td></tr>
+<tr><td><code>revert</code></td><td>The operator took the conversation back to before a message, and from which entry. Nothing else says why the turns after it are no longer read.</td></tr>
 </table>
 
 <p>Nothing else is an event. An action whose result already appears in the transcript — a tool call
@@ -267,15 +268,17 @@ the message list for a model call.</p>
 flowchart LR
   T["Transcript<br/>(JSONL, complete)"] --> P{{"Projection"}}
   P --> M["Messages<br/>(sent to model)"]
+  P -.->|"drop"| R["entries a revert took back"]
   P -.->|"drop"| E["events"]
   P -.->|"fold"| F["entries a compaction covers<br/>→ its summary, once"]
   P -.->|"collapse"| C["repeated job ticks<br/>→ one line + count"]
   P -.->|"mark"| W["job wake<br/>→ names its job, operator absent"]
 </div>
 
-<p>The projection applies seven rules and nothing else:</p>
+<p>The projection applies eight rules and nothing else:</p>
 
 <ol>
+<li>Every entry a <code>revert</code> took back is dropped, whatever its type, and the rules below apply to what is left: a compaction taken back is not the newest, and a prompt taken back is not in force.</li>
 <li>The newest <code>prompt</code> entry becomes the system message. Every earlier one is dropped.</li>
 <li>Only the newest <code>compaction</code> entry is sent, as an <code>assistant</code> message, in place of what it covers: ahead of the turns it kept verbatim, although it is written after them. Every earlier one is dropped.</li>
 <li>Every entry at or before that compaction's <code>covers_through</code> is dropped, whatever its type.</li>
@@ -285,9 +288,10 @@ flowchart LR
 <li>A failed run projects as one line saying the turn above produced no reply, and carrying the failure. Everything else passes through unchanged.</li>
 </ol>
 
-<p>Rules 1 to 3 are what make a compaction a projection rule rather than a rewrite. Nothing is edited
+<p>Rules 2 to 4 are what make a compaction a projection rule rather than a rewrite. Nothing is edited
 and nothing is removed: the transcript grows by one entry, and the projection stops sending what it
-stands for.</p>
+stands for. Rule 1 does the same for a revert, and runs first so that the rest see the conversation
+as it stood before the message reverted to.</p>
 
 <p>The turns a compaction keeps are found by sequence, not by position. A compaction is appended
 after them, so a projection that sent only what follows the entry sent the summary and dropped the
@@ -499,6 +503,67 @@ screen — and it does not stop, lose anything, or fail a turn.</p>
 <li>The prompt says that the conversation compacts, and does not state the threshold it compacts at.</li>
 <li>The turns a compaction kept verbatim reach the model after the summary and before what came since, including after the summary is edited.</li>
 <li>Growth counts the projected messages, so a session growing only in tool results still compacts.</li>
+</ul>
+</div>
+
+<h2>Reverting</h2>
+
+<p>A conversation can be taken back to before any message that started a turn: one the operator
+typed, or a job's wake. That message and everything after it leave the conversation &mdash; the
+agent's replies, its tool calls and their results, the events between &mdash; and the next turn is sent
+the conversation as it stood before the message was written. What the operator typed goes back into
+the composer, to be changed and sent again.</p>
+
+<p>The cut is always where a turn starts. Anywhere else could leave a tool call without its result, or
+an answer without the question it answered: the first a provider refuses, the second the model
+misreads.</p>
+
+<h3>A revert is a rule, not a deletion</h3>
+
+<p>A revert appends one event, naming the first entry it takes back, and the projection stops sending
+everything from that entry up to the event (<a href="adrs.html#adr-061">ADR-061</a>). Nothing on disk
+is removed. What was taken back stays in the transcript, stays in the search index, and is shown
+dimmed in the history, so a revert made by mistake loses nothing that cannot be read again. The
+identifier still addresses the same conversation, and every sequence number still names the entry it
+always named.</p>
+
+<pre><code>      ON DISK (append-only)              SENT TO MODEL (projection)
+      ─────────────────────              ──────────────────────────
+      prompt entry              ·······▶  system message
+      turn 1                    ·······▶  turn 1
+      turn 2                    ·······▶  turn 2
+      turn 3        ┐
+      turn 4        │  taken back
+      compaction    ┘
+  ▶   REVERT from turn 3
+      turn 3, written again     ·······▶  turn 3, written again</code></pre>
+
+<p>Taking back what came after a message takes back everything it did to the conversation: a
+compaction, or an edited summary, written since is undone with the rest, and the turns it had folded
+are sent again. What it did outside the conversation stays done. Files the agent wrote in its working
+directory are where it left them, jobs it created are still scheduled, and what it cost is spent. The
+warning before a revert says so, because a turn the agent no longer remembers can have left a file it
+will find and not recognise.</p>
+
+<p>A conversation that is working refuses a revert. The turn under way would go on writing after the
+revert, answering a message that is no longer there. Stop it, or let it end, and revert then.</p>
+
+<p>The live cache the session reports is cleared, as a compaction clears it: what is sent next no
+longer ends where the cached prefix did, and the next answer says what it actually read.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A conversation can be reverted to before any user message still in it, the operator's or a wake's; the request names the message.</li>
+<li>A revert appends exactly one entry, a <code>revert</code> event naming the first entry it takes back, and modifies or removes no entry on disk.</li>
+<li>After a revert the model is sent everything before the message reverted to, and nothing from it onwards, until something new is written.</li>
+<li>A revert that takes back a compaction leaves in force the compaction before it, if there is one, and the turns the one taken back had folded are sent again.</li>
+<li>An entry a revert took back is still found by search, which says the agent no longer sees it.</li>
+<li>A revert to an entry that is not a user message, to one already taken back, or to one that does not exist, is refused and changes nothing.</li>
+<li>A revert while the conversation is working is refused and changes nothing.</li>
+<li>A revert leaves the working directory and the conversation's jobs as they were.</li>
+<li>A revert clears the live cache the session reports.</li>
+<li>A fork of a reverted conversation sends the model what its origin sends.</li>
 </ul>
 </div>
 

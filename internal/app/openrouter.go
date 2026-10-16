@@ -421,7 +421,8 @@ func (o *OpenRouter) chatOnce(ctx context.Context, req ChatRequest, onDelta func
 			break
 		}
 		var chunk struct {
-			Choices []struct {
+			Provider string `json:"provider"`
+			Choices  []struct {
 				Delta struct {
 					Content   string `json:"content"`
 					ToolCalls []struct {
@@ -452,6 +453,9 @@ func (o *OpenRouter) chatOnce(ctx context.Context, req ChatRequest, onDelta func
 		}
 		if chunk.Error != nil {
 			return nil, started, fmt.Errorf("openrouter: %s", chunk.Error.Message)
+		}
+		if chunk.Provider != "" {
+			res.Usage.Provider = chunk.Provider
 		}
 		if chunk.Usage != nil {
 			res.Usage.PromptTokens = chunk.Usage.PromptTokens

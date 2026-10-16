@@ -457,7 +457,7 @@ func (s *Store) MarkRead(id string, through int) (bool, error) {
 		return false, nil
 	}
 	cleared := false
-	for _, e := range s.entries[id] {
+	for _, e := range liveEntries(s.entries[id]) {
 		if e.Seq > sess.ReadThrough && e.Seq <= through && countsAsUnread(e) {
 			cleared = true
 			break
@@ -620,6 +620,9 @@ type SearchHit struct {
 	// Compacted says the session's newest compaction covers this entry, so the
 	// agent no longer sees it — only the summary that stands for it.
 	Compacted bool `json:"compacted"`
+	// Reverted says a revert took this entry back, so the agent no longer sees
+	// it at all.
+	Reverted bool `json:"reverted"`
 }
 
 // Search queries the full-text index. A sessionID scopes it to one conversation,
@@ -675,14 +678,18 @@ func matchWords(q string) string {
 }
 
 // describeHit fills in what the index does not hold: who wrote the entry, when,
-// and whether a compaction has since taken it out of what the agent is sent.
+// and whether a compaction or a revert has since taken it out of what the agent
+// is sent.
 func (s *Store) describeHit(h *SearchHit) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	list := s.entries[h.SessionID]
+	gone := takenBack(list)
+	h.Reverted = gone[h.Seq]
+	// The compaction in force is the newest one a revert has not taken back.
 	covers := 0
 	for i := len(list) - 1; i >= 0; i-- {
-		if list[i].Type == "compaction" {
+		if list[i].Type == "compaction" && !gone[list[i].Seq] {
 			covers = list[i].CoversThrough
 			break
 		}

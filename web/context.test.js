@@ -10,7 +10,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
-const { transcriptRows, snippetParts } = require('./transcript.js');
+const { transcriptRows, snippetParts, conversationText } = require('./transcript.js');
 
 const WEB = __dirname;
 
@@ -338,4 +338,187 @@ test('the history shows everything stored, folded turns marked, and the hit pick
   assert.match(textOf(hit), /FOLDED question/);
   assert.ok(hit._scrolledInto, 'the history did not open at the hit');
   assert.ok(!button(v, 'Edit'), 'the history offers to edit a summary');
+});
+
+// ---- reverting ----
+
+// A conversation taken back to before KEPT question: that turn, the compaction
+// written after it, and the line about it all go; the revert itself is a line
+// at the end, and the older compaction is the one in force again.
+const reverted = compacted.concat([
+  m(8, 'assistant', 'NEW answer'),
+  { seq: 9, type: 'event', event_kind: 'revert', reverts_from: 4, text: 'reverted to before your message', created_at: at },
+]);
+
+test('what a revert took back is not laid out, and the summary before it is in force again', () => {
+  const rows = transcriptRows(reverted);
+  assert.deepStrictEqual(rows.map(r => [r.entry.seq, r.part]),
+    [[0, 'live'], [3, 'summary'], [1, 'carried'], [2, 'carried'], [9, 'live']]);
+});
+
+test('what a revert took back is not copied with the conversation', () => {
+  const text = conversationText(reverted, 'Boiler');
+  assert.match(text, /FOLDED question/);
+  for (const gone of ['KEPT question', 'KEPT answer', 'NEWEST SUMMARY', 'NEW question', 'NEW answer']) {
+    assert.doesNotMatch(text, new RegExp(gone), gone + ' was taken back and still copied');
+  }
+});
+
+// A conversation the operator can take back: two turns of theirs, a wake, and
+// what each produced.
+const plain = [
+  compacted[0],
+  m(1, 'user', 'first question'),
+  { seq: 2, type: 'message', role: 'assistant', text: 'Looking.', tool_calls: [{ id: 'c', name: 'bash', arguments: '{}' }], created_at: at },
+  { seq: 3, type: 'message', role: 'tool', tool_name: 'bash', tool_call_id: 'c', tool_result: { ok: true, content: 'x' }, created_at: at },
+  m(4, 'assistant', 'first answer'),
+  { seq: 5, type: 'event', event_kind: 'job_check', status: 'not_fired', text: 'check', created_at: at },
+  m(6, 'user', 'second question'),
+  m(7, 'assistant', 'second answer'),
+  { seq: 8, type: 'message', role: 'user', job_id: 'JOB123456', text: 'a wake', created_at: at },
+  m(9, 'assistant', 'wake answer'),
+];
+
+function composer(ctx) {
+  let ta = null;
+  (function walk(x) {
+    for (const c of x.children || []) { if (c.tagName === 'textarea') ta = ta || c; walk(c); }
+  })(ctx._id('foot'));
+  return ta;
+}
+
+const dialogOf = ctx => find(ctx.document.body, 'dialog');
+
+async function revertDialog(ctx, seq) {
+  const t = ctx._id('transcript');
+  const row = t.children.find(k => findAll(k, 'revert').length && textOf(k).includes(plain.find(e => e.seq === seq).text));
+  assert.ok(row, 'entry ' + seq + ' offers no revert');
+  await find(row, 'revert').onclick();
+  const d = dialogOf(ctx);
+  assert.ok(d, 'reverting asked nothing first');
+  return d;
+}
+
+test('every message that started a turn offers to revert to before it, and nothing else does', async () => {
+  const ctx = conversation(session(), plain);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const offering = t.children.filter(k => findAll(k, 'revert').length).map(textOf);
+  assert.strictEqual(offering.length, 3, 'revert offered on ' + offering.length + ' entries');
+  assert.match(offering[0], /first question/);
+  assert.match(offering[1], /second question/);
+  assert.match(offering[2], /a wake/);
+});
+
+test('the history offers no revert', async () => {
+  const ctx = load({ '/sessions/S1': { session: session() }, '/sessions/S1/transcript': plain });
+  vm.runInContext("state.view = 'history'; state.arg = 'S1';", ctx);
+  const v = node('div');
+  await ctx.viewHistory(v);
+  assert.strictEqual(findAll(v, 'revert').length, 0, 'the history offers to revert');
+});
+
+test('reverting warns what goes and what stays, and dismissing it changes nothing', async () => {
+  const ctx = conversation(session(), plain);
+  await ctx.viewSession(node('div'));
+  const d = await revertDialog(ctx, 6);
+  const text = textOf(d);
+  assert.match(text, /3 entries/, 'the warning does not say how many entries go: ' + text);
+  assert.match(text, /no longer see/i, 'the warning does not say the agent will no longer see them');
+  assert.match(text, /files/i, 'the warning does not say files stay');
+  assert.match(text, /jobs/i, 'the warning does not say jobs stay');
+  assert.doesNotMatch(text, /compaction/i, 'a revert that undoes no compaction warns of one');
+  find(d, 'dialog-close').onclick();
+  assert.ok(!ctx._calls.some(c => c.method === 'POST' && /revert/.test(c.path)), 'dismissing the warning reverted');
+  assert.strictEqual(composer(ctx).value, '', 'dismissing the warning filled the composer');
+});
+
+test('a revert that would undo a compaction says so', async () => {
+  const withCompaction = plain.slice(0, 7).concat([
+    m(7, 'assistant', 'second answer'),
+    { seq: 8, type: 'compaction', covers_through: 5, text: 'SUMMARY', created_at: at },
+  ]);
+  const ctx = conversation(session(), withCompaction);
+  await ctx.viewSession(node('div'));
+  const row = ctx._id('transcript').children.find(k => /second question/.test(textOf(k)) && findAll(k, 'revert').length)
+    || findAll(ctx._id('transcript'), 'msg').find(k => /second question/.test(textOf(k)));
+  await find(row, 'revert').onclick();
+  assert.match(textOf(dialogOf(ctx)), /compaction/i, 'the warning does not say a compaction is undone');
+});
+
+test('a confirmed revert names the message, and puts what was typed back in the composer', async () => {
+  const ctx = conversation(session(), plain, { 'POST /sessions/S1/revert': { session: session() } });
+  await ctx.viewSession(node('div'));
+  const d = await revertDialog(ctx, 6);
+  await button(d, 'Revert').onclick();
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/sessions/S1/revert');
+  assert.strictEqual(sent.length, 1, 'reverting made ' + sent.length + ' requests');
+  assert.deepStrictEqual(JSON.parse(sent[0].body), { seq: 6 });
+  assert.strictEqual(composer(ctx).value, 'second question');
+});
+
+test('a revert keeps what is already being typed', async () => {
+  const ctx = conversation(session(), plain, { 'POST /sessions/S1/revert': { session: session() } });
+  await ctx.viewSession(node('div'));
+  composer(ctx).value = 'half a thought';
+  const d = await revertDialog(ctx, 6);
+  await button(d, 'Revert').onclick();
+  assert.strictEqual(composer(ctx).value, 'half a thought');
+});
+
+test('reverting a wake puts nothing in the composer', async () => {
+  const ctx = conversation(session(), plain, { 'POST /sessions/S1/revert': { session: session() } });
+  await ctx.viewSession(node('div'));
+  const d = await revertDialog(ctx, 8);
+  await button(d, 'Revert').onclick();
+  assert.deepStrictEqual(JSON.parse(ctx._calls.find(c => /revert/.test(c.path)).body), { seq: 8 });
+  assert.strictEqual(composer(ctx).value, '', 'a job\'s prompt was put in the composer');
+});
+
+test('while the conversation is working the warning says to stop first, and offers no revert', async () => {
+  const ctx = conversation(session({ working_seconds: 4 }), plain);
+  await ctx.viewSession(node('div'));
+  const d = await revertDialog(ctx, 6);
+  assert.match(textOf(d), /stop/i, 'the warning does not say to stop the turn first');
+  assert.ok(!button(d, 'Revert'), 'a working conversation still offers to revert');
+});
+
+test('a revert refused says why and changes nothing on screen', async () => {
+  const ctx = conversation(session(), plain, {
+    'POST /sessions/S1/revert': { status: 409, body: { error: 'the conversation is working; stop the turn first' } } });
+  await ctx.viewSession(node('div'));
+  const d = await revertDialog(ctx, 6);
+  await button(d, 'Revert').onclick();
+  assert.match(textOf(ctx.document.body), /stop the turn first/);
+  assert.strictEqual(composer(ctx).value, '', 'a refused revert filled the composer');
+  assert.match(textOf(ctx._id('transcript')), /second answer/, 'a refused revert took something off the screen');
+});
+
+test('a revert arriving is drawn: what it took back goes, and the line recording it is last', async () => {
+  const ctx = conversation(session(), plain);
+  await ctx.viewSession(node('div'));
+  ctx.handle({ kind: 'entry', session_id: 'S1',
+    entry: { seq: 10, type: 'event', event_kind: 'revert', reverts_from: 6, text: 'reverted to before your message', created_at: at } });
+  const t = ctx._id('transcript');
+  const text = textOf(t);
+  for (const gone of ['second question', 'second answer', 'a wake', 'wake answer']) {
+    assert.doesNotMatch(text, new RegExp(gone), gone + ' is still drawn');
+  }
+  assert.match(text, /first answer/);
+  const last = t.children.filter(k => !classes(k).includes('thinking')).pop();
+  assert.match(textOf(last), /REVERT/, 'the conversation does not end with the revert');
+});
+
+test('the history dims what a revert took back, and a search hit on it says the agent no longer sees it', async () => {
+  const ctx = load({ '/sessions/S1': { session: session() }, '/sessions/S1/transcript': reverted });
+  vm.runInContext("state.view = 'history'; state.arg = 'S1';", ctx);
+  const v = node('div');
+  await ctx.viewHistory(v);
+  const dim = findAll(v, 'folded').map(textOf).join(' ');
+  for (const gone of ['KEPT question', 'NEWEST SUMMARY', 'NEW answer']) assert.match(dim, new RegExp(gone), gone + ' is not dimmed');
+  assert.match(textOf(v), /revert/i, 'the history does not say what the dimming means');
+
+  const row = ctx.hitRow({ session_id: 'S1', seq: 8, snippet: 'NEW [answer]', role: 'assistant', created_at: at, reverted: true });
+  assert.match(textOf(row), /reverted/, 'a hit on a reverted entry does not say so');
+  assert.match(textOf(row), /no longer sees/);
 });

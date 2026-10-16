@@ -207,6 +207,25 @@ at fifteen minutes, so one turn cannot hold a job that wakes every twenty.</p>
 </ul>
 </div>
 
+<h3>Which provider answered</h3>
+
+<p>The gateway serves one model through many providers and chooses among them call by call. They run
+the same weights at different precisions on different stacks, and one whose deployment breaks answers
+in garbage while the rest answer well. A session on that model then reads as broken for no reason the
+transcript gives: the request it sent was the one it always sends.</p>
+
+<p>So each answer records the provider the gateway named for its call, alongside the call's tokens and
+cost, and the conversation shows it beside what the call read from the cache. An answer recorded
+before this names none, rather than one guessed from its price.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Each assistant message records the provider the gateway reported serving the call that produced it.</li>
+<li>Each assistant message shows that provider, beside the cached proportion of its call; one with no recorded provider shows none.</li>
+</ul>
+</div>
+
 <h3>Prompt caching</h3>
 
 <p>Caching is not free. A cache write costs more than an ordinary read — 1.25x for a five-minute

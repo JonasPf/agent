@@ -1,7 +1,26 @@
 # Changelog
 
+## 2026-10-16
+
+- **See which provider wrote each answer.** One model is run by many
+  providers, and the gateway picks one per message. When one of them breaks,
+  its answers come out as garbage while the others are fine. Each answer now
+  names its provider on the small line under it, next to the cache figure, so
+  a run of nonsense can be traced to who produced it. Older answers name none.
+- **Take a conversation back to an earlier message.** Each message you sent,
+  and each job's wake, now has a small ↶ beside its time. Tapping it asks
+  first, then removes that message and everything after it from the
+  conversation, and puts your message back in the box so you can change it
+  and send again. Files the agent wrote and jobs it created are not undone,
+  and the warning says so. Nothing is erased: search and the history still
+  find what was taken back.
+
 ## 2026-10-15
 
+- **A finished background job reads as finished.** A script the agent started
+  in the background and then checked on kept answering "still running" after
+  it had ended, so a conversation could poll it for hours without ever moving
+  on. Finished processes are now cleaned up, and a check sees them gone.
 - **Changes made at the same moment no longer trip over each other.** A
   conversation renamed or read while the agent was working on it could, rarely,
   lose the change or show figures half updated, and a title the agent wrote

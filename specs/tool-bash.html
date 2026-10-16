@@ -109,6 +109,7 @@ from as though it were the whole answer.</p>
 <li>The tool's own timeout is below the manifest's, so an overrun is always reported rather than killed.</li>
 <li>A timeout ends everything the command started, and the call returns within moments of it.</li>
 <li>A command that leaves a process running in the background returns once its shell exits, with what it wrote, and does not wait for that process.</li>
+<li>A process left in the background is collected when it exits, so a later command checking its process ID finds it gone rather than still running.</li>
 <li>The command runs in the session's working directory, and a relative path resolves inside it.</li>
 <li>A command reaching outside the session's directory is refused by the sandbox, not by the tool.</li>
 <li><code>curl</code>, <code>wget</code>, <code>python3</code>, and <code>perl</code> are installed and run in the shell under the sandbox, and the description says they are there.</li>

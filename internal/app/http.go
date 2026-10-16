@@ -45,6 +45,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/keep", a.hKeep)
 	mux.HandleFunc("POST /sessions/{id}/compact", a.hCompact)
 	mux.HandleFunc("PUT /sessions/{id}/compaction", a.hEditCompaction)
+	mux.HandleFunc("POST /sessions/{id}/revert", a.hRevert)
 	mux.HandleFunc("POST /sessions/{id}/read", a.hMarkRead)
 	mux.HandleFunc("GET /sessions/{id}/files", a.hSessionFiles)
 	mux.HandleFunc("POST /sessions/{id}/files", a.hUpload)
@@ -511,7 +512,7 @@ func (a *App) hEditCompaction(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "text is required")
 		return
 	}
-	entries := a.store.Entries(s.ID)
+	entries := liveEntries(a.store.Entries(s.ID))
 	i := newestCompaction(entries)
 	if i < 0 {
 		fail(w, 409, "this session has not compacted, so there is no summary to edit")
@@ -527,6 +528,37 @@ func (a *App) hEditCompaction(w http.ResponseWriter, r *http.Request) {
 		TokensAfter:   prev.TokensAfter,
 	})
 	writeJSON(w, 200, a.enrich(s))
+}
+
+// hRevert takes a conversation back to before one of its user messages. Nothing
+// is removed: one event is appended and the projection stops sending what it
+// took back, which stays on disk and in the index.
+func (a *App) hRevert(w http.ResponseWriter, r *http.Request) {
+	s := a.store.Session(r.PathValue("id"))
+	if s == nil {
+		fail(w, 404, "no such session")
+		return
+	}
+	var in struct {
+		Seq *int `json:"seq"`
+	}
+	if err := readJSON(r, &in); err != nil || in.Seq == nil {
+		fail(w, 400, "seq is required: the user message to revert to before")
+		return
+	}
+	_, err := a.Revert(s.ID, *in.Seq)
+	switch {
+	case errors.Is(err, errRevertWhileWorking):
+		fail(w, 409, "%v", err)
+		return
+	case errors.Is(err, errCannotRevert):
+		fail(w, 400, "%v", err)
+		return
+	case err != nil:
+		fail(w, 500, "%v", err)
+		return
+	}
+	writeJSON(w, 200, a.enrich(a.store.Session(s.ID)))
 }
 
 func (a *App) hMarkRead(w http.ResponseWriter, r *http.Request) {

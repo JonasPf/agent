@@ -106,6 +106,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <tr><td>Compaction</td><td>A banner standing where the agent's reading of the conversation begins, after the prompt. Says how many turns it replaced and the token count before and after, states that the agent reads the summary in place of everything before it, shows the summary, and offers to search what it folded away. The turns it kept word for word follow it, grouped and labelled as carried over; then what came since. What it covers is not drawn. Editable.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
 <tr><td>Status line</td><td>While the agent is working, how long it has been working, counting, and the way to stop it. Model, context used against the compaction threshold, live cache size and its countdown, tokens per second while streaming, session cost.</td></tr>
+<tr><td>Revert</td><td>Beside each message that started a turn, a control that takes the conversation back to before it. It asks first, in a dialog that says what goes and what stays.</td></tr>
 <tr><td>Copy</td><td>A header action that puts the whole conversation on the clipboard as Markdown.</td></tr>
 <tr><td>Composer</td><td>One field, a way to attach a file, and a send. On a keyboard Enter sends and shift-Enter breaks the line; on a touch screen Enter breaks the line and the button is the send. On a keyboard the cursor is in it as soon as the conversation opens. Up and down step through what the operator has sent in this conversation, newest first, and back to what was being typed.</td></tr>
 </table>
@@ -117,6 +118,15 @@ through the rest of the turn. An answer arriving is drawn at most once a frame, 
 come; the blocks of it that can no longer change are drawn once, and only the block still growing is
 drawn again. What it shows is exactly what the finished answer will show. A reader who has scrolled up is
 left where they are while it arrives; one at the end stays at the end.</p>
+
+<p>A conversation that went somewhere unwanted is taken back from the message where it turned. Each
+message that started a turn &mdash; the operator's, or a job's wake &mdash; carries a small revert
+control beside its time. It asks before it acts, in a dialog that slides over the screen like every
+other: how many entries go, that the agent will no longer see them, that files it wrote and jobs it
+created stay, and, when one would be undone, that a compaction goes with them. Confirmed, the
+conversation is drawn again without what was taken back, ending at the line that records the revert,
+and the operator's message is back in the composer to be changed and sent. Nothing is erased: the
+history and search still reach what was taken back (<a href="sessions.html">Sessions</a>).</p>
 
 <p>The same conversation can be open on more than one device. Every entry goes to every page that is
 connected, whichever device wrote it, so a message typed on a laptop appears on a phone showing that
@@ -144,6 +154,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <ul>
 <li>Assistant output streams token by token.</li>
 <li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
+<li>Each answer names the provider that served the call producing it, beside what that call read from the cache (<a href="architecture.html">Architecture</a>).</li>
 <li>Context usage is shown against the session's compaction threshold, not the model's window.</li>
 <li>The header's title and the status line's figures follow the conversation while it is open: the title its first answer gives it, and the cost and context each turn moves, show without opening it again.</li>
 <li>The estimated cost of the next call is shown, and whether it will be cached: the prompt and the conversation as they would be sent now, at the model's prices, with what a live cache holds priced as a read.</li>
@@ -196,6 +207,12 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>A conversation opened while it is working shows every entry, each once: what the socket delivers while the transcript is on its way is kept beside it, and an entry heard twice is drawn once.</li>
 <li>An answer arriving reads exactly as the finished answer will, is drawn at most once a frame, and draws again only the block still growing; a reader who has scrolled up is left where they are.</li>
 <li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
+<li>Every message that started a turn, the operator's or a wake's, offers to revert the conversation to before it; no other entry does.</li>
+<li>Reverting asks first, in a dialog: it says how many entries go, that the agent will no longer see them, that files the agent wrote and jobs it created are not undone, and, when it would, that a compaction is undone with them. Dismissing it changes nothing.</li>
+<li>While the conversation is working the revert dialog says to stop the turn first, and offers no revert.</li>
+<li>A revert the agent refuses says why, and changes nothing on screen.</li>
+<li>After a revert the conversation is drawn without what it took back, on every page showing it, and ends with the line recording the revert. The operator's message is in the composer, ready to change and send, unless something was already being typed there, which is kept; a wake puts nothing there.</li>
+<li>Entries a revert took back are not drawn in the conversation and are not copied with it; the history shows them dimmed, and a search hit on one says the agent no longer sees it.</li>
 </ul>
 </div>
 
@@ -218,7 +235,7 @@ always measured on the spot.</p>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>Search opened from a conversation looks in that conversation, and can be widened to every conversation in one tap. It searches as it is typed, each word matching as a prefix, and punctuation is looked for rather than read as syntax.</li>
 <li>Each search hit says who wrote it and when, marks what matched, and says so when the agent no longer sees it.</li>
-<li>A search hit opens the conversation's history at that entry: everything the session stored, oldest first, folded entries and superseded summaries included and dimmed, the hit picked out and scrolled to. Nothing in the history can be edited or sent.</li>
+<li>A search hit opens the conversation's history at that entry: everything the session stored, oldest first, folded entries, superseded summaries, and what a revert took back included and dimmed, the hit picked out and scrolled to. Nothing in the history can be edited or sent.</li>
 <li>The list shows which sessions have jobs attached.</li>
 <li>Every session shows what it occupies on disk, so it is clear what deleting one frees.</li>
 <li>What a tool writes or an upload adds, and what a delete frees, shows in the session list on its next read; a session's context figure moves with every entry.</li>

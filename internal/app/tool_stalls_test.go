@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -25,6 +26,42 @@ func TestACommandThatLeavesAProcessRunningReturnsAtOnce(t *testing.T) {
 	}
 	if !res.OK || !strings.Contains(res.Content, "started") {
 		t.Errorf("result = %+v, want the command's own output", res)
+	}
+}
+
+// A process left in the background outlives the shell that started it, and
+// whoever inherits it has to collect it when it exits. Nothing did: it stayed a
+// zombie, and `kill -0` on a zombie succeeds, so a session that polled "is it
+// still running?" heard yes every two minutes for three hours about a script
+// that had finished in five.
+func TestABackgroundProcessThatExitsIsGone(t *testing.T) {
+	root := t.TempDir()
+	toolsDir := filepath.Join(root, "tools")
+	copyToolTree(t, "../../tools", toolsDir)
+	a, _ := confinedApp(t, toolsDir, "", "")
+	run := shellIn(t, a)
+
+	res := run("sleep 2 >/dev/null 2>&1 & echo $!")
+	pid := strings.TrimSpace(res.Content)
+	if !res.OK || pid == "" {
+		t.Fatalf("result = %+v, want the background process's pid", res)
+	}
+	alive := "kill -0 " + pid + " 2>/dev/null && echo running || echo gone"
+	if got := run(alive); !strings.Contains(got.Content, "running") {
+		t.Fatalf("while it runs, the check says %+v; it cannot tell running from gone", got)
+	}
+
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		got := run(alive)
+		if strings.Contains(got.Content, "gone") {
+			return
+		}
+		if time.Now().After(deadline) {
+			stat, _ := os.ReadFile("/proc/" + pid + "/stat")
+			t.Fatalf("pid %s still answers 15s after it exited; /proc says %q", pid, stat)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

@@ -480,6 +480,15 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
 /* The stamp sits with the speaker, quieter than it, so a scan down the column
    reads the speakers and the times stay available without being read. */
 .msg .who .at { margin-left: 8px; text-transform: none; letter-spacing: 0; opacity: .7; font-variant-numeric: tabular-nums; }
+/* The way back to before a turn sits with its time: there whenever it is
+   looked for, too quiet to be read as part of what was said. A thumb gets a
+   target its own size. */
+.msg .who .revert {
+  margin-left: 6px; padding: 0 6px; border: 1px solid transparent; border-radius: 4px;
+  font-size: 12px; line-height: 1.5; color: var(--muted); opacity: .65; vertical-align: baseline;
+}
+.msg .who .revert:hover, .msg .who .revert:focus-visible { opacity: 1; color: var(--accent); border-color: var(--line-2); }
+@media (pointer: coarse) { .msg .who .revert { padding: 3px 10px; margin-left: 2px; } }
 .msg.carried { opacity: .78; border-left: 2px dashed var(--line-2); padding-left: 11px; }
 
 /* Events are a log, not a conversation: a clock in the gutter, the kind as a

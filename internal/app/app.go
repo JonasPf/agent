@@ -403,6 +403,19 @@ func (a *App) Busy(sessionID string) bool {
 	return a.pending[sessionID] > 0
 }
 
+// whenIdle runs fn only if nothing is running or queued for the session, and
+// reports whether it ran. The queue is held shut while it runs, so a turn sent
+// meanwhile waits for it rather than starting part way through.
+func (a *App) whenIdle(sessionID string, fn func()) bool {
+	a.qmu.Lock()
+	defer a.qmu.Unlock()
+	if a.pending[sessionID] > 0 {
+		return false
+	}
+	fn()
+	return true
+}
+
 // workingSeconds is how long a session has been working, or nil when it is not.
 // Elapsed rather than a start time, so a browser whose clock disagrees with the
 // agent's still counts from the right place.

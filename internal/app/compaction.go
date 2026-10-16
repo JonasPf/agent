@@ -175,8 +175,11 @@ func buildCompactionInput(previous string, head []Entry) string {
 // session is created and is what every turn sends for the rest of its life, so
 // there is nothing for a compaction to re-photograph (ADR-055).
 func (a *App) Compact(ctx context.Context, s *Session) error {
-	entries := a.store.Entries(s.ID)
-	before := a.contextUsed(s.ID, entries)
+	all := a.store.Entries(s.ID)
+	before := a.contextUsed(s.ID, all)
+	// What a revert took back is not the conversation, so it is neither folded
+	// nor the previous summary to edit.
+	entries := liveEntries(all)
 
 	var previous string
 	covered := 0

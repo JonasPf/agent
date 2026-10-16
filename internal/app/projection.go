@@ -52,22 +52,73 @@ func newestCompaction(entries []Entry) int {
 	return -1
 }
 
+// isRevert says whether an entry is a revert: the event that takes the
+// conversation back to before the user message it names.
+func isRevert(e Entry) bool {
+	return e.Type == "event" && e.EventKind == "revert"
+}
+
+// takenBack is every entry a revert has taken back: from the message each one
+// names up to the revert itself. A revert can only name a message still in the
+// conversation, so a later one either takes back the whole of an earlier one,
+// itself included, or none of it, and the union is the conversation as it stood
+// before the newest message reverted to.
+func takenBack(entries []Entry) map[int]bool {
+	var gone map[int]bool
+	for _, r := range entries {
+		if !isRevert(r) {
+			continue
+		}
+		if gone == nil {
+			gone = map[int]bool{}
+		}
+		for _, e := range entries {
+			if e.Seq >= r.RevertsFrom && e.Seq < r.Seq {
+				gone[e.Seq] = true
+			}
+		}
+	}
+	return gone
+}
+
+// liveEntries is a transcript without what reverts took back: the conversation
+// every other rule reads. A compaction taken back is not the newest, and the
+// turns it folded are back.
+func liveEntries(entries []Entry) []Entry {
+	gone := takenBack(entries)
+	if len(gone) == 0 {
+		return entries
+	}
+	out := make([]Entry, 0, len(entries)-len(gone))
+	for _, e := range entries {
+		if !gone[e.Seq] {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // Project converts a stored transcript into the message list for a model call.
 //
-//  1. The newest prompt entry is the system message; earlier ones are dropped.
+//  1. Every entry a revert took back is dropped, and the rules below read what
+//     is left.
+//  2. The newest prompt entry is the system message; earlier ones are dropped.
 //     (The caller renders it; Project drops every prompt entry from the body.)
-//  2. Only the newest compaction is sent, as an assistant message, in place of
+//  3. Only the newest compaction is sent, as an assistant message, in place of
 //     what it covers: ahead of the turns it left verbatim.
-//  3. Every entry at or before that compaction's CoversThrough is dropped.
-//  4. Entries of type event are dropped, except a failure.
-//  5. The trailing run of job ticks sharing job_id and status collapses into one
+//  4. Every entry at or before that compaction's CoversThrough is dropped.
+//  5. Entries of type event are dropped, except a failure.
+//  6. The trailing run of job ticks sharing job_id and status collapses into one
 //     line carrying the repetition count and the elapsed span.
-//  6. A wake is marked as one.
-//  7. Everything else passes through unchanged.
+//  7. A wake is marked as one.
+//  8. Everything else passes through unchanged.
 //
 // Project is pure: same input, same output.
 func Project(entries []Entry) []ChatMessage {
-	// Rules 2 and 3. Slicing before anything else means the collapse below sees
+	// Rule 1, first, so that a compaction written after the message reverted
+	// to is not the one the rules below find.
+	entries = liveEntries(entries)
+	// Rules 3 and 4. Slicing before anything else means the collapse below sees
 	// only what is actually being sent, and a compaction can never land inside a
 	// run of ticks it was meant to cover.
 	//
