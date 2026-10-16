@@ -1199,7 +1199,7 @@ function renderEntry(e, opts) {
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
   who.append(el('span', 'at', messageTime(e.created_at)));
   if (o.revert && e.role === 'user') {
-    const back = el('button', 'revert', '↶');
+    const back = el('button', 'revert', '↩️');
     back.type = 'button';
     back.title = 'Revert to before this message';
     back.setAttribute('aria-label', 'Revert to before this message');

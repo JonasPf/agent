@@ -410,6 +410,18 @@ test('every message that started a turn offers to revert to before it, and nothi
   assert.match(offering[2], /a wake/);
 });
 
+// The way back was a grey ↶ at reduced strength, which an operator looking for
+// it could not find. It is the undo emoji now, in colour, on a button with an
+// edge, and still says what it does to a reader that cannot see it.
+test('the revert control is the undo emoji, and says what it does', async () => {
+  const ctx = conversation(session(), plain);
+  await ctx.viewSession(node('div'));
+  const row = ctx._id('transcript').children.find(k => findAll(k, 'revert').length);
+  const b = find(row, 'revert');
+  assert.strictEqual(b.textContent, '↩️');
+  assert.strictEqual(b.title, 'Revert to before this message');
+});
+
 test('the history offers no revert', async () => {
   const ctx = load({ '/sessions/S1': { session: session() }, '/sessions/S1/transcript': plain });
   vm.runInContext("state.view = 'history'; state.arg = 'S1';", ctx);
