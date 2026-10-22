@@ -28,11 +28,12 @@ func (a *App) Revert(sessionID string, seq int) (Entry, error) {
 	ran := a.whenIdle(sessionID, func() {
 		entries := a.store.Entries(sessionID)
 		gone := takenBack(entries)
-		if seq < 0 || seq >= len(entries) || entries[seq].Seq != seq {
+		i := entryAt(entries, seq)
+		if i < 0 {
 			err = fmt.Errorf("%w: there is no entry %d", errCannotRevert, seq)
 			return
 		}
-		at := entries[seq]
+		at := entries[i]
 		if at.Type != "message" || at.Role != "user" {
 			err = fmt.Errorf("%w: entry %d is not a user message, so no turn starts there", errCannotRevert, seq)
 			return

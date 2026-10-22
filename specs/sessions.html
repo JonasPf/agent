@@ -214,6 +214,32 @@ and affordable.</p>
 compaction always is. It is not a message either: no one said it, and it stands for entries rather than
 adding to them.</p>
 
+<h3>A write that fails</h3>
+
+<p>Each entry is one line of <code>transcript.jsonl</code>, numbered when it is written. The host's disk
+once filled in the middle of a write: half an entry reached the file, the conversation went on holding
+the whole of it, and the next entry was written onto the end of that half, so neither line could be
+read. After the next restart the conversation was two entries short and gave their numbers to the
+next two it wrote, which left two numbers meaning two things each.</p>
+
+<p>So an entry is numbered, held, and written as one step, in order. A write that fails is cut back off
+the file and taken back out of memory, so the conversation holds what the file holds and the number is
+free again. Every write starts on a line of its own, whatever the file ends with, so a line a crash
+left unfinished stays one unreadable line rather than taking the next entry with it. An unreadable line
+is skipped when the transcript is read, and the conversation numbers what it writes after the highest
+number it holds rather than after how many entries it holds. An entry is looked up by its number, not
+by its position, which a skipped line moves.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A write that fails leaves nothing: the entry is neither served nor held, and the next entry takes its number.</li>
+<li>An entry written after a line that was left unfinished is read back after a restart, and the unfinished line is not.</li>
+<li>After a restart, a conversation's next entry is numbered after the highest it holds; no number is used twice.</li>
+<li>A revert to a message after an unreadable line finds that message.</li>
+</ul>
+</div>
+
 <h3>What an event is for</h3>
 
 <p>An event exists only where nothing else records what happened. A check that exits non-zero costs no
@@ -470,6 +496,13 @@ while a turn is running folds when that turn ends; while it runs the session say
 be stopped like a turn. When there is nothing to fold &mdash; everything since the last compaction fits
 the verbatim tail &mdash; it says so, calls no model, and writes nothing.</p>
 
+<p>The threshold is checked when a turn ends, whether the turn answered or failed. It was checked only
+after one that answered, so a turn that grew the conversation and then failed &mdash; an upstream that
+timed out, a provider that refused &mdash; left everything it had added to be sent again, whole, with
+every call of the next turn. A turn the operator stopped is the exception: it ends where they said,
+and nothing more runs in its name. The newest turn is still kept whole, so a single turn larger than
+the threshold is folded only once another turn follows it.</p>
+
 <h3>When it fails</h3>
 
 <table>
@@ -500,6 +533,7 @@ screen — and it does not stop, lose anything, or fail a turn.</p>
 <li>A requested compaction waits for a turn in progress to end before it folds anything.</li>
 <li>A requested compaction with nothing to fold says so, calls no model, and writes nothing.</li>
 <li>Compaction happens only between turns, never during one.</li>
+<li>A turn or a wake that fails is followed by the same threshold check as one that answers; one the operator stopped is not.</li>
 <li>Both thresholds default to forty thousand and ten thousand projected tokens, and each session's can be changed at any time (<a href="adrs.html#adr-060">ADR-060</a>).</li>
 <li>The prompt says that the conversation compacts, and does not state the threshold it compacts at.</li>
 <li>The turns a compaction kept verbatim reach the model after the summary and before what came since, including after the summary is edited.</li>

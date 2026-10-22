@@ -288,6 +288,9 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 				return
 			}
 			a.appendEvent(live.ID, Entry{EventKind: "error", Text: "turn failed: " + err.Error()})
+			// What the turn wrote before it failed is in the conversation, and
+			// is sent again with every call of the next turn unless folded now.
+			a.maybeCompact(ctx, live)
 			return
 		}
 		if first {

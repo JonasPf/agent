@@ -34,6 +34,10 @@ type Store struct {
 	// metaMu puts writes of meta.json in order, so the file always ends up
 	// holding the newest session published.
 	metaMu sync.Mutex
+	// writeMu puts appends to transcripts in order: a number is handed out and
+	// written in one step, so the file holds entries in the order they are
+	// numbered, and a write that fails can be taken back.
+	writeMu sync.Mutex
 }
 
 // errSessionDeleted is a write that arrived after its session was deleted.
@@ -503,43 +507,18 @@ func (s *Store) DeleteSession(id string) error {
 
 // Append writes an entry to the transcript. Entries are never modified once written.
 func (s *Store) Append(sessionID string, e Entry) (Entry, error) {
-	s.mu.Lock()
-	if s.deleted[sessionID] {
-		s.mu.Unlock()
-		return e, errSessionDeleted
-	}
-	list := s.entries[sessionID]
-	e.Seq = len(list)
-	if e.CreatedAt.IsZero() {
-		e.CreatedAt = time.Now()
-	}
-	if e.Type == "" {
-		e.Type = "message"
-	}
-	s.entries[sessionID] = append(list, e)
-	sess := s.sessions[sessionID]
-	if sess != nil {
-		c := *sess
-		c.LastActiveAt = e.CreatedAt
-		s.sessions[sessionID] = &c
-	}
-	s.mu.Unlock()
-
-	line, _ := json.Marshal(e)
-	f, err := os.OpenFile(filepath.Join(s.sessionDir(sessionID), "transcript.jsonl"),
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	out, sess, err := s.appendEntries(sessionID, []Entry{e}, time.Now())
 	if err != nil {
+		if len(out) == 1 {
+			return out[0], err
+		}
 		return e, err
 	}
-	defer f.Close()
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		return e, err
-	}
-	s.index(sessionID, e)
+	s.index(sessionID, out[0])
 	if sess != nil {
 		_ = s.flushMeta(sessionID)
 	}
-	return e, nil
+	return out[0], nil
 }
 
 // AppendAll writes several entries to a transcript at once: one write to the
@@ -550,16 +529,38 @@ func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
 	if len(in) == 0 {
 		return nil, nil
 	}
-	now := time.Now()
+	out, sess, err := s.appendEntries(sessionID, in, time.Now())
+	if err != nil {
+		return out, err
+	}
+	if !s.wasDeleted(sessionID) {
+		_ = s.indexAll(map[string][]Entry{sessionID: out})
+	}
+	if sess != nil {
+		_ = s.flushMeta(sessionID)
+	}
+	return out, nil
+}
+
+// appendEntries numbers entries, holds them, and writes them, as one step. A
+// write that fails takes them back out of memory, so what a conversation holds
+// is what its file holds, and a number is never handed out twice. Before this,
+// the host's disk filled during a write: the entry stayed in memory while half
+// of it reached the file, the next entry was glued to that half, and after a
+// restart both were gone and their numbers were given to new entries.
+func (s *Store) appendEntries(sessionID string, in []Entry, now time.Time) ([]Entry, *Session, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	s.mu.Lock()
 	if s.deleted[sessionID] {
 		s.mu.Unlock()
-		return nil, errSessionDeleted
+		return nil, nil, errSessionDeleted
 	}
 	list := s.entries[sessionID]
+	first := nextSeq(list)
 	out := make([]Entry, len(in))
 	for i, e := range in {
-		e.Seq = len(list) + i
+		e.Seq = first + i
 		if e.CreatedAt.IsZero() {
 			e.CreatedAt = now
 		}
@@ -583,22 +584,92 @@ func (s *Store) AppendAll(sessionID string, in []Entry) ([]Entry, error) {
 		buf.Write(line)
 		buf.WriteByte('\n')
 	}
-	f, err := os.OpenFile(filepath.Join(s.sessionDir(sessionID), "transcript.jsonl"),
-		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err := appendLines(filepath.Join(s.sessionDir(sessionID), "transcript.jsonl"), buf.Bytes()); err != nil {
+		s.mu.Lock()
+		// Writes are in order, so what this one added is still the end.
+		if cur := s.entries[sessionID]; len(cur) >= len(out) && cur[len(cur)-1].Seq == out[len(out)-1].Seq {
+			s.entries[sessionID] = cur[:len(cur)-len(out)]
+		}
+		if sess != nil && s.sessions[sessionID] != nil {
+			c := *s.sessions[sessionID]
+			c.LastActiveAt = sess.LastActiveAt
+			s.sessions[sessionID] = &c
+		}
+		s.mu.Unlock()
+		return out, nil, err
+	}
+	return out, sess, nil
+}
+
+// EntryBySeq is one entry of a conversation, found by its number.
+func (s *Store) EntryBySeq(sessionID string, seq int) (Entry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	list := s.entries[sessionID]
+	i := entryAt(list, seq)
+	if i < 0 {
+		return Entry{}, false
+	}
+	return list[i], true
+}
+
+// entryAt is the position of the entry numbered seq, or -1. A number is its
+// position until a line cannot be read, so that is looked at first; a
+// transcript that disagrees is searched rather than trusted.
+func entryAt(list []Entry, seq int) int {
+	if seq >= 0 && seq < len(list) && list[seq].Seq == seq {
+		return seq
+	}
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i].Seq == seq {
+			return i
+		}
+	}
+	return -1
+}
+
+// nextSeq is the number after the highest a transcript holds. It is not the
+// count: a line that could not be read leaves a gap, and the count then hands
+// out a number the file already has.
+func nextSeq(list []Entry) int {
+	n := 0
+	for _, e := range list {
+		if e.Seq >= n {
+			n = e.Seq + 1
+		}
+	}
+	return n
+}
+
+// appendLines adds whole lines to the end of a transcript. They start on a
+// line of their own whatever the file ends with, so a line a crash or a full
+// disk left unfinished stays one unreadable line rather than taking the next
+// entry with it; and a write that fails is cut back off, so it leaves nothing.
+func appendLines(path string, b []byte) error {
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return out, err
+		return err
 	}
 	defer f.Close()
-	if _, err := f.Write(buf.Bytes()); err != nil {
-		return out, err
+	info, err := f.Stat()
+	if err != nil {
+		return err
 	}
-	if !s.wasDeleted(sessionID) {
-		_ = s.indexAll(map[string][]Entry{sessionID: out})
+	size := info.Size()
+	if size > 0 {
+		last := make([]byte, 1)
+		if _, err := f.ReadAt(last, size-1); err != nil {
+			return err
+		}
+		if last[0] != '\n' {
+			b = append([]byte{'\n'}, b...)
+		}
 	}
-	if sess != nil {
-		_ = s.flushMeta(sessionID)
+	if _, err := f.Write(b); err != nil {
+		_ = f.Truncate(size)
+		return err
 	}
-	return out, nil
+	return nil
 }
 
 func (s *Store) Entries(sessionID string) []Entry {
@@ -695,19 +766,7 @@ func (s *Store) describeHit(h *SearchHit) {
 		}
 	}
 	h.Compacted = covers > 0 && h.Seq <= covers
-	// A sequence number is its position, so the lookup is direct; a transcript
-	// that disagrees is searched rather than trusted.
-	at := -1
-	if h.Seq >= 0 && h.Seq < len(list) && list[h.Seq].Seq == h.Seq {
-		at = h.Seq
-	} else {
-		for i, e := range list {
-			if e.Seq == h.Seq {
-				at = i
-				break
-			}
-		}
-	}
+	at := entryAt(list, h.Seq)
 	if at >= 0 {
 		e := list[at]
 		h.Type, h.Role, h.CreatedAt = e.Type, e.Role, e.CreatedAt

@@ -2,6 +2,23 @@
 
 ## 2026-10-22
 
+- **A full disk no longer garbles a conversation.** When the server's disk
+  filled up mid-write, half a message reached the file, the next message was
+  glued onto it, and after a restart both were gone and their numbers were
+  reused. Now a failed write leaves nothing behind, the next message always
+  starts on its own line, and numbering continues after the highest number
+  already used. Going back to a message after a damaged line works again.
+- **The agent can read a search result in full.** A search used to show
+  only a few words around each match. When a compaction hid the agent's own
+  last answer, it spent four hours searching to piece it back together. It
+  can now open any search result whole by its number.
+- **A conversation also compacts after a turn that failed.** Before, only a
+  turn that finished normally triggered compaction, so a failed turn's growth
+  was sent again, in full, on every call of the next one.
+- **Evals run on the model conversations use.** The default eval model is
+  now `z-ai/glm-5.3`. The cheaper one before it failed basic cases too often
+  to tell a good tool description from a bad one.
+
 - **A turn that will not stop now stops at 100 rounds.** One turn ran 728 tool
   calls over four hours and cost $10. Now a turn that calls tools a hundred
   times without answering stops there, and a "round limit" line in the

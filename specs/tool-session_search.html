@@ -23,11 +23,12 @@
 
 <h2>What it does</h2>
 <p>Queries a full-text index over every transcript entry ever written, and returns the session, the
-position, and a snippet for each match.</p>
+position, and a snippet for each match. Given a hit's number instead, it reads that one entry whole.</p>
 
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
-<tr><td><code>query</code></td><td>Words to look for. Each matches as a prefix, and punctuation is looked for as written rather than read as query syntax. Required.</td></tr>
+<tr><td><code>query</code></td><td>Words to look for. Each matches as a prefix, and punctuation is looked for as written rather than read as query syntax. Required unless <code>seq</code> is given.</td></tr>
+<tr><td><code>seq</code></td><td>A hit's number. Reads that entry whole instead of searching: in this session, or in the one <code>session</code> names.</td></tr>
 <tr><td><code>session</code></td><td>Where to look. Defaults to the current session. A session identifier searches that one; <code>all</code> searches every session.</td></tr>
 <tr><td><code>limit</code></td><td>Maximum matches. Optional; twenty by default.</td></tr>
 </table>
@@ -39,6 +40,18 @@ still has its whole history one deliberate call away.</p>
 
 <p>That is the difference between compression and loss, and it is why this tool is not optional
 alongside compaction. An entry a compaction covers is still returned by a search of its own session.</p>
+
+<h2>A hit can be read whole</h2>
+<p>A hit is a dozen words around the match, which finds an entry and does not tell what it said. That
+was once all there was. A compaction hid the agent's own last answer, the operator replied "yes, I'll
+start that on Monday", and the agent spent four hours and 696 searches assembling that answer from
+snippets, each search adding a few words. So a hit's number reads the entry it names: who wrote it and
+when, its text, the calls it made, or what a tool returned, cut at twenty thousand characters. The
+result says when the entry is one a compaction folded away or a revert took back.</p>
+
+<p>Reading follows the same scope as searching. With no <code>session</code> it reads the calling
+conversation; another conversation's entry is read only when its id is given, and <code>all</code>
+names no one conversation, so it is refused.</p>
 
 <div class="note">
 <strong>The default scope is this session.</strong> Searching one's own history is ordinary. Reading another conversation is a thing the operator should be able to watch being decided, so it is a scope the agent has to ask for, and asking appears in the transcript as the tool call it is. Since <a href="adrs.html#adr-055">ADR-055</a> nothing crosses a session boundary unasked at all, which makes this the whole of the route between conversations.
@@ -59,9 +72,10 @@ would read like a call that failed to run.</p>
 <li>Each result identifies its session and position.</li>
 <li>A query matching nothing reports that, distinguishably from a failure.</li>
 <li>A query holding punctuation, or a word a full-text index reads as syntax &mdash; <code>follow-up</code>, <code>notes.md</code>, <code>AND</code> &mdash; is searched for as written, not refused.</li>
-<li>An empty query is refused.</li>
+<li>An empty query is refused, unless a number is given to read.</li>
+<li>A hit's number reads that entry whole, in the calling session or in the one named; a number that names no entry fails and quotes it.</li>
 <li>Event entries are searchable.</li>
-<li>Eval cases cover both an unscoped search and a deliberate widening.</li>
+<li>Eval cases cover an unscoped search, a deliberate widening, and reading a hit whole.</li>
 </ul>
 </div>
 

@@ -433,8 +433,8 @@ older kernel files stay confined, the network is not, and that is said at startu
 <code>/status</code>, and on the Tools screen.</p>
 
 <p><strong>A tool reaches the agent on an API of its own.</strong> <code>AGENT_URL</code> is the tool API,
-not the operator's: the calling conversation's jobs, the skills that conversation has, and
-search. Every request carries <code>AGENT_TOKEN</code>, issued for one call and revoked when it ends, and
+not the operator's: the calling conversation's jobs, the skills that conversation has,
+search, and reading one entry a search found. Every request carries <code>AGENT_TOKEN</code>, issued for one call and revoked when it ends, and
 the call &mdash; not the request &mdash; says which conversation it is. Nothing on it creates, forks,
 messages, or configures a conversation, and a tool cannot schedule a job into, or read a skill outside,
 the conversation it was called from.</p>

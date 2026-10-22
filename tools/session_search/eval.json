@@ -30,6 +30,20 @@
         },
         "clean": true
       }
+    },
+    {
+      "name": "reads a hit whole by its number",
+      "prompt": "Note for later: the pomegranate tree goes by the south wall. Now search this conversation for pomegranate, then read that hit in full and quote it back to me exactly.",
+      "tools": [
+        "session_search"
+      ],
+      "expect": {
+        "tool": "session_search",
+        "args_match": {
+          "seq": "^[0-9]+$"
+        },
+        "clean": true
+      }
     }
   ]
 }

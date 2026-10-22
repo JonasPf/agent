@@ -13,7 +13,7 @@ import (
 //
 // So the run checks first, and says the one useful thing.
 func TestAnEvalModelThatIsNotThereIsNamedAsTheProblem(t *testing.T) {
-	available := []ModelInfo{{ID: "google/gemma-4-26b-a4b-it"}, {ID: "openai/gpt-4o-mini"}}
+	available := []ModelInfo{{ID: "z-ai/glm-5.3"}, {ID: "openai/gpt-4o-mini"}}
 
 	if err := checkEvalModel("minimax/minimax-m3:free", available); err == nil {
 		t.Fatal("a model that is not available was accepted")
