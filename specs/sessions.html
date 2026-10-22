@@ -227,6 +227,7 @@ justification, and it is the test every event has to pass.</p>
 <tr><td><code>job_error</code></td><td>A job failed. Failing is not something the model says.</td></tr>
 <tr><td><code>error</code></td><td>A turn failed, or a compaction failed and the conversation continued uncompacted.</td></tr>
 <tr><td><code>cancelled</code></td><td>The operator stopped a turn, and where it had got to: part way through, or before the agent began. Nothing else tells a conversation that was stopped from one that failed, or from one that simply had nothing more to say.</td></tr>
+<tr><td><code>round_limit</code></td><td>A turn reached a hundred rounds of tool calls and was stopped there, and how to carry on. Without it, a turn that ends on tool results looks like one that broke.</td></tr>
 <tr><td><code>fork</code></td><td>This conversation was copied into a new session. Written in the origin, which is otherwise unchanged and would show no trace.</td></tr>
 <tr><td><code>forked_from</code></td><td>This session began as a copy of another, at a named point in it.</td></tr>
 <tr><td><code>revert</code></td><td>The operator took the conversation back to before a message, and from which entry. Nothing else says why the turns after it are no longer read.</td></tr>

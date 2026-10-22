@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+// maxRounds is how many times one turn calls the model. A research task takes
+// tens; a turn that reaches a hundred is one that will not stop by itself.
+const maxRounds = 100
+
 type turnOpts struct {
 	UserText string
 	JobID    string
@@ -59,13 +63,13 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 
 	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID}
 
-	// A turn runs until the model stops calling tools. It was bounded at twelve
-	// rounds, which a task of any size passes in a minute or two; the turn then
-	// ended having written nothing, and the conversation went quiet with no
-	// reason given. A runaway loop is the risk that bound was against, and it is
-	// one to answer when it is seen, rather than by cutting every long task
-	// short.
-	for {
+	// A turn runs until the model stops calling tools, or for maxRounds rounds.
+	// It was bounded at twelve, which a task of any size passes in a minute or
+	// two; the turn then ended having written nothing, and the conversation went
+	// quiet with no reason given. Unbounded, a runaway was then seen: 728 calls
+	// in one turn, and 335 in two that slept in a loop. So the bound is back,
+	// far above what a task takes, and the stop is an entry rather than silence.
+	for round := 1; ; round++ {
 		req := ChatRequest{Model: s.Model, Messages: msgs, Tools: a.tools.SchemasFor(s)}
 		a.hub.Broadcast(wsEvent{Kind: "turn_start", SessionID: s.ID})
 		res, err := a.or.Chat(ctx, req, func(d string) {
@@ -117,6 +121,14 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 				ToolResult: body, Stderr: result.stderr, JobID: opts.JobID})
 			msgs = append(msgs, ChatMessage{Role: "tool", ToolCallID: c.ID, Name: c.Name,
 				Content: string(body)})
+		}
+		// The results are stored before the stop, so the transcript ends on what
+		// the tools returned and the next message carries on from there.
+		if round == maxRounds {
+			a.appendEvent(s.ID, Entry{EventKind: "round_limit", Text: fmt.Sprintf(
+				"stopped after %d rounds of tool calls without an answer; send \"continue\" to carry on",
+				maxRounds)})
+			break
 		}
 	}
 

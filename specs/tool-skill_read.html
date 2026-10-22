@@ -34,8 +34,18 @@ nothing more. The bodies are what this tool reaches.</p>
 <strong>Why the index is in the prompt and the bodies are not.</strong> A skill body is long. Putting every one in the prompt would spend the session's cheapest, most cacheable tokens on instructions that most conversations never need. Putting none of it there would leave the agent unable to know what exists. The index is the smallest thing that makes the rest reachable, and reading one is a visible call rather than an invisible inclusion.
 </div>
 
-<p>The persona instructs the agent to read a skill before doing work it covers, so the failure mode
-this guards against is not an unreadable skill but an unread one.</p>
+<p>The failure this tool has to guard against is not an unreadable skill but an unread one. In a
+month of use a skill was in front of the model for 40 of the 132 turns that added to a record it
+covered, and for 13 of the 46 that researched on the web. The one rule that said to read a skill sat
+in the middle of the persona's scheduling rules, the description said what the tool does and not when
+to call it, and nothing said that compaction folds a skill away like any other turn &mdash; so a
+conversation that had read one once went on, after its next compaction, as though it still knew it.</p>
+
+<p>So three places now say when. The <a href="skills.html">skills index</a> opens with the rule. Each
+shipped skill's description starts with when to use it. And this tool's own description says to call
+it before the work rather than after, and again once the skill's text is no longer in the
+conversation. The description is the one of the three that reaches a conversation already under way,
+because a session's prompt is fixed when it starts and the tool list is not.</p>
 
 <p>A name that is not a skill fails and says so. It does not return an empty body, which the model
 would read as a skill with no instructions in it and proceed on.</p>
@@ -49,6 +59,7 @@ would read as a skill with no instructions in it and proceed on.</p>
 <li>An empty name is refused.</li>
 <li>A name is matched as it appears in the prompt's index.</li>
 <li>Only skills indexed in this session's prompt are readable from it.</li>
+<li>The description says to read a skill before the work it covers, and again once compaction has folded its text away.</li>
 </ul>
 </div>
 

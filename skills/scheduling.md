@@ -1,6 +1,6 @@
 ---
 name: scheduling
-description: How to turn a condition into a shell command, and how to choose a schedule and an ending.
+description: Use before creating or changing a job — how to turn a condition into a shell command, and how to choose a schedule and an ending.
 ---
 
 A job has three settings that matter. Decide each one; there are no job types.

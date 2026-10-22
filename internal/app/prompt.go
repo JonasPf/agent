@@ -68,6 +68,16 @@ Working rules:
   wake is for and leave it in the transcript; that is where they will read it. Do not ask a question
   you need answered to finish, and do not wait for one.`
 
+// skillsLeadIn heads the index. The index once listed what each skill was and
+// said nothing about when to read one, and skills went unread in most of the
+// turns they covered — above all after a compaction, which folds a skill's text
+// away like any other turn while the model goes on as though it still knew it.
+const skillsLeadIn = `Each skill below is a written procedure for one kind of work. When a request is that kind
+of work, call skill_read with the skill's name before you start it, and follow what it says. Read it
+again whenever its text is no longer in front of you: compaction folds it away like any other turn,
+and working from memory of a skill is how its rules get skipped.
+`
+
 // systemSections builds the prompt as sent, split for display. Tool definitions
 // are shown here exactly as the model receives them; they travel in the tools array.
 func (a *App) systemSections(sess *Session) []Section {
@@ -80,6 +90,8 @@ func (a *App) systemSections(sess *Session) []Section {
 	}
 	if len(skills) == 0 {
 		skillText.WriteString("(none)")
+	} else {
+		skillText.WriteString(skillsLeadIn)
 	}
 	for _, sk := range skills {
 		fmt.Fprintf(&skillText, "- %s: %s\n", sk.Name, sk.Description)

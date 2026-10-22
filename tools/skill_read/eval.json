@@ -13,6 +13,57 @@
         },
         "clean": true
       }
+    },
+    {
+      "name": "reads keeping-records before logging a measurement",
+      "prompt": "My blood pressure this morning was 128 over 82. Keep track of it for me.",
+      "tools": [
+        "skill_read",
+        "bash",
+        "clock",
+        "read",
+        "write",
+        "edit"
+      ],
+      "expect": {
+        "tool": "skill_read",
+        "args": {
+          "name": "keeping-records"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "reads researching before answering from the web",
+      "prompt": "Does magnesium glycinate actually help with sleep? Look into it and tell me what the evidence says.",
+      "tools": [
+        "skill_read",
+        "web_search",
+        "web_fetch"
+      ],
+      "expect": {
+        "tool": "skill_read",
+        "args": {
+          "name": "researching"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "reads scheduling before creating a job",
+      "prompt": "Every weekday at 8 in the morning, remind me to take my vitamins.",
+      "tools": [
+        "skill_read",
+        "schedule",
+        "clock"
+      ],
+      "expect": {
+        "tool": "skill_read",
+        "args": {
+          "name": "scheduling"
+        },
+        "clean": true
+      }
     }
   ]
 }

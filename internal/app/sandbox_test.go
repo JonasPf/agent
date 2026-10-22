@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -479,18 +480,38 @@ func mustAbs(t *testing.T, p string) string {
 	return abs
 }
 
-// A tool is handed AGENT_DB deliberately and some of them write to it — notes
-// keeps its items there. A sandbox that confined writes to the session's own
-// directory broke that tool silently, and no test ran a tool that writes to the
-// database, so nothing said so.
+// A tool is handed AGENT_DB deliberately and may keep its own tables there. A
+// sandbox that confined writes to the session's own directory broke the one
+// tool that did, silently, and no test ran a tool that writes to the database,
+// so nothing said so. That tool is gone; the grant is not, so a tool written for
+// this test keeps it honest.
 func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		if os.Getenv("AGENT_TEST_FULL") == "" {
+			notRun(t, "python3 is not installed on this machine; the image and the test container ship it")
+		}
+		t.Fatal("python3 is missing from the test container")
+	}
 	dir := t.TempDir()
 	st, err := OpenStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"),
-		ToolsDir: "../../tools"}
+	toolsDir := filepath.Join(dir, "tools")
+	writeTool(t, toolsDir, "keeper", `#!/bin/sh
+exec python3 -c '
+import json, os, sqlite3, sys
+a = json.load(sys.stdin)
+db = sqlite3.connect(os.environ["AGENT_DB"])
+t = os.environ["AGENT_DB_PREFIX"] + "items"
+db.execute("create table if not exists " + t + " (text text)")
+if a.get("text"):
+    db.execute("insert into " + t + " values (?)", (a["text"],))
+    db.commit()
+print(json.dumps({"ok": True, "content": "\n".join(r[0] for r in db.execute("select text from " + t))}))
+'
+`)
+	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"), ToolsDir: toolsDir}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
 		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
@@ -505,16 +526,14 @@ func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	args, _ := json.Marshal(map[string]string{"action": "add", "text": "kept through the sandbox"})
-	res := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "notes", args)
+	args, _ := json.Marshal(map[string]string{"text": "kept through the sandbox"})
+	res := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "keeper", args)
 	if !res.OK {
-		t.Fatalf("notes could not write: %s", res.Error)
+		t.Fatalf("the tool could not write: %s (stderr %s)", res.Error, res.stderr)
 	}
-
-	list, _ := json.Marshal(map[string]string{"action": "list"})
-	back := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "notes", list)
+	back := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "keeper", []byte(`{}`))
 	if !back.OK || !strings.Contains(back.Content, "kept through the sandbox") {
-		t.Errorf("the note did not survive: ok=%v %s%s", back.OK, back.Content, back.Error)
+		t.Errorf("the row did not survive: ok=%v %s%s", back.OK, back.Content, back.Error)
 	}
 }
 

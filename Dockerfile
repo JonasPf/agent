@@ -112,14 +112,15 @@ FROM debian:bookworm-slim
 # tesseract reads the scans that are not text, in English and German because
 # that is what the records are in; pip, numpy and pillow are the floor anything
 # numerical starts from, and pip makes the long tail one command rather than an
-# afternoon. All of it lands under /usr, which the sandbox already grants every
+# afternoon. file names what a download or an upload actually is, which a shell
+# asked "is this a PDF or a page saying no?" otherwise cannot. All of it lands under /usr, which the sandbox already grants every
 # tool read-only, so no session can change what another session's shell finds.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates git chromium \
       curl wget python3 perl \
       poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
       python3-pip python3-venv python3-numpy python3-pil \
-      unzip jq tini \
+      unzip jq file tini \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent runs as one user, and it is not root. The data and workspace

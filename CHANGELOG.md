@@ -2,6 +2,32 @@
 
 ## 2026-10-22
 
+- **A turn that will not stop now stops at 100 rounds.** One turn ran 728 tool
+  calls over four hours and cost $10. Now a turn that calls tools a hundred
+  times without answering stops there, and a "round limit" line in the
+  conversation says so. Reply "continue" to let it carry on.
+- **The shell can wait 15 minutes in one go.** It used to give up after two
+  and a half, so to wait for a long script the agent asked "done yet?" again
+  and again, 265 times in one case, each a paid model call. It now waits
+  inside one command. `file` is installed too.
+- **A missed edit points at the line it meant.** When the text the agent
+  tries to replace isn't quite what the file says, the error now quotes the
+  closest line, or says only the spacing differs, so it can retry without
+  reading the file again.
+- **Skills get read when they apply.** The agent read a skill in under a
+  third of the turns where one applied, and forgot it after the conversation
+  compacted. The skill list now says to read a skill before starting the work
+  and again after compaction, and each skill says when to use it. New
+  conversations get the full change; existing ones get the clearer
+  `skill_read` instructions.
+- **The notes tool is gone.** It was used in one conversation, and nothing it
+  saved was ever read back. Those 16 notes are now in that conversation's
+  `notes/from-notes-tool.md`. Keeping records in files, which the
+  keeping-records skill describes, does the same job.
+- **The two code-changing skills are gone.** `changing-yourself` and
+  `working-on-a-repository` were off unless a conversation turned them on,
+  and none ever did. The agent can still clone, branch and open a pull
+  request when asked to and granted a token.
 - **An answer stays in its own conversation.** Leaving a conversation while
   its answer was still arriving left that half-written answer at the bottom
   of every conversation you opened after it, each one saying "generating".

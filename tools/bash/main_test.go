@@ -1,6 +1,46 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+// A command may be allowed up to maxTimeout, and no more: asked for longer, it
+// is held to the most, so an overrun is still the tool's to report. Unasked, it
+// gets the default.
+func TestAllowedHoldsATimeoutBetweenTheDefaultAndTheMost(t *testing.T) {
+	for _, c := range []struct{ asked, want int }{
+		{0, 120}, {-5, 120}, {30, 30}, {600, 600}, {900, 900}, {901, 900}, {86400, 900},
+	} {
+		if got := Allowed(c.asked); got != c.want {
+			t.Errorf("Allowed(%d) = %d, want %d", c.asked, got, c.want)
+		}
+	}
+}
+
+// Waiting for something in one call is what saves a turn from asking again and
+// again whether it is done, so the most has to be long enough to be worth it —
+// and the registry's limit has to sit above it, or the longest wait a caller
+// may ask for ends in a kill with nothing said.
+func TestTheRegistryLimitSitsAboveTheLongestWait(t *testing.T) {
+	if maxTimeout < 900 {
+		t.Errorf("maxTimeout = %ds; a command must be able to wait fifteen minutes", maxTimeout)
+	}
+	b, err := os.ReadFile("manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Timeout int `json:"timeout_seconds"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Timeout <= maxTimeout {
+		t.Errorf("the registry kills bash at %ds, at or below the %ds a command may ask for", m.Timeout, maxTimeout)
+	}
+}
 
 func TestClipLeavesShortOutputAlone(t *testing.T) {
 	body, cut := Clip("hello", 20)

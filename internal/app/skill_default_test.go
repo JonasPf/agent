@@ -9,11 +9,10 @@ import (
 	"testing"
 )
 
-// Some skills are for a conversation that set out to use them. changing-yourself
-// is the first: it walks the agent through cloning and pushing its own code, and
-// a conversation about the weather has no business being told how. A skill says
-// so in its own frontmatter, and a session that did not choose its skills gets
-// every skill except those.
+// Some skills are for a conversation that set out to use them: one that walks
+// the agent through cloning and pushing code has no business in the index of a
+// conversation about the weather. A skill says so in its own frontmatter, and a
+// session that did not choose its skills gets every skill except those.
 
 // writeSkill puts a skill in the root that ships with the image, which is where
 // every skill came from before the operator could write one.
@@ -139,29 +138,18 @@ func TestTheSkillListSaysWhichSkillsShipOff(t *testing.T) {
 	}
 }
 
-// The criterion as shipped: a skill about changing code is off unless a
-// conversation turns it on — the agent's own code or anyone else's. Both walk
-// the agent through cloning and pushing, both want a credential a conversation
-// has to be granted, and neither belongs in the index of a conversation about
-// the weather. Every other shipped skill is on.
-func TestTheSkillsThatChangeCodeShipOff(t *testing.T) {
+// The criterion as shipped: every shipped skill is on. The two that shipped off,
+// for changing code, were never read in a month of use, because no
+// conversation turned them on; they were removed rather than switched on
+// (ADR-064). Off stays a choice for a skill the operator writes.
+func TestEveryShippedSkillShipsOn(t *testing.T) {
 	shipped := NewSkills(filepath.Join("..", "..", "skills"), "")
 	if len(shipped.Failures()) > 0 {
 		t.Fatalf("a shipped skill does not load: %+v", shipped.Failures())
 	}
-	off := map[string]bool{"changing-yourself": true, "working-on-a-repository": true}
-	for name := range off {
-		sk := shipped.Get(name)
-		if sk == nil {
-			t.Fatalf("%s is not shipped", name)
-		}
-		if sk.DefaultEnabled {
-			t.Errorf("%s is on in every conversation that did not choose its skills", name)
-		}
-	}
-	for _, other := range shipped.All() {
-		if !off[other.Name] && !other.DefaultEnabled {
-			t.Errorf("%s ships off; only the skills that change code should", other.Name)
+	for _, sk := range shipped.All() {
+		if !sk.DefaultEnabled {
+			t.Errorf("%s ships off; a shipped skill is in every conversation that did not choose its skills", sk.Name)
 		}
 	}
 }
