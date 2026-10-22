@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-22
+
+- **An answer stays in its own conversation.** Leaving a conversation while
+  its answer was still arriving left that half-written answer at the bottom
+  of every conversation you opened after it, each one saying "generating".
+  Now each conversation shows only its own answer.
+
 ## 2026-10-16
 
 - **The revert button is easier to spot.** The faint grey ↶ beside each of

@@ -192,6 +192,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>Opening or closing a section of the prompt changes that section alone, in that conversation alone: nothing else is drawn again, and a tool result the reader opened stays open.</li>
 <li>An assistant message renders its markdown: headings, bullet and numbered lists, tables, block quotes, rules, emphasis, inline code, and fenced code blocks that keep their lines.</li>
 <li>A turn still streaming renders as markdown while it arrives, including a fenced block whose closing fence has not been sent yet.</li>
+<li>A turn streams only in its own conversation: one left while its answer arrives leaves nothing of that answer, and no word that it is generating, in any conversation opened after.</li>
 <li>A message the operator typed, and a wake carrying a job's stored prompt, are shown verbatim and are never rendered.</li>
 <li>Markup in model output is shown as text and never becomes markup: a link renders only when it points at the web, an address, or this app, and an image renders as a link rather than a fetch.</li>
 <li>Any character model output holds is drawn as text, a NUL included, which is shown as a replacement character: nothing in an answer can stop the conversation drawing.</li>
