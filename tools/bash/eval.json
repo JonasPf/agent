@@ -73,6 +73,23 @@
           "command": "pip install(.|\\n)*--user|--user(.|\\n)*pip install"
         }
       }
+    },
+    {
+      "name": "lets a long command run in one call",
+      "prompt": "Run the script nightly.sh in the workspace with sh. It takes about ten minutes. Tell me when it has finished and what it printed.",
+      "tools": [
+        "bash"
+      ],
+      "expect": {
+        "tool": "bash",
+        "args_match": {
+          "command": "nightly|kill -0|wait|while|until",
+          "timeout_seconds": "^([6-8][0-9][0-9]|900)$"
+        }
+      },
+      "files": {
+        "nightly.sh": "#!/bin/sh\necho starting\nsleep 2\necho finished\n"
+      }
     }
   ]
 }

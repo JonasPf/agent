@@ -48,7 +48,6 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 <tr><td><a href="tool-bash.html"><code>bash</code></a></td><td>Run a shell command in the session's working directory.</td></tr>
 <tr><td><a href="tool-clock.html"><code>clock</code></a></td><td>The current date and time, in UTC and in the operator's zone.</td></tr>
 <tr><td><a href="tool-edit.html"><code>edit</code></a></td><td>Replace an exact string in a workspace file.</td></tr>
-<tr><td><a href="tool-notes.html"><code>notes</code></a></td><td>Short freeform notes that outlive a conversation.</td></tr>
 <tr><td><a href="tool-read.html"><code>read</code></a></td><td>Read a file from the session's working directory.</td></tr>
 <tr><td><a href="tool-schedule.html"><code>schedule</code></a></td><td>Create, list, edit, and delete the jobs that make future work visible.</td></tr>
 <tr><td><a href="tool-session_search.html"><code>session_search</code></a></td><td>Full-text search across transcripts.</td></tr>
@@ -319,8 +318,9 @@ never the constraint.</p>
 <h2>Interface plugins</h2>
 
 <p>A tool that stores data may ship a panel to display it. The panel is a JavaScript module the web
-interface loads and mounts under that tool's name. <a href="tool-notes.html"><code>notes</code></a> shows
-what has been noted; a scheduler tool shows its jobs.</p>
+interface loads and mounts under that tool's name &mdash; a tool that kept a list would show the
+list. No shipped tool has one now: <code>notes</code> did, and was removed
+(<a href="adrs.html#adr-063">ADR-063</a>).</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>

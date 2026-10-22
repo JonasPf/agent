@@ -14,7 +14,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium curl wget python3 perl \
       poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
       python3-pip python3-venv python3-numpy python3-pil \
-      unzip jq tini \
+      unzip jq file tini \
  && rm -rf /var/lib/apt/lists/*
 
 # PID 1 is tini, as it is in the runtime image, so a process a test leaves in the

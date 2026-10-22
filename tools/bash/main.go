@@ -21,6 +21,29 @@ type args struct {
 
 const maxOutput = 20000
 
+// defaultTimeout is what a command gets when it asks for nothing, and
+// maxTimeout the most it may ask for. The most is long enough to wait for
+// something in one call: held to two minutes, a session that started a long
+// script asked whether it had finished 265 times, a model call each time.
+const (
+	defaultTimeout = 120
+	maxTimeout     = 900
+)
+
+// Allowed is the timeout a command runs under. Asking for more than the most
+// is held to it rather than refused, so the overrun is still reported by the
+// tool and not ended by the registry's kill.
+func Allowed(requested int) int {
+	switch {
+	case requested <= 0:
+		return defaultTimeout
+	case requested > maxTimeout:
+		return maxTimeout
+	default:
+		return requested
+	}
+}
+
 // backgroundGrace is how long output is still read after the shell exits, for
 // what a process left running in the background writes on its way out.
 const backgroundGrace = 2 * time.Second
@@ -41,10 +64,7 @@ func main() {
 	if strings.TrimSpace(a.Command) == "" {
 		tool.Failf("command is required")
 	}
-	timeout := a.TimeoutSeconds
-	if timeout <= 0 {
-		timeout = 120
-	}
+	timeout := Allowed(a.TimeoutSeconds)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 

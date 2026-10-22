@@ -1,6 +1,6 @@
 ---
 name: researching
-description: How to answer a question from the web — plan the searches, read sources rather than snippets, check each claim against a second source, and say where every fact came from.
+description: Use before searching the web to answer a question — plan the searches, read sources rather than snippets, check each claim against a second source, and say where every fact came from.
 ---
 
 Research is the work where it is easiest to be confidently wrong. A search snippet reads like an

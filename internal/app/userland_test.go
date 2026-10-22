@@ -83,6 +83,9 @@ func TestTheShellRunsTheProgramsTheImageShips(t *testing.T) {
 		{"pillow", "python3 -c 'import PIL; print(\"pillow\", PIL.__version__)'", "pillow"},
 		{"jq", `echo '{"ok":1}' | jq -r .ok`, "1"},
 		{"unzip", "unzip -v", "UnZip"},
+		// file, because a download that failed is often a page saying so under
+		// the name of the PDF that was asked for.
+		{"file", "printf '%%PDF-1.4' > probe && file probe", "PDF"},
 	} {
 		res := runShell(t, a, s, c.command)
 		if res.OK && strings.Contains(res.Content, c.want) {

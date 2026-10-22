@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// The agent proposes changes to itself, and there is no code for it: a skill
-// says how, `git` and `gh` are in the image, and a credential reaches whichever
-// tool names it. That the capability is composition rather than a feature is a
+// The agent can propose changes to itself, and there is no code for it: `git`
+// and `gh` are in the image, a credential reaches whichever tool names it, and
+// the operator says what to change. That the capability is composition rather than a feature is a
 // property worth keeping, and the way to keep it is to notice when it stops
 // being true.
 //
@@ -40,8 +40,8 @@ func TestNothingInTheAgentKnowsItCanChangeItself(t *testing.T) {
 			for _, word := range forbidden {
 				if strings.Contains(string(b), word) {
 					t.Errorf("%s names %q.\n"+
-						"The agent has no self-modification code: the capability is a skill, git and gh in\n"+
-						"the image, and a credential delivered through a tool manifest. If that is changing,\n"+
+						"The agent has no self-modification code: the capability is git and gh in the image,\n"+
+						"and a credential delivered through a tool manifest. If that is changing,\n"+
 						"change specs/architecture.html first — see \"Changing the agent\".", path, word)
 				}
 			}
@@ -49,35 +49,6 @@ func TestNothingInTheAgentKnowsItCanChangeItself(t *testing.T) {
 		})
 		if err != nil {
 			t.Fatal(err)
-		}
-	}
-}
-
-// The other half of the same property: what the skill needs is prose and two
-// programs, so the skill has to exist and has to say what it needs.
-func TestTheProcedureIsASkillAndNothingElse(t *testing.T) {
-	body, err := os.ReadFile("../../skills/changing-yourself.md")
-	if err != nil {
-		t.Fatalf("the procedure is missing: %v", err)
-	}
-	for _, needed := range []string{"git clone", "gh pr create", "$AGENT_REPO"} {
-		if !strings.Contains(string(body), needed) {
-			t.Errorf("the skill does not mention %q, and nothing else tells the agent how", needed)
-		}
-	}
-	// The variables arrive by grant, and a conversation that was not granted them
-	// cannot be given them mid-flight. Finding that out from an empty $AGENT_REPO
-	// halfway through a clone is finding it out in the worst place, so the skill
-	// has to say to look first and what the answer means.
-	for _, needed := range []string{"MISSING", "GH_TOKEN", "granted"} {
-		if !strings.Contains(string(body), needed) {
-			t.Errorf("the skill does not tell the agent to check for %q before it starts", needed)
-		}
-	}
-	// The one thing the agent must not be led to believe it can do.
-	for _, absent := range []string{"gh pr merge", "--admin"} {
-		if strings.Contains(string(body), absent) {
-			t.Errorf("the skill mentions %q; merging is the reviewer's, not the agent's", absent)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 {
   "name": "skill_read",
-  "description": "Load the full text of a skill.",
+  "description": "Load a skill: a written procedure for one kind of work, listed in the skills index with when to use it. Call it before starting work a skill covers, not after, and follow what it says. Call it again whenever its text is no longer in this conversation — compaction folds a skill away like any other turn — rather than working from memory of it.",
   "db_prefix": "skill_read_",
   "timeout_seconds": 30,
   "parameters": {
@@ -8,7 +8,7 @@
     "properties": {
       "name": {
         "type": "string",
-        "description": "Skill name."
+        "description": "The skill's name, as the skills index lists it."
       }
     },
     "required": [

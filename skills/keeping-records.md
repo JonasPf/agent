@@ -1,6 +1,6 @@
 ---
 name: keeping-records
-description: How to keep a record that accumulates over time — measurements, appointments, incidents — as appended files in this session's working directory.
+description: Use when the operator gives a measurement, result, symptom, appointment, or anything else to keep track of over time, or asks about one kept earlier — how a series is kept as appended files in this session's working directory.
 ---
 
 Some things are not a fact but a series: a weight, a test result, a symptom, a bill, a mood, a

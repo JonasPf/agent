@@ -36,6 +36,30 @@ func TestReplace(t *testing.T) {
 			t.Errorf("err = %v, want it to name the file", err)
 		}
 	})
+	t.Run("a near miss names the line it nearly matched", func(t *testing.T) {
+		body := "date,meal,item\n2026-10-11,breakfast,gouda,on crispbread\n2026-10-11,lunch,rice,plain\n"
+		_, _, err := Replace(body, "2026-10-11,breakfast,gouda,on rye crispbread", "x", false, "log/food.csv")
+		if err == nil {
+			t.Fatal("an edit that matches nothing was applied")
+		}
+		if !strings.Contains(err.Error(), "line 2") ||
+			!strings.Contains(err.Error(), "2026-10-11,breakfast,gouda,on crispbread") {
+			t.Errorf("err = %v, want it to quote line 2, the one it nearly matched", err)
+		}
+	})
+	t.Run("a difference only in spacing says so", func(t *testing.T) {
+		body := "## Plan\n\nWeek one:  oats\nand rice.\n"
+		_, _, err := Replace(body, "Week one: oats and rice.", "x", false, "plan.md")
+		if err == nil || !strings.Contains(err.Error(), "spaces or line breaks") {
+			t.Errorf("err = %v, want it to say the text is there with different spacing", err)
+		}
+	})
+	t.Run("a miss like nothing in the file quotes nothing", func(t *testing.T) {
+		_, _, err := Replace("alpha\nbeta\n", "a sentence that is not here at all", "x", false, "f.txt")
+		if err == nil || strings.Contains(err.Error(), "closest") {
+			t.Errorf("err = %v, want no closest line when none resembles it", err)
+		}
+	})
 	t.Run("an empty old string is refused", func(t *testing.T) {
 		// strings.Count("abc", "") is 4, so without this an empty old string
 		// would report a nonsense count and rewrite the file.

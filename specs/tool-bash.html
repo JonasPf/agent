@@ -44,7 +44,7 @@ the browser is broken.</p>
 one: there is no root and no package manager state. So the image ships the userland rather than
 leaving a session to assemble it (<a href="adrs.html#adr-058">ADR-058</a>) &mdash;
 <code>curl</code>, <code>wget</code>, <code>python3</code>, <code>perl</code>, <code>jq</code>,
-<code>unzip</code>, <code>pdftotext</code> and <code>pdftoppm</code>, <code>tesseract</code> with
+<code>unzip</code>, <code>file</code>, <code>pdftotext</code> and <code>pdftoppm</code>, <code>tesseract</code> with
 English and German, and <code>python3</code> carrying <code>pip</code>, <code>numpy</code> and
 <code>pillow</code>. The description lists them, so they are reached for rather than rebuilt.</p>
 
@@ -59,18 +59,28 @@ because a cache they could both write is exactly the channel the sandbox exists 
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
 <tr><td><code>command</code></td><td>The shell command. Required.</td></tr>
-<tr><td><code>timeout_seconds</code></td><td>How long to allow. Optional; the tool's own default is 120.</td></tr>
+<tr><td><code>timeout_seconds</code></td><td>How long to allow. Optional; 120 when unsaid, and at most 900.</td></tr>
 </table>
 
 <h2>Two timeouts, and why</h2>
 <p>The registry kills a tool at the manifest's <code>timeout_seconds</code>, which for this tool is
-150. The tool imposes its own, lower, at 120 by default. The gap is deliberate: a command that
+930. The tool imposes its own, lower: 120 by default, and at most 900. The gap is deliberate: a command that
 overruns is stopped by the tool, which is still alive and can say <em>timed out after 120s</em>. Were
 there only the outer limit, the subprocess would be killed with nothing written to stdout, and an
 overrun would be indistinguishable from a crash.</p>
 
-<p>A caller may raise <code>timeout_seconds</code>, but the registry's limit still bounds it: asking
-for more than the manifest allows buys a kill rather than a message.</p>
+<p>A caller may raise <code>timeout_seconds</code> to fifteen minutes. Asking for more is held to
+fifteen rather than refused, so the longest wait still ends in the tool's message and never in the
+registry's kill.</p>
+
+<p>Fifteen minutes is so that waiting is one call. The ceiling was two and a half, and a session that
+started a ten-minute script in the background could only ask whether it had finished: it called
+<code>sleep 115; kill -0 &lt;pid&gt;</code> 265 times over two turns, each a model call carrying the
+whole conversation, and spent eight dollars learning what one call could have waited for. The
+description now says to wait inside one call &mdash; a <code>kill -0</code> loop with a long
+<code>timeout_seconds</code> &mdash; rather than to ask again. Waiting costs nothing; asking costs a
+turn each time. A wait longer than fifteen minutes is a job with a check
+(<a href="jobs.html">Jobs</a>), which costs nothing until it fires.</p>
 
 <p>The command runs in a process group of its own, and a timeout ends the whole group. Killing the shell
 alone left whatever it had started holding the output open, and the call waited on that until the
@@ -107,13 +117,14 @@ from as though it were the whole answer.</p>
 <li>Output beyond the cap is truncated, and the result says it was truncated and how much was dropped.</li>
 <li>A command that overruns is stopped by the tool and reports the limit it passed.</li>
 <li>The tool's own timeout is below the manifest's, so an overrun is always reported rather than killed.</li>
+<li>A command may be allowed up to fifteen minutes; a longer request is held to fifteen, and the description says to wait for a background process inside one call rather than by calling again.</li>
 <li>A timeout ends everything the command started, and the call returns within moments of it.</li>
 <li>A command that leaves a process running in the background returns once its shell exits, with what it wrote, and does not wait for that process.</li>
 <li>A process left in the background is collected when it exits, so a later command checking its process ID finds it gone rather than still running.</li>
 <li>The command runs in the session's working directory, and a relative path resolves inside it.</li>
 <li>A command reaching outside the session's directory is refused by the sandbox, not by the tool.</li>
 <li><code>curl</code>, <code>wget</code>, <code>python3</code>, and <code>perl</code> are installed and run in the shell under the sandbox, and the description says they are there.</li>
-<li><code>pdftotext</code>, <code>tesseract</code> with both its languages, <code>pip</code>, <code>numpy</code>, <code>pillow</code>, <code>jq</code>, and <code>unzip</code> run in the shell under the sandbox too, and the description says they are there.</li>
+<li><code>pdftotext</code>, <code>tesseract</code> with both its languages, <code>pip</code>, <code>numpy</code>, <code>pillow</code>, <code>jq</code>, <code>unzip</code>, and <code>file</code> run in the shell under the sandbox too, and the description says they are there.</li>
 <li><code>$HOME</code> is inside the session's own working directory and is writable, so what one session keeps there is invisible to every other.</li>
 <li><code>pip install --user</code> resolves to a path inside the session's working directory, rather than to a home directory no tool can write.</li>
 </ul>

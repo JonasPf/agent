@@ -68,7 +68,7 @@ moves the file with it.
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. The skills here are read-only; the ones you write live under `AGENT_STATE`. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. It only adds; nothing here removes a boundary. |
 | `AGENT_TOOL_PORTS` | none | Extra TCP ports a tool may **connect** to, beyond 22, 53, 80, 443, 3000, 3306, 4000, 5000, 5173, 5432, 6379, 8000, 8080, 8443, 8888, 9418, and 27017. The operator's own port is never added: a tool that could reach it could create a conversation holding a credential. The Tools screen shows what is in force. |
-| `AGENT_REPO` | — | Clone URL of this repository, for the agent to propose changes to itself. Reaches a tool only in a session granted it. |
+| `AGENT_REPO` | — | Clone URL of this repository, for a conversation asked to propose changes to the agent. Reaches a tool only in a session granted it. |
 | `GH_TOKEN` | — | GitHub credential. Reaches a tool only in a session granted it. |
 
 That is the whole list. There were eighteen: seven paths that only ever said
@@ -108,7 +108,7 @@ internal/tool      the package every tool is built on (subprocess contract, API,
 tools/<name>/      one Go package per capability, each with manifest.json,
                    main.go, eval.json, and a `run` built from it: bash read write
                    edit clock web_fetch web_browse web_search schedule session_search
-                   skill_read notes — written by you, not by the agent
+                   skill_read — written by you, not by the agent
 data/sessions/<id>/{meta.json,transcript.jsonl}
 data/db/agent.db   the database and its journals, alone in a directory of their
                    own because Landlock grants a tree or it does not
@@ -214,23 +214,24 @@ GitHub Actions (`DEPLOY_WEBHOOK`); none of them are in this repository.
 
 ## Changing the agent
 
-The agent proposes changes to itself: it clones this repository into a session's working directory,
-edits it there, and opens a pull request that goes through the pipeline above. It cannot change the
-copy of itself that is running, and it cannot merge.
+The agent can propose changes to itself: asked to, it clones this repository into a session's
+working directory, edits it there, and opens a pull request that goes through the pipeline above. It
+cannot change the copy of itself that is running, and it cannot merge.
 
 There is no code for this. The whole of it is:
 
 | What | Is |
 | --- | --- |
-| [`skills/changing-yourself.md`](skills/changing-yourself.md) | The procedure, as prose. ~3 KB |
 | `git` and `gh` in the image | The two programs it needs. The shell, the file tools and the network are there for every other task |
 | `GH_TOKEN`, `AGENT_REPO` | A credential and an address, reaching tools only in a session granted them by name |
 
 No tool, no API route, no branch in the loop — nothing in any package knows this capability exists,
-and a test fails if that changes. Deleting the skill and the two packages deletes the capability.
+and a test fails if that changes. Deleting the two packages deletes the capability. There is no
+skill for it: the one there was, `changing-yourself`, was never read and was removed (ADR-064), so the
+procedure is what you ask for in the conversation and what this repository's `AGENTS.md` says.
 
-**Nothing in the agent enforces the procedure.** A skill is advice to a model that already has a
-shell. The controls are all outside: the credential's scope, branch protection, a pull-request
+**Nothing in the agent enforces a procedure.** A message or a skill is advice to a model that
+already has a shell. The controls are all outside: the credential's scope, branch protection, a pull-request
 pipeline with no secrets, and the sandbox that keeps a tool out of the running agent's directories.
 Where the sandbox does not run, the pipeline is not the only way in.
 See [ADR-036](specs/adrs.html#adr-036) and [Changing the agent](specs/architecture.html).

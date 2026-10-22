@@ -1,12 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // toolCallingModel answers with a call to one tool for the first rounds, and
@@ -34,9 +38,10 @@ func toolCallingModel(t *testing.T, tool string, rounds int, final string) *http
 	}))
 }
 
-// A turn runs as many rounds of tools as the work takes. A bound of twelve
-// stopped a research task in the middle and wrote nothing at all: the
-// conversation simply went quiet, which is the one thing that may not happen.
+// A turn runs as many rounds of tools as the work takes, up to a limit no
+// ordinary task reaches. A bound of twelve stopped a research task in the
+// middle and wrote nothing at all: the conversation simply went quiet, which is
+// the one thing that may not happen.
 func TestATurnRunsAsManyToolRoundsAsTheWorkTakes(t *testing.T) {
 	a := newTestApp(t)
 	dir := t.TempDir()
@@ -85,5 +90,77 @@ func TestATurnRunsAsManyToolRoundsAsTheWorkTakes(t *testing.T) {
 	}
 	if !strings.Contains(last, "knowledge base") {
 		t.Errorf("the turn ended on %q, want the model's answer", last)
+	}
+}
+
+// A model that never stops calling tools is stopped at the round limit, and the
+// transcript says so. Unbounded, one turn ran 728 tool calls over four hours
+// and cost more than every other turn of its conversation together; another
+// spent 335 calls sleeping in a loop. The stop is an entry rather than
+// silence, and the operator's next message carries on where it stopped.
+func TestARunawayTurnStopsAtTheRoundLimitAndSaysSo(t *testing.T) {
+	a := newTestApp(t)
+	dir := t.TempDir()
+	writeTool(t, dir, "ticker", "#!/bin/sh\nprintf '{\"ok\":true,\"content\":\"tick\"}'\n")
+	a.tools.dir = dir
+	if _, f := a.tools.Load(a); len(f) > 0 {
+		t.Fatalf("load failures: %v", f)
+	}
+	var calls atomic.Int64
+	inner := toolCallingModel(t, "ticker", 1<<30, "never")
+	t.Cleanup(inner.Close)
+	// Only a call that offers tools is a round; titling the conversation is not.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), `"ticker"`) {
+			calls.Add(1)
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		inner.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	a.or = NewOpenRouter("test-key")
+	a.or.base = srv.URL
+
+	s := newSession(t, a)
+	send := func(text string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest("POST", "/sessions/"+s.ID+"/messages",
+			strings.NewReader(`{"text":"`+text+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		a.routes().ServeHTTP(w, req)
+		if w.Code != 202 {
+			t.Fatalf("send status = %d: %s", w.Code, w.Body.String())
+		}
+		deadline := time.Now().Add(60 * time.Second)
+		for a.Busy(s.ID) && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if a.Busy(s.ID) {
+			t.Fatal("the turn never stopped")
+		}
+	}
+
+	send("Search every conversation for every food I ever ate.")
+	if got := calls.Load(); got != 100 {
+		t.Errorf("the model was called %d times, want the 100-round limit", got)
+	}
+	var stop *Entry
+	for _, e := range a.store.Entries(s.ID) {
+		if e.Type == "event" && e.EventKind == "round_limit" {
+			stop = &e
+		}
+	}
+	if stop == nil {
+		t.Fatal("the turn stopped without an entry saying why")
+	}
+	if !strings.Contains(stop.Text, "100") || !strings.Contains(stop.Text, "continue") {
+		t.Errorf("the stop says %q; it must name the limit and how to carry on", stop.Text)
+	}
+
+	send("continue")
+	if got := calls.Load(); got <= 100 {
+		t.Errorf("the next message did not carry on: the model was called %d times in all", got)
 	}
 }

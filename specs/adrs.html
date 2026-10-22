@@ -1520,7 +1520,7 @@ visible the next time the new-conversation screen opens.</p>
 </div>
 
 <div class="adr" id="adr-050">
-<div class="meta">ADR-050 · accepted</div>
+<div class="meta">ADR-050 · accepted · amended by <a href="#adr-064">ADR-064</a></div>
 <h3>A skill can ship off</h3>
 <h4>Context</h4>
 <p>A session that did not choose its skills had every skill, so <code>changing-yourself</code> was indexed
@@ -1578,7 +1578,7 @@ every conversation. Both are what those tools are for.</p>
 </div>
 
 <div class="adr" id="adr-052">
-<div class="meta">ADR-052 · accepted</div>
+<div class="meta">ADR-052 · accepted · amended by <a href="#adr-064">ADR-064</a></div>
 <h3>A forge client authenticates from the environment, never from a file</h3>
 <h4>Context</h4>
 <p>The image carries <code>gh</code> so the agent can propose changes to itself
@@ -1985,6 +1985,73 @@ the transcript after a revert, and deleting the session remains the way to remov
 conversation and stay as the reverted turns left them, so the agent can meet a file it has no memory
 of writing. The confirmation says this before anything is reverted, rather than the system pretending
 the turns never ran.</p>
+</div>
+
+<div class="adr" id="adr-062">
+<div class="meta">ADR-062 · accepted · reverses the unbounded turn in <a href="architecture.html">Architecture</a></div>
+<h3>A turn stops at a hundred rounds, and says so</h3>
+<h4>Context</h4>
+<p>A turn was once bounded at twelve rounds, which a research task passes in a minute or two; it stopped
+having written nothing, and the bound was removed, with the risk it guarded against left to be answered
+when it was seen. A month of the deployed agent showed it. One turn called <code>session_search</code>
+696 times in a row, ran 728 tool calls over four hours, reached 166,000 tokens of context because
+compaction runs only between turns, and cost $10.41 &mdash; more than half of its conversation's whole
+spend. Two more turns polled a background script 265 times with <code>sleep 115; kill -0</code>, at
+$8.29. Between them the three were two thirds of everything the agent had cost.</p>
+<h4>Decision</h4>
+<p>A turn calls the model at most a hundred times. The hundredth round's tool results are stored, then a
+<code>round_limit</code> event says the turn stopped and that "continue" carries on. The transcript ends
+on tool results, which a provider accepts, so the next message resumes rather than restarts. The bound
+is a constant, not a setting: it is far above what any task seen so far took, and a setting nobody
+changes is one more thing to document.</p>
+<p>The polling half is answered in the shell as well: <code>bash</code> may now wait fifteen minutes in
+one call, and says to wait inside a call rather than ask again.</p>
+<h4>Consequences</h4>
+<p>A legitimate task that needs more than a hundred rounds is interrupted and needs one word from the
+operator to go on. A job wake that reaches the limit stops with nobody to say it; its next wake begins
+a turn of its own. A runaway is still expensive up to the limit &mdash; a hundred rounds of a large
+conversation is not cheap &mdash; and a turn still does not compact part way through.</p>
+</div>
+
+<div class="adr" id="adr-063">
+<div class="meta">ADR-063 · accepted</div>
+<h3>The notes tool is removed</h3>
+<h4>Context</h4>
+<p><code>notes</code> kept short notes in the agent's database, scoped to a conversation unless asked to
+widen (<a href="#adr-055">ADR-055</a>). In a month it was called 17 times, all in one conversation: 16
+adds and no list. Nothing ever read a note back. The notes were journal entries of 230 to 1,600
+characters, which is what <code>keeping-records</code> already puts in <code>notes/&lt;topic&gt;.md</code>,
+where <code>grep</code> and the Files screen reach them; and reaching another conversation is
+<code>session_search</code>'s job.</p>
+<h4>Decision</h4>
+<p>Remove the tool. Its sixteen notes were copied into that conversation's own <code>notes/</code>
+before the tool went, so nothing it held is lost. The table it kept stays in the database, as any
+deleted tool's tables do.</p>
+<h4>Consequences</h4>
+<p>No shipped tool now keeps tables of its own or ships an interface panel. Both remain part of the tool
+contract and the interface; the database grant is tested with a tool written for the test, and a panel
+is a feature with no example until a tool needs one.</p>
+</div>
+
+<div class="adr" id="adr-064">
+<div class="meta">ADR-064 · accepted · amends <a href="#adr-050">ADR-050</a> and <a href="#adr-052">ADR-052</a></div>
+<h3>The skills for changing code are removed</h3>
+<h4>Context</h4>
+<p><code>changing-yourself</code> and <code>working-on-a-repository</code> shipped off
+(<a href="#adr-050">ADR-050</a>), so a conversation had them only if it chose them. None did, and in a
+month neither was read once. About half of each repeated the other: check for a granted token, clone
+over HTTPS, branch, open a pull request, read the pipeline.</p>
+<h4>Decision</h4>
+<p>Delete both rather than merge them or switch them on. The capability does not depend on them:
+<code>git</code>, <code>gh</code>, and <code>glab</code> are in the image and a granted credential still
+reaches a tool, so a conversation asked to propose a change can still propose one. What it is told is
+what the operator asks for and what the repository's own <code>AGENTS.md</code> says.</p>
+<h4>Consequences</h4>
+<p>What the skills knew that a model does not &mdash; that <code>auth login</code> cannot work here, that
+<code>glab</code> needs <code>GLAB_CONFIG_DIR</code> pointed at the working directory, that a token in a
+clone URL must not be printed &mdash; is no longer written down for the agent. A conversation that meets
+those will find them the slow way, and a skill can be written again when there is a real need for one.
+Every shipped skill is now on; <code>default: off</code> remains for skills the operator writes.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

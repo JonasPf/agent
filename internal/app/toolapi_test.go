@@ -169,7 +169,12 @@ func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
 	a := newTestAppAt(t, dir)
 	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")
 	a.tools = NewRegistry(a.cfg.ToolsDir, DBPath(dir), a.store.DB())
-	a.skills = NewSkills(filepath.Join("..", "..", "skills"), "")
+	userSkills := t.TempDir()
+	writeSkillIn(t, userSkills, "chosen-only", "default: off\n")
+	a.skills = NewSkills(filepath.Join("..", "..", "skills"), userSkills)
+	if sk := a.skills.Get("chosen-only"); sk == nil || sk.DefaultEnabled {
+		t.Fatalf("the skill that is off by default did not load as off: %+v", sk)
+	}
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %+v", failures)
@@ -183,8 +188,6 @@ func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
 		return a.tools.Call(t.Context(), &ToolCtx{App: a, SessionID: s.ID}, name, json.RawMessage(args))
 	}
 	for _, c := range []struct{ tool, args string }{
-		{"notes", `{"action":"add","text":"prefers metric units"}`},
-		{"notes", `{"action":"list"}`},
 		{"schedule", `{"action":"create","schedule":"10m","prompt":"stretch","after_acting":"stop"}`},
 		{"schedule", `{"action":"list"}`},
 		{"skill_read", `{"name":"scheduling"}`},
@@ -200,7 +203,7 @@ func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
 			t.Errorf("the schedule tool put a job into another conversation")
 		}
 	}
-	if res := call("skill_read", `{"name":"changing-yourself"}`); res.OK {
-		t.Errorf("skill_read read a skill that ships off in a conversation that did not choose it")
+	if res := call("skill_read", `{"name":"chosen-only"}`); res.OK {
+		t.Errorf("skill_read read a skill that is off by default in a conversation that did not choose it")
 	}
 }

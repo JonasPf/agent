@@ -26,7 +26,7 @@
 <table>
 <tr><th>Component</th><th>Responsibility</th></tr>
 <tr><td><b>Gateway</b></td><td>Serves the HTTP API, the web UI, and a WebSocket stream. The only network surface.</td></tr>
-<tr><td><b>Agent loop</b></td><td>Assembles a request from a session, calls the model, dispatches tool calls, appends results, repeats until the model stops calling tools.</td></tr>
+<tr><td><b>Agent loop</b></td><td>Assembles a request from a session, calls the model, dispatches tool calls, appends results, repeats until the model stops calling tools or a hundred rounds have run.</td></tr>
 <tr><td><b>Scheduler</b></td><td>Ticks once per second. Fires due jobs into their sessions. Writes each job's run log and owns the circuit breaker.</td></tr>
 <tr><td><b>Tool registry</b></td><td>Scans the tool directory, validates manifests, exposes schemas to the model, executes tools as subprocesses.</td></tr>
 <tr><td><b>Store</b></td><td>SQLite for structured state and full-text search. JSONL files for transcripts.</td></tr>
@@ -165,18 +165,28 @@ and can be changed mid-session.</p>
 <h3>How long a turn runs</h3>
 
 <p>A turn is a loop: the model is called, the tools it asks for are run, their results go back, and it
-is called again. The loop ends when the model stops asking for tools. It is not bounded by a number of
-rounds. A research task passes any such number in a minute or two, and a turn that stopped on one
-stopped having written nothing &mdash; the conversation went quiet, mid-task, with no entry saying
-why, which is the one thing that may not happen here. A model that calls tools forever is a real risk
-and is answered when it is seen, by the operator reading what it is doing and by the cost the session
-reports, not by cutting every long task short.</p>
+is called again. The loop ends when the model stops asking for tools, or after a hundred rounds.</p>
+
+<p>The bound is set far above what a task takes. One of twelve was tried and removed: a research task
+passes twelve in a minute or two, and a turn that stopped on it stopped having written nothing &mdash;
+the conversation went quiet, mid-task, with no entry saying why, which is the one thing that may not
+happen here. Without any bound, the risk it had been against was then seen: one turn ran 728 tool
+calls over four hours, and two more spent 335 calls sleeping in a loop, between them two thirds of
+everything the agent had spent (<a href="adrs.html#adr-062">ADR-062</a>).</p>
+
+<p>So a turn that reaches a hundred rounds stops after storing what its last tools returned, and
+writes a <code>round_limit</code> event saying so. The transcript ends on tool results, which is a
+conversation a provider accepts, and the operator's next message &mdash; "continue" is enough &mdash;
+carries on from there. A job wake that reaches the limit stops the same way; the next wake starts its
+own turn.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A turn runs as many rounds of tool calls as the model asks for, and ends on what the model said.</li>
-<li>A turn never ends without writing an entry: an answer, or a failure that says what went wrong.</li>
+<li>A turn runs as many rounds of tool calls as the model asks for, up to a hundred, and ends on what the model said.</li>
+<li>A turn that reaches a hundred rounds stops, stores the results of its last tool calls, and writes an event naming the limit and saying how to carry on.</li>
+<li>The next message after a stopped turn carries on: the model is called again with everything the stopped turn wrote.</li>
+<li>A turn never ends without writing an entry: an answer, a failure that says what went wrong, or the stop at the limit.</li>
 </ul>
 </div>
 
@@ -307,40 +317,45 @@ must be on the tailnet to learn anything at all.</p>
 
 <h2>Changing the agent</h2>
 
-<p>The agent proposes changes to itself (<a href="adrs.html#adr-036">ADR-036</a>), which is the second
+<p>The agent can propose changes to itself (<a href="adrs.html#adr-036">ADR-036</a>), which is the second
 half of <a href="index.html">no surprises</a>: the agent you are talking to tomorrow is the one you
 approved today. It is worth being exact about what that consists of, because it is not a feature and
 there is no code for it.</p>
 
 <table>
 <tr><th>What</th><th>Is</th></tr>
-<tr><td><code>skills/changing-yourself.md</code></td><td>The procedure, as prose: clone into this session's working directory, branch, edit, push, open a pull request, read what the pipeline says. About three kilobytes.</td></tr>
-<tr><td><code>git</code> and <code>gh</code> in the image</td><td>The two programs that procedure needs. Everything else it uses &mdash; the shell, the file tools, the network &mdash; is there for every other task too.</td></tr>
+<tr><td><code>git</code> and <code>gh</code> in the image</td><td>The two programs a change needs. Everything else it uses &mdash; the shell, the file tools, the network &mdash; is there for every other task too.</td></tr>
 <tr><td><code>GH_TOKEN</code>, <code>AGENT_REPO</code></td><td>A credential and an address, delivered to a tool that names them in its manifest (<a href="adrs.html#adr-037">ADR-037</a>).</td></tr>
 </table>
 
 <p>That is the whole of it. No package in the agent knows this capability exists: no tool, no route on
-the API, no branch in the loop. It is composition &mdash; a shell, a network, and a document &mdash;
-and the same three parts let the agent work on any other repository just as well. That is what
-<code>skills/working-on-a-repository.md</code> is: the same composition pointed at someone else's code,
-with <code>glab</code> beside <code>gh</code> in the image and <code>GITLAB_TOKEN</code> beside
-<code>GH_TOKEN</code> among the names a session can be granted
-(<a href="adrs.html#adr-052">ADR-052</a>). Neither client is logged in, because nothing here can write
-the file a login would leave.</p>
+the API, no branch in the loop. It is composition &mdash; a shell, a network, and a credential &mdash;
+and the same parts let the agent work on any other repository just as well, with <code>glab</code>
+beside <code>gh</code> in the image and <code>GITLAB_TOKEN</code> beside <code>GH_TOKEN</code> among
+the names a session can be granted (<a href="adrs.html#adr-052">ADR-052</a>). Neither client is logged
+in, because nothing here can write the file a login would leave.</p>
 
-<p><strong>Nothing in the agent enforces the procedure.</strong> A skill is advice to a model that
-already has a shell; it shapes what the agent does and constrains nothing. Every control that makes
+<p>There used to be one more part, a skill for each case: <code>changing-yourself</code> and
+<code>working-on-a-repository</code>, the procedure as prose. Both shipped off, no conversation turned
+either on, and neither was read in a month of use, so both were removed
+(<a href="adrs.html#adr-064">ADR-064</a>). The procedure is now what the operator asks for in the
+conversation, and what the repository's own <code>AGENTS.md</code> or <code>CONTRIBUTING.md</code>
+says.</p>
+
+<p><strong>Nothing in the agent enforces a procedure.</strong> Advice to a model that already has a
+shell &mdash; a skill, a message, a repository's own rules &mdash; shapes what the agent does and
+constrains nothing. Every control that makes
 this safe sits outside the process: the scope of the credential, the branch protection that refuses a
 merge without a green pipeline, the pipeline that holds no secrets on a pull request, and the sandbox
-that keeps a tool out of the agent's own directories. An agent that ignores its skill entirely still
+that keeps a tool out of the agent's own directories. An agent that ignores every piece of advice still
 cannot merge; an agent on a host where the sandbox does not run can write the tool directory of the
 copy that is running, and the pipeline stops being the only way in.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>No source file in the agent, its tools, or its commands refers to the credential or the repository the agent proposes changes to. The capability is a skill, two programs, and the tool environment; a code path for it is a defect.</li>
-<li>Removing the skill and the two programs removes the capability, and nothing else changes.</li>
+<li>No source file in the agent, its tools, or its commands refers to the credential or the repository the agent proposes changes to. The capability is two programs and the tool environment; a code path for it is a defect.</li>
+<li>Removing the two programs removes the capability, and nothing else changes.</li>
 <li>The agent cannot write the tool directory or the skill directory of the running process, so a change reaches the running agent only by being merged and deployed.</li>
 <li>What constrains the agent is stated where the capability is described: the credential's scope, the branch protection, a pipeline without secrets, and the sandbox.</li>
 </ul>

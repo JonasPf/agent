@@ -30,21 +30,30 @@ about when and how to use one.</p>
 
 ---
 name: scheduling
-description: How to turn a request for later into a job.
+description: Use before creating or changing a job — how to turn a request for later into one.
 ---
 
 A request for later is either a time or a condition…</code></pre>
 
 <p>A skill a conversation should set out to use, rather than find in every prompt, adds
 <code>default: off</code> to its frontmatter. A session that did not choose its skills then leaves it
-out; a session that lists its skills has exactly the ones it lists. <code>changing-yourself</code> and
-<code>working-on-a-repository</code> ship off (<a href="adrs.html#adr-050">ADR-050</a>,
-<a href="adrs.html#adr-052">ADR-052</a>).</p>
+out; a session that lists its skills has exactly the ones it lists
+(<a href="adrs.html#adr-050">ADR-050</a>). No shipped skill does: the two that did, for changing code,
+were never read, because no conversation turned them on, and were removed
+(<a href="adrs.html#adr-064">ADR-064</a>). Off remains a choice for a skill the operator writes.</p>
 
 <h2>Progressive disclosure</h2>
 
 <p>Only the name and description of each skill appear in the system prompt. The agent loads a skill's
-full text when it judges the skill relevant.</p>
+full text with <a href="tool-skill_read.html"><code>skill_read</code></a> when the work in front of it
+is work the skill covers.</p>
+
+<p>Left to judge relevance from a list, it mostly did not: a skill was in front of the model in under a
+third of the turns it covered. So the index opens with the rule &mdash; read the skill before starting
+the work, and again whenever its text is no longer there, because compaction folds a skill away like
+any other turn &mdash; and a description says <em>when</em> to use a skill before it says what is in it.
+"Use when the operator gives a measurement&hellip;" is a trigger a model can match a request against;
+"How to keep a record&hellip;" is a summary it has to infer one from.</p>
 
 <p>This is what allows the collection to grow. Twenty skills cost a few hundred characters of context
 rather than twenty documents' worth.</p>
@@ -54,13 +63,15 @@ rather than twenty documents' worth.</p>
 <ul>
 <li>The system prompt lists the name and description of every skill enabled for the session, and no skill's body.</li>
 <li>A skill's description is a single line.</li>
+<li>The index opens by saying to read a skill with <code>skill_read</code> before the work it covers, and again after compaction; an empty index says only that there are none.</li>
+<li>Every shipped skill's description begins with when to use it.</li>
 <li>Reading a skill is a tool call visible in the transcript.</li>
 <li>Adding a skill requires no restart.</li>
 <li>A skill with malformed frontmatter is skipped, and the failure is visible in the interface.</li>
 <li>A skill whose frontmatter says <code>default: off</code> is absent from the index of a session that did not choose its skills, and present in one that chose it.</li>
 <li>A <code>default</code> that is neither <code>on</code> nor <code>off</code> is malformed frontmatter.</li>
 <li>The skill list says, for each skill, whether it is on by default.</li>
-<li><code>changing-yourself</code> and <code>working-on-a-repository</code> ship off, and are the only shipped skills that do.</li>
+<li>Every shipped skill is on by default.</li>
 </ul>
 </div>
 

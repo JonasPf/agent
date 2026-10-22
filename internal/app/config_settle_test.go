@@ -80,7 +80,7 @@ func TestConfigCannotBeChangedOnAnExistingSession(t *testing.T) {
 	}
 	for _, body := range []string{
 		`{"model":"newer/model"}`,
-		`{"enabled_tools":["notes"]}`,
+		`{"enabled_tools":["bash"]}`,
 		`{"enabled_skills":[]}`,
 	} {
 		w := patchSession(t, a, s.ID, body)
