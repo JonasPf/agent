@@ -729,6 +729,34 @@ test('an answer arriving leaves a reader who scrolled up where they are', async 
   assert.strictEqual(main.scrollTop, 5000, 'a reader at the end was left behind as the answer grew');
 });
 
+// An answer belongs to the conversation that asked for it. Left mid-answer, it
+// finishes where nobody is looking, and what had arrived of it used to stay
+// behind: drawn at the foot of every conversation opened after, each one saying
+// it was generating.
+test('an answer left mid-stream is not drawn in the conversation opened next', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1' }) }, '/sessions/S1/transcript': [],
+    '/sessions/S2': { session: session({ id: 'S2', title: 'Kiln firing log' }) }, '/sessions/S2/transcript': [],
+  });
+  vm.runInContext("state.view = 'session'; state.arg = 'S1';", ctx);
+  await ctx.viewSession(node('div'));
+  ctx.handle({ kind: 'working', session_id: 'S1' });
+  ctx.handle({ kind: 'delta', session_id: 'S1', text: 'The humidity is high.' });
+
+  vm.runInContext("state.arg = 'S2';", ctx);
+  await ctx.viewSession(node('div'));
+  const check = when => {
+    assert.doesNotMatch(textOf(ctx._id('transcript')), /humidity/, 'the other answer is drawn here ' + when);
+    assert.doesNotMatch(textOf(ctx._id('statusline')), /generating/, 'this conversation says it is generating ' + when);
+  };
+  check('once opened');
+
+  ctx.handle({ kind: 'entry', session_id: 'S1',
+    entry: { seq: 1, type: 'message', role: 'assistant', text: 'The humidity is high.', created_at: '2026-10-22T12:00:00Z' } });
+  ctx.handle({ kind: 'idle', session_id: 'S1' });
+  check('after it finished');
+});
+
 // A turn with many tool calls appends many entries. Each is added where it
 // belongs; what is already on screen stays as it is, a result the reader opened
 // included.

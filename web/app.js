@@ -593,6 +593,9 @@ async function viewSession(v) {
   // What arrives over the socket while the transcript is on its way collects
   // here, to be kept: the transcript was read before it was written.
   state.entries = [];
+  // An answer that was arriving belongs to the conversation it was arriving
+  // in, which finishes it where this page is no longer looking.
+  state.streaming = '';
   // Neither waits on the other: on a phone each is a round trip of its own.
   const [res, entries] = await Promise.all([
     api('/sessions/' + state.arg), api('/sessions/' + state.arg + '/transcript')]);
