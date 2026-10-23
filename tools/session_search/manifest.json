@@ -1,6 +1,6 @@
 {
   "name": "session_search",
-  "description": "Full-text search over transcripts. Defaults to this conversation, which is how you reach back for detail that compaction has folded away \u2014 anything said earlier here is still findable even when you can no longer see it. Pass session:\"all\" to search every conversation, or a session id to search that one.",
+  "description": "Full-text search over transcripts. Defaults to this conversation, which is how you reach back for detail that compaction has folded away — anything said earlier here is still findable even when you can no longer see it. Pass session:\"all\" to search every conversation, or a session id to search that one. A hit shows only a few words around the match and its number (#1366); to read that entry whole, call again with seq set to the number, and session set to its session id if it is in another conversation. Read the entry rather than searching again and again for more of it.",
   "db_prefix": "session_search_",
   "timeout_seconds": 30,
   "parameters": {
@@ -8,7 +8,11 @@
     "properties": {
       "query": {
         "type": "string",
-        "description": "Words to look for. Each word matches as a prefix, and punctuation is looked for as written: \"follow-up\", \"notes.md\", and \"AND\" are all fine."
+        "description": "Words to look for. Each word matches as a prefix, and punctuation is looked for as written: \"follow-up\", \"notes.md\", and \"AND\" are all fine. Required unless seq is given."
+      },
+      "seq": {
+        "type": "integer",
+        "description": "A hit's number, to read that one entry whole instead of searching."
       },
       "limit": {
         "type": "integer"
@@ -18,8 +22,6 @@
         "description": "Where to look. Omit for this conversation; \"all\" for every conversation; or a session id."
       }
     },
-    "required": [
-      "query"
-    ]
+    "required": []
   }
 }

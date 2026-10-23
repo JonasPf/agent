@@ -92,6 +92,7 @@ func (a *App) toolRoutes() http.Handler {
 	mux.HandleFunc("DELETE /jobs/{id}", a.ownJob(a.hDeleteJob))
 	mux.HandleFunc("GET /skills/{name}", a.tSkill)
 	mux.HandleFunc("GET /search", a.hSearch)
+	mux.HandleFunc("GET /entry", a.tEntry)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		g, ok := a.calls.lookup(token)
@@ -157,4 +158,32 @@ func (a *App) tSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"name": sk.Name, "description": sk.Description, "body": sk.Body})
+}
+
+// tEntry reads one entry whole. A search hit is a dozen words around the match,
+// and an agent that lost an answer to a compaction once spent four hours and
+// 696 searches putting it back together from those. The calling conversation's
+// entry unless another is named, as with a search.
+func (a *App) tEntry(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session")
+	if sessionID == "" {
+		sessionID = caller(r).SessionID
+	}
+	seq, err := strconv.Atoi(r.URL.Query().Get("seq"))
+	if err != nil {
+		fail(w, 400, "seq is required")
+		return
+	}
+	if a.store.Session(sessionID) == nil {
+		fail(w, 404, "no conversation %s", sessionID)
+		return
+	}
+	e, ok := a.store.EntryBySeq(sessionID, seq)
+	if !ok {
+		fail(w, 404, "no entry %d in %s", seq, sessionID)
+		return
+	}
+	h := SearchHit{SessionID: sessionID, Seq: seq}
+	a.store.describeHit(&h)
+	writeJSON(w, 200, map[string]any{"entry": e, "reverted": h.Reverted, "compacted": h.Compacted})
 }

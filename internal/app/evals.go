@@ -317,10 +317,14 @@ func readTurn(entries []Entry) TurnRecord {
 // which is exactly how the last default was found to be gone. Hence the check
 // below: the run says the model is not there and what to do about it.
 //
-// google/gemma-4-26b-a4b-it is cheap rather than free, which is the trade. The
-// free tier that preceded it took three and a half minutes a case; this takes
-// under two seconds, and a suite nobody will wait for is a suite nobody runs.
-const DefaultEvalModel = "google/gemma-4-26b-a4b-it"
+// z-ai/glm-5.3 is the model the deployed conversations run on, so a case that
+// passes says something about the agent as it is used. Its predecessor,
+// google/gemma-4-26b-a4b-it, took under two seconds a case and was too weak to
+// tell a good description from a bad one: it failed basic cases — "print hello
+// with the shell", answered with no call at all — on descriptions this one
+// passes, and failed them the same way before and after a change. A case here
+// takes seconds rather than one, and a suite still runs in a few minutes.
+const DefaultEvalModel = "z-ai/glm-5.3"
 
 // EvalModel is the model the eval command drives. It is deliberately a cheap one
 // by default: an eval that is expensive to run is an eval nobody runs.

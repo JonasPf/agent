@@ -147,6 +147,8 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 			return
 		}
 		s.jobFailed(j, err)
+		// A failed wake grew the conversation as an answered one does.
+		a.maybeCompact(ctx, sess)
 		return
 	}
 	j.LastStatus = "fired"
