@@ -415,7 +415,7 @@ popup of its own instead.</p>
 <h2>Panels</h2>
 
 <p>Jobs, tools, skills, and personas each have a management panel. Tools that ship their own
-panel appear alongside them.</p>
+panel appear alongside them. More also leads to <a href="#metrics">Metrics</a>.</p>
 
 <p>Skills and personas are the same kind of thing on disk &mdash; a Markdown file with frontmatter that
 the operator writes &mdash; so they are listed, written, and deleted through one screen, and only the
@@ -434,6 +434,53 @@ wording differs.</p>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
 <li>The Tools panel shows, for each tool, the paths it may read and write and the ports it may connect to, from the policy the sandbox applies, and that it can never reach the operator's port; it sets what that tool's manifest asked for apart from what every tool gets; it says when either half is not enforced, and that a builtin runs inside the agent.</li>
+</ul>
+</div>
+
+<h2 id="metrics">Metrics</h2>
+
+<p>How much each skill, tool, and job is used, on one screen behind More. Without it the question was
+answered by copying every transcript off the server and counting by hand, which is also the one thing a
+conversation about health records should never need.</p>
+
+<p>The numbers are counted, on the way out, from what the agent already stores: the transcripts and
+each job's log (<a href="adrs.html#adr-065">ADR-065</a>). Nothing is recorded for them, so nothing can
+disagree with the transcript, and what a deleted conversation did leaves with it. What a fork copied
+from its origin happened once and is counted once, in the origin.</p>
+
+<ul>
+<li><strong>Skills.</strong> A read is a <code>skill_read</code> call for that skill that succeeded. Beside
+it, how many conversations read it out of how many were offered it: a conversation is offered a skill
+when the index its model was shown listed it, which is read from the conversation's own prompt rather
+than from the skills loaded now, because a prompt is fixed for a conversation's life. A skill read in
+few of the conversations offered it is one whose description is not doing its job.</li>
+<li><strong>Tools.</strong> Calls, failures (a result that says it did not succeed), how many
+conversations called it, and what its newest failure said, which is usually enough to tell a broken
+tool from one the model calls wrongly.</li>
+<li><strong>Jobs.</strong> Each job's wakes by outcome &mdash; acted, skipped, failed &mdash; from its
+log, and what the model calls of its wakes cost, from the transcript. A check costs nothing and adds
+nothing to the cost.</li>
+</ul>
+
+<p>Every tool and skill loaded is listed whether or not it was used, since one nobody uses is an answer
+too, and one that is no longer loaded keeps the uses it had, marked so. A job is listed when it woke in
+the window or is still scheduled. "In how many conversations" is out of the conversations that had a
+model call in the window; one that was created and never spoken in showed its model nothing.</p>
+
+<p>The window is the last 7 days, the last 30, or everything stored; 30 is the default. It is in the
+address, so going back returns to the window that was being read.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>The More panel leads to a Metrics screen.</li>
+<li>Each skill says how often it was read, and in how many of the conversations offered it; one never read says so.</li>
+<li>Each tool says how often it was called, how often that failed, and what its newest failure said.</li>
+<li>Each job says how many of its wakes acted, were skipped, and failed, and what its wakes cost, and opens the conversation it fires into.</li>
+<li>Every loaded tool and skill is listed whether or not it was used; one no longer loaded keeps its uses and is marked not loaded.</li>
+<li>What a fork carried over from its origin is counted once.</li>
+<li>A deleted conversation's uses are no longer counted.</li>
+<li>A window of the last 7 or 30 days counts only what happened in it; the window chosen is kept in the address.</li>
 </ul>
 </div>
 

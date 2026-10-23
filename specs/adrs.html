@@ -2054,6 +2054,25 @@ those will find them the slow way, and a skill can be written again when there i
 Every shipped skill is now on; <code>default: off</code> remains for skills the operator writes.</p>
 </div>
 
+<div class="adr" id="adr-065">
+<div class="meta">ADR-065 · accepted</div>
+<h3>Metrics are counted from the transcripts, not recorded</h3>
+<h4>Context</h4>
+<p>Which skills are read and which tools fail was answered once by reading every transcript on the
+server and counting by hand. The operator wants the agent to answer it, on a page. A counter could be
+incremented as each call happens, or the counts could be taken from what is already stored.</p>
+<h4>Decision</h4>
+<p>Count on the way out. <code>GET /metrics</code> walks the transcripts, which already hold every tool
+call, its result, and what each model call cost, and each job's run log, which holds every wake's
+outcome. Nothing new is stored. A skill's "offered" count is read from each conversation's own prompt
+entry, since that is what its model was shown.</p>
+<h4>Consequences</h4>
+<p>The counts cannot disagree with the transcript, and need no migration when what is counted changes:
+an older conversation is counted the same way as a new one. What a deleted conversation did leaves the
+numbers with it, as a deleted job's wakes leave with its log; the screen says so. Each request reads
+every entry in memory, which is fine for one operator's conversations and would not be for many.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

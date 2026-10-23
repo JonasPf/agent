@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-10-23
+
+- **A Metrics screen shows what gets used.** Open More, then Metrics. It
+  shows how often each skill is read, and in how many of the conversations
+  that were offered it. It shows how often each tool is called, how often
+  it fails, and what its last failure said. For each job it shows how many
+  wakes acted, were skipped or failed, and what they cost. Choose the last
+  7 days, the last 30, or all time. The numbers are counted from the
+  conversations themselves, so deleting a conversation removes its numbers
+  too.
+
 ## 2026-10-22
 
 - **A full disk no longer garbles a conversation.** When the server's disk
