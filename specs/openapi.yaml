@@ -910,6 +910,41 @@ paths:
                     name: {type: string}
                     from_env_file: {type: boolean, description: Written in the agent's .env, rather than only in its environment.}
 
+  /metrics:
+    get:
+      tags: [system]
+      summary: How much each tool, skill, and job is used, counted from the transcripts and job logs.
+      parameters:
+        - name: days
+          in: query
+          schema: {type: integer, minimum: 0}
+          description: Count only the last this many days. Absent or 0 counts everything stored.
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  days: {type: integer}
+                  since: {type: string, format: date-time, description: Where the window begins; absent for no window.}
+                  conversations: {type: integer, description: Conversations with a model call in the window.}
+                  tools:
+                    type: array
+                    description: Every loaded tool, and any other called in the window; most called first.
+                    items: {$ref: "#/components/schemas/ToolMetric"}
+                  skills:
+                    type: array
+                    description: Every loaded skill, and any other read in the window; most read first.
+                    items: {$ref: "#/components/schemas/SkillMetric"}
+                  jobs:
+                    type: array
+                    description: Every job that woke in the window or is still scheduled; costliest first.
+                    items: {$ref: "#/components/schemas/JobMetric"}
+        "400":
+          description: days is not a whole number of days.
+
   /status:
     get:
       tags: [system]
@@ -1168,6 +1203,43 @@ components:
         due_at: {type: string, format: date-time}
         outcome: {type: string, enum: [fired, skipped, failed]}
         message: {type: string}
+
+    ToolMetric:
+      type: object
+      properties:
+        name: {type: string}
+        calls: {type: integer}
+        failures: {type: integer, description: Calls whose result said ok false.}
+        conversations: {type: integer}
+        last_at: {type: string, format: date-time}
+        last_error: {type: string, description: What the newest failure said.}
+        loaded: {type: boolean}
+
+    SkillMetric:
+      type: object
+      properties:
+        name: {type: string}
+        reads: {type: integer, description: skill_read calls for it that succeeded.}
+        conversations: {type: integer, description: Conversations that read it.}
+        offered: {type: integer, description: Conversations whose skills index listed it.}
+        last_at: {type: string, format: date-time}
+        loaded: {type: boolean}
+
+    JobMetric:
+      type: object
+      properties:
+        id: {type: string}
+        session_id: {type: string}
+        session_title: {type: string}
+        prompt: {type: string}
+        schedule: {type: string}
+        check: {type: string}
+        status: {type: string, enum: [scheduled, done]}
+        fired: {type: integer}
+        skipped: {type: integer}
+        failed: {type: integer}
+        cost: {type: number, description: What the model calls of its wakes cost, in dollars.}
+        last_at: {type: string, format: date-time}
 
     Tool:
       type: object

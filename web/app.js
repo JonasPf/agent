@@ -446,7 +446,7 @@ function renderSideFoot() {
 
 // A transcript is read in a column; a list of jobs, tools, or files is read
 // across the room a laptop actually has.
-const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel', 'compared'];
+const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'personas', 'files', 'panels', 'metrics', 'search', 'toolpanel', 'compared'];
 
 // A screen is drawn from requests that answer in their own time, so two screens
 // asked for in quick succession can answer in the wrong order. Each draw keeps
@@ -487,6 +487,7 @@ function draw(v) {
     case 'session': return viewSession(v);
     case 'panels': return viewPanels(v);
     case 'jobs': return viewJobs(v);
+    case 'metrics': return viewMetrics(v);
     case 'tools': return viewTools(v);
     case 'skills': return viewSkills(v);
     case 'personas': return viewPersonas(v);
@@ -2230,6 +2231,7 @@ async function viewPanels(v) {
     ['tools', 'Tools', 'Loaded tools and failures'],
     ['skills', 'Skills', 'What the agent knows how to do'],
     ['personas', 'Personas', 'Who the agent is when a conversation starts'],
+    ['metrics', 'Metrics', 'How often each skill, tool, and job is used'],
     ['search', 'Search', 'Full text across every transcript'],
   ];
   const grid = el('div', 'cards');
@@ -2392,6 +2394,81 @@ function renderRuns(into, runs) {
 }
 
 
+// What each skill, tool, and job has been used for, over a window. The agent
+// counts it from the transcripts and job logs it already holds, so this screen
+// only asks and lays out. The window is in the address, so going back returns
+// to the one that was being read.
+const METRIC_WINDOWS = [['7', '7 days'], ['30', '30 days'], ['all', 'All time']];
+
+async function viewMetrics(v) {
+  const gen = drawing;
+  setHeader('Metrics', true);
+  const win = METRIC_WINDOWS.some(([k]) => k === state.arg) ? state.arg : '30';
+  const bar = el('div', 'toolbar');
+  for (const [key, label] of METRIC_WINDOWS) {
+    const b = el('button', 'pill' + (key === win ? ' on' : ''), label);
+    b.onclick = () => location.hash = '#metrics' + (key === '30' ? '' : '/' + key);
+    bar.append(b);
+  }
+  v.append(bar);
+  const m = await api('/metrics?days=' + (win === 'all' ? 0 : win));
+  if (stale(gen)) return;
+  const n = m.conversations || 0;
+  v.append(el('div', 's', `${n} conversation${n === 1 ? '' : 's'} with a model call ` +
+    (win === 'all' ? 'in everything stored' : `in the last ${win} days`) +
+    '. A deleted conversation takes its numbers with it.'));
+  const when = t => t ? ' · last ' + ago(t) : '';
+  const card = (name, lines, tags, acts) => {
+    const row = el('div', 'row-item');
+    const box = el('div', 'm');
+    const head = el('div', 'n', name);
+    head.title = name;
+    box.append(head);
+    for (const [cls, text] of lines) if (text) box.append(el('div', cls, text));
+    for (const [cls, text] of tags || []) box.append(el('span', 'tag ' + cls, text));
+    if (acts) box.append(acts);
+    row.append(box);
+    return row;
+  };
+  const pct = (part, whole) => whole ? ` (${Math.round(100 * part / whole)}%)` : '';
+
+  v.append(el('h2', null, 'skills'));
+  const skills = el('div', 'cards');
+  for (const s of m.skills || []) {
+    const said = s.reads
+      ? `${s.reads} read${s.reads === 1 ? '' : 's'} · read in ${s.conversations} of ${s.offered} conversations offered it` + when(s.last_at)
+      : `never read · offered to ${s.offered} conversation${s.offered === 1 ? '' : 's'}`;
+    skills.append(card(s.name, [['s', said]], s.loaded ? [] : [['', 'not loaded']]));
+  }
+  if (!(m.skills || []).length) skills.append(el('div', 'empty', 'No skills loaded or read.'));
+  v.append(skills);
+
+  v.append(el('h2', null, 'jobs'));
+  const jobs = el('div', 'cards');
+  for (const j of m.jobs || []) {
+    const open = el('button', 'btn', 'Open conversation');
+    open.onclick = () => location.hash = '#session/' + j.session_id;
+    const acts = el('div');
+    acts.append(open);
+    jobs.append(card(j.prompt, [
+      ['s', `${j.fired} acted · ${j.skipped} skipped · ${j.failed} failed` + when(j.last_at)],
+      ['s cost', fmtMoney(j.cost)],
+      ['s', j.schedule + (j.check ? ' · check ' + j.check : '') + ' · ' + (j.session_title || j.session_id)],
+    ], [[j.status === 'done' ? '' : 'on', j.status]], acts));
+  }
+  if (!(m.jobs || []).length) jobs.append(el('div', 'empty', 'No job woke in this window, and none is scheduled.'));
+  v.append(jobs);
+
+  v.append(el('h2', null, 'tools'));
+  const tools = el('div', 'cards');
+  for (const t of m.tools || []) {
+    tools.append(card(t.name, [
+      ['s', `${t.calls} call${t.calls === 1 ? '' : 's'} · ${t.failures} failed${pct(t.failures, t.calls)} · in ${t.conversations} of ${n} conversations` + when(t.last_at)],
+      ['s bad', t.last_error ? 'last failure: ' + t.last_error : ''],
+    ], t.loaded ? [] : [['', 'not loaded']]));
+  }
+  v.append(tools);
+}
 
 async function viewTools(v) {
   const gen = drawing;

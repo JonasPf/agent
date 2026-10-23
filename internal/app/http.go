@@ -83,6 +83,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /models", a.hModels)
 	mux.HandleFunc("GET /preferences", a.hPreferences)
 	mux.HandleFunc("GET /env", a.hEnv)
+	mux.HandleFunc("GET /metrics", a.hMetrics)
 	mux.HandleFunc("GET /status", a.hStatus)
 	mux.HandleFunc("GET /version", a.hVersion)
 	mux.HandleFunc("/ws", a.handleWS)

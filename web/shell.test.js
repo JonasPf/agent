@@ -546,6 +546,83 @@ test('a build without a changelog still names itself', async () => {
   assert.strictEqual(find(v, 'changelog'), null, 'an empty changelog was rendered anyway');
 });
 
+// ---------- metrics ----------
+
+const METRICS = {
+  days: 30, since: '2026-09-23T00:00:00Z', conversations: 4,
+  skills: [
+    { name: 'watering', reads: 3, conversations: 1, offered: 4, last_at: new Date().toISOString(), loaded: true },
+    { name: 'pruning', reads: 0, conversations: 0, offered: 4, loaded: true },
+    { name: 'changing-yourself', reads: 2, conversations: 2, offered: 2, loaded: false },
+  ],
+  tools: [
+    { name: 'read', calls: 3, failures: 1, conversations: 2, last_at: new Date().toISOString(),
+      last_error: 'no-such-file.txt: no such file', loaded: true },
+    { name: 'bash', calls: 0, failures: 0, conversations: 0, loaded: true },
+  ],
+  jobs: [
+    { id: 'J1', session_id: 'S1', session_title: 'Pets', prompt: 'Remind me to feed the cat.',
+      schedule: '20m', status: 'scheduled', fired: 5, skipped: 12, failed: 1, cost: 0.25 },
+  ],
+};
+
+// How much each skill, tool, and job is used was answered once by copying the
+// transcripts off the server and counting by hand. It is a screen behind More.
+test('More leads to the metrics screen', async () => {
+  const ctx = load({});
+  const v = ctx._id('view');
+  await ctx.viewPanels(v);
+  const row = findAll(v, 'row-item').find(r => find(r, 'n').textContent === 'Metrics');
+  assert.ok(row, 'More does not lead to metrics');
+  row.onclick();
+  assert.strictEqual(ctx.location.hash, '#metrics');
+});
+
+test('the metrics screen says how often each skill, tool, and job is used', async () => {
+  const ctx = load({ '/metrics?days=30': METRICS });
+  const v = ctx._id('view');
+  vm.runInContext("state.view = 'metrics'; state.arg = undefined;", ctx);
+  await ctx.viewMetrics(v);
+  const text = textOf(v);
+  assert.match(text, /4 conversations/, 'the screen does not say what its counts are out of');
+  assert.match(text, /3 reads.*read in 1 of 4 conversations offered it/, 'a skill does not say how often it was read where it was offered');
+  assert.match(text, /pruning[\s\S]*never read/, 'a skill nobody read does not say so');
+  const gone = findAll(v, 'row-item').find(r => /changing-yourself/.test(textOf(r)));
+  assert.match(textOf(gone), /not loaded/, 'a skill that is gone is not marked so');
+  assert.match(text, /3 calls · 1 failed \(33%\)/, 'a tool does not say how often it failed');
+  assert.match(text, /no-such-file\.txt: no such file/, 'a tool does not say what its last failure said');
+  const job = findAll(v, 'row-item').find(r => /feed the cat/.test(textOf(r)));
+  assert.ok(job, 'the job is not listed by its prompt');
+  assert.match(textOf(job), /5 acted · 12 skipped · 1 failed/, 'a job does not say what its wakes did');
+  assert.match(textOf(job), /\$0\.2500/, 'a job does not say what it cost');
+  const open = findAll(job, 'btn').find(b => /conversation/i.test(b.textContent));
+  open.onclick();
+  assert.strictEqual(ctx.location.hash, '#session/S1');
+});
+
+// The window is in the address, so going back returns to the one that was read.
+test('the metrics window is chosen on the screen and kept in the address', async () => {
+  const ctx = load({ '/metrics?days=30': METRICS, '/metrics?days=7': Object.assign({}, METRICS, { days: 7 }), '/metrics?days=0': METRICS });
+  const v = ctx._id('view');
+  vm.runInContext("state.view = 'metrics'; state.arg = undefined;", ctx);
+  await ctx.viewMetrics(v);
+  const pills = findAll(v, 'pill');
+  assert.deepStrictEqual(pills.map(p => p.textContent), ['7 days', '30 days', 'All time']);
+  assert.ok(/\bon\b/.test(pills[1].className), 'the window shown is not the one marked');
+  pills[0].onclick();
+  assert.strictEqual(ctx.location.hash, '#metrics/7');
+  pills[2].onclick();
+  assert.strictEqual(ctx.location.hash, '#metrics/all');
+
+  for (const [arg, path] of [['7', '/metrics?days=7'], ['all', '/metrics?days=0']]) {
+    ctx._calls = [];
+    vm.runInContext(`state.arg = ${JSON.stringify(arg)};`, ctx);
+    v.innerHTML = '';
+    await ctx.viewMetrics(v);
+    assert.ok(ctx._calls.some(c => c.path === path), `#metrics/${arg} did not ask for ${path}`);
+  }
+});
+
 // ---------- granted environment ----------
 
 // The dialog a control opens is appended to the page, not to the view, so that
