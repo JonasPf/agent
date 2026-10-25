@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-10-25
+
+- **Your phone is told about messages you haven't read, even with the app
+  closed.** Open More and turn on push notifications under "device". On an
+  iPhone, add the app to your home screen first and turn them on from there.
+  A message is sent to your devices if it is still unread ten seconds after
+  the agent wrote it. If you read it on any device in that time, nothing is
+  sent. Tapping the notification opens that conversation. The same screen
+  sends a test push, lists every device that is signed up, and shows what
+  each one's push service last answered. A device the push service no
+  longer knows is removed by itself. The agent still has no way to send a
+  notification of its own.
+
 ## 2026-10-23
 
 - **A Metrics screen shows what gets used.** Open More, then Metrics. It

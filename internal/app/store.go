@@ -65,7 +65,8 @@ create table if not exists job_runs (
 create index if not exists job_runs_by_job on job_runs(job_id, at);
 -- Web push went with the notification stack (ADR-026); dead letters and job
 -- expiry went with the run log (ADR-028). Dropping the tables is how a removal
--- reaches a database that already exists.
+-- reaches a database that already exists. Push came back with ADR-066, but not
+-- here: every tool is handed this database, so its keys live in push.json.
 drop table if exists push_subscriptions;
 drop table if exists dead_letters;
 -- Memory went with ADR-055: nothing crosses a session boundary on its own any

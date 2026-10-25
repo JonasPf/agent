@@ -177,6 +177,7 @@ type App struct {
 	or       *OpenRouter
 	hub      *Hub
 	sched    *Scheduler
+	push     *Pusher
 
 	// calls are the tool calls running now, which the tool API answers; toolAddr
 	// is where it listens.
@@ -286,6 +287,9 @@ func Run() error {
 		or:       NewOpenRouter(cfg.APIKey),
 		hub:      NewHub(),
 		queues:   map[string]chan func(){},
+	}
+	if a.push, err = newPusher(cfg.DataDir, a.unreadMessage); err != nil {
+		return err
 	}
 	// Before any tool can run, and before the sandbox is described: the tool
 	// API's port is part of the policy.

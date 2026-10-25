@@ -19,8 +19,9 @@ confined by Landlock exactly as it is in production. `task dev` is the only way 
 uses — so a laptop proves what CI proves rather than a subset of it. On Linux both run directly.
 Docker is used where it is installed, Podman otherwise. Off Linux the Go package does not compile
 at all, which is deliberate: see [ADR-056](specs/adrs.html#adr-056).
-Enable notifications on the settings screen to get a banner when the agent says something you
-are not reading; it works while the browser is open, and there is no push.
+Enable notifications on the settings screen to be told when the agent says something you have
+not read, even with the browser closed. On an iPhone, add the app to the home screen first. The
+same screen sends a test push and shows what each device's push service answered.
 
 ## Tasks
 

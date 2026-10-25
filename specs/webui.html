@@ -338,9 +338,9 @@ file has to mean the file's own bytes.</p>
 
 <h2 id="unread">Unread work</h2>
 
-<p>The agent cannot interrupt the operator. It has no notification tool and no way to reach a device
-&mdash; that is <a href="adrs.html#adr-026">ADR-026</a> and it still holds. What the interface may do
-is tell the operator about output they have not read, and it does that in two places.</p>
+<p>The agent cannot interrupt the operator. It has no notification tool and cannot cause, suppress, or
+word a notification &mdash; that part of <a href="adrs.html#adr-026">ADR-026</a> still holds. What the
+interface may do is tell the operator about output they have not read, and it does that in two places.</p>
 
 <p>The first is a count. The session list shows unread assistant messages per session, each job
 carries its own run log, and a tripped breaker is a banner across the top of every screen.</p>
@@ -361,32 +361,54 @@ for the session list, which is the costliest thing the agent serves.</p>
 that marks it, rather than at its end with what was missed above the fold. The line stays where it
 is while the conversation is open.</p>
 
-<p>The second is a system notification, on the narrow terms of
-<a href="adrs.html#adr-027">ADR-027</a>: while a tab is open, a new agent message the operator is not
-currently reading shows a banner. It is the browser's own notification API and nothing else &mdash; no
-push service, no service worker, no keys, no subscription &mdash; so it reaches a running browser and
-nothing else. A closed browser learns nothing, and this is stated rather than implied.</p>
+<p>The second is a system notification, on the terms of <a href="adrs.html#adr-066">ADR-066</a>: an
+agent message nobody has read is pushed to every device that asked for it, including one whose
+browser is closed. A message waits ten seconds first, and one that any page reads in that time is
+not pushed, so the device being read on stays quiet about the line on its screen. Several messages
+in that time make one push, carrying the newest.</p>
 
-<p>The conversation is the title and its newest line is the body, clipped: a banner is a pointer to
-the transcript, not a copy of it. One banner per conversation, replaced as the exchange continues.
-Opening it goes to that session.</p>
+<p>The conversation is the title and its newest line is the body, clipped: a notification is a
+pointer to the transcript, not a copy of it. One per conversation, replaced as the exchange
+continues, and the push service is told the same so it can drop an older one it has not yet
+delivered. Opening it goes to that session, in a window already open if there is one. The payload is
+encrypted to the device and signed with the agent's key, so the push service relays it without
+reading it.</p>
 
-<p>Permission is the operator's, asked for once from the settings screen, and the screen states what
-this device will actually do &mdash; on, off, blocked for the site, or an origin without the API at
-all. Where permission is absent the count is the whole of the signal; the interface never opens a
-popup of its own instead.</p>
+<p>A device subscribes from the settings screen. Permission is asked for there, once, by a tap, and
+the screen states what this device will actually do: pushed to, banners only while open, blocked
+for the site, or an origin without the API at all. An iPhone or iPad offers push only from the home
+screen, and outside it the screen says that rather than offering a button that cannot work. The
+screen lists every registered device, with what its push service last answered, and offers a test
+push that reports each answer, because a push that fails looks exactly like a quiet agent. A device
+its push service reports gone is forgotten; any other refusal stays beside the device until a push
+succeeds. A page opened on a subscribed device registers again, so an agent whose state was reset
+learns of it, and a subscription made under an earlier key is replaced.</p>
+
+<p>A page that cannot be pushed to keeps the browser's own notification while it is open, as
+<a href="adrs.html#adr-027">ADR-027</a> describes: a new agent message in a conversation it is not
+showing raises a banner. A page that is pushed to raises none of its own, so a message arrives once.
+Where permission is absent the count is the whole of the signal; the interface never opens a popup of
+its own instead.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A new assistant message in a session the operator is not reading shows a system notification, whether the page is hidden or showing another screen.</li>
-<li>A message in the conversation on screen shows no notification.</li>
-<li>A user message, a tool result, an event, and a turn that only called tools show no notification.</li>
-<li>The messages a fork copies show no notification and reach no page one by one: the copy is written at once, and pages hear only that the list moved.</li>
-<li>Successive messages in one session replace each other rather than stacking.</li>
-<li>Opening a notification goes to the session that produced it.</li>
-<li>Without permission nothing is shown at all &mdash; no banner and no in-app popup &mdash; and the settings screen says so.</li>
-<li>The system makes no outbound connection to any push service, and nothing reaches a closed browser.</li>
+<li>An assistant message still unread ten seconds after it was written is pushed to every registered device, whether or not a browser is open there.</li>
+<li>A message read within those ten seconds, on any device, is pushed to none; several unread in that time make one push, carrying the newest.</li>
+<li>A user message, a tool result, an event, and a turn that only called tools are not pushed.</li>
+<li>The push names the conversation as its title and its newest line as its body; it is encrypted to the device (RFC 8291) and signed with the agent's VAPID key (RFC 8292).</li>
+<li>Pushes about one session share a tag and a push-service topic, so a later one replaces an earlier one rather than stacking.</li>
+<li>Opening a pushed notification goes to the session that produced it, in a window already open if there is one.</li>
+<li>Enabling push on the settings screen asks for permission, subscribes with the agent's public key, and registers the device; turning it off unsubscribes and forgets it.</li>
+<li>A test push from the settings screen reaches every registered device, and the screen shows what each push service answered.</li>
+<li>A device whose push service answers that it is gone is forgotten; any other refusal is kept beside the device and shown on the settings screen.</li>
+<li>A page opened on a subscribed device registers it again, and replaces a subscription made under a key the agent no longer holds.</li>
+<li>On an iPhone or iPad outside the home-screen app, the settings screen says push needs it and offers no push button.</li>
+<li>A page that cannot be pushed to shows a system notification while open for a new assistant message in a session it is not showing, whether hidden or on another screen; a message in the conversation on screen shows none.</li>
+<li>A page on a subscribed device raises no notification of its own.</li>
+<li>The messages a fork copies are not pushed and reach no page one by one: the copy is written at once, and pages hear only that the list moved.</li>
+<li>Without permission nothing is shown at all &mdash; no notification and no in-app popup &mdash; and the settings screen says so.</li>
+<li>No tool can read or write the agent's push keys or the devices' subscriptions.</li>
 <li>The session list shows the unread assistant message count for each session, and clears it when the session is read.</li>
 <li>A message a job's wake produced counts as unread exactly as a reply to a typed message does.</li>
 <li>A read clears only what it names: a message written after the point read through stays unread, and a late read for an earlier point does not make anything unread again.</li>

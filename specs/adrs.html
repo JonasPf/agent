@@ -597,7 +597,7 @@ been switched off.</p>
 </div>
 
 <div class="adr" id="adr-026">
-<div class="meta">ADR-026 · accepted · amended by <a href="#adr-027">ADR-027</a></div>
+<div class="meta">ADR-026 · accepted · amended by <a href="#adr-027">ADR-027</a> and <a href="#adr-066">ADR-066</a></div>
 <h3>No notifications at all</h3>
 <h4>Context</h4>
 <p><a href="#adr-011">ADR-011</a> gave the system two notification tiers and a notify tool for the
@@ -630,7 +630,7 @@ restored, and neither is push.</p>
 </div>
 
 <div class="adr" id="adr-027">
-<div class="meta">ADR-027 · accepted · amends <a href="#adr-026">ADR-026</a></div>
+<div class="meta">ADR-027 · accepted · amends <a href="#adr-026">ADR-026</a> · amended by <a href="#adr-066">ADR-066</a></div>
 <h3>The interface notifies about unread messages; the agent still cannot</h3>
 <h4>Context</h4>
 <p><a href="#adr-026">ADR-026</a> removed every notification because the stack that carried them did
@@ -2071,6 +2071,45 @@ entry, since that is what its model was shown.</p>
 an older conversation is counted the same way as a new one. What a deleted conversation did leaves the
 numbers with it, as a deleted job's wakes leave with its log; the screen says so. Each request reads
 every entry in memory, which is fine for one operator's conversations and would not be for many.</p>
+</div>
+
+<div class="adr" id="adr-066">
+<div class="meta">ADR-066 · accepted · amends <a href="#adr-026">ADR-026</a> and <a href="#adr-027">ADR-027</a></div>
+<h3>Unread messages are pushed to a closed browser; the agent still cannot interrupt</h3>
+<h4>Context</h4>
+<p><a href="#adr-027">ADR-027</a> notifies only while a tab is open, and a phone does not keep one open:
+it is the device the operator is away with, and the one that learns nothing. Push was removed by
+<a href="#adr-026">ADR-026</a> because it never delivered on the operator's devices, for three reasons:
+an origin without a secure context, permission never granted, and a browser with its push service off
+by default. The deployment now has a public HTTPS hostname (<a href="#adr-038">ADR-038</a>), so the
+first is gone. The other two belong to the device, and what made them fatal was that every failure
+looked like silence.</p>
+<h4>Decision</h4>
+<p>Bring back web push for one thing: an assistant message the operator has not read. It is the badge
+tier of <a href="#adr-011">ADR-011</a> reaching a closed browser, not the interrupt tier returning.
+There is no notify tool, and the agent cannot cause a push, suppress one, or change what one says.</p>
+<p>A device subscribes from the settings screen and registers with the agent. A message waits ten
+seconds before it is pushed. If any page reads it in that time, nothing is sent, so the device the
+operator is reading on does not buzz about the line in front of them. The server makes that decision
+rather than the service worker, because Safari withdraws a subscription whose pushes show nothing.</p>
+<p>Encryption (RFC 8291) and VAPID signing (RFC 8292) are written against the standard library, so no
+dependency comes back with them. The keys and subscriptions live in a file in the data directory.
+They are kept out of the database because every tool is handed the database and may write to it,
+and a tool holding them could push to the operator's phone.</p>
+<p>Failure is made visible. The settings screen sends a test push and shows what each push service
+answered. A device the service reports gone is forgotten; any other refusal is kept beside the device
+until a push succeeds.</p>
+<h4>Consequences</h4>
+<p>The agent now makes outbound connections to the push service of each registered device. That
+means Google's, Apple's, or Mozilla's, chosen by the operator's browser. They relay a payload they
+cannot read; what they learn is that a message was sent, and when.</p>
+<p>A page that is pushed to stops raising its own banner, so a message arrives once, not twice. A
+page that cannot be pushed to keeps the in-tab banner of ADR-027. On an iPhone, push works only from
+the home-screen app, and the settings screen says so rather than offering a button that cannot work.</p>
+<p>Real delivery to the phone still cannot be tested in the container. What is tested runs up to it:
+a fake push service decrypts what the agent sent and checks the signature, and the service worker
+is run against the events a browser gives it. The test push covers the last step, on the device
+itself.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

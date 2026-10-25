@@ -177,8 +177,10 @@ func (a *App) append(sessionID string, e Entry) Entry {
 	a.hub.Broadcast(wsEvent{Kind: "entry", SessionID: sessionID, Entry: &out})
 	// The session list carries the unread count, so a message that adds to it
 	// moves the list too, whoever wrote it: a reply, a reminder, a forked copy.
+	// Left unread, it is pushed to the devices that asked (ADR-066).
 	if countsAsUnread(out) {
 		a.hub.Broadcast(wsEvent{Kind: "sessions"})
+		a.push.Soon(sessionID)
 	}
 	return out
 }
