@@ -166,7 +166,7 @@ func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 	} else if err := json.Unmarshal(b, &manifest); err != nil {
 		t.Fatal(err)
 	}
-	manifest["reads"] = []string{extra}
+	manifest["agent"].(map[string]any)["reads"] = []string{extra}
 	if b, err := json.Marshal(manifest); err != nil {
 		t.Fatal(err)
 	} else if err := os.WriteFile(mf, b, 0o644); err != nil {
@@ -180,38 +180,37 @@ func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 
 	w := call(t, a, "GET", "/tools", "")
 	var got struct {
-		Tools []struct {
-			Name    string     `json:"name"`
-			Builtin bool       `json:"builtin"`
-			Reach   *ToolReach `json:"reach"`
+		Sandbox *ToolReach `json:"sandbox"`
+		Tools   []struct {
+			Name  string     `json:"name"`
+			Agent *ToolAgent `json:"agent"`
 		} `json:"tools"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	var reach *ToolReach
-	for _, tl := range got.Tools {
-		if tl.Name == "envcheck" {
-			reach = tl.Reach
-		}
-		if tl.Builtin && tl.Reach != nil {
-			t.Errorf("builtin %s reports a sandbox it does not run in", tl.Name)
-		}
-	}
+	reach := got.Sandbox
 	if reach == nil {
-		t.Fatal("the tool reports no reach")
+		t.Fatal("the screen is given no sandbox")
+	}
+	var own []string
+	for _, tl := range got.Tools {
+		if tl.Name == "envcheck" && tl.Agent != nil {
+			own = tl.Agent.Reads
+		}
 	}
 
+	// What every tool gets, then what this one asked for, is what it runs under.
 	ws := "/w/S1"
-	p := policyOf(t, a.sandbox.Wrap("/x/run", ws, a.tools.dir, a.tools.Get("envcheck").Reads, nil))
+	p := policyOf(t, a.sandbox.Wrap("/x/run", ws, a.tools.dir, a.tools.Get("envcheck").Agent.Reads, nil))
 	if !reach.Enforced || !reach.NetworkEnforced {
 		t.Errorf("reach = %+v, want both halves enforced", reach)
 	}
-	if strings.Join(reach.Read, "|") != strings.Join(p.Read, "|") {
-		t.Errorf("read = %v, policy reads %v", reach.Read, p.Read)
+	if strings.Join(own, "|") != extra {
+		t.Errorf("the tool shows reads %v, the manifest asked for %v", own, extra)
 	}
-	if strings.Join(reach.ToolRead, "|") != extra {
-		t.Errorf("tool_read = %v, the manifest asked for %v", reach.ToolRead, extra)
+	if strings.Join(append(append([]string{}, reach.Read...), own...), "|") != strings.Join(p.Read, "|") {
+		t.Errorf("read = %v plus %v, policy reads %v", reach.Read, own, p.Read)
 	}
 	if strings.Join(reach.Files, "|") != strings.Join(p.Files, "|") {
 		t.Errorf("files = %v, policy files %v", reach.Files, p.Files)
@@ -220,8 +219,7 @@ func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 	if strings.Join(reach.ReadWrite, "|") != wantWrite {
 		t.Errorf("read_write = %v, policy writes %v", reach.ReadWrite, p.Write)
 	}
-	if strings.Trim(strings.Join(strings.Fields(strings.Trim(jsonInts(reach.Ports), "[]")), ""), ",") !=
-		strings.Trim(strings.Join(strings.Fields(strings.Trim(jsonInts(p.Ports), "[]")), ""), ",") {
+	if jsonInts(reach.Ports) != jsonInts(p.Ports) {
 		t.Errorf("ports = %v, policy ports %v", reach.Ports, p.Ports)
 	}
 	if reach.OperatorPort != 0 && hasPort(reach.Ports, reach.OperatorPort) {

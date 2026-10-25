@@ -1,8 +1,6 @@
 {
   "name": "session_search",
   "description": "Full-text search over transcripts. Defaults to this conversation, which is how you reach back for detail that compaction has folded away — anything said earlier here is still findable even when you can no longer see it. Pass session:\"all\" to search every conversation, or a session id to search that one. A hit shows only a few words around the match and its number (#1366); to read that entry whole, call again with seq set to the number, and session set to its session id if it is in another conversation. Read the entry rather than searching again and again for more of it.",
-  "db_prefix": "session_search_",
-  "timeout_seconds": 30,
   "parameters": {
     "type": "object",
     "properties": {
@@ -23,5 +21,9 @@
       }
     },
     "required": []
+  },
+  "agent": {
+    "db_prefix": "session_search_",
+    "timeout_seconds": 30
   }
 }

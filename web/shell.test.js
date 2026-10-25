@@ -1646,43 +1646,177 @@ test('a large tree opens folded', async () => {
   assert.deepStrictEqual(rowsOf(v), ['repo/', 'notes.txt']);
 });
 
-// ---------- what a tool may reach ----------
+// ---------- the tools screen ----------
 
-const REACH = {
-  enforced: true, network_enforced: true,
+const SANDBOX = {
+  mechanism: 'landlock', enforced: true, network_enforced: true,
   read_write: ['this session’s working directory', '/app/state/data/db'],
   read: ['/app/tools', '/usr', '/etc'], files: ['/dev/null'],
-  ports: [22, 443, 8080, 45123], tool_api_port: 45123, operator_port: 7770,
+  ports: [22, 443, 5432, 8080, 45123], tool_api_port: 45123, operator_port: 7770,
 };
+const sent = t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } });
+const SEARCH = {
+  name: 'web_search', description: 'Search the web. It calls a search API.',
+  parameters: { type: 'object', required: ['query'], properties: {
+    query: { type: 'string', description: 'Search query.' },
+    limit: { type: 'integer' },
+  } },
+  agent: { db_prefix: 'web_search_', timeout_seconds: 60, env: ['TAVILY_API_KEY'] },
+};
+SEARCH.sent = sent(SEARCH);
+const BROWSE = {
+  name: 'web_browse', description: 'Open a page in a browser.',
+  parameters: { type: 'object', properties: { url: { type: 'string', description: 'The page.' } } },
+  agent: { db_prefix: 'web_browse_', timeout_seconds: 60, reads: ['/proc', '/sys'] },
+};
+BROWSE.sent = sent(BROWSE);
+const RELOAD = { name: 'reload_tools', description: 'Validate and register tools from disk.',
+  parameters: { type: 'object', properties: {} }, builtin: true };
+RELOAD.sent = sent(RELOAD);
 
-// A tool's boundary is part of what the tool is, so the Tools screen says it:
-// the files it may read and write, and the ports it may open.
-test('the tools screen says what each tool may read, write, and connect to', async () => {
-  const ctx = load({ '/tools': { failures: [], tools: [
-    { name: 'bash', description: 'Run a command.', parameters: {}, reach: REACH },
-    { name: 'reload_tools', description: 'Reload.', parameters: {}, builtin: true },
-  ] } });
+async function toolsScreen(over) {
+  const ctx = load({ '/tools': Object.assign({ failures: [], sandbox: SANDBOX, tools: [RELOAD, BROWSE, SEARCH] }, over) });
   const v = node('div');
   await ctx.viewTools(v);
-  const rows = findAll(v, 'row-item');
-  const bash = textOf(rows[0]);
-  for (const want of ['working directory', '/app/state/data/db', '/usr', '/dev/null', '22', '443', '8080']) {
-    assert.ok(bash.includes(want), `the bash row does not say ${want}: ${bash}`);
+  return { ctx, v };
+}
+const toolCard = (v, name) => findAll(v, 'tooldef').find(c => textOf(find(c, 'tname')).includes(name));
+// flat is the text a node shows, run together as the page would show it in a <pre>.
+const flat = n => String(n._text || '') + (n.children || []).map(flat).join('');
+
+// The boundary is the same for every tool program, so it is said once, where
+// the tools used to repeat it on every card.
+test('the tools screen shows the sandbox once: what a tool may read, write, and connect to', async () => {
+  const { v } = await toolsScreen();
+  assert.strictEqual(findAll(v, 'sandbox').length, 1, 'the sandbox is not shown exactly once');
+  const box = textOf(find(v, 'sandbox'));
+  for (const want of ['working directory', '/app/state/data/db', '/app/tools', '/usr', '/dev/null', '22', '443', '5432', '8080']) {
+    assert.ok(box.includes(want), `the sandbox does not say ${want}: ${box}`);
   }
-  assert.match(bash, /7770/, 'the row does not say the operator port is out of reach');
-  assert.match(bash, /tool API/, 'the row does not say how the tool reaches the agent');
-  assert.match(textOf(rows[1]), /inside the agent/, 'a builtin does not say it runs inside the agent');
+  assert.match(box, /7770/, 'the sandbox does not say the operator port is out of reach');
+  assert.match(box, /tool API/, 'the sandbox does not say how a tool reaches the agent');
+  assert.match(box, /landlock/, 'the sandbox does not say what enforces it');
+  assert.doesNotMatch(textOf(toolCard(v, 'web_search')), /\/usr|5432/, 'a tool card repeats the sandbox');
 });
 
-test('a boundary that is not enforced says so on the tool', async () => {
-  const ctx = load({ '/tools': { failures: [], tools: [
-    { name: 'bash', description: 'Run a command.', parameters: {}, reach: Object.assign({}, REACH,
-      { enforced: false, reason: 'Landlock is a Linux facility', network_enforced: false, network_reason: 'Landlock is a Linux facility' }) },
-  ] } });
-  const v = node('div');
-  await ctx.viewTools(v);
-  const text = textOf(findAll(v, 'row-item')[0]);
-  assert.match(text, /not enforced/i, 'an unenforced boundary is presented as though it holds');
+test('the ports are grouped by what they are for', async () => {
+  const { ctx } = await toolsScreen();
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.portGroups([22, 53, 80, 443, 3000, 5432, 9418, 12345, 45123], 45123))), [
+    ['ssh, git', [22, 9418]], ['DNS', [53]], ['web', [80, 443]], ['dev servers', [3000]],
+    ['databases', [5432]], ['other', [12345]],
+  ]);
+});
+
+test('a boundary that is not enforced says so', async () => {
+  const off = Object.assign({}, SANDBOX, { enforced: false, reason: 'Landlock is a Linux facility',
+    network_enforced: false, network_reason: 'Landlock is a Linux facility' });
+  const { v } = await toolsScreen({ sandbox: off });
+  assert.match(textOf(find(v, 'sandbox')), /not enforced/i, 'an unenforced boundary is presented as though it holds');
+  const net = Object.assign({}, SANDBOX, { network_enforced: false, network_reason: 'this kernel predates Landlock ABI 4' });
+  const second = await toolsScreen({ sandbox: net });
+  const row = findAll(second.v, 'kv').find(r => textOf(r).includes('Network'));
+  assert.match(textOf(row), /not enforced/i, 'an unenforced network is presented as though it holds');
+  assert.match(textOf(row), /ABI 4/);
+});
+
+// The question the screen has to answer: which part of a tool does the model
+// see, and which part is only the agent's.
+test('each tool shows what the model is sent apart from what the agent uses', async () => {
+  const { v } = await toolsScreen();
+  const card = toolCard(v, 'web_search');
+  const model = textOf(find(card, 'model-sees'));
+  for (const want of ['Search the web. It calls a search API.', 'query', 'string', 'required', 'Search query.', 'limit', 'integer', 'optional']) {
+    assert.ok(model.includes(want), `what the model sees does not say ${want}: ${model}`);
+  }
+  assert.doesNotMatch(model, /web_search_|TAVILY|60 seconds/, 'the agent’s own settings are shown as what the model sees');
+  const agent = textOf(find(card, 'agent-uses'));
+  for (const want of ['60 seconds', 'web_search_', 'TAVILY_API_KEY']) {
+    assert.ok(agent.includes(want), `what the agent uses does not say ${want}: ${agent}`);
+  }
+  assert.match(textOf(find(toolCard(v, 'web_browse'), 'agent-uses')), /\/proc/, 'a tool’s extra reads are not shown');
+  const summary = textOf(find(card, 'tsum'));
+  assert.match(summary, /TAVILY_API_KEY/, 'a tool given a credential does not say so before it is opened');
+  assert.match(textOf(find(toolCard(v, 'web_browse'), 'tsum')), /\/proc/, 'a tool that reads more does not say so before it is opened');
+});
+
+test('a parameter without a description is flagged on the parameter and on the summary', async () => {
+  const { v } = await toolsScreen();
+  const card = toolCard(v, 'web_search');
+  assert.match(textOf(find(card, 'tsum')), /1 parameter undescribed/);
+  const limit = findAll(card, 'param').find(p => textOf(p).includes('limit'));
+  assert.ok(find(limit, 'none'), 'the undescribed parameter is not marked');
+  assert.match(textOf(limit), /only that it is an integer/);
+  assert.doesNotMatch(textOf(find(toolCard(v, 'web_browse'), 'tsum')), /undescribed/);
+});
+
+test('a parameter is shown with its allowed values and its item type', async () => {
+  const { ctx } = await toolsScreen();
+  assert.strictEqual(ctx.typeOf({ type: 'string', enum: ['create', 'list'] }), 'string · one of create, list');
+  assert.strictEqual(ctx.typeOf({ type: 'array', items: { type: 'string' } }), 'array of string');
+  assert.strictEqual(ctx.typeOf({ type: ['string', 'null'] }), 'string or null');
+  assert.strictEqual(ctx.typeOf({}), 'any');
+});
+
+test('the manifest sets the agent block apart, and the entry the model is sent is shown as sent', async () => {
+  const { v } = await toolsScreen();
+  const card = toolCard(v, 'web_search');
+  const manifest = find(card, 'json-manifest');
+  assert.ok(manifest && manifest.hidden, 'the manifest is not there, or is open before it is asked for');
+  assert.deepStrictEqual(JSON.parse(flat(find(manifest, 'json'))), {
+    name: SEARCH.name, description: SEARCH.description, parameters: SEARCH.parameters, agent: SEARCH.agent });
+  assert.match(flat(find(manifest, 'ours')), /"agent"[\s\S]*web_search_/, 'the agent block is not set apart');
+  assert.doesNotMatch(flat(find(manifest, 'std')), /agent|web_search_/, 'the standard part holds the agent’s own settings');
+  const asSent = find(card, 'json-sent');
+  assert.deepStrictEqual(JSON.parse(flat(find(asSent, 'json'))), SEARCH.sent);
+  const [showManifest, showSent] = findAll(card, 'jb');
+  showManifest.onclick();
+  assert.strictEqual(manifest.hidden, false, 'the manifest button did not open the manifest');
+  showSent.onclick();
+  assert.ok(manifest.hidden && !asSent.hidden, 'the two views are open at once');
+  showSent.onclick();
+  assert.ok(asSent.hidden, 'a second press does not close the view');
+});
+
+test('a builtin says it runs inside the agent, and has no manifest', async () => {
+  const { v } = await toolsScreen();
+  const card = toolCard(v, 'reload_tools');
+  assert.match(textOf(card), /inside the agent/, 'a builtin does not say it runs inside the agent');
+  assert.match(textOf(find(card, 'tsum')), /built in/);
+  assert.strictEqual(find(card, 'json-manifest'), null, 'a builtin offers a manifest it does not have');
+  assert.ok(find(card, 'json-sent'), 'a builtin is sent to the model, and the card does not show it');
+  assert.strictEqual(find(card, 'agent-uses'), null);
+});
+
+test('a tool that failed to load says why, and the count says how many', async () => {
+  const { v } = await toolsScreen({ failures: [{ dir: 'notes', reason: 'manifest.json: "db_prefix" is not a manifest field' }] });
+  const fail = textOf(find(v, 'fail'));
+  assert.match(fail, /notes/);
+  assert.match(fail, /"db_prefix" is not a manifest field/);
+  assert.match(textOf(find(v, 'tcount')), /3 tools.*1 built in.*1 didn’t load/s);
+});
+
+test('how a tool call works is explained, folded', async () => {
+  const { v } = await toolsScreen();
+  const how = find(v, 'how');
+  assert.ok(how && !how.open, 'the explanation is missing, or open on arrival');
+  assert.strictEqual(findAll(how, 'step').length, 4);
+  assert.match(textOf(how), /never sent to the model/);
+});
+
+// A ? opens on tap, which is all a phone has, and only one is open at a time.
+test('a ? explains a term on tap, one at a time', async () => {
+  const { v } = await toolsScreen();
+  const helps = findAll(v, 'help');
+  assert.ok(helps.length >= 8, `only ${helps.length} terms are explained`);
+  for (const h of helps) assert.ok(textOf(find(h, 'tip')).trim().length > 20, 'a ? explains nothing: ' + textOf(h));
+  const [a, b] = helps;
+  const tap = h => find(h, 'help-q').onclick({ stopPropagation() {}, preventDefault() {} });
+  tap(a);
+  assert.match(a.className, /\bopen\b/, 'a tap did not open the explanation');
+  tap(b);
+  assert.doesNotMatch(a.className, /\bopen\b/, 'two explanations are open at once');
+  tap(b);
+  assert.doesNotMatch(b.className, /\bopen\b/, 'a second tap does not close it');
 });
 
 // ---------- the model dialog ----------

@@ -1,8 +1,6 @@
 {
   "name": "read",
   "description": "Read a file from the workspace.",
-  "db_prefix": "read_",
-  "timeout_seconds": 30,
   "parameters": {
     "type": "object",
     "properties": {
@@ -20,5 +18,9 @@
     "required": [
       "path"
     ]
+  },
+  "agent": {
+    "db_prefix": "read_",
+    "timeout_seconds": 30
   }
 }

@@ -2112,6 +2112,29 @@ is run against the events a browser gives it. The test push covers the last step
 itself.</p>
 </div>
 
+<div class="adr" id="adr-067">
+<div class="meta">ADR-067 · accepted</div>
+<h3>A manifest keeps the agent's own settings under <code>agent</code></h3>
+<h4>Context</h4>
+<p>A manifest held the three fields of an OpenAI function definition &mdash; <code>name</code>,
+<code>description</code>, <code>parameters</code> &mdash; beside four only this agent reads:
+<code>db_prefix</code>, <code>timeout_seconds</code>, <code>reads</code>, and <code>env</code>. Only the
+first three reach the model, but nothing in the file said which were which, so the operator could not
+tell from a manifest what the model sees. <code>bash</code> showed the cost: its manifest had a top-level
+<code>timeout_seconds</code>, the registry's limit, and a parameter of the same name, the command's own,
+which the model sets.</p>
+<h4>Decision</h4>
+<p>The top level of a manifest is exactly the standard function definition, and is what the model is
+sent. The agent's own settings move under one <code>agent</code> object. A field anywhere else stops the
+tool from loading, and the reason names the field. A prefix such as <code>x_</code> was the other
+option, but it would still mix the two parts in one list, where one object separates them.</p>
+<h4>Consequences</h4>
+<p>Every manifest changed at once; one written in the old shape now fails to load and says which field
+is out of place, rather than loading with settings silently ignored. A misspelt setting is refused for
+the same reason instead of falling back to its default. The Tools screen shows the two parts apart:
+what the model sees, and what the agent uses.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

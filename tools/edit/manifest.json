@@ -1,8 +1,6 @@
 {
   "name": "edit",
   "description": "Replace an exact string in a workspace file.",
-  "db_prefix": "edit_",
-  "timeout_seconds": 30,
   "parameters": {
     "type": "object",
     "properties": {
@@ -27,5 +25,9 @@
       "old",
       "new"
     ]
+  },
+  "agent": {
+    "db_prefix": "edit_",
+    "timeout_seconds": 30
   }
 }

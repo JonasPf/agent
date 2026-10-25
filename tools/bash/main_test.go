@@ -32,13 +32,15 @@ func TestTheRegistryLimitSitsAboveTheLongestWait(t *testing.T) {
 		t.Fatal(err)
 	}
 	var m struct {
-		Timeout int `json:"timeout_seconds"`
+		Agent struct {
+			Timeout int `json:"timeout_seconds"`
+		} `json:"agent"`
 	}
 	if err := json.Unmarshal(b, &m); err != nil {
 		t.Fatal(err)
 	}
-	if m.Timeout <= maxTimeout {
-		t.Errorf("the registry kills bash at %ds, at or below the %ds a command may ask for", m.Timeout, maxTimeout)
+	if m.Agent.Timeout <= maxTimeout {
+		t.Errorf("the registry kills bash at %ds, at or below the %ds a command may ask for", m.Agent.Timeout, maxTimeout)
 	}
 }
 

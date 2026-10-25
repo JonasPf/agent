@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tools Screen Mock — Agent Spec</title>
+<style>
+/* The interface's own tokens, copied so this page looks like the screen it
+   proposes whether it is opened from disk or served with the rest of the spec. */
+:root {
+  color-scheme: light;
+  --bg: #faf8f5; --sunk: #f3efe8; --card: #ffffff; --fg: #1a1917; --fg-2: #4c483f; --muted: #7b766d;
+  --line: #e7e1d7; --line-2: #d8d1c4; --accent: #a3542a; --soft: #f6ece2; --ok: #2c6a45; --warn: #866719;
+  --bad: #a03429; --code-bg: #f4f0e9; --r: 12px; --r-sm: 8px;
+  --shadow: 0 1px 2px rgba(30, 24, 16, .06), 0 10px 30px rgba(30, 24, 16, .08);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #151310; --sunk: #100f0c; --card: #1d1b17; --fg: #ece7dd; --fg-2: #c5bfb3; --muted: #948e83;
+    --line: #2e2a25; --line-2: #3d382f; --accent: #e09a63; --soft: #2a211a; --ok: #74b48c; --warn: #d6b968;
+    --bad: #e58a80; --code-bg: #24211c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 34px rgba(0, 0, 0, .45);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+button { font: inherit; color: inherit; }
+
+.mocknote { background: var(--sunk); border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--muted); padding: 8px 16px; }
+.mocknote a { color: var(--accent); }
+.top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 5; }
+.top .back { color: var(--muted); font-size: 20px; line-height: 1; }
+.top h1 { font-size: 17px; margin: 0; flex: 1; }
+.wrap { max-width: 780px; margin: 0 auto; padding: 16px 16px 60px; }
+
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
+.btn { border: 1px solid var(--line-2); background: var(--card); border-radius: 99px; padding: 6px 14px; font-size: 13.5px; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 550; }
+.count { font-size: 13px; color: var(--muted); }
+.count b { color: var(--fg-2); font-variant-numeric: tabular-nums; }
+.count .bad { color: var(--bad); }
+
+h2 { display: flex; align-items: center; gap: 6px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: 26px 0 8px; font-weight: 650; }
+h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+.card + .card { margin-top: 10px; }
+
+/* ---- ? help: hover on a pointer, tap anywhere ---- */
+.help { position: relative; display: inline-flex; vertical-align: 1px; }
+.help > button {
+  width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--card);
+  color: var(--muted); font-size: 10.5px; font-weight: 700; line-height: 14px; padding: 0; cursor: help;
+  text-transform: none; letter-spacing: 0;
+}
+.help > button:hover, .help.open > button { color: var(--accent); border-color: var(--accent); }
+.help .tip {
+  display: none; position: fixed; left: 0; top: 0; z-index: 20; width: max-content;
+  max-width: min(320px, calc(100vw - 40px)); background: var(--fg); color: var(--bg);
+  font: 400 12.5px/1.5 var(--sans); text-transform: none; letter-spacing: 0; padding: 9px 11px;
+  border-radius: var(--r-sm); box-shadow: var(--shadow); white-space: normal;
+}
+.help .tip code { color: inherit; opacity: .85; }
+@media (hover: hover) { .help:hover .tip { display: block; } }
+.help.open .tip { display: block; }
+
+/* ---- how a call works ---- */
+details.how > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+details.how > summary::-webkit-details-marker { display: none; }
+details.how > summary .t { font-weight: 600; flex: 1; }
+details.how > summary .s { color: var(--muted); font-size: 13px; }
+.chev { color: var(--muted); transition: transform .15s; }
+details[open] > summary .chev { transform: rotate(90deg); }
+.steps { list-style: none; margin: 0; padding: 4px 14px 14px; display: grid; gap: 10px; counter-reset: step; }
+.steps li { display: grid; grid-template-columns: 26px 1fr; gap: 0 10px; counter-increment: step; }
+.steps li::before { content: counter(step); grid-row: span 3; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--soft); color: var(--accent); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.steps b { font-size: 14px; }
+.steps .d { font-size: 13px; color: var(--fg-2); }
+.steps pre { margin: 4px 0 0; font: 11.5px/1.5 var(--mono); background: var(--code-bg); border-radius: 6px; padding: 6px 9px;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-2); }
+.split { margin: 0 14px 14px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--sunk); font-size: 13px; color: var(--fg-2); }
+
+/* ---- failures ---- */
+.fail { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); padding: 10px 14px; }
+.fail .h { color: var(--bad); font-weight: 600; font-size: 13.5px; }
+.fail .r { font-size: 13px; color: var(--fg-2); }
+
+/* ---- sandbox ---- */
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; border: 1px solid var(--line-2); border-radius: 99px; padding: 1px 9px; color: var(--fg-2); }
+.pill.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.pill.ok::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.box { padding: 6px 14px 12px; }
+.box > .lede { font-size: 13px; color: var(--muted); padding: 6px 0 4px; }
+.kv { display: grid; grid-template-columns: 118px 1fr; gap: 0 12px; padding: 9px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.kv:first-of-type { border-top: 0; }
+.kv > .k { font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.kv > .v { font-size: 13.5px; min-width: 0; }
+.paths { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.path { font: 12px/1.6 var(--mono); background: var(--code-bg); border-radius: 5px; padding: 0 6px; display: inline-flex; align-items: center; gap: 5px; }
+.path.plain { font-family: var(--sans); font-size: 12.5px; }
+.ports { display: flex; flex-wrap: wrap; gap: 6px; }
+.port { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 1px 7px 1px 8px; font-size: 12px; }
+.port .l { color: var(--muted); white-space: nowrap; }
+.port .n { font-family: var(--mono); font-size: 11.5px; }
+.port.api { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.port.never { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: var(--bad); }
+.port.never .l { color: var(--bad); }
+.refused { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
+
+/* ---- tool cards ---- */
+details.tool > summary { list-style: none; cursor: pointer; padding: 11px 14px; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
+details.tool > summary::-webkit-details-marker { display: none; }
+.tname { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.tname .n { font: 600 14.5px var(--mono); }
+.chip { font-size: 11.5px; border-radius: 99px; padding: 0 8px; border: 1px solid var(--line); color: var(--fg-2); white-space: nowrap; }
+.chip.key { background: var(--soft); border-color: transparent; color: var(--accent); }
+.chip.reads { background: var(--code-bg); border-color: transparent; }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.chip.builtin { background: var(--sunk); border-color: transparent; color: var(--muted); }
+details.tool > summary .meta { grid-row: span 2; align-self: center; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+details.tool > summary .desc { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+details.tool[open] > summary .desc { display: none; }
+details.tool[open] > summary { border-bottom: 1px solid var(--line); }
+
+.sect { padding: 10px 14px 4px; }
+.sect + .sect { border-top: 1px dashed var(--line); }
+.sh { display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 650; margin-bottom: 6px; }
+.sh .tag { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11.5px; }
+.modeldesc { font-size: 13.5px; color: var(--fg-2); margin: 0 0 8px; }
+.params { border-top: 1px solid var(--line); }
+.param { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 0 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.param .pn { font: 600 12.5px/1.6 var(--mono); }
+.param .pt { font-size: 12px; color: var(--muted); }
+.param .pt .req { color: var(--accent); }
+.param .pd { grid-column: 2; font-size: 13px; color: var(--fg-2); }
+.param .pd.none { color: var(--warn); }
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 2px 0 10px; }
+.fact { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 7px 10px; }
+.fact .k { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.fact .v { font-size: 13.5px; margin-top: 1px; }
+.fact .v.mono { font-size: 12.5px; }
+.fact .v.none { color: var(--muted); }
+.jsons { padding: 0 14px 12px; }
+.jbtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.jb { cursor: pointer; background: none; border: 1px solid var(--line-2); border-radius: 99px; padding: 3px 11px; font-size: 12.5px; color: var(--fg-2); }
+.jb.on { border-color: var(--accent); color: var(--accent); }
+.jsons pre { margin: 8px 0 0; font: 11.5px/1.55 var(--mono); background: var(--code-bg); border-radius: var(--r-sm); padding: 10px 12px; overflow-x: auto; white-space: pre; }
+.jsons pre .std { color: var(--fg); }
+.jsons pre .ours { color: var(--accent); }
+.jsons .cap { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.builtinnote { padding: 10px 14px 12px; font-size: 13px; color: var(--fg-2); }
+
+@media (max-width: 560px) {
+  .kv { grid-template-columns: 1fr; gap: 4px; }
+  .param { grid-template-columns: 1fr; }
+  .param .pd { grid-column: 1; }
+}
+</style></head>
+<body>
+
+<div class="mocknote">Mock of the Tools screen (More → Tools), with each manifest in its standard part and its
+<code>agent</code> block (<a href="adrs.html#adr-067">ADR-067</a>). Static data, and a few of the tools; the cards, the
+explainer, and every <b>?</b> work. <a href="webui.html">← Web UI spec</a></div>
+
+<div class="top"><span class="back">‹</span><h1>Tools</h1></div>
+
+<div class="wrap">
+
+<div class="bar">
+  <button class="btn primary">Reload from disk</button>
+  <span class="count"><b>12</b> tools · <b>1</b> built in · <span class="bad"><b>1</b> didn't load</span></span>
+</div>
+
+<details class="card how">
+  <summary><span class="chev">›</span><span class="t">How a tool call works</span><span class="s">four steps</span></summary>
+  <ol class="steps">
+    <li><b>Offer</b><span class="d">Every model call lists the tools: each one's name, description and parameters, in the standard OpenAI format. That is all the model knows about a tool.</span>
+      <pre>{"type": "function", "function": {"name": "web_search", "description": "Search the web…", "parameters": {…}}}</pre></li>
+    <li><b>Call</b><span class="d">The model answers with a tool call instead of text: a name, and arguments as JSON.</span>
+      <pre>{"id": "call_7", "function": {"name": "web_search", "arguments": "{\"query\": \"Go 1.25\"}"}}</pre></li>
+    <li><b>Run</b><span class="d">The agent starts <code>tools/web_search/run</code> inside the sandbox below. The arguments go in on standard input; the tool answers on standard output, or is stopped at its timeout.</span>
+      <pre>stdin   {"query": "Go 1.25"}
+stdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}</pre></li>
+    <li><b>Return</b><span class="d">The answer is saved to the transcript and sent back to the model as a <code>tool</code> message. The model then answers, or calls another tool.</span></li>
+  </ol>
+  <div class="split">A manifest has two parts. <b>name</b>, <b>description</b> and <b>parameters</b> are the standard part: they are what step 1 sends. The <b class="mono">agent</b> block is this agent's own: the timeout, the table prefix, and what the sandbox adds. It is read by the agent and never sent to the model.</div>
+</details>
+
+<div class="card fail" style="margin-top:10px">
+  <div class="h">tools/notes didn't load</div>
+  <div class="r"><code>manifest.json</code>: "description" is missing. The other tools are unaffected.</div>
+</div>
+
+<h2>The sandbox
+  <span class="help"><button aria-label="What is the sandbox?">?</button><span class="tip">Landlock, a Linux kernel feature, limits what each tool program can touch. Every list here is an allow-list: anything not named is refused by the kernel, whatever the tool tries. Built-in tools run inside the agent and are not sandboxed.</span></span>
+  <span class="right"><span class="pill ok">landlock · enforced</span></span>
+</h2>
+<div class="card"><div class="box">
+  <div class="lede">Every tool program runs inside this. A tool's card says what it adds.</div>
+
+  <div class="kv"><div class="k">Read &amp; write
+      <span class="help"><button aria-label="Read and write">?</button><span class="tip">The only places a tool can change anything.</span></span></div>
+    <div class="v paths">
+      <span class="path plain">this conversation's folder
+        <span class="help"><button aria-label="This conversation's folder">?</button><span class="tip">The folder the tool runs in, one per conversation. Its temp folder and <code>HOME</code> are inside it too, so scratch files stay confined, and show on the Files screen.</span></span></span>
+      <span class="path">/app/state/data/db
+        <span class="help"><button aria-label="The database folder">?</button><span class="tip">The folder holding the shared database, <code>agent.db</code>, and the two journal files SQLite writes beside it. Every tool is handed the database to keep its own tables, named with its prefix. The folder above it, with every transcript and the push keys, is not granted.</span></span></span>
+    </div></div>
+
+  <div class="kv"><div class="k">Read only
+      <span class="help"><button aria-label="Read only">?</button><span class="tip"><code>/app/tools</code> holds the tool programs. The rest is the system: the programs, libraries and certificates a tool needs to start. <code>/proc</code> is left out because it would show the agent's own environment, API key included; a tool that needs it asks in its manifest.</span></span></div>
+    <div class="v paths"><span class="path">/app/tools</span><span class="path">/usr</span><span class="path">/bin</span><span class="path">/sbin</span><span class="path">/lib</span><span class="path">/lib64</span><span class="path">/etc</span><span class="path">/opt</span></div></div>
+
+  <div class="kv"><div class="k">Devices
+      <span class="help"><button aria-label="Devices">?</button><span class="tip">Files a program opens before any of its own code runs: a shell cannot redirect output without <code>/dev/null</code>. They are named one by one because granting <code>/dev</code> would grant every device.</span></span></div>
+    <div class="v paths"><span class="path">/dev/null</span><span class="path">/dev/zero</span><span class="path">/dev/full</span><span class="path">/dev/random</span><span class="path">/dev/urandom</span><span class="path">/dev/tty</span></div></div>
+
+  <div class="kv"><div class="k">Network
+      <span class="help"><button aria-label="Network">?</button><span class="tip">Outgoing TCP to these ports only. Starting a server, and all UDP, are not restricted. This needs Linux 6.7 or later; on an older kernel this row says it is not enforced.</span></span></div>
+    <div class="v ports">
+      <span class="port"><span class="l">ssh, git</span><span class="n">22 9418</span></span>
+      <span class="port"><span class="l">DNS</span><span class="n">53</span></span>
+      <span class="port"><span class="l">web</span><span class="n">80 443</span></span>
+      <span class="port"><span class="l">dev servers</span><span class="n">3000 4000 5000 5173 8000 8080 8443 8888</span></span>
+      <span class="port"><span class="l">databases</span><span class="n">3306 5432 6379 27017</span></span>
+      <span class="port api"><span class="l">tool API</span><span class="n">41237</span>
+        <span class="help"><button aria-label="Tool API">?</button><span class="tip">How a tool reaches the agent: a separate API on a port the kernel picks at startup. A tool calls it with <code>AGENT_URL</code> and a token that is valid for one call. It can search, and see its own conversation's jobs and skills. It cannot create or message a conversation.</span></span></span>
+      <span class="port never"><span class="l">never your API</span><span class="n">7770</span>
+        <span class="help"><button aria-label="Your API">?</button><span class="tip">The API this screen uses. It can create a conversation holding a credential and send it a message, so a tool that reached it could hand itself any credential you have set.</span></span></span>
+    </div></div>
+
+  <div class="refused">Everything else is refused: other conversations, the skills folder, your home folder, and the file holding the API key.</div>
+</div></div>
+
+<h2>Tools</h2>
+
+<details class="card tool" open>
+  <summary>
+    <div class="tname"><span class="n">web_search</span><span class="chip key">env TAVILY_API_KEY TAVILY_URL</span></div>
+    <div class="meta">60 s <span class="chev">›</span></div>
+    <div class="desc">Search the web and return result titles, URLs, and snippets.</div>
+  </summary>
+  <div class="sect">
+    <div class="sh">What the model sees
+      <span class="help"><button aria-label="What the model sees">?</button><span class="tip">Sent with every model call, in the standard OpenAI tools format: the name, this description, and the parameters as JSON Schema. The model knows nothing else about the tool, so a parameter without a description is only its type.</span></span></div>
+    <p class="modeldesc">Search the web and return result titles, URLs, and snippets. It calls a search API with the agent's own key, so there is nothing to sign in to; a search when no key is configured fails saying so, and is the operator's to fix. Follow a result with web_fetch, or web_browse if the page needs its scripts to run.</p>
+    <div class="params">
+      <div class="param"><span class="pn">query</span><span class="pt">string · <span class="req">required</span></span><span class="pd">Search query.</span></div>
+      <div class="param"><span class="pn">limit</span><span class="pt">integer · optional</span><span class="pd">Maximum results, default 10. It is what the API is asked for, so ask for what you will read.</span></div>
+    </div>
+  </div>
+  <div class="sect">
+    <div class="sh">What the agent uses
+      <span class="help"><button aria-label="What the agent uses">?</button><span class="tip">The manifest's <code>agent</code> block. The agent reads it to run the tool, and never sends it to the model.</span></span></div>
+    <div class="facts">
+      <div class="fact"><div class="k">Timeout <span class="help"><button aria-label="Timeout">?</button><span class="tip">The program is stopped after this, and the model is told it failed.</span></span></div><div class="v">60 seconds</div></div>
+      <div class="fact"><div class="k">Table prefix <span class="help"><button aria-label="Table prefix">?</button><span class="tip">Every table this tool creates in the shared database starts with this, so two tools cannot write into each other's tables.</span></span></div><div class="v mono">web_search_</div></div>
+      <div class="fact"><div class="k">Environment <span class="help"><button aria-label="Environment">?</button><span class="tip">Passed to this tool on every call, in every conversation. Names only: values are never shown. A credential you grant one conversation is set on that conversation instead.</span></span></div><div class="v mono">TAVILY_API_KEY<br>TAVILY_URL</div></div>
+      <div class="fact"><div class="k">Extra reads <span class="help"><button aria-label="Extra reads">?</button><span class="tip">Folders this tool may read on top of what every tool gets.</span></span></div><div class="v none">none</div></div>
+    </div>
+  </div>
+  <div class="jsons">
+    <div class="jbtns"><button class="jb" data-j="manifest">manifest.json</button><button class="jb" data-j="sent">Sent to the model</button></div>
+    <div class="jpanel" data-j="manifest" hidden>
+<pre><span class="std">{
+  "name": "web_search",
+  "description": "Search the web and return result titles, URLs, and snippets. …",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "query": {"type": "string", "description": "Search query."},
+      "limit": {"type": "integer", "description": "Maximum results, default 10. …"}
+    },
+    "required": ["query"]
+  },</span>
+<span class="ours">  "agent": {
+    "db_prefix": "web_search_",
+    "timeout_seconds": 60,
+    "env": ["TAVILY_API_KEY", "TAVILY_URL"]
+  }</span>
+<span class="std">}</span></pre>
+      <div class="cap">Black is standard and sent to the model; the <span style="color:var(--accent)">agent block</span> is this agent's own.</div>
+    </div>
+    <div class="jpanel" data-j="sent" hidden>
+<pre>{
+  "type": "function",
+  "function": {
+    "name": "web_search",
+    "description": "Search the web and return result titles, URLs, and snippets. …",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "Search query."},
+        "limit": {"type": "integer", "description": "Maximum results, default 10. …"}
+      },
+      "required": ["query"]
+    }
+  }
+}</pre>
+      <div class="cap">One entry of the request's <code>tools</code> list, exactly as sent.</div>
+    </div>
+  </div>
+</details>
+
+<details class="card tool">
+  <summary>
+    <div class="tname"><span class="n">session_search</span><span class="chip warn">1 parameter undescribed</span></div>
+    <div class="meta">30 s <span class="chev">›</span></div>
+    <div class="desc">Full-text search over transcripts.</div>
+  </summary>
+  <div class="sect">
+    <div class="sh">What the model sees</div>
+    <p class="modeldesc">Full-text search over transcripts. Defaults to this conversation, which is how you reach back for detail that compaction has folded away. …</p>
+    <div class="params">
+      <div class="param"><span class="pn">query</span><span class="pt">string · optional</span><span class="pd">Words to look for. Each word matches as a prefix, and punctuation is looked for as written. Required unless seq is given.</span></div>
+      <div class="param"><span class="pn">seq</span><span class="pt">integer · optional</span><span class="pd">A hit's number, to read that one entry whole instead of searching.</span></div>
+      <div class="param"><span class="pn">limit</span><span class="pt">integer · optional</span><span class="pd none">No description. The model sees only that it is an integer.</span></div>
+      <div class="param"><span class="pn">session</span><span class="pt">string · optional</span><span class="pd">Where to look. Omit for this conversation; "all" for every conversation; or a session id.</span></div>
+    </div>
+  </div>
+  <div class="sect">
+    <div class="sh">What the agent uses</div>
+    <div class="facts">
+      <div class="fact"><div class="k">Timeout</div><div class="v">30 seconds</div></div>
+      <div class="fact"><div class="k">Table prefix</div><div class="v mono">session_search_</div></div>
+      <div class="fact"><div class="k">Environment</div><div class="v none">none</div></div>
+      <div class="fact"><div class="k">Extra reads</div><div class="v none">none</div></div>
+    </div>
+  </div>
+</details>
+
+<details class="card tool">
+  <summary>
+    <div class="tname"><span class="n">web_browse</span><span class="chip reads">reads /proc /sys /var</span></div>
+    <div class="meta">60 s <span class="chev">›</span></div>
+    <div class="desc">Open a URL in a real browser, let the page's scripts run, and return the text a person would see.</div>
+  </summary>
+  <div class="sect"><div class="sh">What the agent uses</div>
+    <div class="facts">
+      <div class="fact"><div class="k">Timeout</div><div class="v">60 seconds</div></div>
+      <div class="fact"><div class="k">Table prefix</div><div class="v mono">web_browse_</div></div>
+      <div class="fact"><div class="k">Environment</div><div class="v none">none</div></div>
+      <div class="fact"><div class="k">Extra reads</div><div class="v mono">/proc /sys /var</div></div>
+    </div></div>
+</details>
+
+<details class="card tool">
+  <summary>
+    <div class="tname"><span class="n">bash</span></div>
+    <div class="meta">930 s <span class="chev">›</span></div>
+    <div class="desc">Run a shell command in the workspace.</div>
+  </summary>
+</details>
+
+<details class="card tool">
+  <summary>
+    <div class="tname"><span class="n">reload_tools</span><span class="chip builtin">built in</span></div>
+    <div class="meta">60 s <span class="chev">›</span></div>
+    <div class="desc">Validate and register tools from disk.</div>
+  </summary>
+  <div class="builtinnote">Runs inside the agent process: no program, no sandbox, and no manifest file. It is how a running conversation asks the agent to load tools you have just installed.</div>
+</details>
+
+<p class="count" style="margin-top:14px">…and seven more: clock, edit, read, schedule, skill_read, web_fetch, write.</p>
+
+</div>
+
+<script>
+// A ? opens on tap and closes on the next tap anywhere; on a pointer it also
+// opens on hover (CSS). Only one is open at a time. The explanation is placed
+// under its ? and kept on screen, so one near an edge is not cut off.
+function place(h) {
+  const b = h.querySelector('button').getBoundingClientRect();
+  const tip = h.querySelector('.tip');
+  const w = tip.offsetWidth, ht = tip.offsetHeight;
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  const left = Math.min(Math.max(8, b.left - 8), vw - w - 8);
+  const top = b.bottom + ht + 14 > vh ? b.top - ht - 6 : b.bottom + 6;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+document.addEventListener('mouseover', e => { const h = e.target.closest('.help'); if (h) place(h); });
+document.addEventListener('click', e => {
+  const h = e.target.closest('.help');
+  document.querySelectorAll('.help.open').forEach(x => { if (x !== h) x.classList.remove('open'); });
+  if (h && e.target.closest('button')) {
+    e.preventDefault(); e.stopPropagation();
+    h.classList.toggle('open');
+    if (h.classList.contains('open')) place(h);
+  }
+}, true);
+// The two JSON buttons share one place under them: one open at a time.
+document.addEventListener('click', e => {
+  const b = e.target.closest('.jb');
+  if (!b) return;
+  const box = b.closest('.jsons');
+  const open = !b.classList.contains('on');
+  box.querySelectorAll('.jb').forEach(x => x.classList.toggle('on', open && x === b));
+  box.querySelectorAll('.jpanel').forEach(x => { x.hidden = !(open && x.dataset.j === b.dataset.j); });
+});
+addEventListener('scroll', () => document.querySelectorAll('.help.open').forEach(x => x.classList.remove('open')), { passive: true });
+addEventListener('load', () => setTimeout(() => document.querySelectorAll('.help.open').forEach(place), 50));
+</script>
+</body></html>

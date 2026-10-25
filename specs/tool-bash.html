@@ -63,7 +63,7 @@ because a cache they could both write is exactly the channel the sandbox exists 
 </table>
 
 <h2>Two timeouts, and why</h2>
-<p>The registry kills a tool at the manifest's <code>timeout_seconds</code>, which for this tool is
+<p>The registry kills a tool at its manifest's <code>agent.timeout_seconds</code>, which for this tool is
 930. The tool imposes its own, lower: 120 by default, and at most 900. The gap is deliberate: a command that
 overruns is stopped by the tool, which is still alive and can say <em>timed out after 120s</em>. Were
 there only the outer limit, the subprocess would be killed with nothing written to stdout, and an

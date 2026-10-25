@@ -612,8 +612,8 @@ func TestTheManifestReportsThePathsAToolAsksFor(t *testing.T) {
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"name":"browser","description":"Render a page.","db_prefix":"browser_",
-	  "reads":["/proc"],"parameters":{"type":"object","properties":{}}}`
+	manifest := `{"name":"browser","description":"Render a page.",
+	  "parameters":{"type":"object","properties":{}},"agent":{"db_prefix":"browser_","reads":["/proc"]}}`
 	if err := os.WriteFile(filepath.Join(toolDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -627,8 +627,8 @@ func TestTheManifestReportsThePathsAToolAsksFor(t *testing.T) {
 	if got == nil {
 		t.Fatal("the tool did not load")
 	}
-	if len(got.Reads) != 1 || got.Reads[0] != "/proc" {
-		t.Errorf("reads = %v, want [/proc]", got.Reads)
+	if len(got.Agent.Reads) != 1 || got.Agent.Reads[0] != "/proc" {
+		t.Errorf("reads = %v, want [/proc]", got.Agent.Reads)
 	}
 }
 

@@ -141,8 +141,8 @@ func writeTool(t *testing.T, root, name, script string) {
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	manifest := `{"name":"` + name + `","description":"Test tool.","db_prefix":"` + name +
-		`_","parameters":{"type":"object","properties":{}}}`
+	manifest := `{"name":"` + name + `","description":"Test tool.",` +
+		`"parameters":{"type":"object","properties":{}},"agent":{"db_prefix":"` + name + `_"}}`
 	if err := os.WriteFile(d+"/manifest.json", []byte(manifest), 0o644); err != nil {
 		t.Fatal(err)
 	}
