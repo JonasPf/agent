@@ -489,6 +489,14 @@ too, and one that is no longer loaded keeps the uses it had, marked so. A job is
 the window or is still scheduled. "In how many conversations" is out of the conversations that had a
 model call in the window; one that was created and never spoken in showed its model nothing.</p>
 
+<p>Each of the three is a table: one row per skill, tool, or job, its figures in columns of their own,
+right-aligned, so a column is read down and a row across without reading a sentence for each. A name
+too long for the row is cut short rather than wrapped, except a job's prompt, which is how a job is
+recognised and gets two lines first. A tool's newest failure is the one thing too long
+for a column, and is a line of its own beneath that tool's row. A row nothing used is dimmed. The
+conversations a skill was read in are written as a count out of those offered it, as in
+<code>1/4</code>, and the screen says once what that means.</p>
+
 <p>The window is the last 7 days, the last 30, or everything stored; 30 is the default. It is in the
 address, so going back returns to the window that was being read.</p>
 
@@ -496,9 +504,10 @@ address, so going back returns to the window that was being read.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>The More panel leads to a Metrics screen.</li>
+<li>Skills, tools, and jobs are each a table with one row per item and a column per figure; a tool's newest failure is a line beneath its row.</li>
 <li>Each skill says how often it was read, and in how many of the conversations offered it; one never read says so.</li>
 <li>Each tool says how often it was called, how often that failed, and what its newest failure said.</li>
-<li>Each job says how many of its wakes acted, were skipped, and failed, and what its wakes cost, and opens the conversation it fires into.</li>
+<li>Each job says how many of its wakes acted, were skipped, and failed, and what its wakes cost, and its prompt opens the conversation it fires into.</li>
 <li>Every loaded tool and skill is listed whether or not it was used; one no longer loaded keeps its uses and is marked not loaded.</li>
 <li>What a fork carried over from its origin is counted once.</li>
 <li>A deleted conversation's uses are no longer counted.</li>

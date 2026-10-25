@@ -12,6 +12,11 @@
   each one's push service last answered. A device the push service no
   longer knows is removed by itself. The agent still has no way to send a
   notification of its own.
+- **The Metrics screen is a table.** Skills, jobs, and tools each take one
+  row, with their numbers in columns, so the whole screen fits on a phone
+  instead of a long scroll of cards. A tool's latest failure sits on a line
+  under its row. Anything unused is greyed out. Tap a job's prompt to open
+  its conversation.
 
 ## 2026-10-23
 

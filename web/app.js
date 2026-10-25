@@ -2420,57 +2420,78 @@ async function viewMetrics(v) {
   v.append(el('div', 's', `${n} conversation${n === 1 ? '' : 's'} with a model call ` +
     (win === 'all' ? 'in everything stored' : `in the last ${win} days`) +
     '. A deleted conversation takes its numbers with it.'));
-  const when = t => t ? ' · last ' + ago(t) : '';
-  const card = (name, lines, tags, acts) => {
-    const row = el('div', 'row-item');
-    const box = el('div', 'm');
-    const head = el('div', 'n', name);
-    head.title = name;
-    box.append(head);
-    for (const [cls, text] of lines) if (text) box.append(el('div', cls, text));
-    for (const [cls, text] of tags || []) box.append(el('span', 'tag ' + cls, text));
-    if (acts) box.append(acts);
-    row.append(box);
-    return row;
+  const pct = (part, whole) => part ? ` (${Math.round(100 * part / whole)}%)` : '';
+  const last = t => t ? ago(t) : 'never';
+  // A name is cut short rather than wrapped; the whole of it is its title.
+  const name = (text, loaded) => {
+    const n = el('div', 'nm', text);
+    n.title = text;
+    const c = el('div');
+    c.append(n);
+    if (!loaded) c.append(el('div', 'sub', 'not loaded'));
+    return c;
   };
-  const pct = (part, whole) => whole ? ` (${Math.round(100 * part / whole)}%)` : '';
 
   v.append(el('h2', null, 'skills'));
-  const skills = el('div', 'cards');
-  for (const s of m.skills || []) {
-    const said = s.reads
-      ? `${s.reads} read${s.reads === 1 ? '' : 's'} · read in ${s.conversations} of ${s.offered} conversations offered it` + when(s.last_at)
-      : `never read · offered to ${s.offered} conversation${s.offered === 1 ? '' : 's'}`;
-    skills.append(card(s.name, [['s', said]], s.loaded ? [] : [['', 'not loaded']]));
-  }
-  if (!(m.skills || []).length) skills.append(el('div', 'empty', 'No skills loaded or read.'));
-  v.append(skills);
+  v.append(metricTable(['Skill', 'Reads', 'Read in', 'Last'], (m.skills || []).map(s => ({
+    idle: !s.reads,
+    cells: [name(s.name, s.loaded), s.reads, `${s.conversations}/${s.offered}`, last(s.last_at)]
+  })), 'No skills loaded or read.'));
+  if ((m.skills || []).length) v.append(el('div', 's', 'Read in: the conversations that read a skill, out of those offered it.'));
 
   v.append(el('h2', null, 'jobs'));
-  const jobs = el('div', 'cards');
-  for (const j of m.jobs || []) {
-    const open = el('button', 'btn', 'Open conversation');
-    open.onclick = () => location.hash = '#session/' + j.session_id;
-    const acts = el('div');
-    acts.append(open);
-    jobs.append(card(j.prompt, [
-      ['s', `${j.fired} acted · ${j.skipped} skipped · ${j.failed} failed` + when(j.last_at)],
-      ['s cost', fmtMoney(j.cost)],
-      ['s', j.schedule + (j.check ? ' · check ' + j.check : '') + ' · ' + (j.session_title || j.session_id)],
-    ], [[j.status === 'done' ? '' : 'on', j.status]], acts));
-  }
-  if (!(m.jobs || []).length) jobs.append(el('div', 'empty', 'No job woke in this window, and none is scheduled.'));
-  v.append(jobs);
+  v.append(metricTable(['Job', 'Acted', 'Skipped', 'Failed', 'Cost'], (m.jobs || []).map(j => {
+    // The prompt is how a job is recognised, and opens where it fires.
+    const go = el('button', 'go', j.prompt);
+    go.title = j.prompt;
+    go.onclick = () => location.hash = '#session/' + j.session_id;
+    const sub = el('div', 'sub', [j.schedule, j.check ? 'check ' + j.check : '', j.status,
+      j.session_title || j.session_id].filter(Boolean).join(' · '));
+    const c = el('div');
+    c.append(go, sub);
+    return { idle: !(j.fired + j.skipped + j.failed), cells: [c, j.fired, j.skipped, j.failed, fmtMoney(j.cost)] };
+  }), 'No job woke in this window, and none is scheduled.'));
 
   v.append(el('h2', null, 'tools'));
-  const tools = el('div', 'cards');
-  for (const t of m.tools || []) {
-    tools.append(card(t.name, [
-      ['s', `${t.calls} call${t.calls === 1 ? '' : 's'} · ${t.failures} failed${pct(t.failures, t.calls)} · in ${t.conversations} of ${n} conversations` + when(t.last_at)],
-      ['s bad', t.last_error ? 'last failure: ' + t.last_error : ''],
-    ], t.loaded ? [] : [['', 'not loaded']]));
+  v.append(metricTable(['Tool', 'Calls', 'Failed', 'Convs', 'Last'], (m.tools || []).map(t => ({
+    idle: !t.calls,
+    cells: [name(t.name, t.loaded), t.calls, t.failures + pct(t.failures, t.calls), t.conversations, last(t.last_at)],
+    why: t.last_error ? 'last failure: ' + t.last_error : ''
+  })), 'No tools loaded or called.'));
+}
+
+// metricTable lays out one kind of item as rows: the first column names it and
+// takes what width is left, cut short if it needs more; every other column is
+// a figure. A row's `why` is a line beneath it, for the one thing too long for
+// a column. A row nothing used is dimmed.
+function metricTable(heads, rows, empty) {
+  if (!rows.length) return el('div', 'empty', empty);
+  const wrap = el('div', 'mtable-wrap');
+  const t = el('table', 'mtable');
+  const head = el('thead');
+  const hr = el('tr');
+  heads.forEach((h, i) => hr.append(el('th', i ? 'num' : null, h)));
+  head.append(hr);
+  const body = el('tbody');
+  for (const r of rows) {
+    const tr = el('tr', 'mrow' + (r.idle ? ' idle' : '') + (r.why ? ' has-why' : ''));
+    r.cells.forEach((c, i) => {
+      const td = el('td', i ? 'num' : 'name');
+      if (c && typeof c === 'object') td.append(c); else td.textContent = String(c);
+      tr.append(td);
+    });
+    body.append(tr);
+    if (r.why) {
+      const why = el('tr', 'why');
+      const td = el('td', null, r.why);
+      td.colSpan = heads.length;
+      why.append(td);
+      body.append(why);
+    }
   }
-  v.append(tools);
+  t.append(head, body);
+  wrap.append(t);
+  return wrap;
 }
 
 async function viewTools(v) {
