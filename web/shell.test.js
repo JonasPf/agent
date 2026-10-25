@@ -564,6 +564,10 @@ const METRICS = {
   jobs: [
     { id: 'J1', session_id: 'S1', session_title: 'Pets', prompt: 'Remind me to feed the cat.',
       schedule: '20m', status: 'scheduled', fired: 5, skipped: 12, failed: 1, cost: 0.25 },
+    { id: 'J2', session_id: 'S2', prompt: 'Tell me when the build is green.', schedule: '5m',
+      check: 'test -f /tmp/green', status: 'done', fired: 1, skipped: 30, failed: 0, cost: 0.004 },
+    { id: 'J3', session_id: 'S3', session_title: 'Reading', prompt: 'Every Sunday, summarise the saved articles.',
+      schedule: '0 9 * * 0', status: 'scheduled', fired: 0, skipped: 0, failed: 0, cost: 0 },
   ],
 };
 
@@ -579,10 +583,11 @@ test('More leads to the metrics screen', async () => {
   assert.strictEqual(ctx.location.hash, '#metrics');
 });
 
-// cellsOf is a metrics row read across: each column's text.
-const cellsOf = row => row.children.map(c => textOf(c).trim().replace(/\s+/g, ' '));
-const metricRow = (v, name) => findAll(v, 'mrow').find(r => cellsOf(r)[0].startsWith(name));
-const headsOf = table => table.children[0].children[0].children.map(c => c.textContent);
+// words is a node's text as it reads: its pieces joined, its spacing collapsed.
+const words = n => textOf(n).replace(/\s+/g, ' ').trim();
+const metricRow = (v, name) => findAll(v, 'mrow').find(r => find(find(r, 'mnm'), 't').textContent === name);
+const metricJob = (v, prompt) => findAll(v, 'mjob').find(j => find(j, 'mprompt').textContent === prompt);
+const tipOf = n => textOf(find(n, 'tip'));
 
 async function metricsScreen() {
   const ctx = load({ '/metrics?days=30': METRICS });
@@ -592,48 +597,112 @@ async function metricsScreen() {
   return { ctx, v };
 }
 
-// A card per item said its figures in a sentence each, and the screen was a
-// long scroll on a phone. A table reads down a column and across a row.
-test('skills, tools, and jobs are each a table with a row per item', async () => {
+// The tables gave every figure the same weight, so the screen had to be read
+// row by row to find the one thing that needed a look. It opens with the
+// totals, and draws what can be compared at a glance.
+test('the metrics screen opens with the window\'s totals', async () => {
   const { v } = await metricsScreen();
-  const tables = findAll(v, 'mtable');
-  assert.deepStrictEqual(tables.map(headsOf), [
-    ['Skill', 'Reads', 'Read in', 'Last'],
-    ['Job', 'Acted', 'Skipped', 'Failed', 'Cost'],
-    ['Tool', 'Calls', 'Failed', 'Convs', 'Last'],
-  ]);
-  assert.deepStrictEqual(tables.map(t => findAll(t, 'mrow').length), [3, 1, 3]);
-  assert.strictEqual(findAll(v, 'row-item').length, 0, 'an item is still drawn as a card');
+  const tiles = findAll(v, 'mtile');
+  assert.deepStrictEqual(tiles.map(t => find(t, 'mk').children[0].textContent), ['Conversations', 'Tool calls', 'Skill reads', 'Job cost']);
+  assert.deepStrictEqual(tiles.map(t => find(t, 'mv').textContent), ['4', '8', '5', '$0.25']);
+  const subs = tiles.map(t => words(find(t, 'ms')));
+  assert.match(subs[0], /with a model call/);
+  assert.match(subs[1], /1 failed · 13%/, 'the tool calls do not say how many failed');
+  assert.match(subs[2], /2 of 3 skills read/);
+  assert.match(subs[3], /3 jobs · 6 acted/);
+  assert.deepStrictEqual(findAll(v, 'msec').map(h => h.children[0].textContent), ['Tools', 'Skills', 'Jobs']);
+  assert.strictEqual(findAll(v, 'mtable').length, 0, 'the figures are still tables');
 });
 
-test('the metrics screen says how often each skill, tool, and job is used', async () => {
-  const { ctx, v } = await metricsScreen();
-  const text = textOf(v);
-  assert.match(text, /4 conversations/, 'the screen does not say what its counts are out of');
-  assert.match(text, /out of those offered it/, 'the screen does not say what "read in" counts');
-
-  const watering = cellsOf(metricRow(v, 'watering'));
-  assert.deepStrictEqual(watering.slice(0, 3), ['watering', '3', '1/4'], 'a skill does not say how often it was read where it was offered');
-  assert.match(watering[3], /ago/);
-  const pruning = metricRow(v, 'pruning');
-  assert.strictEqual(cellsOf(pruning)[3], 'never', 'a skill nobody read does not say so');
-  assert.match(pruning.className, /\bidle\b/, 'a skill nobody read is not dimmed');
-  assert.match(cellsOf(metricRow(v, 'changing-yourself'))[0], /not loaded/, 'a skill that is gone is not marked so');
-
+test('each tool\'s calls are a bar with its failed share at the end, and its newest failure beneath it', async () => {
+  const { v } = await metricsScreen();
   const read = metricRow(v, 'read');
-  assert.deepStrictEqual(cellsOf(read).slice(0, 4), ['read', '3', '1 (33%)', '2'], 'a tool does not say how often it failed');
-  const below = read.parent.children[read.parent.children.indexOf(read) + 1];
-  assert.match(below.className, /\bwhy\b/, 'a tool\'s last failure is not the line beneath it');
-  assert.match(textOf(below), /no-such-file\.txt: no such file/, 'a tool does not say what its last failure said');
-  assert.match(metricRow(v, 'bash').className, /\bidle\b/, 'a tool nobody called is not dimmed');
-  assert.strictEqual(cellsOf(metricRow(v, 'web_fetch'))[2], '0', 'a tool that never failed is given a percentage of nothing');
+  assert.strictEqual(find(read, 'mcalls').textContent, '3');
+  const failed = find(read, 'mfailed');
+  assert.strictEqual(failed.children[0].textContent, '1');
+  assert.strictEqual(find(failed, 'mpc').textContent, '33%', 'a tool does not say what share of its calls failed');
+  assert.notStrictEqual(find(read, 'mlast').textContent, 'never');
+  // web_fetch is called most, so its bar is the whole width; read's is 3 of 5.
+  const segs = find(read, 'mbar').children;
+  assert.deepStrictEqual(segs.map(i => [i.className, i.style.width]), [['', '40%'], ['b', '20%']]);
+  const fetch = metricRow(v, 'web_fetch');
+  assert.deepStrictEqual(find(fetch, 'mbar').children.map(i => i.style.width), ['100%'], 'a tool that never failed is drawn a failed share');
+  assert.strictEqual(find(fetch, 'mpc'), null, 'a tool that never failed is given a percentage of nothing');
+  assert.strictEqual(find(fetch, 'mfail'), null);
 
-  const job = metricRow(v, 'Remind me to feed the cat.');
-  assert.ok(job, 'the job is not listed by its prompt');
-  assert.deepStrictEqual(cellsOf(job).slice(1), ['5', '12', '1', '$0.2500'], 'a job does not say what its wakes did and cost');
-  assert.match(cellsOf(job)[0], /20m.*scheduled.*Pets/, 'a job does not say when it wakes and where');
-  find(job, 'go').onclick();
+  const why = find(read, 'mfail');
+  assert.match(textOf(why), /last failure.*no-such-file\.txt: no such file/, 'a tool does not say what its last failure said');
+  why.onclick();
+  assert.match(why.className, /\bopen\b/, 'a failure cut to one line does not open to the whole of it');
+  why.onclick();
+  assert.doesNotMatch(why.className, /\bopen\b/);
+
+  const bash = metricRow(v, 'bash');
+  assert.match(bash.className, /\bidle\b/, 'a tool nobody called is not dimmed');
+  assert.strictEqual(find(bash, 'mlast').textContent, 'never');
+  assert.strictEqual(find(bash, 'mbar').children.length, 0, 'a tool nobody called is drawn a bar');
+});
+
+test('each skill\'s bar is the conversations that read it out of those offered it', async () => {
+  const { v } = await metricsScreen();
+  const watering = metricRow(v, 'watering');
+  assert.strictEqual(find(watering, 'mof').textContent, '1 of 4');
+  assert.strictEqual(find(watering, 'mreads').textContent, '3');
+  assert.strictEqual(find(watering, 'mmeter').children[0].style.width, '25%');
+  assert.match(tipOf(watering), /read in 1 of the 4 conversations offered it, 3 times/);
+
+  const pruning = metricRow(v, 'pruning');
+  assert.match(pruning.className, /\bidle\b/, 'a skill nobody read is not dimmed');
+  assert.strictEqual(find(pruning, 'mof').textContent, '0 of 4');
+  assert.strictEqual(find(pruning, 'mlast').textContent, 'never', 'a skill nobody read does not say so');
+  assert.match(tipOf(pruning), /read in none/);
+
+  const gone = metricRow(v, 'changing-yourself');
+  assert.strictEqual(words(find(gone, 'mchip')), 'not loaded', 'a skill that is gone is not marked so');
+  assert.match(tipOf(gone), /no longer loaded/);
+});
+
+test('each job says what its wakes did and cost, and opens where it fires', async () => {
+  const { ctx, v } = await metricsScreen();
+  const cat = metricJob(v, 'Remind me to feed the cat.');
+  assert.ok(cat, 'the job is not listed by its prompt');
+  assert.strictEqual(find(cat, 'mcost').children[0].textContent, '$0.25', 'money is not to the cent');
+  assert.match(textOf(find(cat, 'mcost')), /\$0\.05 when it acts/);
+  assert.deepStrictEqual(findAll(cat, 'mwake').map(w => [find(w, 'n').textContent, find(w, 'l').textContent]),
+    [['5', 'acted'], ['12', 'skipped'], ['1', 'failed']], 'a job does not say what its wakes did');
+  assert.deepStrictEqual(findAll(cat, 'mtag').map(words), ['20m', 'in Pets']);
+  find(cat, 'mprompt').onclick();
   assert.strictEqual(ctx.location.hash, '#session/S1');
+
+  const build = metricJob(v, 'Tell me when the build is green.');
+  const tags = findAll(build, 'mtag');
+  const check = tags.find(t => /checks first/.test(textOf(t)));
+  assert.ok(check, 'a job gated by a check does not say so');
+  assert.match(tipOf(check), /test -f \/tmp\/green/, 'the check a job runs is not shown');
+  assert.ok(tags.some(t => words(t) === 'done'), 'a finished job is not marked done');
+  assert.ok(tags.some(t => words(t) === 'in S2'), 'a job in an untitled conversation does not name it');
+  assert.strictEqual(find(build, 'mcost').children[0].textContent, '<$0.01');
+  assert.match(textOf(find(build, 'mcost')), /acted once/);
+
+  const sunday = metricJob(v, 'Every Sunday, summarise the saved articles.');
+  assert.match(sunday.className, /\bidle\b/, 'a job that never woke is not dimmed');
+  assert.match(textOf(find(sunday, 'mquiet')), /hasn.t woken in this window/);
+  assert.strictEqual(findAll(sunday, 'mwake').length, 0);
+  assert.strictEqual(find(sunday, 'mcost').children[0].textContent, '$0');
+});
+
+test('a bar says its numbers on hover and tap, and a ? explains what a label cannot', async () => {
+  const { v } = await metricsScreen();
+  const read = metricRow(v, 'read');
+  const bar = find(read, 'mbar');
+  assert.match(tipOf(read), /read: 3 calls in 2 conversations\. 2 succeeded, 1 failed \(33%\)/);
+  bar.onclick({ preventDefault() {}, stopPropagation() {} });
+  assert.match(bar.parent.className, /\bopen\b/, 'tapping a bar does not give its numbers');
+  const tips = findAll(v, 'help').map(h => tipOf(h)).join('\n');
+  for (const [what, re] of [['the window', /deleted conversation takes its numbers with it/], ['a conversation', /model call/],
+    ['failed', /did not succeed/], ['offered', /offered/], ['the wakes', /skipped/i], ['the cost', /check/]]) {
+    assert.match(tips, re, `no ? explains ${what}`);
+  }
 });
 
 // The window is in the address, so going back returns to the one that was read.
@@ -642,12 +711,12 @@ test('the metrics window is chosen on the screen and kept in the address', async
   const v = ctx._id('view');
   vm.runInContext("state.view = 'metrics'; state.arg = undefined;", ctx);
   await ctx.viewMetrics(v);
-  const pills = findAll(v, 'pill');
-  assert.deepStrictEqual(pills.map(p => p.textContent), ['7 days', '30 days', 'All time']);
-  assert.ok(/\bon\b/.test(pills[1].className), 'the window shown is not the one marked');
-  pills[0].onclick();
+  const wins = findAll(v, 'mwin');
+  assert.deepStrictEqual(wins.map(p => p.textContent), ['7 days', '30 days', 'All time']);
+  assert.ok(/\bon\b/.test(wins[1].className), 'the window shown is not the one marked');
+  wins[0].onclick();
   assert.strictEqual(ctx.location.hash, '#metrics/7');
-  pills[2].onclick();
+  wins[2].onclick();
   assert.strictEqual(ctx.location.hash, '#metrics/all');
 
   for (const [arg, path] of [['7', '/metrics?days=7'], ['all', '/metrics?days=0']]) {

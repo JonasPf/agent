@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Metrics Screen Mock — Agent Spec</title>
+<style>
+/* The interface's own tokens, copied so this page looks like the screen it
+   proposes whether it is opened from disk or served with the rest of the spec.
+   The --m-* marks are the chart colours: a grey for what went fine and the
+   status red for what failed (never beside the accent, which a deuteranope
+   cannot tell from it), and the accent on its own lighter track for a share. */
+:root {
+  color-scheme: light;
+  --bg: #faf8f5; --sunk: #f3efe8; --card: #ffffff; --fg: #1a1917; --fg-2: #4c483f; --muted: #7b766d;
+  --line: #e7e1d7; --line-2: #d8d1c4; --accent: #a3542a; --soft: #f6ece2; --ok: #2c6a45; --warn: #866719;
+  --bad: #a03429; --code-bg: #f4f0e9; --r: 12px; --r-sm: 8px;
+  --m-fine: #bdb3a2; --m-bad: #a03429; --m-track: #efe2d5;
+  --shadow: 0 1px 2px rgba(30, 24, 16, .06), 0 10px 30px rgba(30, 24, 16, .08);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #151310; --sunk: #100f0c; --card: #1d1b17; --fg: #ece7dd; --fg-2: #c5bfb3; --muted: #948e83;
+    --line: #2e2a25; --line-2: #3d382f; --accent: #e09a63; --soft: #2a211a; --ok: #74b48c; --warn: #d6b968;
+    --bad: #e58a80; --code-bg: #24211c;
+    --m-fine: #6e675a; --m-bad: #d06a5d; --m-track: #3a2c21;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 34px rgba(0, 0, 0, .45);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+code, .mono { font-family: var(--mono); font-size: .86em; }
+button { font: inherit; color: inherit; }
+
+.mocknote { background: var(--sunk); border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--muted); padding: 8px 16px; }
+.mocknote a { color: var(--accent); }
+.top { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--card); position: sticky; top: 0; z-index: 5; }
+.top .back { color: var(--muted); font-size: 20px; line-height: 1; }
+.top h1 { font-size: 17px; margin: 0; flex: 1; }
+.wrap { max-width: 780px; margin: 0 auto; padding: 16px 16px 60px; }
+
+h2 { display: flex; align-items: center; gap: 6px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--muted); margin: 28px 0 8px; font-weight: 650; }
+h2 .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; display: flex; gap: 10px; align-items: center; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+
+/* ---- ? help: hover on a pointer, tap anywhere (as on the Tools screen) ---- */
+.help { position: relative; display: inline-flex; vertical-align: 1px; }
+.help > button {
+  width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--card);
+  color: var(--muted); font-size: 10.5px; font-weight: 700; line-height: 14px; padding: 0; cursor: help;
+  text-transform: none; letter-spacing: 0;
+}
+.help > button:hover, .help.open > button { color: var(--accent); border-color: var(--accent); }
+.tip, #tt {
+  display: none; position: fixed; left: 0; top: 0; z-index: 20; width: max-content;
+  max-width: min(320px, calc(100vw - 40px)); background: var(--fg); color: var(--bg);
+  font: 400 12.5px/1.5 var(--sans); text-transform: none; letter-spacing: 0; padding: 9px 11px;
+  border-radius: var(--r-sm); box-shadow: var(--shadow); white-space: normal; pointer-events: none;
+}
+.tip code, #tt code { color: inherit; opacity: .85; }
+@media (hover: hover) { .help:hover .tip { display: block; } }
+.help.open .tip, #tt.on { display: block; }
+
+/* ---- the window ---- */
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 14px; }
+.seg { display: inline-flex; background: var(--sunk); border: 1px solid var(--line); border-radius: 99px; padding: 3px; }
+.seg button { border: 0; background: none; border-radius: 99px; padding: 4px 13px; font-size: 13.5px; color: var(--fg-2); cursor: pointer; }
+.seg button.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(30, 24, 16, .12); }
+.since { font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+
+/* ---- the four figures ---- */
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.tile { padding: 11px 13px 12px; }
+.tile .k { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.tile .v { font-size: 26px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; margin-top: 2px; }
+.tile .s { font-size: 12px; color: var(--fg-2); margin-top: 2px; }
+.tile .s .x { color: var(--bad); }
+.tile .s .x::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 2px; background: var(--m-bad); margin-right: 5px; vertical-align: 1px; }
+
+/* ---- rows: shared ---- */
+.rows .hd, .rows .r { display: grid; align-items: center; gap: 0 12px; padding: 0 14px; }
+.rows .hd { font-size: 11px; color: var(--muted); padding-top: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.rows .r { padding-top: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+.rows .r:last-child { border-bottom: 0; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 13.5px; }
+.num.dim, .hd .num { color: var(--muted); }
+.num .pc { color: var(--muted); font-size: 12px; margin-left: 3px; }
+.nm { font: 600 13.5px/1.5 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; display: flex; align-items: center; gap: 6px; }
+.nm .t { overflow: hidden; text-overflow: ellipsis; }
+.chip { font: 500 11px var(--sans); border-radius: 99px; padding: 0 7px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; flex: none; }
+.r.idle .nm, .r.idle .num { color: var(--muted); font-weight: 500; }
+.legend { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 10px; height: 6px; border-radius: 2px; display: inline-block; }
+
+/* ---- tools: calls as a bar, its failed share in red at the end ---- */
+.tools .hd, .tools .r { grid-template-columns: 128px 1fr 44px 70px 40px; grid-template-areas: "nm bar calls fail last"; }
+.tools .nm { grid-area: nm; } .tools .calls { grid-area: calls; } .tools .fail { grid-area: fail; } .tools .last { grid-area: last; }
+.track { grid-area: bar; height: 8px; display: flex; gap: 2px; min-width: 0; cursor: default; }
+.track i { display: block; height: 100%; min-width: 3px; background: var(--m-fine); border-radius: 0; }
+.track i.b { background: var(--m-bad); min-width: 2px; }
+.track i:last-child { border-radius: 0 4px 4px 0; }
+.track.none { background: none; }
+.err { grid-column: 1 / -1; margin-top: 6px; display: flex; gap: 7px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; min-width: 0; }
+.err::before { content: "!"; flex: none; width: 15px; height: 15px; border-radius: 50%; background: color-mix(in srgb, var(--bad) 14%, transparent);
+  color: var(--bad); font: 700 10px/15px var(--sans); text-align: center; margin-top: 1px; }
+.err .m { font: 12px/1.45 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.err .m b { font: 500 12px var(--sans); color: var(--muted); margin-right: 4px; }
+.err.open .m { white-space: normal; overflow-wrap: anywhere; }
+
+/* ---- skills: read in how many of the conversations offered it ---- */
+.skills .hd, .skills .r { grid-template-columns: 210px 1fr 62px 44px 40px; grid-template-areas: "nm meter of reads last"; }
+.skills .nm { grid-area: nm; } .skills .of { grid-area: of; } .skills .reads { grid-area: reads; } .skills .last { grid-area: last; }
+.meter { grid-area: meter; height: 8px; border-radius: 4px; background: var(--m-track); overflow: hidden; min-width: 0; cursor: default; }
+.meter i { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+.of { text-align: right; font-size: 12.5px; color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.of.never { color: var(--muted); }
+
+/* ---- jobs ---- */
+.job { padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; }
+.job:last-child { border-bottom: 0; }
+.job .p { color: var(--accent); font-size: 14px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-decoration: none; }
+.job .p:hover { text-decoration: underline; }
+.job .cost { font-size: 17px; font-weight: 650; text-align: right; }
+.job .cost small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+.job .meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.tag { font-size: 11.5px; border-radius: 6px; padding: 0 7px; background: var(--code-bg); color: var(--fg-2); white-space: nowrap; }
+.tag.mono { font: 11.5px/1.6 var(--mono); }
+.tag.done { background: none; border: 1px solid var(--line); color: var(--muted); }
+.tag.conv { background: none; color: var(--muted); padding-left: 2px; }
+.wakes { grid-column: 1 / -1; display: flex; gap: 22px; margin-top: 4px; }
+.wake .n { font-size: 15px; font-weight: 600; }
+.wake .l { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.wake .l::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--m-fine); }
+.wake.acted .l::before { background: var(--accent); }
+.wake.failed .l::before { background: var(--m-bad); }
+.wake.zero .n { color: var(--muted); font-weight: 500; }
+.job.idle .p { color: var(--fg-2); }
+.job .quiet { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); }
+
+.foot { margin-top: 24px; font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: flex-start; }
+
+@media (max-width: 600px) {
+  .tiles { grid-template-columns: 1fr 1fr; }
+  .tile .v { font-size: 23px; }
+  .tools .hd, .tools .r { grid-template-columns: 1fr 44px 70px 36px; grid-template-areas: "nm calls fail last" "bar bar bar bar"; }
+  .tools .r .track { margin-top: 7px; }
+  .tools .hd .bh { display: none; }
+  .skills .hd, .skills .r { grid-template-columns: 1fr 44px 36px; grid-template-areas: "nm reads last" "meter meter meter" "of of of"; }
+  .skills .r .meter { margin-top: 7px; }
+  .skills .r .of { text-align: left; margin-top: 3px; font-size: 12px; }
+  .skills .hd .mh, .skills .hd .of { display: none; }
+}
+</style></head>
+<body>
+
+<div class="mocknote">Mock of the Metrics screen (More → Metrics). Static sample data, using only what
+<code>GET /metrics</code> returns; the window buttons don't switch, but every <b>?</b>, every bar's hover, and
+tapping a failure work. <a href="webui.html#metrics">← Web UI spec</a></div>
+
+<div class="top"><span class="back">‹</span><h1>Metrics</h1></div>
+
+<div class="wrap">
+
+<div class="bar">
+  <div class="seg" role="group" aria-label="Window"><button>7 days</button><button class="on">30 days</button><button>All time</button></div>
+  <span class="since">since 25 Sep
+    <span class="help"><button aria-label="Where these numbers come from">?</button><span class="tip">Counted from the transcripts and job logs each time this screen opens; nothing is stored for it, so it cannot disagree with them. A deleted conversation takes its numbers with it, and what a fork copied is counted once, in the conversation it came from.</span></span></span>
+</div>
+
+<div class="tiles">
+  <div class="card tile"><div class="k">Conversations
+      <span class="help"><button aria-label="Conversations">?</button><span class="tip">Conversations with at least one model call in the window. One created and never spoken in showed its model nothing, so it is not counted. Every "in how many conversations" below is out of these.</span></span></div>
+    <div class="v">23</div><div class="s">with a model call</div></div>
+  <div class="card tile"><div class="k">Tool calls</div>
+    <div class="v">1,117</div><div class="s"><span class="x">67 failed</span> · 6%</div></div>
+  <div class="card tile"><div class="k">Skill reads</div>
+    <div class="v">24</div><div class="s">5 of 6 skills read</div></div>
+  <div class="card tile"><div class="k">Job cost
+      <span class="help"><button aria-label="Job cost">?</button><span class="tip">What the model calls of every job's wakes cost, from the prices the gateway reported. A check runs before the model and costs nothing, so a wake it skipped adds nothing.</span></span></div>
+    <div class="v">$4.34</div><div class="s">4 jobs · 33 acted</div></div>
+</div>
+
+<h2>Tools
+  <span class="help"><button aria-label="What counts as failed">?</button><span class="tip">A call failed when its result said it did not succeed: the tool broke, or the model called it wrongly. The newest failure's message, under the tool, usually tells which. Tap it to read all of it.</span></span>
+  <span class="right"><span class="legend"><i style="background:var(--m-fine)"></i>succeeded</span><span class="legend"><i style="background:var(--m-bad)"></i>failed</span></span>
+</h2>
+<div class="card rows tools">
+  <div class="hd"><span>tool</span><span class="bh"></span><span class="num">calls</span><span class="num">failed</span><span class="num">last</span></div>
+  <div class="r">
+    <div class="nm"><span class="t">bash</span></div>
+    <div class="track" data-tip="<b>bash</b> · 412 calls in 15 conversations<br>375 succeeded · 37 failed (9%)"><i style="width:91%"></i><i class="b" style="width:9%"></i></div>
+    <div class="num calls">412</div><div class="num fail">37<span class="pc">9%</span></div><div class="num dim last">40m</div>
+    <div class="err"><span class="m"><b>last failure</b>exit status 1: go: cannot find main module, but found .git/config in /work; to create a module there, run: go mod init</span></div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">read</span></div>
+    <div class="track" data-tip="<b>read</b> · 288 calls in 16 conversations<br>284 succeeded · 4 failed (1%)"><i style="width:68.9%"></i><i class="b" style="width:1%"></i></div>
+    <div class="num calls">288</div><div class="num fail">4<span class="pc">1%</span></div><div class="num dim last">42m</div>
+    <div class="err"><span class="m"><b>last failure</b>open notes/todo.md: no such file or directory</span></div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">edit</span></div>
+    <div class="track" data-tip="<b>edit</b> · 131 calls in 11 conversations<br>122 succeeded · 9 failed (7%)"><i style="width:29.6%"></i><i class="b" style="width:2.2%"></i></div>
+    <div class="num calls">131</div><div class="num fail">9<span class="pc">7%</span></div><div class="num dim last">1h</div>
+    <div class="err"><span class="m"><b>last failure</b>old string appears 3 times in main.go; pass replace_all or give more context</span></div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">web_search</span></div>
+    <div class="track" data-tip="<b>web_search</b> · 96 calls in 12 conversations<br>none failed"><i style="width:23.3%"></i></div>
+    <div class="num calls">96</div><div class="num fail dim">0</div><div class="num dim last">5h</div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">web_fetch</span></div>
+    <div class="track" data-tip="<b>web_fetch</b> · 71 calls in 10 conversations<br>60 succeeded · 11 failed (15%)"><i style="width:14.6%"></i><i class="b" style="width:2.7%"></i></div>
+    <div class="num calls">71</div><div class="num fail">11<span class="pc">15%</span></div><div class="num dim last">5h</div>
+    <div class="err"><span class="m"><b>last failure</b>GET https://example.org/report: 403 Forbidden</span></div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">session_search</span></div>
+    <div class="track" data-tip="<b>session_search</b> · 38 calls in 9 conversations<br>none failed"><i style="width:9.2%"></i></div>
+    <div class="num calls">38</div><div class="num fail dim">0</div><div class="num dim last">1d</div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">write</span></div>
+    <div class="track" data-tip="<b>write</b> · 33 calls in 8 conversations<br>32 succeeded · 1 failed (3%)"><i style="width:7.8%"></i><i class="b" style="width:.2%"></i></div>
+    <div class="num calls">33</div><div class="num fail">1<span class="pc">3%</span></div><div class="num dim last">2h</div>
+    <div class="err"><span class="m"><b>last failure</b>path escapes the workspace: ../secrets</span></div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">skill_read</span></div>
+    <div class="track" data-tip="<b>skill_read</b> · 24 calls in 11 conversations<br>none failed"><i style="width:5.8%"></i></div>
+    <div class="num calls">24</div><div class="num fail dim">0</div><div class="num dim last">3h</div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">schedule</span></div>
+    <div class="track" data-tip="<b>schedule</b> · 12 calls in 5 conversations<br>10 succeeded · 2 failed (17%)"><i style="width:2.4%"></i><i class="b" style="width:.5%"></i></div>
+    <div class="num calls">12</div><div class="num fail">2<span class="pc">17%</span></div><div class="num dim last">3d</div>
+    <div class="err"><span class="m"><b>last failure</b>schedule "every 10 minutes" is not a duration, cron expression, or RFC 3339 time</span></div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">web_browse</span></div>
+    <div class="track" data-tip="<b>web_browse</b> · 7 calls in 2 conversations<br>4 succeeded · 3 failed (43%)"><i style="width:1%"></i><i class="b" style="width:.7%"></i></div>
+    <div class="num calls">7</div><div class="num fail">3<span class="pc">43%</span></div><div class="num dim last">9d</div>
+    <div class="err"><span class="m"><b>last failure</b>navigation timed out after 30s</span></div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">clock</span></div>
+    <div class="track" data-tip="<b>clock</b> · 5 calls in 4 conversations<br>none failed"><i style="width:1.2%"></i></div>
+    <div class="num calls">5</div><div class="num fail dim">0</div><div class="num dim last">4d</div>
+  </div>
+  <div class="r idle">
+    <div class="nm"><span class="t">reload_tools</span></div>
+    <div class="track none"></div>
+    <div class="num calls">0</div><div class="num fail dim">–</div><div class="num dim last">never</div>
+  </div>
+</div>
+
+<h2>Skills
+  <span class="help"><button aria-label="Read in, out of offered">?</button><span class="tip">A conversation is offered a skill when the skills index in its prompt listed it. The bar is how many of those conversations read it. A skill offered often and seldom read is one whose description isn't doing its job.</span></span>
+  <span class="right">read in, out of offered</span>
+</h2>
+<div class="card rows skills">
+  <div class="hd"><span>skill</span><span class="mh"></span><span class="of">read in</span><span class="num">reads</span><span class="num">last</span></div>
+  <div class="r">
+    <div class="nm"><span class="t">git-workflow</span></div>
+    <div class="meter" data-tip="<b>git-workflow</b> was read in 9 of the 23 conversations offered it, 14 times in all"><i style="width:39.1%"></i></div>
+    <div class="of">9 of 23</div><div class="num reads">14</div><div class="num dim last">3h</div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">weekly-review</span></div>
+    <div class="meter" data-tip="<b>weekly-review</b> was read in 4 of the 23 conversations offered it, 4 times in all"><i style="width:17.4%"></i></div>
+    <div class="of">4 of 23</div><div class="num reads">4</div><div class="num dim last">2d</div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">research-notes</span></div>
+    <div class="meter" data-tip="<b>research-notes</b> was read in 2 of the 17 conversations offered it, 3 times in all"><i style="width:11.8%"></i></div>
+    <div class="of">2 of 17</div><div class="num reads">3</div><div class="num dim last">6d</div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">deploy-checklist</span></div>
+    <div class="meter" data-tip="<b>deploy-checklist</b> was read in 1 of the 23 conversations offered it, once"><i style="width:4.3%"></i></div>
+    <div class="of">1 of 23</div><div class="num reads">1</div><div class="num dim last">12d</div>
+  </div>
+  <div class="r">
+    <div class="nm"><span class="t">old-meeting-notes</span><span class="chip">not loaded</span></div>
+    <div class="meter" data-tip="<b>old-meeting-notes</b> was read in 1 of the 4 conversations offered it, twice. It is no longer loaded, and keeps the uses it had."><i style="width:25%"></i></div>
+    <div class="of">1 of 4</div><div class="num reads">2</div><div class="num dim last">20d</div>
+  </div>
+  <div class="r idle">
+    <div class="nm"><span class="t">postmortem</span></div>
+    <div class="meter" data-tip="<b>postmortem</b> was offered in 23 conversations and read in none"></div>
+    <div class="of never">0 of 23</div><div class="num reads">0</div><div class="num dim last">never</div>
+  </div>
+</div>
+
+<h2>Jobs
+  <span class="help"><button aria-label="Acted, skipped, failed">?</button><span class="tip"><b>Acted</b>: the job woke and ran its prompt. <b>Skipped</b>: its check said not this time, before any model call, so it cost nothing. <b>Failed</b>: the wake went wrong; the job's log says how. Tap a prompt to open the conversation it runs in.</span></span>
+  <span class="right">costliest first</span>
+</h2>
+<div class="card">
+  <div class="job">
+    <a class="p" href="#">Summarise what changed in my repos overnight and what's on today.</a>
+    <div class="cost">$3.87<small>$0.13 when it acts</small></div>
+    <div class="meta"><span class="tag mono">0 7 * * *</span><span class="tag conv">in Morning brief</span></div>
+    <div class="wakes"><div class="wake acted"><div class="n">29</div><div class="l">acted</div></div><div class="wake zero"><div class="n">0</div><div class="l">skipped</div></div><div class="wake failed"><div class="n">1</div><div class="l">failed</div></div></div>
+  </div>
+  <div class="job">
+    <a class="p" href="#">Check the disk on the server and warn me if any volume is above 85%, with what grew since yesterday.</a>
+    <div class="cost">$0.41<small>$0.14 when it acts</small></div>
+    <div class="meta"><span class="tag mono">*/20 * * * *</span>
+      <span class="tag">checks first
+        <span class="help"><button aria-label="The check">?</button><span class="tip">Runs before every wake; only a zero exit lets the job act.<br><code>df --output=pcent / | tail -1 | tr -dc 0-9 | awk '$1&gt;85'</code></span></span></span>
+      <span class="tag conv">in Server watch</span></div>
+    <div class="wakes"><div class="wake acted"><div class="n">3</div><div class="l">acted</div></div><div class="wake"><div class="n">2,157</div><div class="l">skipped</div></div><div class="wake failed zero"><div class="n">0</div><div class="l">failed</div></div></div>
+  </div>
+  <div class="job">
+    <a class="p" href="#">Tell me when the v2.4 pipeline finishes.</a>
+    <div class="cost">$0.06<small>acted once</small></div>
+    <div class="meta"><span class="tag mono">5m</span>
+      <span class="tag">checks first
+        <span class="help"><button aria-label="The check">?</button><span class="tip">Runs before every wake; only a zero exit lets the job act.<br><code>gh run list -L1 --json status -q '.[0].status' | grep -qx completed</code></span></span></span>
+      <span class="tag done">done</span><span class="tag conv">in Release follow-up</span></div>
+    <div class="wakes"><div class="wake acted"><div class="n">1</div><div class="l">acted</div></div><div class="wake"><div class="n">31</div><div class="l">skipped</div></div><div class="wake failed zero"><div class="n">0</div><div class="l">failed</div></div></div>
+  </div>
+  <div class="job idle">
+    <a class="p" href="#">Every Sunday, pick three saved articles I haven't read and summarise each in a paragraph.</a>
+    <div class="cost">$0</div>
+    <div class="meta"><span class="tag mono">0 9 * * 0</span><span class="tag conv">in Reading list</span></div>
+    <div class="quiet">Scheduled, and hasn't woken in this window.</div>
+  </div>
+</div>
+
+<div class="foot">Tools and skills are listed whether or not they were used, since one nobody uses is an answer too.</div>
+
+</div>
+
+<div id="tt"></div>
+
+<script>
+// A ? opens on tap and closes on the next tap anywhere; on a pointer it also
+// opens on hover (CSS). Only one is open at a time. The explanation is placed
+// under its ? and kept on screen, so one near an edge is not cut off.
+function place(anchor, tip) {
+  const b = anchor.getBoundingClientRect();
+  const w = tip.offsetWidth, ht = tip.offsetHeight;
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  tip.style.left = Math.min(Math.max(8, b.left - 8), vw - w - 8) + 'px';
+  tip.style.top = (b.bottom + ht + 14 > vh ? b.top - ht - 6 : b.bottom + 6) + 'px';
+}
+const tt = document.getElementById('tt');
+// A bar or meter says its numbers on hover, and on a tap where there is no hover.
+function show(el) { tt.innerHTML = el.dataset.tip; tt.classList.add('on'); place(el, tt); }
+function hide() { tt.classList.remove('on'); }
+document.addEventListener('mouseover', e => {
+  const h = e.target.closest('.help'); if (h) place(h.querySelector('button'), h.querySelector('.tip'));
+  const d = e.target.closest('[data-tip]'); if (d) show(d); else hide();
+});
+document.addEventListener('click', e => {
+  const h = e.target.closest('.help');
+  document.querySelectorAll('.help.open').forEach(x => { if (x !== h) x.classList.remove('open'); });
+  if (h && e.target.closest('button')) {
+    e.preventDefault(); e.stopPropagation();
+    h.classList.toggle('open');
+    if (h.classList.contains('open')) place(h.querySelector('button'), h.querySelector('.tip'));
+    return;
+  }
+  const d = e.target.closest('[data-tip]');
+  if (d) show(d); else hide();
+  // A failure is one line until it is tapped.
+  const err = e.target.closest('.err'); if (err) err.classList.toggle('open');
+  if (e.target.closest('a.p')) e.preventDefault();
+}, true);
+addEventListener('scroll', () => { hide(); document.querySelectorAll('.help.open').forEach(x => x.classList.remove('open')); }, { passive: true });
+</script>
+</body></html>

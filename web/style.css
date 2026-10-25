@@ -24,6 +24,12 @@
   --bad: #a03429;
   --code-bg: #f4f0e9;
   --sel: #f0e7db;
+  /* Chart marks: a grey for what went fine and the status red for what failed,
+     which never sits beside the accent (a deuteranope cannot tell them apart),
+     and the accent on a lighter track of its own for a share. */
+  --m-fine: #bdb3a2;
+  --m-bad: #a03429;
+  --m-track: #efe2d5;
 
   --r: 12px;
   --r-sm: 8px;
@@ -56,6 +62,9 @@
     --bad: #e58a80;
     --code-bg: #24211c;
     --sel: #2a2620;
+    --m-fine: #6e675a;
+    --m-bad: #d06a5d;
+    --m-track: #3a2c21;
     --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 34px rgba(0, 0, 0, .45);
   }
 }
@@ -588,32 +597,109 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
 .md th, .md td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
 .md th { background: var(--code-bg); font-weight: 600; }
 
-/* Metrics are read down a column and across a row: one line per item, the
-   name taking what width is left and cut short, every figure right-aligned in
-   tabular digits so a column lines up. */
-.mtable-wrap { overflow-x: auto; margin: 0 0 6px; }
-.mtable { width: 100%; border-collapse: collapse; font-size: 13px; }
-.mtable th {
-  font-size: 11px; font-weight: 600; color: var(--muted); text-align: left;
-  padding: 4px 6px; border-bottom: 1px solid var(--line-2); white-space: nowrap;
+/* ---------- the Metrics screen ----------
+   The window's totals first, then each tool and skill a row whose figures are
+   right-aligned in tabular digits and whose bar compares it with the rest, then
+   each job a card. A row nothing used is dimmed. */
+
+.mseg { display: inline-flex; background: var(--sunk); border: 1px solid var(--line); border-radius: 99px; padding: 3px; }
+.mwin { border-radius: 99px; padding: 4px 13px; font-size: 13.5px; color: var(--fg-2); }
+.mwin.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(30, 24, 16, .12); }
+.metrics .toolbar { align-items: center; gap: 8px 12px; }
+.msince { font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+
+.mtiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.mtile { padding: 11px 13px 12px; min-width: 0; }
+/* Side by side, not stacked: no card's gap above it. */
+.mtiles .mtile { margin-top: 0; }
+.mk { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.mv { font-size: 26px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; margin-top: 2px; }
+.ms { font-size: 12px; color: var(--fg-2); margin-top: 2px; }
+.ms .x { color: var(--bad); }
+.ms .x::before, .mkey::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 2px; background: var(--m-bad);
+  margin-right: 5px; vertical-align: 1px;
 }
-.mtable td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.mtable th:first-child, .mtable td:first-child { padding-left: 0; }
-.mtable th:last-child, .mtable td:last-child { padding-right: 0; }
-.mtable .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.mtable td.name { width: 100%; max-width: 0; }
-.mtable .nm, .mtable .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mtable .sub { font-size: 11.5px; color: var(--muted); }
+
+.metrics h2.msec { display: flex; align-items: center; gap: 6px; margin-top: 28px; }
+.msec .right { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 12px; display: flex; gap: 10px; }
+.mkey.fine::before { background: var(--m-fine); }
+
+.mhd, .mrow { display: grid; align-items: center; gap: 0 12px; padding: 0 14px; }
+.mhd { font-size: 11px; color: var(--muted); padding-top: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.mrow { padding-top: 9px; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+.mrow:last-child { border-bottom: 0; }
+.mnum { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 13.5px; }
+.mnum.dim, .mhd .mnum { color: var(--muted); }
+.mpc { color: var(--muted); font-size: 12px; margin-left: 3px; }
+.mnm { font: 600 13.5px/1.5 var(--mono); min-width: 0; display: flex; align-items: center; gap: 6px; }
+.mnm .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mchip { font: 500 11px var(--sans); border-radius: 99px; padding: 0 7px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; flex: none; }
+.mrow.idle .mnm, .mrow.idle .mnum { color: var(--muted); font-weight: 500; }
+/* A bar or meter is the mark its numbers hang off, hovered or tapped. */
+.help.on-mark { display: flex; align-items: center; min-width: 0; vertical-align: baseline; cursor: default; }
+.on-mark > .mbar, .on-mark > .mmeter { flex: 1; }
+
+.mtools .mhd, .mtools .mrow { grid-template-columns: 128px 1fr 44px 70px 40px; grid-template-areas: "nm bar calls fail last"; }
+.mtools .mnm { grid-area: nm; } .mtools .on-mark, .mtools .mrow > .mbar { grid-area: bar; }
+.mcalls { grid-area: calls; } .mfailed { grid-area: fail; } .mtools .mlast { grid-area: last; }
+.mbar { height: 8px; display: flex; gap: 2px; min-width: 0; }
+.mbar i { display: block; height: 100%; min-width: 3px; background: var(--m-fine); }
+.mbar i.b { background: var(--m-bad); min-width: 2px; }
+.mbar i:last-child { border-radius: 0 4px 4px 0; }
+.mfail { grid-column: 1 / -1; margin-top: 6px; display: flex; gap: 7px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; min-width: 0; }
+.mfail::before {
+  content: "!"; flex: none; width: 15px; height: 15px; border-radius: 50%; margin-top: 1px; text-align: center;
+  background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); font: 700 10px/15px var(--sans);
+}
+.mfail .m { font: 12px/1.45 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.mfail .m b { font: 500 12px var(--sans); color: var(--muted); margin-right: 4px; }
+.mfail.open .m { white-space: normal; overflow-wrap: anywhere; }
+
+.mskills .mhd, .mskills .mrow { grid-template-columns: 210px 1fr 62px 44px 40px; grid-template-areas: "nm meter of reads last"; }
+.mskills .mnm { grid-area: nm; } .mskills .on-mark { grid-area: meter; }
+.mskills .mrow > .mof { grid-area: of; } .mreads { grid-area: reads; } .mskills .mlast { grid-area: last; }
+.mmeter { height: 8px; border-radius: 4px; background: var(--m-track); overflow: hidden; min-width: 0; }
+.mmeter i { display: block; height: 100%; background: var(--accent); border-radius: 0 4px 4px 0; }
+.mof { text-align: right; font-size: 12.5px; color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mhd .mof { color: var(--muted); font-size: 11px; }
+.mrow.idle .mof { color: var(--muted); }
+
+.mjob { padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 4px 14px; }
+.mjob:last-child { border-bottom: 0; }
 /* A job is recognised by its prompt, so it gets two lines before it is cut. */
-.mtable button.go {
+.mprompt {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  width: 100%; padding: 0; border: 0; background: none;
-  color: var(--accent); font: inherit; text-align: left; cursor: pointer;
+  color: var(--accent); font-size: 14px; line-height: 1.45; text-align: left; min-width: 0;
 }
-.mtable button.go:hover { text-decoration: underline; }
-.mtable tr.idle td { color: var(--muted); }
-.mtable tr.has-why td { border-bottom: 0; padding-bottom: 2px; }
-.mtable tr.why td { color: var(--bad); font-size: 11.5px; padding-top: 0; overflow-wrap: anywhere; }
+.mprompt:hover { text-decoration: underline; }
+.mjob.idle .mprompt { color: var(--fg-2); }
+.mcost { font-size: 17px; font-weight: 650; text-align: right; white-space: nowrap; }
+.mcost small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+.mmeta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-width: 0; }
+.mtag { font-size: 11.5px; border-radius: 6px; padding: 0 7px; background: var(--code-bg); color: var(--fg-2); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.mtag.mono { font: 11.5px/1.6 var(--mono); }
+.mtag.done { background: none; border: 1px solid var(--line); color: var(--muted); }
+.mtag.conv { background: none; color: var(--muted); padding-left: 2px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; display: block; }
+.mwakes { grid-column: 1 / -1; display: flex; gap: 22px; margin-top: 4px; }
+.mwake .n { font-size: 15px; font-weight: 600; }
+.mwake .l { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.mwake .l::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--m-fine); }
+.mwake.acted .l::before { background: var(--accent); }
+.mwake.failed .l::before { background: var(--m-bad); }
+.mwake.zero .n { color: var(--muted); font-weight: 500; }
+.mquiet { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); }
+
+@media (max-width: 600px) {
+  .mtiles { grid-template-columns: 1fr 1fr; }
+  .mv { font-size: 23px; }
+  .mtools .mhd, .mtools .mrow { grid-template-columns: 1fr 44px 70px 36px; grid-template-areas: "nm calls fail last" "bar bar bar bar"; }
+  .mtools .mrow .on-mark, .mtools .mrow > .mbar { margin-top: 7px; }
+  .mskills .mhd, .mskills .mrow { grid-template-columns: 1fr 44px 36px; grid-template-areas: "nm reads last" "meter meter meter" "of of of"; }
+  .mskills .mrow .on-mark { margin-top: 7px; }
+  .mskills .mrow > .mof { text-align: left; margin-top: 3px; font-size: 12px; }
+  .mhd .mgap, .mskills .mhd .mof { display: none; }
+}
 
 /* A wake is the scheduler replaying a job's prompt, not the operator typing.
    It gets its own mark rather than the bubble that means "you said this". */
