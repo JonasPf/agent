@@ -2,7 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { shouldNotify, messageNotification, canShowSystemNotification } = require('./notify.js');
+const { shouldNotify, messageNotification, canShowSystemNotification,
+  pushSupport, keyBytes, sameKey, deviceLine } = require('./notify.js');
 
 const msg = (over = {}) => Object.assign(
   { type: 'message', role: 'assistant', text: 'The deploy finished.' }, over);
@@ -98,4 +99,46 @@ test('anything else falls back to the unread count alone', () => {
   assert.strictEqual(canShowSystemNotification({ hasNotification: true, permission: 'denied' }), false);
   assert.strictEqual(canShowSystemNotification({ hasNotification: false, permission: 'granted' }), false);
   assert.strictEqual(canShowSystemNotification(null), false);
+});
+
+test('a browser with a service worker, push, and notifications can be pushed to', () => {
+  assert.strictEqual(pushSupport({ hasServiceWorker: true, hasPushManager: true, hasNotification: true }), 'push');
+  assert.strictEqual(pushSupport({ hasServiceWorker: true, hasPushManager: true, hasNotification: true, standalone: true }), 'push');
+});
+
+// An iPhone outside the home-screen app has none of the API, and is the one
+// browser that says it is not standalone.
+test('an iPhone outside the home screen is told to use it', () => {
+  assert.strictEqual(pushSupport({ hasServiceWorker: true, standalone: false }), 'home-screen');
+});
+
+test('anything else cannot be pushed to', () => {
+  assert.strictEqual(pushSupport({ hasServiceWorker: true, hasNotification: true }), 'none');
+  assert.strictEqual(pushSupport(null), 'none');
+});
+
+test('the served key is decoded to the bytes a subscription is made with', () => {
+  const raw = Buffer.from([4, ...Array.from({ length: 64 }, (_, i) => i * 3 % 256)]);
+  assert.deepStrictEqual(Array.from(keyBytes(raw.toString('base64url'))), Array.from(raw));
+});
+
+test('a subscription is recognised as made under the current key, and not under another', () => {
+  const key = Buffer.from([4, ...Array(64).fill(7)]).toString('base64url');
+  assert.strictEqual(sameKey(keyBytes(key).buffer, key), true);
+  assert.strictEqual(sameKey(new Uint8Array(65).buffer, key), false);
+  assert.strictEqual(sameKey(null, key), false);
+});
+
+// A push that fails looks exactly like a quiet agent, so the refusal is what
+// the line says, in full.
+test('a device line says what its push service last answered', () => {
+  const refused = deviceLine({ service: 'web.push.apple.com', last_status: 403, last_error: '403 BadJwtToken' }, false);
+  assert.strictEqual(refused.bad, true);
+  assert.match(refused.said, /refused.*403 BadJwtToken/);
+  assert.strictEqual(refused.who, 'Safari');
+  const fine = deviceLine({ service: 'fcm.googleapis.com', last_status: 201 }, true);
+  assert.strictEqual(fine.bad, false);
+  assert.match(fine.said, /accepted/);
+  assert.strictEqual(fine.who, 'This device · Chrome');
+  assert.match(deviceLine({ service: 'push.example' }, false).said, /Nothing pushed yet/);
 });

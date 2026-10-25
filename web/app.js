@@ -82,7 +82,7 @@ const until = t => {
 
 // working holds, per session, when this page learned the agent started on it,
 // in this browser's clock.
-const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent', working: {} };
+const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent', working: {}, push: { device: '', error: '', test: null } };
 
 // ---------- routing ----------
 
@@ -332,7 +332,10 @@ async function onVisible() {
 // announce shows a system notification for a message the operator is not
 // looking at. It is best-effort by design: without permission the unread count
 // in the session list is the whole signal, and nothing opens inside the app.
+// A device the agent pushes to is told that way, so the page stays quiet and
+// the message arrives once.
 function announce(entry, sessionID) {
+  if (state.push.device) return;
   if (!shouldNotify(entry, sessionID, { view: state.view, arg: state.arg, visible: !document.hidden })) return;
   if (!canShowSystemNotification({ hasNotification: 'Notification' in window, permission: 'Notification' in window ? Notification.permission : '' })) return;
   const known = (state.sessions || []).find(x => x.id === sessionID);
@@ -2852,30 +2855,156 @@ function notifyControl() {
   const box = el('div');
   const has = 'Notification' in window;
   const perm = has ? Notification.permission : '';
+  const support = pushSupport(pushEnv());
   const line = (cls, text) => box.append(el('span', cls, text));
+  const say = (text, cls) => box.append(el('div', 's' + (cls ? ' ' + cls : ''), text));
+  if (support === 'home-screen') {
+    line('tag warn', 'notifications · home screen only');
+    say('On an iPhone or iPad, notifications work only in the home-screen app. Tap Share, then Add to Home Screen, open the agent from there, and turn them on here.');
+    return box;
+  }
   if (!has) {
     line('tag bad', 'notifications · unavailable');
-    box.append(el('div', 's', 'This browser has no notification API here. It needs a secure origin — https, or localhost. The unread count on the session list is the only signal.'));
+    say('This browser has no notification API here. It needs a secure origin — https, or localhost. The unread count on the session list is the only signal.');
     return box;
   }
   if (perm === 'denied') {
     line('tag bad', 'notifications · blocked');
-    box.append(el('div', 's', 'Blocked for this site in the browser\'s own settings. Allow it there to turn banners back on.'));
+    say('Blocked for this site in the browser\'s own settings. Allow it there to turn notifications back on.');
     return box;
   }
-  if (perm === 'granted') {
-    line('tag on', 'notifications · on');
-    box.append(el('div', 's', 'A new agent message shows a banner while this browser is open and you are not reading that conversation. Nothing reaches you once the browser is closed.'));
+  if (support === 'push' && state.push.device) {
+    line('tag on', 'notifications · push');
+    say('A message you have not read reaches this device ten seconds after it was written, even with the browser closed. One you read in that time, on any device, is not sent.');
+    box.append(pushActions(), pushDevices());
     return box;
   }
-  line('tag warn', 'notifications · off');
-  box.append(el('div', 's', 'Not enabled on this device. Until it is, a new message only changes the unread count.'));
-  const b = el('button', 'btn primary', 'Enable notifications');
+  if (support !== 'push' && perm === 'granted') {
+    line('tag on', 'notifications · while open');
+    say('This browser cannot be pushed to, so a banner shows only while it is open and you are not reading that conversation. Nothing reaches you once it is closed.');
+    return box;
+  }
+  if (support === 'push' && perm === 'granted') {
+    line('tag warn', 'notifications · while open');
+    say('A banner shows while this browser is open. Turn on push to be told with it closed too.');
+  } else {
+    line('tag warn', 'notifications · off');
+    say('Not turned on for this device. Until they are, a new message only changes the unread count.');
+  }
+  if (state.push.error) say('Push could not be turned on: ' + state.push.error, 'bad');
+  const b = el('button', 'btn primary', support === 'push' ? 'Turn on push notifications' : 'Enable notifications');
   b.onclick = async () => {
-    try { await Notification.requestPermission(); } catch (e) {}
+    b.disabled = true;
+    try {
+      // Asked first and directly from the tap: Safari refuses a request made
+      // after anything else has been awaited.
+      const granted = await Notification.requestPermission() === 'granted';
+      if (granted && support === 'push') await subscribePush();
+    } catch (e) { state.push.error = e.message || String(e); }
     render();
   };
   box.append(b);
+  return box;
+}
+
+// ---------- push ----------
+
+// pushEnv is what pushSupport reads, taken from this browser.
+function pushEnv() {
+  return {
+    hasServiceWorker: 'serviceWorker' in navigator,
+    hasPushManager: 'PushManager' in window,
+    hasNotification: 'Notification' in window,
+    standalone: navigator.standalone
+  };
+}
+
+// startPush installs the service worker and listens for it, and registers a
+// device that is already subscribed with the agent again: an agent whose
+// state was reset learns of it, and a subscription made under a key the agent
+// no longer holds is replaced.
+async function startPush() {
+  if (pushSupport(pushEnv()) !== 'push') return;
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && 'open' in e.data) location.hash = e.data.open ? '#session/' + e.data.open : '#sessions';
+  });
+  try {
+    await navigator.serviceWorker.register('/sw.js');
+    if (Notification.permission !== 'granted') return;
+    const reg = await navigator.serviceWorker.ready;
+    if (await reg.pushManager.getSubscription()) await subscribePush();
+  } catch (e) { state.push.error = e.message || String(e); }
+  if (state.view === 'panels') render();
+}
+
+// subscribePush subscribes this device under the agent's key, keeping a
+// subscription it already has under that key, and registers it.
+async function subscribePush() {
+  await navigator.serviceWorker.register('/sw.js');
+  const reg = await navigator.serviceWorker.ready;
+  const key = (await api('/push')).public_key;
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && !sameKey(sub.options && sub.options.applicationServerKey, key)) {
+    await sub.unsubscribe();
+    sub = null;
+  }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+  const d = await post('/push/devices', sub.toJSON());
+  state.push.device = d.id;
+  state.push.error = '';
+}
+
+// pushActions are the test and the way out. The test reports what each push
+// service answered, because a push that fails looks exactly like a quiet agent.
+function pushActions() {
+  const row = el('div', 'env-line');
+  const test = el('button', 'btn', 'Send a test');
+  test.onclick = async () => {
+    test.disabled = true;
+    try { state.push.test = (await post('/push/test')).devices; }
+    catch (e) { state.push.error = e.message || String(e); }
+    render();
+  };
+  const off = el('button', 'btn danger', 'Turn off on this device');
+  off.onclick = async () => {
+    off.disabled = true;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+      await del('/push/devices/' + state.push.device);
+    } catch (e) {}
+    state.push.device = '';
+    state.push.test = null;
+    render();
+  };
+  row.append(test, off);
+  return row;
+}
+
+// pushDevices lists every registered device with what its push service last
+// answered. One this device does not recognise can be forgotten from here.
+function pushDevices() {
+  const box = el('div');
+  const draw = list => {
+    box.innerHTML = '';
+    if (state.push.test) box.append(el('div', 's', 'Test sent to ' + state.push.test.length + (state.push.test.length === 1 ? ' device.' : ' devices.')));
+    for (const d of list) {
+      const mine = d.id === state.push.device;
+      const l = deviceLine(d, mine);
+      const row = el('div', 'env-line');
+      const m = el('div');
+      m.append(el('div', null, l.who), el('div', 's' + (l.bad ? ' bad' : ''), l.said));
+      row.append(m);
+      if (!mine) {
+        const forget = el('button', 'btn danger', 'Forget');
+        forget.onclick = async () => { try { await del('/push/devices/' + d.id); } catch (e) {} render(); };
+        row.append(forget);
+      }
+      box.append(row);
+    }
+  };
+  api('/push').then(r => draw(r.devices || [])).catch(() => {});
   return box;
 }
 
@@ -2886,6 +3015,7 @@ async function boot() {
   connect();
   route();
   readStatus();
+  startPush();
 }
 
 // readStatus reads the agent's status — the breaker, the credit, the sandbox —

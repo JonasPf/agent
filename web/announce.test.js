@@ -124,3 +124,13 @@ test('the open session still renders its new entry', () => {
   const n = vm.runInContext('state.entries.length', ctx);
   assert.strictEqual(n, 1);
 });
+
+// A device the agent pushes to is told by the service worker; the page saying
+// it too would show every message twice.
+test('a page on a subscribed device raises no notification of its own', () => {
+  const { ctx, shown } = load();
+  inSession(ctx, 'S1');
+  vm.runInContext("state.push.device = 'D1';", ctx);
+  ctx.handle(entryEvent('S2'));
+  assert.strictEqual(shown.length, 0);
+});

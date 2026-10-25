@@ -37,6 +37,9 @@ func newTestAppAt(t *testing.T, dir string) *App {
 		hub:      NewHub(),
 		queues:   map[string]chan func(){},
 	}
+	if a.push, err = newPusher(dir, a.unreadMessage); err != nil {
+		t.Fatal(err)
+	}
 	a.registerBuiltins()
 	return a
 }
