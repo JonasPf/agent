@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-25
+
+- **The Metrics screen is a table.** Skills, jobs, and tools each take one
+  row, with their numbers in columns, so the whole screen fits on a phone
+  instead of a long scroll of cards. A tool's latest failure sits on a line
+  under its row. Anything unused is greyed out. Tap a job's prompt to open
+  its conversation.
+
 ## 2026-10-23
 
 - **A Metrics screen shows what gets used.** Open More, then Metrics. It

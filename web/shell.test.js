@@ -558,6 +558,7 @@ const METRICS = {
   tools: [
     { name: 'read', calls: 3, failures: 1, conversations: 2, last_at: new Date().toISOString(),
       last_error: 'no-such-file.txt: no such file', loaded: true },
+    { name: 'web_fetch', calls: 5, failures: 0, conversations: 1, last_at: new Date().toISOString(), loaded: true },
     { name: 'bash', calls: 0, failures: 0, conversations: 0, loaded: true },
   ],
   jobs: [
@@ -578,25 +579,60 @@ test('More leads to the metrics screen', async () => {
   assert.strictEqual(ctx.location.hash, '#metrics');
 });
 
-test('the metrics screen says how often each skill, tool, and job is used', async () => {
+// cellsOf is a metrics row read across: each column's text.
+const cellsOf = row => row.children.map(c => textOf(c).trim().replace(/\s+/g, ' '));
+const metricRow = (v, name) => findAll(v, 'mrow').find(r => cellsOf(r)[0].startsWith(name));
+const headsOf = table => table.children[0].children[0].children.map(c => c.textContent);
+
+async function metricsScreen() {
   const ctx = load({ '/metrics?days=30': METRICS });
   const v = ctx._id('view');
   vm.runInContext("state.view = 'metrics'; state.arg = undefined;", ctx);
   await ctx.viewMetrics(v);
+  return { ctx, v };
+}
+
+// A card per item said its figures in a sentence each, and the screen was a
+// long scroll on a phone. A table reads down a column and across a row.
+test('skills, tools, and jobs are each a table with a row per item', async () => {
+  const { v } = await metricsScreen();
+  const tables = findAll(v, 'mtable');
+  assert.deepStrictEqual(tables.map(headsOf), [
+    ['Skill', 'Reads', 'Read in', 'Last'],
+    ['Job', 'Acted', 'Skipped', 'Failed', 'Cost'],
+    ['Tool', 'Calls', 'Failed', 'Convs', 'Last'],
+  ]);
+  assert.deepStrictEqual(tables.map(t => findAll(t, 'mrow').length), [3, 1, 3]);
+  assert.strictEqual(findAll(v, 'row-item').length, 0, 'an item is still drawn as a card');
+});
+
+test('the metrics screen says how often each skill, tool, and job is used', async () => {
+  const { ctx, v } = await metricsScreen();
   const text = textOf(v);
   assert.match(text, /4 conversations/, 'the screen does not say what its counts are out of');
-  assert.match(text, /3 reads.*read in 1 of 4 conversations offered it/, 'a skill does not say how often it was read where it was offered');
-  assert.match(text, /pruning[\s\S]*never read/, 'a skill nobody read does not say so');
-  const gone = findAll(v, 'row-item').find(r => /changing-yourself/.test(textOf(r)));
-  assert.match(textOf(gone), /not loaded/, 'a skill that is gone is not marked so');
-  assert.match(text, /3 calls · 1 failed \(33%\)/, 'a tool does not say how often it failed');
-  assert.match(text, /no-such-file\.txt: no such file/, 'a tool does not say what its last failure said');
-  const job = findAll(v, 'row-item').find(r => /feed the cat/.test(textOf(r)));
+  assert.match(text, /out of those offered it/, 'the screen does not say what "read in" counts');
+
+  const watering = cellsOf(metricRow(v, 'watering'));
+  assert.deepStrictEqual(watering.slice(0, 3), ['watering', '3', '1/4'], 'a skill does not say how often it was read where it was offered');
+  assert.match(watering[3], /ago/);
+  const pruning = metricRow(v, 'pruning');
+  assert.strictEqual(cellsOf(pruning)[3], 'never', 'a skill nobody read does not say so');
+  assert.match(pruning.className, /\bidle\b/, 'a skill nobody read is not dimmed');
+  assert.match(cellsOf(metricRow(v, 'changing-yourself'))[0], /not loaded/, 'a skill that is gone is not marked so');
+
+  const read = metricRow(v, 'read');
+  assert.deepStrictEqual(cellsOf(read).slice(0, 4), ['read', '3', '1 (33%)', '2'], 'a tool does not say how often it failed');
+  const below = read.parent.children[read.parent.children.indexOf(read) + 1];
+  assert.match(below.className, /\bwhy\b/, 'a tool\'s last failure is not the line beneath it');
+  assert.match(textOf(below), /no-such-file\.txt: no such file/, 'a tool does not say what its last failure said');
+  assert.match(metricRow(v, 'bash').className, /\bidle\b/, 'a tool nobody called is not dimmed');
+  assert.strictEqual(cellsOf(metricRow(v, 'web_fetch'))[2], '0', 'a tool that never failed is given a percentage of nothing');
+
+  const job = metricRow(v, 'Remind me to feed the cat.');
   assert.ok(job, 'the job is not listed by its prompt');
-  assert.match(textOf(job), /5 acted · 12 skipped · 1 failed/, 'a job does not say what its wakes did');
-  assert.match(textOf(job), /\$0\.2500/, 'a job does not say what it cost');
-  const open = findAll(job, 'btn').find(b => /conversation/i.test(b.textContent));
-  open.onclick();
+  assert.deepStrictEqual(cellsOf(job).slice(1), ['5', '12', '1', '$0.2500'], 'a job does not say what its wakes did and cost');
+  assert.match(cellsOf(job)[0], /20m.*scheduled.*Pets/, 'a job does not say when it wakes and where');
+  find(job, 'go').onclick();
   assert.strictEqual(ctx.location.hash, '#session/S1');
 });
 
