@@ -17,7 +17,8 @@
         "description": "Replacement text."
       },
       "replace_all": {
-        "type": "boolean"
+        "type": "boolean",
+        "description": "Replace every occurrence of old. Without it, old must appear exactly once or the edit is refused."
       }
     },
     "required": [

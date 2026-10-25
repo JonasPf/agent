@@ -31,6 +31,10 @@
   and `parameters`. The table prefix, timeout, extra reads and environment
   moved into an `agent` block. A manifest still in the old shape, or with a
   misspelt setting, no longer loads, and the Tools screen names the field.
+- **Every parameter of the supplied tools is described.** The five that
+  weren't now say what they do: `edit`'s `replace_all`, `read`'s `offset`
+  and `limit`, `schedule`'s `action`, and `session_search`'s `limit`. The
+  model no longer has to guess from the name.
 
 ## 2026-10-23
 

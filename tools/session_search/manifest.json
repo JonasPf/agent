@@ -13,7 +13,8 @@
         "description": "A hit's number, to read that one entry whole instead of searching."
       },
       "limit": {
-        "type": "integer"
+        "type": "integer",
+        "description": "Most hits to return. Omit for 20."
       },
       "session": {
         "type": "string",

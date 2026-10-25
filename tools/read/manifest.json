@@ -9,10 +9,12 @@
         "description": "Path, relative to the workspace."
       },
       "offset": {
-        "type": "integer"
+        "type": "integer",
+        "description": "Lines to skip from the top. Omit to start at the first line."
       },
       "limit": {
-        "type": "integer"
+        "type": "integer",
+        "description": "Most lines to return. Omit to read to the end."
       }
     },
     "required": [

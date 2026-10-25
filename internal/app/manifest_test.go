@@ -225,3 +225,29 @@ func TestEverySuppliedManifestLoads(t *testing.T) {
 		}
 	}
 }
+
+// A parameter without a description reaches the model as a bare name and a
+// type, so every tool the image ships describes each one.
+func TestEverySuppliedParameterIsDescribed(t *testing.T) {
+	root := filepath.Join("..", "..", "tools")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		tl, err := loadToolDir(filepath.Join(root, e.Name()))
+		if err != nil {
+			t.Errorf("%s: %v", e.Name(), err)
+			continue
+		}
+		props, _ := tl.Parameters["properties"].(map[string]any)
+		for name, p := range props {
+			if d, _ := p.(map[string]any)["description"].(string); strings.TrimSpace(d) == "" {
+				t.Errorf("%s.%s has no description", tl.Name, name)
+			}
+		}
+	}
+}
