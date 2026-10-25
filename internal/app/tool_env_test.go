@@ -27,8 +27,9 @@ func installEnvTool(t *testing.T, a *App, name string) {
 		t.Fatal(err)
 	}
 	manifest := map[string]any{
-		"name": name, "description": "Report the environment.", "db_prefix": name + "_",
+		"name": name, "description": "Report the environment.",
 		"parameters": map[string]any{"type": "object", "properties": map[string]any{}},
+		"agent":      map[string]any{"db_prefix": name + "_"},
 	}
 	b, _ := json.Marshal(manifest)
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {

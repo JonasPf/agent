@@ -1,8 +1,6 @@
 {
   "name": "edit",
   "description": "Replace an exact string in a workspace file.",
-  "db_prefix": "edit_",
-  "timeout_seconds": 30,
   "parameters": {
     "type": "object",
     "properties": {
@@ -19,7 +17,8 @@
         "description": "Replacement text."
       },
       "replace_all": {
-        "type": "boolean"
+        "type": "boolean",
+        "description": "Replace every occurrence of old. Without it, old must appear exactly once or the edit is refused."
       }
     },
     "required": [
@@ -27,5 +26,9 @@
       "old",
       "new"
     ]
+  },
+  "agent": {
+    "db_prefix": "edit_",
+    "timeout_seconds": 30
   }
 }

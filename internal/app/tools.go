@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -16,11 +17,24 @@ import (
 
 // Tool is either a builtin or a directory containing a manifest and an executable.
 type Tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	DBPrefix    string         `json:"db_prefix"`
-	Timeout     int            `json:"timeout_seconds"`
-	Parameters  map[string]any `json:"parameters"`
+	Name        string
+	Description string
+	Parameters  map[string]any
+	// Agent is the manifest's "agent" block. A builtin has no manifest and
+	// leaves it empty.
+	Agent    ToolAgent
+	HasPanel bool
+	LoadedAt time.Time
+	Builtin  bool
+	Dir      string
+	run      builtinFn
+}
+
+// ToolAgent is what a manifest says under "agent": everything this agent reads
+// to run the tool, and never sends to the model.
+type ToolAgent struct {
+	DBPrefix string `json:"db_prefix"`
+	Timeout  int    `json:"timeout_seconds"`
 	// Reads names the paths this tool may read beyond the runtime every tool
 	// gets. A browser reads /proc and /sys before it renders anything; a tool
 	// that edits a file does not, and granting the union of what any tool might
@@ -32,12 +46,17 @@ type Tool struct {
 	// Reads is: web_search needs a search key, and bash — which runs commands
 	// the model wrote — must never be handed one. The value is never shown
 	// anywhere; the name is, on the tool's own card.
-	Env      []string  `json:"env,omitempty"`
-	HasPanel bool      `json:"has_panel"`
-	LoadedAt time.Time `json:"loaded_at"`
-	Builtin  bool      `json:"builtin"`
-	Dir      string    `json:"-"`
-	run      builtinFn `json:"-"`
+	Env []string `json:"env,omitempty"`
+}
+
+// manifest is manifest.json. Its top level is exactly an OpenAI function
+// definition, which is what the model is sent; the agent's own settings sit
+// under "agent", so that neither can be mistaken for the other (ADR-067).
+type manifest struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+	Agent       ToolAgent      `json:"agent"`
 }
 
 type builtinFn func(ctx context.Context, tc *ToolCtx, args json.RawMessage) (any, error)
@@ -133,8 +152,8 @@ func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 	}
 	prefixes := map[string]string{}
 	for _, t := range r.tools {
-		if t.DBPrefix != "" {
-			prefixes[t.DBPrefix] = t.Name
+		if t.Agent.DBPrefix != "" {
+			prefixes[t.Agent.DBPrefix] = t.Name
 		}
 	}
 	for _, e := range entries {
@@ -147,16 +166,16 @@ func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 			r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: err.Error()})
 			continue
 		}
-		if owner, ok := prefixes[t.DBPrefix]; ok && owner != t.Name {
+		if owner, ok := prefixes[t.Agent.DBPrefix]; ok && owner != t.Name {
 			r.failures = append(r.failures, LoadFailure{Dir: e.Name(),
-				Reason: fmt.Sprintf("db_prefix %q already used by %s", t.DBPrefix, owner)})
+				Reason: fmt.Sprintf("db_prefix %q already used by %s", t.Agent.DBPrefix, owner)})
 			continue
 		}
 		if err := r.applySchema(t); err != nil {
 			r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: "schema.sql: " + err.Error()})
 			continue
 		}
-		prefixes[t.DBPrefix] = t.Name
+		prefixes[t.Agent.DBPrefix] = t.Name
 		r.register(t)
 		loaded = append(loaded, t.Name)
 	}
@@ -168,13 +187,17 @@ func loadToolDir(dir string) (*Tool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("manifest.json: %w", err)
 	}
-	var t Tool
-	if err := json.Unmarshal(b, &t); err != nil {
+	if err := strayField(b); err != nil {
 		return nil, fmt.Errorf("manifest.json: %w", err)
 	}
-	if t.Name == "" || t.Description == "" || t.DBPrefix == "" || t.Parameters == nil {
-		return nil, fmt.Errorf("manifest missing name, description, db_prefix, or parameters")
+	var m manifest
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, fmt.Errorf("manifest.json: %w", err)
 	}
+	if m.Name == "" || m.Description == "" || m.Agent.DBPrefix == "" || m.Parameters == nil {
+		return nil, fmt.Errorf("manifest missing name, description, parameters, or agent.db_prefix")
+	}
+	t := Tool{Name: m.Name, Description: m.Description, Parameters: m.Parameters, Agent: m.Agent}
 	if typ, _ := t.Parameters["type"].(string); typ != "object" {
 		return nil, fmt.Errorf("parameters must be a JSON Schema object")
 	}
@@ -186,13 +209,53 @@ func loadToolDir(dir string) (*Tool, error) {
 	if st.Mode()&0o111 == 0 {
 		return nil, fmt.Errorf("run is not executable")
 	}
-	if t.Timeout <= 0 {
-		t.Timeout = 30
+	if t.Agent.Timeout <= 0 {
+		t.Agent.Timeout = 30
 	}
 	_, err = os.Stat(filepath.Join(dir, "ui", "panel.js"))
 	t.HasPanel = err == nil
 	t.Dir = dir
 	return &t, nil
+}
+
+// strayField names the first field a manifest does not define. A setting at the
+// top level would sit beside what the model is sent, and one misspelt under
+// "agent" would be ignored for its default; either is refused when the tool
+// loads, rather than noticed at the call it was meant to change.
+func strayField(b []byte) error {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(b, &top); err != nil {
+		return err
+	}
+	if err := onlyFields(top, "name", "description", "parameters", "agent"); err != nil {
+		return fmt.Errorf("%w; the top level is what the model is sent, and the agent's own settings go under \"agent\"", err)
+	}
+	raw, ok := top["agent"]
+	if !ok {
+		return nil
+	}
+	var agent map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &agent); err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
+	if err := onlyFields(agent, "db_prefix", "timeout_seconds", "reads", "env"); err != nil {
+		return fmt.Errorf("agent: %w", err)
+	}
+	return nil
+}
+
+func onlyFields(m map[string]json.RawMessage, known ...string) error {
+	var stray []string
+	for k := range m {
+		if !slices.Contains(known, k) {
+			stray = append(stray, k)
+		}
+	}
+	if len(stray) == 0 {
+		return nil
+	}
+	sort.Strings(stray)
+	return fmt.Errorf("%q is not a manifest field", stray[0])
 }
 
 func (r *Registry) applySchema(t *Tool) error {
@@ -225,10 +288,16 @@ func (r *Registry) SchemasFor(sess *Session) []ToolSchema {
 		if sess != nil && !sess.toolEnabled(t.Name) {
 			continue
 		}
-		out = append(out, ToolSchema{Type: "function", Function: ToolSchemaFn{
-			Name: t.Name, Description: t.Description, Parameters: t.Parameters}})
+		out = append(out, t.schema())
 	}
 	return out
+}
+
+// schema is the tool as the model is sent it: the manifest's standard part, and
+// nothing from its agent block. The Tools screen shows this same value.
+func (t *Tool) schema() ToolSchema {
+	return ToolSchema{Type: "function", Function: ToolSchemaFn{
+		Name: t.Name, Description: t.Description, Parameters: t.Parameters}}
 }
 
 type toolResult struct {
@@ -263,7 +332,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 		}
 	}
 
-	cctx, cancel := context.WithTimeout(ctx, time.Duration(t.Timeout)*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, time.Duration(t.Agent.Timeout)*time.Second)
 	defer cancel()
 	bin, err := filepath.Abs(filepath.Join(t.Dir, "run"))
 	if err != nil {
@@ -277,7 +346,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// Whatever the tool did, it did it here: what the directory holds is
 	// measured again rather than read from what was kept.
 	defer tc.App.workspaceChanged(tc.SessionID)
-	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, t.Reads, nil)
+	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, t.Agent.Reads, nil)
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace
 	if abs, err := filepath.Abs(workspace); err == nil {
@@ -299,7 +368,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	defer done()
 	cmd.Env = append(toolBaseEnv(tc.grants()),
 		"AGENT_DB="+r.dbPath,
-		"AGENT_DB_PREFIX="+t.DBPrefix,
+		"AGENT_DB_PREFIX="+t.Agent.DBPrefix,
 		"AGENT_URL="+tc.App.toolURL(),
 		"AGENT_TOKEN="+token,
 		"AGENT_WORKSPACE="+workspace,
@@ -307,12 +376,12 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 		"AGENT_JOB="+tc.JobID,
 		"TMPDIR="+tmp,
 		"HOME="+home)
-	cmd.Env = append(cmd.Env, declaredEnv(t.Env)...)
+	cmd.Env = append(cmd.Env, declaredEnv(t.Agent.Env)...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
 	if cctx.Err() == context.DeadlineExceeded {
-		res := errResult("tool %q exceeded its %ds timeout", name, t.Timeout)
+		res := errResult("tool %q exceeded its %ds timeout", name, t.Agent.Timeout)
 		res.stderr = stderr.String()
 		return res
 	}

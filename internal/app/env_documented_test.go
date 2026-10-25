@@ -40,13 +40,15 @@ func manifestEnvNames(t *testing.T) map[string]bool {
 			continue
 		}
 		var m struct {
-			Env []string `json:"env"`
+			Agent struct {
+				Env []string `json:"env"`
+			} `json:"agent"`
 		}
 		if err := json.Unmarshal(b, &m); err != nil {
 			t.Errorf("%s has an unreadable manifest: %v", d.Name(), err)
 			continue
 		}
-		for _, name := range m.Env {
+		for _, name := range m.Agent.Env {
 			out[name] = true
 		}
 	}

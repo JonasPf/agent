@@ -282,15 +282,128 @@ p.note { color: var(--muted); font-size: 13px; margin: 0 0 16px; max-width: 62ch
 .facts:empty { display: none; }
 .facts b { color: var(--fg-2); font-weight: 600; font-variant-numeric: tabular-nums; }
 
-/* What a tool may reach is a list of paths and ports, read to check one, so it
-   is set like one. */
-.reach dd { font-family: var(--mono); font-size: 11.5px; overflow-wrap: anywhere; }
-/* What every tool gets repeats on every card; what one tool asked for is the
-   part worth checking, so it carries the accent. */
-.reach-scope { font-size: 11px; color: var(--muted); margin-top: 8px; }
-.reach-group .settings { margin-top: 2px; }
-.reach-own { border-left: 2px solid var(--accent); padding-left: 8px; }
-.reach-own .reach-scope { color: var(--accent); }
+/* ---------- the Tools screen ---------- */
+
+.tools .toolbar { align-items: center; gap: 10px; }
+.tcount { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tcount .bad { color: var(--bad); }
+/* The sandbox heading opens its own section, where h2:first-child would pull it
+   up against the card above. */
+.tools h2.tsec { display: flex; align-items: center; gap: 6px; margin-top: 26px; }
+.tcard { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); }
+.tcard + .tcard { margin-top: 10px; }
+.tcard > summary { list-style: none; cursor: pointer; }
+.tcard > summary::-webkit-details-marker { display: none; }
+.tools .chev { color: var(--muted); transition: transform .15s; display: inline-block; }
+.tcard[open] > summary .chev { transform: rotate(90deg); }
+
+/* A ? opens on hover where there is a pointer and on tap everywhere. Its
+   explanation is fixed to the screen and placed by placeHelp, so a card's edge
+   never cuts it off. */
+.help { position: relative; display: inline-flex; vertical-align: 1px; }
+.help-q {
+  width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line-2); background: var(--card);
+  color: var(--muted); font-size: 10.5px; font-weight: 700; line-height: 14px; padding: 0; cursor: help;
+  text-transform: none; letter-spacing: 0; font-family: var(--sans);
+}
+.help-q:hover, .help.open .help-q { color: var(--accent); border-color: var(--accent); }
+.help .tip {
+  display: none; position: fixed; left: 0; top: 0; z-index: 30; width: max-content;
+  max-width: min(320px, calc(100vw - 40px)); background: var(--fg); color: var(--bg);
+  font: 400 12.5px/1.5 var(--sans); text-transform: none; letter-spacing: 0; padding: 9px 11px;
+  border-radius: var(--r-sm); box-shadow: var(--shadow); white-space: normal; text-align: left;
+}
+.help .tip code { color: inherit; background: none; opacity: .85; font-size: .92em; }
+@media (hover: hover) { .help:hover .tip { display: block; } }
+.help.open .tip { display: block; }
+
+.how > summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+.how > summary .t { font-weight: 600; flex: 1; }
+.how > summary .s { color: var(--muted); font-size: 13px; }
+.steps { list-style: none; margin: 0; padding: 4px 14px 14px; display: grid; gap: 10px; counter-reset: step; }
+.step { display: grid; grid-template-columns: 26px 1fr; gap: 0 10px; counter-increment: step; }
+.step::before { content: counter(step); grid-row: span 3; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--soft); color: var(--accent); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.step b { font-size: 14px; }
+.step .d { font-size: 13px; color: var(--fg-2); }
+.step pre { margin: 4px 0 0; font: 11.5px/1.5 var(--mono); background: var(--code-bg); border-radius: 6px; padding: 6px 9px;
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-2); }
+.how .split { margin: 0 14px 14px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--sunk); font-size: 13px; color: var(--fg-2); }
+
+.tcard.fail { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); padding: 10px 14px; margin-top: 10px; }
+.tcard.fail .h { color: var(--bad); font-weight: 600; font-size: 13.5px; }
+.tcard.fail .r { font-size: 13px; color: var(--fg-2); overflow-wrap: anywhere; }
+
+.tpill { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; border: 1px solid var(--line-2);
+  border-radius: 99px; padding: 1px 9px; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.tpill.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--line)); }
+.tpill.ok::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+.tpill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); }
+.tbox { padding: 6px 14px 12px; }
+.tbox > .lede { font-size: 13px; color: var(--muted); padding: 6px 0 4px; }
+.twarn { flex-basis: 100%; font-size: 13px; color: var(--bad); padding: 6px 0; }
+.kv { display: grid; grid-template-columns: 118px 1fr; gap: 0 12px; padding: 9px 0; border-top: 1px solid var(--line); align-items: baseline; }
+.tbox > .lede + .kv, .tbox > .twarn + .kv { border-top: 0; }
+.kv > .k { font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.kv > .v { font-size: 13.5px; min-width: 0; }
+.kv .paths, .kv .ports { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.tools .path { font: 12px/1.6 var(--mono); background: var(--code-bg); border-radius: 5px; padding: 0 6px; display: inline-flex; align-items: center; gap: 5px; overflow-wrap: anywhere; }
+.tools .path.plain { font-family: var(--sans); font-size: 12.5px; }
+.tools .port { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 1px 7px 1px 8px; font-size: 12px; }
+.tools .port .l { color: var(--muted); white-space: nowrap; }
+.tools .port .n { font-family: var(--mono); font-size: 11.5px; }
+.tools .port.api { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.tools .port.never { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: var(--bad); }
+.tools .port.never .l { color: var(--bad); }
+.tbox .refused { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
+
+/* A tool folded is one line: its name, what is unusual about it, and its
+   timeout. Opened, the description is shown whole below, so the line drops it. */
+.tsum { padding: 11px 14px; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
+.tname { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.tname .n { font: 600 14.5px var(--mono); }
+.tchip { font-size: 11.5px; border-radius: 99px; padding: 0 8px; border: 1px solid var(--line); color: var(--fg-2); white-space: nowrap; }
+.tchip.key { background: var(--soft); border-color: transparent; color: var(--accent); }
+.tchip.reads { background: var(--code-bg); border-color: transparent; }
+.tchip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.tchip.builtin { background: var(--sunk); border-color: transparent; color: var(--muted); }
+.tsum .meta { grid-row: span 2; align-self: center; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.tsum .tdesc { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tooldef[open] > .tsum .tdesc { display: none; }
+.tooldef[open] > .tsum { border-bottom: 1px solid var(--line); }
+
+.tooldef .sect { padding: 10px 14px 4px; }
+.tooldef .sect + .sect { border-top: 1px dashed var(--line); }
+.tooldef .sh { display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 650; margin-bottom: 6px; }
+.tooldef .modeldesc { font-size: 13.5px; color: var(--fg-2); margin: 0 0 8px; }
+.tooldef .params { border-top: 1px solid var(--line); margin-bottom: 8px; }
+.tooldef .noparams { font-size: 13px; color: var(--muted); padding: 7px 0; }
+.tooldef .param { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 0 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.tooldef .param .pn { font: 600 12.5px/1.6 var(--mono); }
+.tooldef .param .pt { font-size: 12px; color: var(--muted); }
+.tooldef .param .pt .req { color: var(--accent); }
+.tooldef .param .pd { grid-column: 2; font-size: 13px; color: var(--fg-2); }
+.tooldef .param .pd.none { color: var(--warn); }
+.tfacts { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 2px 0 10px; }
+.tfact { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 7px 10px; }
+.tfact .k { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 5px; }
+.tfact .v { font-size: 13.5px; margin-top: 1px; overflow-wrap: anywhere; }
+.tfact .v.mono { font-family: var(--mono); font-size: 12.5px; }
+.tfact .v.none { color: var(--muted); }
+.tooldef .builtinnote { padding: 10px 14px 12px; font-size: 13px; color: var(--fg-2); }
+.tooldef .jsons { padding: 0 14px 12px; }
+.tooldef .jbtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.tooldef .jb { cursor: pointer; background: none; border: 1px solid var(--line-2); border-radius: 99px; padding: 3px 11px; font-size: 12.5px; color: var(--fg-2); }
+.tooldef .jb.on { border-color: var(--accent); color: var(--accent); }
+.tooldef pre.json { margin: 8px 0 0; font: 11.5px/1.55 var(--mono); background: var(--code-bg); border-radius: var(--r-sm); padding: 10px 12px; overflow-x: auto; white-space: pre; color: var(--fg); }
+.tooldef pre.json .ours { color: var(--accent); }
+.tooldef .jsons .cap { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+@media (max-width: 560px) {
+  .kv { grid-template-columns: 1fr; gap: 4px; }
+  .tooldef .param { grid-template-columns: 1fr; }
+  .tooldef .param .pd { grid-column: 1; }
+}
 
 .env-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .env-summary { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; min-width: 0; }

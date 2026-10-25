@@ -1,8 +1,6 @@
 {
   "name": "clock",
   "description": "The current date and time, in UTC and in the agent's local zone.",
-  "db_prefix": "clock_",
-  "timeout_seconds": 10,
   "parameters": {
     "type": "object",
     "properties": {
@@ -12,5 +10,9 @@
       }
     },
     "required": []
+  },
+  "agent": {
+    "db_prefix": "clock_",
+    "timeout_seconds": 10
   }
 }

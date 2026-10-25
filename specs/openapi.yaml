@@ -627,7 +627,7 @@ paths:
   /tools:
     get:
       tags: [tools]
-      summary: Every loaded tool, what it may reach, and what failed to load.
+      summary: Every loaded tool, the sandbox every tool program runs in, and what failed to load.
       parameters:
         - name: session_id
           in: query
@@ -644,6 +644,7 @@ paths:
                   tools:
                     type: array
                     items: {$ref: "#/components/schemas/Tool"}
+                  sandbox: {$ref: "#/components/schemas/ToolSandbox"}
                   failures:
                     type: array
                     items: {$ref: "#/components/schemas/LoadFailure"}
@@ -1319,29 +1320,46 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
-        db_prefix: {type: string}
-        timeout_seconds: {type: integer}
         parameters: {type: object, description: The JSON Schema the model receives.}
+        sent:
+          type: object
+          description: The entry the model is sent in a request's tools list, exactly as sent.
+          properties:
+            type: {type: string, enum: [function]}
+            function:
+              type: object
+              properties:
+                name: {type: string}
+                description: {type: string}
+                parameters: {type: object}
+        agent:
+          type: object
+          description: The manifest's agent block, which is never sent to the model. Absent for a builtin, which has no manifest.
+          properties:
+            db_prefix: {type: string}
+            timeout_seconds: {type: integer}
+            reads: {type: array, items: {type: string}, description: Paths this tool may read beyond the sandbox every tool gets.}
+            env: {type: array, items: {type: string}, description: Names of the variables this tool is given. Never their values.}
         has_panel: {type: boolean}
         builtin: {type: boolean}
         loaded_at: {type: string, format: date-time}
         enabled: {type: boolean}
-        reach:
-          type: object
-          description: What the sandbox lets the tool touch. Absent for a builtin, which runs inside the agent.
-          properties:
-            enforced: {type: boolean}
-            reason: {type: string}
-            read_write: {type: array, items: {type: string}}
-            read: {type: array, items: {type: string}}
-            tool_read: {type: array, items: {type: string}}
-            tool_env: {type: array, items: {type: string}}
-            files: {type: array, items: {type: string}}
-            network_enforced: {type: boolean}
-            network_reason: {type: string}
-            ports: {type: array, items: {type: integer}}
-            tool_api_port: {type: integer}
-            operator_port: {type: integer}
+
+    ToolSandbox:
+      type: object
+      description: What every tool program may touch, before its manifest adds reads of its own. A builtin runs inside the agent and is not in it.
+      properties:
+        mechanism: {type: string}
+        enforced: {type: boolean}
+        reason: {type: string}
+        read_write: {type: array, items: {type: string}}
+        read: {type: array, items: {type: string}}
+        files: {type: array, items: {type: string}}
+        network_enforced: {type: boolean}
+        network_reason: {type: string}
+        ports: {type: array, items: {type: integer}}
+        tool_api_port: {type: integer}
+        operator_port: {type: integer}
 
     ToolResult:
       type: object

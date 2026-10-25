@@ -18,7 +18,6 @@ func (a *App) registerBuiltins() {
 		Name:        "reload_tools",
 		Description: "Validate and register tools from disk.",
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{}, "required": []string{}},
-		Timeout:     60,
 		Builtin:     true,
 		run:         a.reloadTool,
 	})

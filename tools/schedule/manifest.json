@@ -1,8 +1,6 @@
 {
   "name": "schedule",
   "description": "Create, list, edit, or delete jobs attached to a session. A job wakes on a schedule and runs its prompt; an optional check gates whether a wake acts. Every wake is recorded in the job's own log, and every job reports what it will cost \u2014 wakes a day, tokens a day, and money where the model's price is known. Any cadence is allowed; say what a frequent one costs rather than talking the operator out of it. List to answer any question about what is scheduled or what has already run, rather than answering from the conversation.",
-  "db_prefix": "schedule_",
-  "timeout_seconds": 30,
   "parameters": {
     "type": "object",
     "properties": {
@@ -13,7 +11,8 @@
           "list",
           "edit",
           "delete"
-        ]
+        ],
+        "description": "create a job; list this session's jobs; edit one by id, changing only the fields given; or delete one."
       },
       "id": {
         "type": "string",
@@ -43,5 +42,9 @@
     "required": [
       "action"
     ]
+  },
+  "agent": {
+    "db_prefix": "schedule_",
+    "timeout_seconds": 30
   }
 }

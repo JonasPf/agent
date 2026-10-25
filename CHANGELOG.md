@@ -17,6 +17,24 @@
   instead of a long scroll of cards. A tool's latest failure sits on a line
   under its row. Anything unused is greyed out. Tap a job's prompt to open
   its conversation.
+- **The Tools screen says what the model sees and what the agent uses.**
+  Each tool is one line until you tap it. Opened, it shows what the model
+  is sent: the description and every parameter. A parameter with no
+  description is flagged, because the model sees only its type. Below that
+  is what the agent uses to run the tool: its timeout, table prefix,
+  credentials and extra folders. Two buttons show the manifest and the
+  exact entry sent to the model. The sandbox is shown once at the top,
+  instead of on every tool. "How a tool call works" explains the four
+  steps of a call, and a **?** beside any unclear term explains it.
+- **A tool's manifest keeps the agent's own settings under `agent`.** The
+  top level now holds only what the model is sent: `name`, `description`
+  and `parameters`. The table prefix, timeout, extra reads and environment
+  moved into an `agent` block. A manifest still in the old shape, or with a
+  misspelt setting, no longer loads, and the Tools screen names the field.
+- **Every parameter of the supplied tools is described.** The five that
+  weren't now say what they do: `edit`'s `replace_all`, `read`'s `offset`
+  and `limit`, `schedule`'s `action`, and `session_search`'s `limit`. The
+  model no longer has to guess from the name.
 
 ## 2026-10-23
 

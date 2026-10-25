@@ -447,9 +447,10 @@ function renderSideFoot() {
 
 // ---------- views ----------
 
-// A transcript is read in a column; a list of jobs, tools, or files is read
-// across the room a laptop actually has.
-const ROOMY = ['sessions', 'jobs', 'tools', 'skills', 'personas', 'files', 'panels', 'metrics', 'search', 'toolpanel', 'compared'];
+// A transcript is read in a column; a list of jobs or files is read across the
+// room a laptop actually has. The Tools screen is read in a column too: it is
+// mostly explanation, one tool under another.
+const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'metrics', 'search', 'toolpanel', 'compared'];
 
 // A screen is drawn from requests that answer in their own time, so two screens
 // asked for in quick succession can answer in the wrong order. Each draw keeps
@@ -2494,87 +2495,305 @@ function metricTable(heads, rows, empty) {
   return wrap;
 }
 
+// The Tools screen answers what a tool is to the model and what it is to the
+// agent: how a call goes, the sandbox every tool program runs in, and for each
+// tool what the model is sent beside what the agent uses to run it (ADR-067).
 async function viewTools(v) {
   const gen = drawing;
   setHeader('Tools', true);
   const data = await api('/tools');
   if (stale(gen)) return;
+  const tools = data.tools || [], failures = data.failures || [];
+  const page = el('div', 'tools');
   const rl = el('button', 'btn primary', 'Reload from disk');
   rl.onclick = async () => { const r = await post('/tools/reload', {}); toast({ title: 'Reloaded', body: (r.loaded || []).join(', ') }); render(); };
-  const bar = el('div', 'toolbar'); bar.append(rl);
-  v.append(bar);
-  const grid = el('div', 'cards');
-  for (const f of (data.failures || [])) {
-    const row = el('div', 'row-item');
-    const m = el('div', 'm');
-    m.append(el('div', 'n', f.dir), el('div', 's', f.reason));
-    m.append(el('span', 'tag bad', 'not loaded'));
-    row.append(m);
-    grid.append(row);
+  const count = el('span', 'tcount', `${tools.length} tools · ${tools.filter(t => t.builtin).length} built in`);
+  if (failures.length) count.append(el('span', 'bad', ` · ${failures.length} didn’t load`));
+  const bar = el('div', 'toolbar'); bar.append(rl, count);
+  page.append(bar, toolsHow());
+  for (const f of failures) {
+    const c = el('div', 'tcard fail');
+    c.append(el('div', 'h', `tools/${f.dir} didn’t load`), el('div', 'r', f.reason));
+    page.append(c);
   }
-  for (const t of data.tools) {
-    const row = el('div', 'row-item');
-    const m = el('div', 'm');
-    m.append(el('div', 'n', t.name));
-    m.append(el('div', 's', t.description));
-    if (t.builtin) m.append(el('span', 'tag', 'builtin'));
-    if (t.db_prefix) m.append(el('span', 'tag', t.db_prefix));
-    if (t.has_panel) m.append(el('span', 'tag on', 'panel'));
-    m.append(reachList(t));
-    const pre = el('pre', null, JSON.stringify(t.parameters, null, 2));
-    pre.hidden = true; pre.style.fontSize = '11px'; pre.style.whiteSpace = 'pre-wrap';
-    const sh = el('button', 'btn', 'Manifest');
-    sh.onclick = () => pre.hidden = !pre.hidden;
-    m.append(sh, pre);
-    row.append(m);
-    grid.append(row);
-  }
-  v.append(grid);
+  if (data.sandbox) page.append(toolSandbox(data.sandbox));
+  page.append(el('h2', 'tsec', 'Tools'));
+  for (const t of tools) page.append(toolCard(t));
+  v.append(page);
 }
 
-// reachList is what a tool may touch, as the sandbox applies it: the files it
-// may read and write, and the ports it may open. A boundary that is not
-// enforced here says so first, and then what it would be where it is. What
-// every tool gets is set apart from what this tool's manifest asked for, because
-// the first is the same on every card and the second is a decision about one.
-function reachList(t) {
-  const box = el('div', 'reach');
-  const list = parent => {
-    const dl = el('dl', 'settings');
-    parent.append(dl);
-    return (k, val) => dl.append(el('dt', null, k), el('dd', null, val));
+// What each ? on the Tools screen says: the things its labels cannot.
+const TOOL_TIPS = {
+  sandbox: 'Landlock, a Linux kernel feature, limits what each tool program can touch. Every list here is an allow-list: anything not named is refused by the kernel, whatever the tool tries. Built-in tools run inside the agent and are not sandboxed.',
+  readWrite: 'The only places a tool can change anything.',
+  folder: 'The folder the tool runs in, one per conversation. Its temp folder and `HOME` are inside it too, so scratch files stay confined, and show on the Files screen.',
+  db: 'The folder holding the shared database, `agent.db`, and the journal files SQLite writes beside it. Every tool is handed the database to keep its own tables, named with its prefix. The folder above it, with every transcript and the push keys, is not granted.',
+  read: 'The tool folder holds the tool programs: readable so they can start, writable by none. The rest is the system: the programs, libraries, and certificates a tool needs to start. `/proc` is left out because it would show the agent’s own environment, API key included; a tool that needs it asks in its manifest.',
+  devices: 'Files a program opens before any of its own code runs: a shell cannot redirect output without `/dev/null`. They are named one by one because granting `/dev` would grant every device.',
+  network: 'Outgoing TCP to these ports only. Starting a server, and all UDP, are not restricted. This needs Linux 6.7 or later; on an older kernel this row says it is not enforced.',
+  toolApi: 'How a tool reaches the agent: a separate API on a port picked at startup. A tool calls it with `AGENT_URL` and a token that is valid for one call. It reaches the calling conversation’s jobs and skills, and search. It cannot create a conversation or message one.',
+  never: 'The API this screen uses. It can create a conversation holding a credential and send it a message, so a tool that reached it could hand itself any credential you have set.',
+  model: 'Sent with every model call, in the standard OpenAI tools format: the name, this description, and the parameters as JSON Schema. The model knows nothing else about the tool, so a parameter without a description is only its type.',
+  agent: 'The manifest’s `agent` block. The agent reads it to run the tool, and never sends it to the model.',
+  timeout: 'The program is stopped after this, and the model is told the call failed.',
+  prefix: 'Every table this tool creates in the shared database starts with this, so each tool’s tables are told apart. No two tools may share one.',
+  env: 'Passed to this tool on every call, in every conversation. Names only: values are never shown. A credential you grant one conversation is set on that conversation instead.',
+  reads: 'Paths this tool may read on top of what every tool gets.',
+};
+
+// help is a ? beside a term the screen cannot explain in its label. It opens on
+// hover with a pointer (the stylesheet) and on tap, which is all a phone has.
+// One is open at a time, and a tap anywhere else or a scroll closes it.
+let openHelp = null;
+function help(text) {
+  const h = el('span', 'help');
+  const q = el('button', 'help-q', '?');
+  q.type = 'button';
+  q.setAttribute('aria-label', 'Explain');
+  h.append(q, rich('span', 'tip', text));
+  h.onmouseover = () => placeHelp(h);
+  q.onclick = e => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    const was = openHelp === h;
+    closeHelp();
+    if (was) return;
+    h.className = 'help open';
+    openHelp = h;
+    placeHelp(h);
   };
-  const group = (cls, title) => {
-    const g = el('div', 'reach-group ' + cls);
-    g.append(el('div', 'reach-scope', title));
-    box.append(g);
-    return list(g);
-  };
-  if (t.builtin || !t.reach) {
-    list(box)('runs', 'inside the agent — no sandbox applies');
-    return box;
+  if (!help.wired) {
+    help.wired = true;
+    document.addEventListener('click', closeHelp);
+    addEventListener('scroll', closeHelp, { passive: true, capture: true });
   }
-  const r = t.reach;
-  if (!r.enforced) list(box)('boundary', `NOT ENFORCED here (${r.reason || 'no sandbox'}). Where it is, this applies:`);
-  const read = r.read || [], own = r.tool_read || [];
-  const field = group('reach-every', 'Every tool');
-  field('read & write', (r.read_write || []).join(', '));
-  // The policy lists what the tool asked for after everything else.
-  field('read', read.slice(0, read.length - own.length).join(', '));
-  if ((r.files || []).length) field('files', r.files.join(', '));
-  const ports = (r.ports || []).filter(p => p !== r.tool_api_port);
-  let net = 'TCP to ports ' + ports.join(', ');
-  if (r.tool_api_port) net += '; the agent through its tool API';
-  if (r.operator_port) net += '; never the operator port ' + r.operator_port;
-  if (r.enforced && !r.network_enforced) net = `NOT ENFORCED (${r.network_reason || 'no network rules'}); would be ${net}`;
-  field('network', net);
-  const mine = group('reach-own', 'This tool only');
-  const env = r.tool_env || [];
-  if (own.length) mine('read', own.join(', '));
-  // The name of a credential, never its value: what the card is for is saying
-  // which tool holds one, so that a tool holding one cannot do so quietly.
-  if (env.length) mine('environment', env.join(', '));
-  if (!own.length && !env.length) mine('adds', 'nothing beyond what every tool gets');
+  return h;
+}
+
+function closeHelp() {
+  if (openHelp) openHelp.className = 'help';
+  openHelp = null;
+}
+
+// placeHelp puts an explanation under its ?, or above it where there is no room
+// below, and inside the screen, so one beside an edge is read whole rather than
+// cut off.
+function placeHelp(h) {
+  const [q, tip] = h.children;
+  if (!q.getBoundingClientRect || !document.documentElement) return;
+  const b = q.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  const w = tip.offsetWidth, ht = tip.offsetHeight;
+  tip.style.left = Math.max(8, Math.min(b.left - 8, vw - w - 8)) + 'px';
+  tip.style.top = (b.bottom + ht + 14 > vh ? b.top - ht - 6 : b.bottom + 6) + 'px';
+}
+
+// rich is text with its `code` marked the way the rest of the screen marks it.
+function rich(tag, cls, text) {
+  const n = el(tag, cls);
+  String(text).split(/(`[^`]+`)/).forEach((part, i) => {
+    if (part) n.append(i % 2 ? el('code', null, part.slice(1, -1)) : el('span', null, part));
+  });
+  return n;
+}
+
+const TOOL_HOW = [
+  ['Offer', 'Every model call lists the tools: each one’s name, description, and parameters, in the standard OpenAI format. That is all the model knows about a tool.',
+    '{"type": "function", "function": {"name": "web_search", "description": "Search the web…", "parameters": {…}}}'],
+  ['Call', 'The model answers with a tool call instead of text: a name, and arguments as JSON.',
+    '{"id": "call_7", "function": {"name": "web_search", "arguments": "{\\"query\\": \\"Go 1.25\\"}"}}'],
+  ['Run', 'The agent starts `tools/web_search/run` inside the sandbox below. The arguments go in on standard input; the tool answers on standard output, or is stopped at its timeout.',
+    'stdin   {"query": "Go 1.25"}\nstdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}'],
+  ['Return', 'The answer is kept in the transcript and sent back to the model as a `tool` message. The model then answers, or calls another tool.'],
+];
+
+function toolsHow() {
+  const d = el('details', 'tcard how');
+  const s = el('summary');
+  s.append(el('span', 'chev', '›'), el('span', 't', 'How a tool call works'), el('span', 's', 'four steps'));
+  const ol = el('ol', 'steps');
+  for (const [title, text, code] of TOOL_HOW) {
+    const li = el('li', 'step');
+    li.append(el('b', null, title), rich('span', 'd', text));
+    if (code) li.append(el('pre', null, code));
+    ol.append(li);
+  }
+  d.append(s, ol, rich('div', 'split', 'A manifest has two parts. `name`, `description`, and `parameters` are the standard part, and are what step 1 sends. The `agent` block is this agent’s own: the timeout, the table prefix, and what the sandbox adds. The agent reads it to run the tool; it is never sent to the model.'));
+  return d;
+}
+
+// toolSandbox is the boundary every tool program runs in, said once. Where it is
+// not enforced it says so first, and then what it would be where it is.
+function toolSandbox(s) {
+  const box = el('section', 'sandbox');
+  const h = el('h2', 'tsec', 'The sandbox');
+  h.append(help(TOOL_TIPS.sandbox), el('span', 'tpill ' + (s.enforced ? 'ok' : 'bad'),
+    s.enforced ? `${s.mechanism} · enforced` : 'not enforced'));
+  const card = el('div', 'tcard tbox');
+  box.append(h, card);
+  card.append(s.enforced ? el('div', 'lede', 'Every tool program runs inside this. A tool’s card says what it adds.')
+    : el('div', 'twarn', `Not enforced here (${s.reason || 'no sandbox'}): a tool can read and write anything the agent can. Where it is enforced, this applies:`));
+  const row = (label, tip, cls) => {
+    const r = el('div', 'kv');
+    const k = el('div', 'k', label);
+    k.append(help(tip));
+    const v = el('div', 'v ' + cls);
+    r.append(k, v);
+    card.append(r);
+    return v;
+  };
+  const path = (p, tip) => {
+    const c = el('span', p.startsWith('/') ? 'path' : 'path plain', p);
+    if (tip) c.append(help(tip));
+    return c;
+  };
+  row('Read & write', TOOL_TIPS.readWrite, 'paths').append(...(s.read_write || []).map(p =>
+    path(p, p.startsWith('/') ? TOOL_TIPS.db : TOOL_TIPS.folder)));
+  row('Read only', TOOL_TIPS.read, 'paths').append(...(s.read || []).map(p => path(p)));
+  row('Devices', TOOL_TIPS.devices, 'paths').append(...(s.files || []).map(p => path(p)));
+  const net = row('Network', TOOL_TIPS.network, 'ports');
+  if (s.enforced && !s.network_enforced) {
+    net.append(el('div', 'twarn', `Not enforced here (${s.network_reason || 'no network rules'}): a tool can connect to any port, yours included. Where it is enforced, this applies:`));
+  }
+  const port = (label, n, cls, tip) => {
+    const c = el('span', 'port ' + (cls || ''));
+    c.append(el('span', 'l', label), el('span', 'n', String(n)));
+    if (tip) c.append(help(tip));
+    net.append(c);
+  };
+  for (const [label, ports] of portGroups(s.ports || [], s.tool_api_port)) port(label, ports.join(' '));
+  if (s.tool_api_port) port('tool API', s.tool_api_port, 'api', TOOL_TIPS.toolApi);
+  if (s.operator_port) port('never your API', s.operator_port, 'never', TOOL_TIPS.never);
+  card.append(el('div', 'refused', 'Anything not listed is refused by the kernel: other conversations’ folders, the transcripts, the skills, and the home folder.'));
+  return box;
+}
+
+const PORT_GROUPS = [['ssh, git', [22, 9418]], ['DNS', [53]], ['web', [80, 443]],
+  ['dev servers', [3000, 4000, 5000, 5173, 8000, 8080, 8443, 8888]], ['databases', [3306, 5432, 6379, 27017]]];
+
+// portGroups sorts the ports a tool may open by what they are usually for. The
+// tool API is left out, because it is shown on its own.
+function portGroups(ports, apiPort) {
+  const left = ports.filter(p => p !== apiPort);
+  const out = [];
+  for (const [label, known] of PORT_GROUPS) {
+    const mine = left.filter(p => known.includes(p));
+    if (mine.length) out.push([label, mine]);
+  }
+  const other = left.filter(p => !PORT_GROUPS.some(([, known]) => known.includes(p)));
+  if (other.length) out.push(['other', other]);
+  return out;
+}
+
+// toolCard is one tool, folded to a line that says only what is unusual about
+// it. Opened, it shows what the model is sent apart from what the agent uses.
+function toolCard(t) {
+  const d = el('details', 'tcard tooldef');
+  const props = (t.parameters && t.parameters.properties) || {};
+  const bare = Object.keys(props).filter(k => !props[k].description);
+  const a = t.agent || {};
+  const name = el('div', 'tname');
+  name.append(el('span', 'n', t.name));
+  if (t.builtin) name.append(el('span', 'tchip builtin', 'built in'));
+  if ((a.env || []).length) name.append(el('span', 'tchip key', 'env ' + a.env.join(' ')));
+  if ((a.reads || []).length) name.append(el('span', 'tchip reads', 'reads ' + a.reads.join(' ')));
+  if (t.has_panel) name.append(el('span', 'tchip', 'panel'));
+  if (bare.length) name.append(el('span', 'tchip warn', `${bare.length} parameter${bare.length > 1 ? 's' : ''} undescribed`));
+  const meta = el('div', 'meta', a.timeout_seconds ? a.timeout_seconds + ' s' : '');
+  meta.append(el('span', 'chev', '›'));
+  const s = el('summary', 'tsum');
+  s.append(name, meta, el('div', 'tdesc', t.description));
+  d.append(s, modelSees(t, props));
+  d.append(t.builtin ? el('div', 'builtinnote', 'Runs inside the agent: no program, no sandbox, and no manifest file.') : agentUses(a));
+  d.append(toolJSON(t));
+  return d;
+}
+
+function modelSees(t, props) {
+  const sec = el('div', 'sect model-sees');
+  const h = el('div', 'sh', 'What the model sees');
+  h.append(help(TOOL_TIPS.model));
+  sec.append(h, el('p', 'modeldesc', t.description));
+  const req = (t.parameters && t.parameters.required) || [];
+  const list = el('div', 'params');
+  const names = Object.keys(props);
+  if (!names.length) list.append(el('div', 'noparams', 'No parameters.'));
+  for (const k of names) {
+    const p = props[k], ty = typeOf(p);
+    const type = el('span', 'pt', ty + ' · ');
+    type.append(el('span', req.includes(k) ? 'req' : 'opt', req.includes(k) ? 'required' : 'optional'));
+    const what = p.enum ? 'one of ' + p.enum.join(', ') : (/^[aeiou]/.test(ty) ? 'an ' : 'a ') + ty;
+    const row = el('div', 'param');
+    row.append(el('span', 'pn', k), type, p.description ? el('span', 'pd', p.description)
+      : el('span', 'pd none', `No description. The model sees only that it is ${what}.`));
+    list.append(row);
+  }
+  sec.append(list);
+  return sec;
+}
+
+// typeOf is a parameter's JSON Schema type as a person would say it.
+function typeOf(p) {
+  let t = Array.isArray(p.type) ? p.type.join(' or ') : (p.type || 'any');
+  if (t === 'array' && p.items && p.items.type) t = 'array of ' + p.items.type;
+  if (p.enum) t += ' · one of ' + p.enum.join(', ');
+  return t;
+}
+
+function agentUses(a) {
+  const sec = el('div', 'sect agent-uses');
+  const h = el('div', 'sh', 'What the agent uses');
+  h.append(help(TOOL_TIPS.agent));
+  const facts = el('div', 'tfacts');
+  const fact = (label, tip, value, mono) => {
+    const f = el('div', 'tfact');
+    const k = el('div', 'k', label);
+    k.append(help(tip));
+    f.append(k, el('div', 'v' + (!value ? ' none' : mono ? ' mono' : ''), value || 'none'));
+    facts.append(f);
+  };
+  fact('Timeout', TOOL_TIPS.timeout, a.timeout_seconds ? a.timeout_seconds + ' seconds' : '');
+  fact('Table prefix', TOOL_TIPS.prefix, a.db_prefix, true);
+  fact('Environment', TOOL_TIPS.env, (a.env || []).join(' '), true);
+  fact('Extra reads', TOOL_TIPS.reads, (a.reads || []).join(' '), true);
+  sec.append(h, facts);
+  return sec;
+}
+
+// toolJSON shows the manifest, with the agent block set apart from the part the
+// model is sent, and the entry the model is sent, as the agent sends it. The two
+// share one place under their buttons, and one is open at a time.
+function toolJSON(t) {
+  const box = el('div', 'jsons');
+  const btns = el('div', 'jbtns');
+  box.append(btns);
+  const views = [];
+  const view = (label, cls, body, cap) => {
+    const b = el('button', 'jb', label);
+    b.type = 'button';
+    const panel = el('div', 'jpanel ' + cls);
+    panel.hidden = true;
+    panel.append(body, rich('div', 'cap', cap));
+    views.push([b, panel]);
+    b.onclick = () => {
+      const open = panel.hidden;
+      for (const [ob, op] of views) {
+        op.hidden = !(open && op === panel);
+        ob.className = open && op === panel ? 'jb on' : 'jb';
+      }
+    };
+    btns.append(b);
+    box.append(panel);
+  };
+  if (!t.builtin) {
+    const std = JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters }, null, 2);
+    const pre = el('pre', 'json');
+    pre.append(el('span', 'std', std.slice(0, -2) + ',\n'),
+      el('span', 'ours', '  "agent": ' + JSON.stringify(t.agent || {}, null, 2).replace(/\n/g, '\n  ')),
+      el('span', 'std', '\n}'));
+    view('manifest.json', 'json-manifest', pre, 'The `agent` block, in colour, is this agent’s own and is never sent; the rest is the standard part the model is sent.');
+  }
+  view('Sent to the model', 'json-sent', el('pre', 'json', JSON.stringify(t.sent, null, 2)),
+    'One entry of the request’s `tools` list, exactly as sent.');
   return box;
 }
 

@@ -1,8 +1,6 @@
 {
   "name": "write",
   "description": "Write a file in the workspace, creating or replacing it.",
-  "db_prefix": "write_",
-  "timeout_seconds": 30,
   "parameters": {
     "type": "object",
     "properties": {
@@ -19,5 +17,9 @@
       "path",
       "content"
     ]
+  },
+  "agent": {
+    "db_prefix": "write_",
+    "timeout_seconds": 30
   }
 }

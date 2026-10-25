@@ -262,19 +262,15 @@ func (s *Sandbox) policyFor(ws, tools string, reads []string) policy {
 	return p
 }
 
-// ToolReach is what one tool may touch, as the Tools screen shows it.
+// ToolReach is what every tool program may touch, as the Tools screen shows it.
+// A tool's manifest may add reads of its own, which the screen shows on that
+// tool.
 type ToolReach struct {
-	Enforced  bool     `json:"enforced"`
-	Reason    string   `json:"reason,omitempty"`
-	ReadWrite []string `json:"read_write"`
-	Read      []string `json:"read"`
-	// ToolRead is the part of Read this tool's manifest asked for. The rest is
-	// what every tool gets, and the screen says which is which.
-	ToolRead []string `json:"tool_read"`
-	// ToolEnv names the variables from the agent's environment this tool is
-	// given, and never their values. A credential that reaches one tool and not
-	// the others is a boundary like any other, so it is on the screen.
-	ToolEnv         []string `json:"tool_env,omitempty"`
+	Mechanism       string   `json:"mechanism"`
+	Enforced        bool     `json:"enforced"`
+	Reason          string   `json:"reason,omitempty"`
+	ReadWrite       []string `json:"read_write"`
+	Read            []string `json:"read"`
 	Files           []string `json:"files"`
 	NetworkEnforced bool     `json:"network_enforced"`
 	NetworkReason   string   `json:"network_reason,omitempty"`
@@ -283,17 +279,17 @@ type ToolReach struct {
 	OperatorPort    int      `json:"operator_port,omitempty"`
 }
 
-// Reach describes the policy a tool runs under. Where nothing is enforced it
-// still says what the policy is — the one the container applies — beside the
-// reason it does not apply here.
-func (s *Sandbox) Reach(toolRoot string, reads, env []string) *ToolReach {
+// Reach describes the policy every tool runs under, before its manifest adds
+// anything. Where nothing is enforced it still says what the policy is — the
+// one the container applies — beside the reason it does not apply here.
+func (s *Sandbox) Reach(toolRoot string) *ToolReach {
 	tools := s.toolsDir
 	if toolRoot != "" {
 		tools = absOr(toolRoot)
 	}
-	p := s.policyFor(sessionDirLabel, tools, reads)
-	r := &ToolReach{Enforced: s.Enforcing(), Reason: s.Reason, ReadWrite: p.Write, Read: p.Read,
-		ToolRead: append([]string{}, reads...), ToolEnv: append([]string{}, env...), Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
+	p := s.policyFor(sessionDirLabel, tools, nil)
+	r := &ToolReach{Mechanism: s.Mechanism, Enforced: s.Enforcing(), Reason: s.Reason, ReadWrite: p.Write,
+		Read: p.Read, Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
 		Ports: s.connectPorts(), ToolAPIPort: s.ToolAPIPort, OperatorPort: s.OperatorPort}
 	if !r.NetworkEnforced {
 		r.NetworkReason = s.NetworkReason

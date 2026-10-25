@@ -439,6 +439,10 @@ its own instead.</p>
 <p>Jobs, tools, skills, and personas each have a management panel. Tools that ship their own
 panel appear alongside them. More also leads to <a href="#metrics">Metrics</a>.</p>
 
+<p>The Tools panel answers what a tool is to the model and what it is to the agent: how a call works,
+the sandbox every tool program runs in, and for each tool, what the model is sent and what the agent
+uses to run it. It is drawn in <a href="mock-tools.html">the Tools mock</a>.</p>
+
 <p>Skills and personas are the same kind of thing on disk &mdash; a Markdown file with frontmatter that
 the operator writes &mdash; so they are listed, written, and deleted through one screen, and only the
 wording differs.</p>
@@ -455,7 +459,11 @@ wording differs.</p>
 <li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
-<li>The Tools panel shows, for each tool, the paths it may read and write and the ports it may connect to, from the policy the sandbox applies, and that it can never reach the operator's port; it sets what that tool's manifest asked for apart from what every tool gets; it says when either half is not enforced, and that a builtin runs inside the agent.</li>
+<li>The Tools panel shows the sandbox once, from the policy it applies to every tool program: the paths a tool may read and write, the device files, and the ports it may connect to, grouped by what they are for, and that it can never reach the operator's port. It says when either half is not enforced.</li>
+<li>Each tool shows what the model is sent apart from what only the agent reads (<a href="adrs.html#adr-067">ADR-067</a>). The first is its description and each parameter, with its type, whether it is required, and its own description. The second is its timeout, its table prefix, the names of the variables it is given, and the paths it may read beyond the sandbox.</li>
+<li>A parameter without a description is flagged, on the parameter and on the tool's summary line, because the model sees only its type.</li>
+<li>Each tool shows its manifest, with the <code>agent</code> block set apart, and the entry the model is sent, exactly as sent. A builtin says it runs inside the agent, with no sandbox and no manifest.</li>
+<li>A term the screen cannot explain in its label has a <b>?</b> beside it, which explains it on hover with a pointer and on tap on a phone, and stays on screen near an edge.</li>
 </ul>
 </div>
 
