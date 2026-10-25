@@ -295,9 +295,11 @@ working directories &mdash; is under one mounted volume, so a redeploy replaces 
 every conversation, job, and file. The two directories inside it are not a boundary; the sandbox is
 (<a href="adrs.html#adr-039">ADR-039</a>).</p>
 
-<p>Nothing reaches the phone unless the phone asks. There is no push service and no outbound
-notification path: the operator reads what happened by opening the interface, which means the phone
-must be on the tailnet to learn anything at all.</p>
+<p>One thing reaches the phone without the phone asking: a push about an unread message, sent to the
+push service of a device the operator registered (<a href="adrs.html#adr-066">ADR-066</a>). The push
+service is the browser vendor's &mdash; Google's, Apple's, or Mozilla's &mdash; and relays a payload
+encrypted to the device, which it cannot read. Everything else the operator learns by opening the
+interface.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -310,7 +312,7 @@ must be on the tailnet to learn anything at all.</p>
 <li>The container reports whether the process inside it is answering, using the agent's own binary rather than a second program carried for the purpose.</li>
 <li>A confinement mechanism is claimed only after it has been shown to run on this machine; one that is installed but refused reports as not enforced, with the refusal as its reason.</li>
 <li>The deployed image is built from a commit on the default branch and is tagged with it, so what is running can be named.</li>
-<li>The system makes no outbound connection to any push service.</li>
+<li>The only push services the system connects to are those of devices the operator registered, and what it sends them is encrypted to the device.</li>
 <li>A phone off the tailnet fails visibly rather than showing a blank screen.</li>
 </ul>
 </div>

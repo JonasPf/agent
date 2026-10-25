@@ -15,6 +15,7 @@ tags:
   - name: tools
   - name: skills
   - name: personas
+  - name: push
   - name: system
 
 paths:
@@ -945,6 +946,78 @@ paths:
         "400":
           description: days is not a whole number of days.
 
+  /push:
+    get:
+      tags: [push]
+      summary: The agent's public push key, and every device registered for pushes.
+      description: >-
+        The key is what a browser subscribes with (`applicationServerKey`). An
+        unread assistant message is pushed to every device here once it has
+        gone unread for ten seconds.
+      responses:
+        "200":
+          description: The key and the devices.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  public_key: {type: string, description: "The VAPID public key: an uncompressed P-256 point, base64url without padding."}
+                  devices:
+                    type: array
+                    items: {$ref: "#/components/schemas/PushDevice"}
+
+  /push/devices:
+    post:
+      tags: [push]
+      summary: Register a browser's push subscription, or refresh one already registered.
+      description: >-
+        The body is what `PushSubscription.toJSON()` returns. A device is
+        identified by its endpoint, so registering the same one again replaces
+        its keys rather than adding a second device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PushSubscription"}
+      responses:
+        "200":
+          description: The device as registered.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PushDevice"}
+        "400":
+          description: The endpoint is not https, or the keys are not a P-256 point and a 16-byte secret.
+
+  /push/devices/{id}:
+    delete:
+      tags: [push]
+      summary: Forget a device. Nothing more is pushed to it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "204": {description: Forgotten.}
+        "404": {description: No such device.}
+
+  /push/test:
+    post:
+      tags: [push]
+      summary: Push a test notification to every registered device now, and report what each push service answered.
+      responses:
+        "200":
+          description: Every device, with the answer to this push.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  devices:
+                    type: array
+                    items: {$ref: "#/components/schemas/PushDevice"}
+
   /status:
     get:
       tags: [system]
@@ -1353,6 +1426,28 @@ components:
         coding_index: {type: number}
         agentic_index: {type: number}
 
+    PushSubscription:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint: {type: string, description: The push service URL the browser was given. Must be https.}
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh: {type: string, description: "The browser's P-256 public key, base64url."}
+            auth: {type: string, description: The 16-byte authentication secret, base64url.}
+    PushDevice:
+      type: object
+      description: >-
+        A registered device. Its subscription keys are never served back.
+      properties:
+        id: {type: string}
+        service: {type: string, description: The push service's host, which says whose it is.}
+        added_at: {type: string, format: date-time}
+        last_sent_at: {type: string, format: date-time, description: Absent until something has been pushed to it.}
+        last_status: {type: integer, description: The HTTP status the push service last answered.}
+        last_error: {type: string, description: What the push service or the connection said when the last push failed; absent once one succeeds.}
     Sandbox:
       type: object
       properties:
