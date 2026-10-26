@@ -12,11 +12,14 @@
   each one's push service last answered. A device the push service no
   longer knows is removed by itself. The agent still has no way to send a
   notification of its own.
-- **The Metrics screen is a table.** Skills, jobs, and tools each take one
-  row, with their numbers in columns, so the whole screen fits on a phone
-  instead of a long scroll of cards. A tool's latest failure sits on a line
-  under its row. Anything unused is greyed out. Tap a job's prompt to open
-  its conversation.
+- **The Metrics screen is easier to read at a glance.** It opens with four
+  totals: conversations, tool calls and how many failed, skill reads, and
+  what jobs cost. Each tool's calls are a bar, with the failed share in red
+  at its end, and its last failure is one line underneath; tap it to read
+  all of it. Each skill's bar shows how many of the conversations offered
+  it actually read it. Each job is a card with its cost, its schedule,
+  whether a check runs first, and its wakes. Tap a bar for its numbers, or
+  a **?** for what a term means. Money is shown to the cent.
 - **The Tools screen says what the model sees and what the agent uses.**
   Each tool is one line until you tap it. Opened, it shows what the model
   is sent: the description and every parameter. A parameter with no

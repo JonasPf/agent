@@ -450,7 +450,7 @@ function renderSideFoot() {
 // A transcript is read in a column; a list of jobs or files is read across the
 // room a laptop actually has. The Tools screen is read in a column too: it is
 // mostly explanation, one tool under another.
-const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'metrics', 'search', 'toolpanel', 'compared'];
+const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel', 'compared'];
 
 // A screen is drawn from requests that answer in their own time, so two screens
 // asked for in quick succession can answer in the wrong order. Each draw keeps
@@ -2400,99 +2400,204 @@ function renderRuns(into, runs) {
 
 // What each skill, tool, and job has been used for, over a window. The agent
 // counts it from the transcripts and job logs it already holds, so this screen
-// only asks and lays out. The window is in the address, so going back returns
-// to the one that was being read.
+// only asks and lays out: the window's totals first, then what can be compared
+// at a glance drawn as bars. The window is in the address, so going back
+// returns to the one that was being read.
 const METRIC_WINDOWS = [['7', '7 days'], ['30', '30 days'], ['all', 'All time']];
+
+// What each ? on the Metrics screen says: the things its labels cannot.
+const METRIC_TIPS = {
+  source: 'Counted from the transcripts and job logs each time this screen opens; nothing is stored for it, so it cannot disagree with them. A deleted conversation takes its numbers with it, and what a fork copied is counted once, in the conversation it came from.',
+  conversations: 'Conversations with at least one model call in the window. One created and never spoken in showed its model nothing, so it is not counted. Every “in how many conversations” below is out of these.',
+  cost: 'What the model calls of every job’s wakes cost, from the prices the gateway reported. A check runs before the model and costs nothing, so a wake it skipped adds nothing.',
+  failed: 'A call failed when its result said it did not succeed: the tool broke, or the model called it wrongly. The newest failure’s message, under the tool, usually tells which. Tap it to read all of it.',
+  offered: 'A conversation is offered a skill when the skills index in its prompt listed it. The bar is how many of those conversations read it. A skill offered often and seldom read is one whose description isn’t doing its job.',
+  wakes: 'Acted: the job woke and ran its prompt. Skipped: its check said not this time, before any model call, so it cost nothing. Failed: the wake went wrong; the job’s log says how. Tap a prompt to open the conversation it runs in.',
+};
 
 async function viewMetrics(v) {
   const gen = drawing;
   setHeader('Metrics', true);
   const win = METRIC_WINDOWS.some(([k]) => k === state.arg) ? state.arg : '30';
+  const page = el('div', 'metrics');
   const bar = el('div', 'toolbar');
+  const seg = el('div', 'mseg');
   for (const [key, label] of METRIC_WINDOWS) {
-    const b = el('button', 'pill' + (key === win ? ' on' : ''), label);
+    const b = el('button', 'mwin' + (key === win ? ' on' : ''), label);
     b.onclick = () => location.hash = '#metrics' + (key === '30' ? '' : '/' + key);
-    bar.append(b);
+    seg.append(b);
   }
-  v.append(bar);
+  const since = el('span', 'msince');
+  bar.append(seg, since);
+  page.append(bar);
+  v.append(page);
   const m = await api('/metrics?days=' + (win === 'all' ? 0 : win));
   if (stale(gen)) return;
-  const n = m.conversations || 0;
-  v.append(el('div', 's', `${n} conversation${n === 1 ? '' : 's'} with a model call ` +
-    (win === 'all' ? 'in everything stored' : `in the last ${win} days`) +
-    '. A deleted conversation takes its numbers with it.'));
-  const pct = (part, whole) => part ? ` (${Math.round(100 * part / whole)}%)` : '';
-  const last = t => t ? ago(t) : 'never';
-  // A name is cut short rather than wrapped; the whole of it is its title.
-  const name = (text, loaded) => {
-    const n = el('div', 'nm', text);
-    n.title = text;
-    const c = el('div');
-    c.append(n);
-    if (!loaded) c.append(el('div', 'sub', 'not loaded'));
-    return c;
-  };
+  since.append(el('span', null, m.since ? 'since ' + new Date(m.since).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : 'everything stored'),
+    help(METRIC_TIPS.source));
+  const tools = m.tools || [], skills = m.skills || [], jobs = m.jobs || [];
+  const sum = (xs, k) => xs.reduce((n, x) => n + (x[k] || 0), 0);
+  const calls = sum(tools, 'calls'), failures = sum(tools, 'failures');
+  const failedSub = el('span');
+  if (failures) failedSub.append(el('span', 'x', `${count(failures)} failed`), el('span', null, ' · ' + share(failures, calls)));
+  else failedSub.textContent = calls ? 'none failed' : 'none called';
+  const tiles = el('div', 'mtiles');
+  tiles.append(
+    metricTile('Conversations', count(m.conversations || 0), 'with a model call', METRIC_TIPS.conversations),
+    metricTile('Tool calls', count(calls), failedSub),
+    metricTile('Skill reads', count(sum(skills, 'reads')), `${skills.filter(s => s.reads).length} of ${skills.length} skills read`),
+    metricTile('Job cost', cents(sum(jobs, 'cost')), `${jobs.length} job${jobs.length === 1 ? '' : 's'} · ${count(sum(jobs, 'fired'))} acted`, METRIC_TIPS.cost));
+  page.append(tiles);
 
-  v.append(el('h2', null, 'skills'));
-  v.append(metricTable(['Skill', 'Reads', 'Read in', 'Last'], (m.skills || []).map(s => ({
-    idle: !s.reads,
-    cells: [name(s.name, s.loaded), s.reads, `${s.conversations}/${s.offered}`, last(s.last_at)]
-  })), 'No skills loaded or read.'));
-  if ((m.skills || []).length) v.append(el('div', 's', 'Read in: the conversations that read a skill, out of those offered it.'));
-
-  v.append(el('h2', null, 'jobs'));
-  v.append(metricTable(['Job', 'Acted', 'Skipped', 'Failed', 'Cost'], (m.jobs || []).map(j => {
-    // The prompt is how a job is recognised, and opens where it fires.
-    const go = el('button', 'go', j.prompt);
-    go.title = j.prompt;
-    go.onclick = () => location.hash = '#session/' + j.session_id;
-    const sub = el('div', 'sub', [j.schedule, j.check ? 'check ' + j.check : '', j.status,
-      j.session_title || j.session_id].filter(Boolean).join(' · '));
-    const c = el('div');
-    c.append(go, sub);
-    return { idle: !(j.fired + j.skipped + j.failed), cells: [c, j.fired, j.skipped, j.failed, fmtMoney(j.cost)] };
-  }), 'No job woke in this window, and none is scheduled.'));
-
-  v.append(el('h2', null, 'tools'));
-  v.append(metricTable(['Tool', 'Calls', 'Failed', 'Convs', 'Last'], (m.tools || []).map(t => ({
-    idle: !t.calls,
-    cells: [name(t.name, t.loaded), t.calls, t.failures + pct(t.failures, t.calls), t.conversations, last(t.last_at)],
-    why: t.last_error ? 'last failure: ' + t.last_error : ''
-  })), 'No tools loaded or called.'));
+  const legend = el('span', 'right');
+  legend.append(el('span', 'mkey fine', 'succeeded'), el('span', 'mkey bad', 'failed'));
+  page.append(metricHead('Tools', METRIC_TIPS.failed, legend));
+  page.append(tools.length ? metricTools(tools) : el('div', 'empty', 'No tools loaded or called.'));
+  page.append(metricHead('Skills', METRIC_TIPS.offered, el('span', 'right', 'read in, out of offered')));
+  page.append(skills.length ? metricSkills(skills) : el('div', 'empty', 'No skills loaded or read.'));
+  page.append(metricHead('Jobs', METRIC_TIPS.wakes, el('span', 'right', 'costliest first')));
+  page.append(jobs.length ? metricJobs(jobs) : el('div', 'empty', 'No job woke in this window, and none is scheduled.'));
 }
 
-// metricTable lays out one kind of item as rows: the first column names it and
-// takes what width is left, cut short if it needs more; every other column is
-// a figure. A row's `why` is a line beneath it, for the one thing too long for
-// a column. A row nothing used is dimmed.
-function metricTable(heads, rows, empty) {
-  if (!rows.length) return el('div', 'empty', empty);
-  const wrap = el('div', 'mtable-wrap');
-  const t = el('table', 'mtable');
-  const head = el('thead');
-  const hr = el('tr');
-  heads.forEach((h, i) => hr.append(el('th', i ? 'num' : null, h)));
-  head.append(hr);
-  const body = el('tbody');
-  for (const r of rows) {
-    const tr = el('tr', 'mrow' + (r.idle ? ' idle' : '') + (r.why ? ' has-why' : ''));
-    r.cells.forEach((c, i) => {
-      const td = el('td', i ? 'num' : 'name');
-      if (c && typeof c === 'object') td.append(c); else td.textContent = String(c);
-      tr.append(td);
-    });
-    body.append(tr);
-    if (r.why) {
-      const why = el('tr', 'why');
-      const td = el('td', null, r.why);
-      td.colSpan = heads.length;
-      why.append(td);
-      body.append(why);
+// A count is grouped the way the reader's locale writes it; money is to the
+// cent, and a cost too small for a cent says so rather than reading as free.
+const count = n => (n || 0).toLocaleString();
+const cents = v => !v ? '$0' : v < 0.005 ? '<$0.01' : '$' + v.toFixed(2);
+const share = (part, whole) => { const p = 100 * part / whole; return (p > 0 && p < 1 ? '<1' : Math.round(p)) + '%'; };
+const lastUse = t => t ? ago(t).replace(/ ago$/, '') : 'never';
+const times = n => n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)} times`;
+
+function metricTile(label, value, sub, tip) {
+  const t = el('div', 'tcard mtile');
+  const k = el('div', 'mk');
+  k.append(el('span', null, label));
+  if (tip) k.append(help(tip));
+  const s = el('div', 'ms');
+  if (typeof sub === 'string') s.textContent = sub; else s.append(sub);
+  t.append(k, el('div', 'mv', value), s);
+  return t;
+}
+
+function metricHead(title, tip, right) {
+  const h = el('h2', 'msec');
+  h.append(el('span', null, title), help(tip), right);
+  return h;
+}
+
+// metricName is an item's name, cut short rather than wrapped, with its whole
+// self as the title, and marked when it is no longer loaded.
+function metricName(name, loaded) {
+  const n = el('div', 'mnm');
+  const t = el('span', 't', name);
+  t.title = name;
+  n.append(t);
+  if (!loaded) n.append(el('span', 'mchip', 'not loaded'));
+  return n;
+}
+
+// Each tool's calls are a bar against the most-called tool, the failed share
+// at its end in red, so a large tool's few failures and a small tool's many
+// both show. The bar says its numbers on hover and on tap.
+function metricTools(tools) {
+  const most = Math.max(1, ...tools.map(t => t.calls || 0));
+  const pct = n => +(100 * n / most).toFixed(1) + '%';
+  const box = el('div', 'tcard mrows mtools');
+  const hd = el('div', 'mhd');
+  hd.append(el('span', null, 'tool'), el('span', 'mgap'), el('span', 'mnum', 'calls'), el('span', 'mnum', 'failed'), el('span', 'mnum', 'last'));
+  box.append(hd);
+  for (const t of tools) {
+    const r = el('div', 'mrow' + (t.calls ? '' : ' idle'));
+    const b = el('div', 'mbar');
+    let mark = b;
+    if (t.calls) {
+      const fine = el('i');
+      fine.style.width = pct(t.calls - t.failures);
+      b.append(fine);
+      if (t.failures) {
+        const bad = el('i', 'b');
+        bad.style.width = pct(t.failures);
+        b.append(bad);
+      }
+      mark = help(`${t.name}: ${count(t.calls)} call${t.calls === 1 ? '' : 's'} in ${count(t.conversations)} conversation${t.conversations === 1 ? '' : 's'}. ` +
+        (t.failures ? `${count(t.calls - t.failures)} succeeded, ${count(t.failures)} failed (${share(t.failures, t.calls)}).` : 'None failed.'), b);
     }
+    const failed = el('div', 'mnum mfailed' + (t.failures ? '' : ' dim'));
+    failed.append(el('span', null, t.calls ? count(t.failures) : '–'));
+    if (t.failures) failed.append(el('span', 'mpc', share(t.failures, t.calls)));
+    r.append(metricName(t.name, t.loaded), mark, el('div', 'mnum mcalls', count(t.calls)), failed, el('div', 'mnum dim mlast', lastUse(t.last_at)));
+    if (t.last_error) {
+      // One line until it is tapped: the whole message is often a paragraph.
+      const why = el('div', 'mfail');
+      const msg = el('span', 'm');
+      msg.append(el('b', null, 'last failure'), el('span', null, t.last_error));
+      why.append(msg);
+      why.onclick = () => why.className = /\bopen\b/.test(why.className) ? 'mfail' : 'mfail open';
+      r.append(why);
+    }
+    box.append(r);
   }
-  t.append(head, body);
-  wrap.append(t);
-  return wrap;
+  return box;
+}
+
+// Each skill's bar is the conversations that read it out of those offered it:
+// a skill offered often and seldom read has a description not doing its job.
+function metricSkills(skills) {
+  const box = el('div', 'tcard mrows mskills');
+  const hd = el('div', 'mhd');
+  hd.append(el('span', null, 'skill'), el('span', 'mgap'), el('span', 'mof', 'read in'), el('span', 'mnum', 'reads'), el('span', 'mnum', 'last'));
+  box.append(hd);
+  for (const s of skills) {
+    const r = el('div', 'mrow' + (s.reads ? '' : ' idle'));
+    const meter = el('div', 'mmeter');
+    const fill = el('i');
+    fill.style.width = (s.offered ? +(100 * s.conversations / s.offered).toFixed(1) : 0) + '%';
+    meter.append(fill);
+    const said = s.reads
+      ? `${s.name} was read in ${count(s.conversations)} of the ${count(s.offered)} conversations offered it, ${times(s.reads)} in all.`
+      : `${s.name} was offered in ${count(s.offered)} conversation${s.offered === 1 ? '' : 's'} and read in none.`;
+    r.append(metricName(s.name, s.loaded), help(said + (s.loaded ? '' : ' It is no longer loaded, and keeps the uses it had.'), meter),
+      el('div', 'mof', `${count(s.conversations)} of ${count(s.offered)}`), el('div', 'mnum mreads', count(s.reads)), el('div', 'mnum dim mlast', lastUse(s.last_at)));
+    box.append(r);
+  }
+  return box;
+}
+
+// Each job is a card: the prompt is how a job is recognised, and opens the
+// conversation it fires into; its wakes are counted by what they did.
+function metricJobs(jobs) {
+  const box = el('div', 'tcard mjobs');
+  for (const j of jobs) {
+    const woke = j.fired + j.skipped + j.failed;
+    const c = el('div', 'mjob' + (woke ? '' : ' idle'));
+    const p = el('button', 'mprompt', j.prompt);
+    p.title = j.prompt;
+    p.onclick = () => location.hash = '#session/' + j.session_id;
+    const cost = el('div', 'mcost');
+    cost.append(el('span', null, cents(j.cost)));
+    if (j.fired > 1) cost.append(el('small', null, `${cents(j.cost / j.fired)} when it acts`));
+    else if (j.fired === 1) cost.append(el('small', null, 'acted once'));
+    const meta = el('div', 'mmeta');
+    meta.append(el('span', 'mtag mono', j.schedule));
+    if (j.check) {
+      const t = el('span', 'mtag', 'checks first ');
+      t.append(help('Runs before every wake, and only a zero exit lets the job act: `' + j.check + '`'));
+      meta.append(t);
+    }
+    if (j.status === 'done') meta.append(el('span', 'mtag done', 'done'));
+    meta.append(el('span', 'mtag conv', 'in ' + (j.session_title || j.session_id)));
+    c.append(p, cost, meta);
+    if (woke) {
+      const w = el('div', 'mwakes');
+      for (const [n, label] of [[j.fired, 'acted'], [j.skipped, 'skipped'], [j.failed, 'failed']]) {
+        const x = el('div', 'mwake ' + label + (n ? '' : ' zero'));
+        x.append(el('div', 'n', count(n)), el('div', 'l', label));
+        w.append(x);
+      }
+      c.append(w);
+    } else c.append(el('div', 'mquiet', 'Scheduled, and hasn’t woken in this window.'));
+    box.append(c);
+  }
+  return box;
 }
 
 // The Tools screen answers what a tool is to the model and what it is to the
@@ -2543,21 +2648,27 @@ const TOOL_TIPS = {
 
 // help is a ? beside a term the screen cannot explain in its label. It opens on
 // hover with a pointer (the stylesheet) and on tap, which is all a phone has.
-// One is open at a time, and a tap anywhere else or a scroll closes it.
+// One is open at a time, and a tap anywhere else or a scroll closes it. Given a
+// mark, such as a bar, the mark is what is hovered or tapped instead of a ?.
 let openHelp = null;
-function help(text) {
-  const h = el('span', 'help');
-  const q = el('button', 'help-q', '?');
-  q.type = 'button';
-  q.setAttribute('aria-label', 'Explain');
+function help(text, mark) {
+  const h = el('span', mark ? 'help on-mark' : 'help');
+  const base = h.className;
+  let q = mark;
+  if (!q) {
+    q = el('button', 'help-q', '?');
+    q.type = 'button';
+    q.setAttribute('aria-label', 'Explain');
+  }
   h.append(q, rich('span', 'tip', text));
   h.onmouseover = () => placeHelp(h);
+  h.close = () => h.className = base;
   q.onclick = e => {
     if (e) { e.preventDefault(); e.stopPropagation(); }
     const was = openHelp === h;
     closeHelp();
     if (was) return;
-    h.className = 'help open';
+    h.className = base + ' open';
     openHelp = h;
     placeHelp(h);
   };
@@ -2570,7 +2681,7 @@ function help(text) {
 }
 
 function closeHelp() {
-  if (openHelp) openHelp.className = 'help';
+  if (openHelp) openHelp.close();
   openHelp = null;
 }
 
