@@ -7,9 +7,25 @@ import (
 	"time"
 )
 
+// defaultThresholds is when a new conversation compacts unless it says. A
+// session always gets a positive threshold: a zero would mean every turn is
+// over it, so a configuration that forgot to set one would compact on every
+// single turn rather than never.
+func (a *App) defaultThresholds() (compactAt, keep int) {
+	compactAt, keep = a.cfg.CompactAtTokens, a.cfg.KeepVerbatimTokens
+	if compactAt <= 0 {
+		compactAt = defaultCompactAtTokens
+	}
+	if keep <= 0 {
+		keep = defaultKeepVerbatimTokens
+	}
+	return compactAt, keep
+}
+
 // baseConfig is the configuration a new session starts from when the request
 // does not fully specify one: the seed's; else the most recently used session's
-// tools, skills, and grants on the model last chosen.
+// tools and skills on the model last chosen. Variables are not configuration,
+// and never come from another session.
 func (a *App) baseConfig(seed *Session) SessionConfig {
 	if seed != nil {
 		return seed.SessionConfig
@@ -30,16 +46,7 @@ func (a *App) NewSession(cfg SessionConfig, forkedFrom string) (*Session, error)
 	if cfg.Model == "" {
 		cfg.Model = a.startingModel()
 	}
-	// A session always gets a positive threshold. A zero would mean every turn
-	// is over it, so a configuration that forgot to set one would compact on
-	// every single turn rather than never.
-	compactAt, keep := a.cfg.CompactAtTokens, a.cfg.KeepVerbatimTokens
-	if compactAt <= 0 {
-		compactAt = defaultCompactAtTokens
-	}
-	if keep <= 0 {
-		keep = defaultKeepVerbatimTokens
-	}
+	compactAt, keep := a.defaultThresholds()
 	now := time.Now()
 	s := &Session{
 		ID:                 newID(),
@@ -81,6 +88,14 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	// origin's directory, and neither session's writes reach the other
 	// afterwards.
 	if err := copyTree(a.sessionWorkspace(origin.ID), a.ensureWorkspace(fork.ID)); err != nil {
+		return nil, err
+	}
+	// And its variables: a copy, so a change to either reaches only that one.
+	carried := map[string]*string{}
+	for name, v := range a.store.SessionEnv(origin.ID) {
+		carried[name] = &v
+	}
+	if _, err := a.store.ChangeSessionEnv(fork.ID, carried); err != nil {
 		return nil, err
 	}
 
@@ -226,9 +241,6 @@ func describeConfigChange(from, to SessionConfig) string {
 	var parts []string
 	if from.Model != to.Model {
 		parts = append(parts, "model "+from.Model+" → "+to.Model)
-	}
-	if !sameSet(from.GrantedEnv, to.GrantedEnv) {
-		parts = append(parts, "grants "+describeSet(from.GrantedEnv, "none")+" → "+describeSet(to.GrantedEnv, "none"))
 	}
 	if !sameSet(from.EnabledTools, to.EnabledTools) {
 		parts = append(parts, "tools "+describeSet(from.EnabledTools, "all")+" → "+describeSet(to.EnabledTools, "all"))

@@ -69,8 +69,6 @@ moves the file with it.
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. The skills here are read-only; the ones you write live under `AGENT_STATE`. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. It only adds; nothing here removes a boundary. |
 | `AGENT_TOOL_PORTS` | none | Extra TCP ports a tool may **connect** to, beyond 22, 53, 80, 443, 3000, 3306, 4000, 5000, 5173, 5432, 6379, 8000, 8080, 8443, 8888, 9418, and 27017. The operator's own port is never added: a tool that could reach it could create a conversation holding a credential. The Tools screen shows what is in force. |
-| `AGENT_REPO` | — | Clone URL of this repository, for a conversation asked to propose changes to the agent. Reaches a tool only in a session granted it. |
-| `GH_TOKEN` | — | GitHub credential. Reaches a tool only in a session granted it. |
 
 That is the whole list. There were eighteen: seven paths that only ever said
 where two roots were, four numbers nothing ever set — two of them defaults for a
@@ -171,15 +169,21 @@ docker run -d --name agent \
 | Variable | Is |
 | --- | --- |
 | `OPENROUTER_API_KEY` | Required for model calls. |
-| `TAVILY_API_KEY` | Required for `web_search`. A free account gives 1,000 searches a month and takes no card. Unlike the rest of this table it is not granted per conversation: `web_search` names it in its manifest and is given it on every call, in every session, and no other tool is. |
-| `GH_TOKEN` | Optional. Fine-grained, one repository, contents + pull requests write, no workflow scope — what the agent needs to propose changes to itself. The most it can do with this is open a pull request nobody has merged yet. |
-| `AGENT_REPO` | Optional. The repository the agent clones when it changes itself. |
-| `GITLAB_TOKEN` | Optional. A personal or project access token, `api` + `write_repository`, for the GitLab projects the agent works on. Read by `glab`, and by `git` when it is in the clone URL. |
+| `TAVILY_API_KEY` | Required for `web_search`, which names it in its manifest and is given it on every call, in every session; no other tool is. A free account gives 1,000 searches a month and takes no card. |
 
-Setting any of these in the deployment does not by itself let the agent use it — `TAVILY_API_KEY` excepted, which `web_search` asks for by name in its manifest and gets. A tool receives any other variable only in a session **granted** it by name,
-under **Controls → granted environment**, and a grant is fixed for that session's
-life. That is deliberate: the credential reaches the one conversation doing the
-work, not every conversation forever. `OPENROUTER_API_KEY` can never be granted.
+A credential for one piece of work — `GH_TOKEN` for a repository, `GITLAB_TOKEN`,
+a clone URL in `AGENT_REPO` — is not set in the deployment at all. It is a
+**variable of the conversation** doing the work: set when the conversation is
+started or forked, or later under **Details → variables**, and given to that
+conversation's tools and checks and no other's. Its value is never shown again
+once entered, and an export carries only its name. The agent's own environment,
+`OPENROUTER_API_KEY` included, reaches no tool on a conversation's behalf.
+
+| Variable | For |
+| --- | --- |
+| `GH_TOKEN` | Fine-grained, one repository, contents + pull requests write, no workflow scope — what the agent needs to propose changes to itself. The most it can do with this is open a pull request nobody has merged yet. |
+| `AGENT_REPO` | The repository the agent clones when it changes itself. |
+| `GITLAB_TOKEN` | A personal or project access token, `api` + `write_repository`, for the GitLab projects the agent works on. Read by `glab`, and by `git` when it is in the clone URL. |
 
 Every other setting has a default; the table under [Configuration](#configuration)
 has the rest.
@@ -197,8 +201,8 @@ runs, and nothing in the repository is shaped around it.
 
 1. Create an **Application**, provider **Docker**, image
    `ghcr.io/<owner>/agent:latest`.
-2. **Environment**: `OPENROUTER_API_KEY`, and `GH_TOKEN` / `AGENT_REPO` if the
-   agent is to propose changes to itself.
+2. **Environment**: `OPENROUTER_API_KEY`. A credential for one piece of work,
+   such as `GH_TOKEN`, is set on the conversation doing it instead.
 3. **Advanced → Volumes**: one volume mount, `agent-state` → `/app/state`.
 4. **Advanced → Resources**: a memory limit. A single-user agent on a shared host
    without one takes the machine down with it; 512 MB is enough.
@@ -210,7 +214,7 @@ Then set `DEPLOY_WEBHOOK` in the repository's GitHub Actions secrets to the
 application's deploy webhook URL, so a merge to `main` publishes the image and
 the host pulls it.
 
-Secrets live where it is deployed (`OPENROUTER_API_KEY`, `GH_TOKEN`) and in
+Secrets live where it is deployed (`OPENROUTER_API_KEY`), in the conversations that use them, and in
 GitHub Actions (`DEPLOY_WEBHOOK`); none of them are in this repository.
 
 ## Changing the agent
@@ -224,7 +228,7 @@ There is no code for this. The whole of it is:
 | What | Is |
 | --- | --- |
 | `git` and `gh` in the image | The two programs it needs. The shell, the file tools and the network are there for every other task |
-| `GH_TOKEN`, `AGENT_REPO` | A credential and an address, reaching tools only in a session granted them by name |
+| `GH_TOKEN`, `AGENT_REPO` | A credential and an address, set as variables of the conversation doing the work |
 
 No tool, no API route, no branch in the loop — nothing in any package knows this capability exists,
 and a test fails if that changes. Deleting the two packages deletes the capability. There is no

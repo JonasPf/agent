@@ -82,7 +82,6 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("GET /models", a.hModels)
 	mux.HandleFunc("GET /preferences", a.hPreferences)
-	mux.HandleFunc("GET /env", a.hEnv)
 	mux.HandleFunc("GET /metrics", a.hMetrics)
 	mux.HandleFunc("GET /push", a.hPush)
 	mux.HandleFunc("POST /push/devices", a.hRegisterPush)
@@ -191,7 +190,6 @@ type configRequest struct {
 	Model         string      `json:"model"`
 	EnabledTools  optionalSet `json:"enabled_tools"`
 	EnabledSkills optionalSet `json:"enabled_skills"`
-	GrantedEnv    optionalSet `json:"granted_env"`
 	// Persona is a pointer for the same reason the sets carry a presence flag:
 	// absent means inherit, and the zero value is a choice somebody may have
 	// made.
@@ -211,18 +209,82 @@ func (c configRequest) applyTo(base SessionConfig) SessionConfig {
 	if c.EnabledSkills.present {
 		base.EnabledSkills = c.EnabledSkills.set
 	}
-	if c.GrantedEnv.present {
-		base.GrantedEnv = c.GrantedEnv.set
-	}
 	return base
+}
+
+// startRequest is what a conversation can be started or forked with beside its
+// configuration: everything else about it that can be set, so that nothing has
+// to be set from its details afterwards.
+type startRequest struct {
+	Title              *string            `json:"title"`
+	CompactAtTokens    *int               `json:"compact_at_tokens"`
+	KeepVerbatimTokens *int               `json:"keep_verbatim_tokens"`
+	Env                map[string]*string `json:"env"`
+}
+
+// check refuses a start that could not be applied, before anything is created.
+// compactAt and keep are what the conversation would start with otherwise.
+func (st startRequest) check(compactAt, keep int) error {
+	if st.CompactAtTokens != nil || st.KeepVerbatimTokens != nil {
+		if st.CompactAtTokens != nil {
+			compactAt = *st.CompactAtTokens
+		}
+		if st.KeepVerbatimTokens != nil {
+			keep = *st.KeepVerbatimTokens
+		}
+		if err := checkThresholds(compactAt, keep); err != nil {
+			return err
+		}
+	}
+	return checkEnvChange(st.Env)
+}
+
+// applyStart gives a conversation just created what it was started with. A
+// blank title is no title, and the one it has stands: generated later for a
+// new conversation, the origin's for a fork.
+func (a *App) applyStart(id string, st startRequest) (*Session, error) {
+	title := ""
+	if st.Title != nil {
+		title = strings.TrimSpace(*st.Title)
+	}
+	if _, err := a.store.UpdateSession(id, func(x *Session) {
+		if title != "" {
+			x.Title = title
+		}
+		if st.CompactAtTokens != nil {
+			x.CompactAtTokens = *st.CompactAtTokens
+		}
+		if st.KeepVerbatimTokens != nil {
+			x.KeepVerbatimTokens = *st.KeepVerbatimTokens
+		}
+	}); err != nil {
+		return nil, err
+	}
+	if _, err := a.store.ChangeSessionEnv(id, st.Env); err != nil {
+		return nil, err
+	}
+	return a.store.Session(id), nil
+}
+
+// readStart decodes a body that may be empty, refusing one that is not JSON
+// rather than starting something other than what was asked for.
+func readStart(r *http.Request, v any) error {
+	if err := readJSON(r, v); err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
 
 func (a *App) hCreateSession(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		configRequest
+		startRequest
 		From string `json:"from"`
 	}
-	_ = readJSON(r, &in)
+	if err := readStart(r, &in); err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
 	var seed *Session
 	if in.From != "" {
 		seed = a.store.Session(in.From)
@@ -231,8 +293,16 @@ func (a *App) hCreateSession(w http.ResponseWriter, r *http.Request) {
 	if seed != nil {
 		from = seed.ID
 	}
+	if err := in.startRequest.check(a.defaultThresholds()); err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
 	s, err := a.NewSession(in.applyTo(a.baseConfig(seed)), from)
 	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	if s, err = a.applyStart(s.ID, in.startRequest); err != nil {
 		fail(w, 500, "%v", err)
 		return
 	}
@@ -265,12 +335,13 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 		Model         *string     `json:"model"`
 		EnabledTools  optionalSet `json:"enabled_tools"`
 		EnabledSkills optionalSet `json:"enabled_skills"`
-		GrantedEnv    optionalSet `json:"granted_env"`
 		Persona       *string     `json:"persona"`
 		// The thresholds are how the conversation is kept, not what it is: no
-		// prompt reads them, so they can change at any point in its life.
-		CompactAtTokens    *int `json:"compact_at_tokens"`
-		KeepVerbatimTokens *int `json:"keep_verbatim_tokens"`
+		// prompt reads them, so they can change at any point in its life. Nor
+		// does any prompt read the variables, which reach the next tool call.
+		CompactAtTokens    *int               `json:"compact_at_tokens"`
+		KeepVerbatimTokens *int               `json:"keep_verbatim_tokens"`
+		Env                map[string]*string `json:"env"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
@@ -279,14 +350,11 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	// Everything that can refuse the request is decided before anything is
 	// applied, so a refused request changes nothing — not even the part of it
 	// that would have been allowed on its own.
-	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.GrantedEnv.present ||
-		in.Persona != nil {
+	if in.Model != nil || in.EnabledTools.present || in.EnabledSkills.present || in.Persona != nil {
 		// A configuration is chosen before the session exists and fixed once it
-		// does. There is one answer here, not two. Grants are part of it: a
-		// conversation that could be handed a credential halfway through is one
-		// whose reach cannot be read from how it started. So is the persona: it
+		// does. There is one answer here, not two. The persona is part of it: it
 		// is a section of the prompt, and the prompt is written once.
-		fail(w, 409, "a session's model, tools, skills, grants, and persona are fixed for its life; "+
+		fail(w, 409, "a session's model, tools, skills, and persona are fixed for its life; "+
 			"POST /sessions/%s/fork to copy this conversation into a new session under a new configuration", s.ID)
 		return
 	}
@@ -303,6 +371,10 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 			fail(w, 400, "%v", err)
 			return
 		}
+	}
+	if err := checkEnvChange(in.Env); err != nil {
+		fail(w, 400, "%v", err)
+		return
 	}
 	// A conversation with no title is harder to find again than one whose
 	// title has gone stale, so a blank is not a rename.
@@ -325,6 +397,19 @@ func (a *App) hPatchSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, 404, "%v", err)
 		return
+	}
+	if len(in.Env) > 0 {
+		before, err := a.store.ChangeSessionEnv(s.ID, in.Env)
+		if err != nil {
+			fail(w, 500, "%v", err)
+			return
+		}
+		// Written where it happened, by name: what the next tool call can reach
+		// changed, and the conversation is where that is looked for.
+		if text := describeEnvChange(before, in.Env); text != "" {
+			a.appendEvent(s.ID, Entry{EventKind: "env", Text: text})
+		}
+		updated = a.store.Session(s.ID)
 	}
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	writeJSON(w, 200, a.enrich(updated))
@@ -403,10 +488,24 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	var in configRequest
-	_ = readJSON(r, &in)
+	var in struct {
+		configRequest
+		startRequest
+	}
+	if err := readStart(r, &in); err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
+	if err := in.startRequest.check(s.CompactAtTokens, s.KeepVerbatimTokens); err != nil {
+		fail(w, 400, "%v", err)
+		return
+	}
 	fork, err := a.Fork(s, in.applyTo(s.SessionConfig))
 	if err != nil {
+		fail(w, 500, "%v", err)
+		return
+	}
+	if fork, err = a.applyStart(fork.ID, in.startRequest); err != nil {
 		fail(w, 500, "%v", err)
 		return
 	}

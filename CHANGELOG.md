@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-26
+
+- **A conversation keeps its own variables.** Under "variables", when you
+  start or fork a conversation or later in its Details, add a name and a
+  value: a GitHub token, a key for one service. Its tools and checks get them
+  from the next call on, and no other conversation does. A value is hidden
+  once entered and never shown again, and an export carries only the names.
+  A change made mid-conversation leaves a line in the conversation saying
+  which variables changed. The old "granted environment" is gone: nothing is
+  passed through from the agent's own environment any more. A conversation
+  that had names granted keeps them, with the values they had.
+- **Starting or forking a conversation sets everything about it.** The title
+  and when it compacts are on that screen too, next to the model, tools,
+  skills, persona, and variables. Details keeps only what can still change:
+  the title, compaction, variables, export, and delete. Export moved there
+  from the Files screen.
+- **The compaction banner has a ?** Hover over it or tap it for what
+  compacting does: when it happens, what is summarised and what is kept word
+  for word, and that nothing is deleted.
+
 ## 2026-10-25
 
 - **Your phone is told about messages you haven't read, even with the app

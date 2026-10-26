@@ -334,7 +334,7 @@ there is no code for it.</p>
 the API, no branch in the loop. It is composition &mdash; a shell, a network, and a credential &mdash;
 and the same parts let the agent work on any other repository just as well, with <code>glab</code>
 beside <code>gh</code> in the image and <code>GITLAB_TOKEN</code> beside <code>GH_TOKEN</code> among
-the names a session can be granted (<a href="adrs.html#adr-052">ADR-052</a>). Neither client is logged
+the variables a conversation can hold (<a href="adrs.html#adr-068">ADR-068</a>). Neither client is logged
 in, because nothing here can write the file a login would leave.</p>
 
 <p>There used to be one more part, a skill for each case: <code>changing-yourself</code> and
@@ -454,7 +454,7 @@ operator's port there.</p>
 <li>A tool cannot write the tool directory or the skill directory, and is refused by the operating system rather than by its own good manners.</li>
 <li>A tool may read and write the database file it is handed, and no other file in the data directory.</li>
 <li>A path named in <code>AGENT_READ_PATHS</code> is readable and still not writable, and the paths in force are visible in <code>/status</code>.</li>
-<li>A check command is confined exactly as a tool is: the same files, the same ports, and the environment a tool in its conversation receives &mdash; what a program needs to start and that conversation's grants, never the model API key.</li>
+<li>A check command is confined exactly as a tool is: the same files, the same ports, and the environment a tool in its conversation receives &mdash; what a program needs to start and that conversation's variables, never the model API key.</li>
 <li>A confined tool can drive a headless browser, so the web tools work under the sandbox rather than only outside it.</li>
 <li>When nothing is enforcing, the system says so at startup, in <code>/status</code>, and in the interface.</li>
 <li>A confined tool can open TCP connections to the listed ports, the ports named in <code>AGENT_TOOL_PORTS</code>, and the tool API, and is refused the operator's port by the operating system rather than by its own good manners.</li>

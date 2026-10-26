@@ -250,6 +250,23 @@ test('the summary offers a search of what it folded away', async () => {
   assert.strictEqual(ctx.location.hash, '#search/S1');
 });
 
+// The banner says what happened; a ? beside its heading says what compacting
+// is, on hover and on tap, for whoever meets one for the first time.
+test('the compaction banner explains compacting behind a ?', async () => {
+  const ctx = conversation(session(), compacted);
+  await ctx.viewSession(node('div'));
+  const banner = find(ctx._id('transcript'), 'compaction');
+  const q = find(banner, 'help-q');
+  assert.ok(q, 'the banner has no ? to explain compacting');
+  const tip = textOf(find(banner, 'tip'));
+  for (const [what, re] of [
+    ['when it happens', /threshold/], ['who folds it', /summar/], ['what is kept', /word for word/],
+    ['that nothing is deleted', /search/i], ['that files are untouched', /working directory/],
+  ]) assert.match(tip, re, `the explanation does not say ${what}`);
+  q.onclick({ preventDefault() {}, stopPropagation() {} });
+  assert.match(find(banner, 'help').className, /\bopen\b/, 'tapping the ? does not open it');
+});
+
 test('the conversation header compacts now', async () => {
   const ctx = conversation(session(), compacted, { 'POST /sessions/S1/compact': { session: session() } });
   await ctx.viewSession(node('div'));

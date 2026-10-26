@@ -76,12 +76,12 @@ func TestTheToolAPIHasNoWayToMakeOrDriveAConversation(t *testing.T) {
 	defer done()
 
 	for _, r := range []struct{ method, path, body string }{
-		{"POST", "/sessions", `{"model":"x/y","granted_env":["GH_TOKEN"]}`},
-		{"POST", "/sessions/" + s.ID + "/fork", `{"granted_env":["GH_TOKEN"]}`},
+		{"POST", "/sessions", `{"model":"x/y","env":{"GH_TOKEN":"ghp"}}`},
+		{"POST", "/sessions/" + s.ID + "/fork", `{"env":{"GH_TOKEN":"ghp"}}`},
+		{"PATCH", "/sessions/" + s.ID, `{"env":{"GH_TOKEN":"ghp"}}`},
 		{"POST", "/sessions/" + s.ID + "/messages", `{"text":"push the branch"}`},
 		{"POST", "/sessions/import", ``},
 		{"GET", "/sessions/" + s.ID + "/transcript", ``},
-		{"GET", "/env", ``},
 		{"POST", "/tools/bash/call", `{"command":"true"}`},
 	} {
 		if code, body := toolRequest(t, base, token, r.method, r.path, r.body); code != 404 && code != 405 {
@@ -99,7 +99,7 @@ func TestAToolSchedulesOnlyIntoItsOwnConversation(t *testing.T) {
 	a := newTestApp(t)
 	base := toolAPI(t, a)
 	mine, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-	other, _ := a.NewSession(SessionConfig{Model: "test/model", GrantedEnv: []string{"GH_TOKEN"}}, "")
+	other := start(t, a, `{"model":"test/model","env":{"GH_TOKEN":"ghp"}}`)
 	token, done := a.calls.issue(mine.ID, "")
 	defer done()
 

@@ -68,18 +68,13 @@ type ToolCtx struct {
 	JobID     string
 }
 
-// grants is what the calling session was granted. A session that is not there
-// grants nothing, which is the safe direction: a credential is withheld rather
-// than handed out on the strength of a lookup that found nothing.
-func (tc *ToolCtx) grants() []string {
+// vars is what the calling conversation holds (ADR-068). A call outside one
+// holds nothing.
+func (tc *ToolCtx) vars() map[string]string {
 	if tc == nil || tc.App == nil || tc.App.store == nil || tc.SessionID == "" {
 		return nil
 	}
-	s := tc.App.store.Session(tc.SessionID)
-	if s == nil {
-		return nil
-	}
-	return s.GrantedEnv
+	return tc.App.store.SessionEnv(tc.SessionID)
 }
 
 type LoadFailure struct {
@@ -366,7 +361,12 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// request only for a call that is running, as the conversation it runs in.
 	token, done := tc.App.calls.issue(tc.SessionID, tc.JobID)
 	defer done()
-	cmd.Env = append(toolBaseEnv(tc.grants()),
+	// What a program needs to start, what the manifest names, then what the
+	// conversation holds, which takes the place of a manifest's variable of the
+	// same name; the contract goes last, so nothing stands in for it.
+	cmd.Env = append(toolBaseEnv(), declaredEnv(t.Agent.Env)...)
+	cmd.Env = append(cmd.Env, sessionVars(tc.vars())...)
+	cmd.Env = append(cmd.Env,
 		"AGENT_DB="+r.dbPath,
 		"AGENT_DB_PREFIX="+t.Agent.DBPrefix,
 		"AGENT_URL="+tc.App.toolURL(),
@@ -376,7 +376,6 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 		"AGENT_JOB="+tc.JobID,
 		"TMPDIR="+tmp,
 		"HOME="+home)
-	cmd.Env = append(cmd.Env, declaredEnv(t.Agent.Env)...)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()
@@ -409,33 +408,20 @@ var toolPassthrough = []string{
 	"SSL_CERT_FILE", "SSL_CERT_DIR", "TERM",
 }
 
-// neverGranted is the one name a session cannot ask for. The allow-list exists
-// because this variable reached every tool, including the one that runs commands
-// the model composed; a grant that could hand it back would undo the decision
-// rather than refine it. Nothing else is special-cased — an operator granting
-// their own credential to their own conversation is the feature.
-var neverGranted = map[string]bool{"OPENROUTER_API_KEY": true}
+// neverDeclared is the one name a manifest cannot ask for. The allow-list
+// exists because this variable reached every tool, including the one that runs
+// commands the model composed; a manifest that could hand it back would undo the
+// decision rather than refine it.
+var neverDeclared = map[string]bool{"OPENROUTER_API_KEY": true}
 
 // toolBaseEnv builds the environment a tool is started with. A subprocess used
 // to inherit the agent's whole environment, which handed the model API key to
 // every tool including the one that runs shell commands the model wrote. The
 // list is an allow-list for the same reason the sandbox is one: a variable
 // nobody considered is absent rather than present.
-//
-// granted is what the calling session was granted. A name that is not set in the
-// agent's own environment is absent rather than empty, because a tool asks
-// whether it has a credential by asking whether the variable is there.
-func toolBaseEnv(granted []string) []string {
+func toolBaseEnv() []string {
 	var out []string
 	for _, name := range toolPassthrough {
-		if v, ok := os.LookupEnv(name); ok {
-			out = append(out, name+"="+v)
-		}
-	}
-	for _, name := range granted {
-		if neverGranted[name] {
-			continue
-		}
 		if v, ok := os.LookupEnv(name); ok {
 			out = append(out, name+"="+v)
 		}
@@ -452,7 +438,7 @@ func toolBaseEnv(granted []string) []string {
 func declaredEnv(names []string) []string {
 	var out []string
 	for _, name := range names {
-		if neverGranted[name] || toolContractEnv[name] {
+		if neverDeclared[name] || toolContractEnv[name] {
 			continue
 		}
 		if v, ok := os.LookupEnv(name); ok && v != "" {

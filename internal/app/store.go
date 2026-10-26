@@ -34,6 +34,9 @@ type Store struct {
 	// metaMu puts writes of meta.json in order, so the file always ends up
 	// holding the newest session published.
 	metaMu sync.Mutex
+	// envMu puts changes to a session's variables in order, so two at once
+	// cannot each write over what the other set.
+	envMu sync.Mutex
 	// writeMu puts appends to transcripts in order: a number is handed out and
 	// written in one step, so the file holds entries in the order they are
 	// numbered, and a write that fails can be taken back.
@@ -174,6 +177,11 @@ func OpenStore(dir string) (*Store, error) {
 	if err := s.load(); err != nil {
 		return nil, err
 	}
+	for _, sess := range s.Sessions() {
+		if err := s.adoptGrants(sess.ID); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
 }
 
@@ -264,6 +272,8 @@ func (s *Store) loadSession(id string) (*Session, []Entry, error) {
 	if !hasKey(b, "read_through") {
 		sess.ReadThrough = readThroughFromCount(list, sess.Unread)
 	}
+	// What is set is what the values say, whatever the metadata last recorded.
+	sess.Env = envNames(readEnvJSON(s.envPath(id)))
 	return &sess, list, nil
 }
 

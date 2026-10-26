@@ -163,9 +163,9 @@ belongs to.</p>
 <p>It carries nothing else. A subprocess used to inherit the agent's whole environment, which handed
 the model API key to every tool including the one that runs shell commands the model wrote. The
 environment is now built from an allow-list &mdash; what any program needs to start, what the table
-below promises, and whatever the calling session was granted by name
-(<a href="adrs.html#adr-037">ADR-037</a>, <a href="adrs.html#adr-045">ADR-045</a>). A variable nobody
-granted is absent, and a granted variable that is not set stays absent rather than arriving empty.</p>
+below promises, and the variables the calling conversation holds
+(<a href="adrs.html#adr-037">ADR-037</a>, <a href="adrs.html#adr-068">ADR-068</a>). A variable nobody
+defined is absent.</p>
 
 <table>
 <tr><th>Variable</th><th>Holds</th></tr>
@@ -181,11 +181,12 @@ granted is absent, and a granted variable that is not set stays absent rather th
 
 <p>Beyond that list, and the handful any program needs to start at all &mdash; <code>PATH</code>,
 the locale, the certificate paths &mdash; a tool receives a variable only because the
-conversation it is running in was granted it by name
-(<a href="adrs.html#adr-045">ADR-045</a>). A grant belongs to a session, not to a tool: a credential is
-something an operator hands to one conversation, where a manifest could only say every session or none
-of them, for the life of the deployment. The <code>OPENROUTER_API_KEY</code> is the one name no grant
-can carry, because it is the variable the whole allow-list exists to keep out.</p>
+conversation it is running in holds it (<a href="adrs.html#adr-068">ADR-068</a>), or because its
+manifest names one from the agent's own environment. A conversation's variable belongs to it, not to a
+tool: a credential is something an operator hands to one conversation, where a manifest can only say
+every session or none of them. Where both name the same variable, the conversation's wins in that
+conversation. Nothing reads the agent's own environment on a conversation's behalf, so the
+<code>OPENROUTER_API_KEY</code> reaches no tool.</p>
 
 <pre><code>stdin   {"action": "status", "service": "web"}
 stdout  {"ok": true, "content": "web: deployed 12m ago, healthy"}
@@ -202,7 +203,7 @@ turn rather than the process.</p>
 <li>A tool reaches its own conversation's jobs, that conversation's skills, and search through <code>AGENT_URL</code>, naming its call with <code>AGENT_TOKEN</code>, without a private hook into the process; nothing it can reach creates or drives a conversation.</li>
 <li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
 <li>Standard error is captured and stored with the result, not shown to the model, and readable by the operator beside the call that wrote it.</li>
-<li>A tool subprocess receives only the variables above and the ones its calling session was granted; the model API key and every other variable of the agent's environment are absent.</li>
+<li>A tool subprocess receives only the variables above, the ones its manifest names, and the ones its calling conversation holds; the model API key and every other variable of the agent's environment are absent.</li>
 <li>A variable a manifest names is passed only to that tool, and only when it is set.</li>
 <li>Tool results are recorded as transcript entries.</li>
 </ul>

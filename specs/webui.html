@@ -184,6 +184,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>The banner names itself a compaction, says the agent reads its summary in place of everything before it, and shows the turn count and the tokens before and after.</li>
 <li>The compaction summary is editable, and an edit changes what the next turn sends.</li>
 <li>A compaction says that it reset the cache.</li>
+<li>A <strong>?</strong> beside the banner's heading says, on hover and on tap, what a compaction does: when it happens, what is folded and by whom, what is kept word for word, that nothing is deleted, and that the working directory is untouched.</li>
 <li>The status line shows the live cache size and counts down to its expiry, and shows it as expired when it is.</li>
 <li>A provider that caches on its own, without the agent's marker, reports no lifetime; its cache is shown as held by the provider, and no countdown is invented for it.</li>
 <li>Each assistant message shows the cached proportion of the call that produced it, from what the provider reported, and says so plainly when there was no hit.</li>
@@ -260,8 +261,8 @@ always measured on the spot.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The details screen states the session's model, tools, skills, grants, and persona, and states them as read: nothing on it changes any of them, and it says that a different configuration is reached by forking.</li>
-<li>The details screen offers only what a conversation can still be given or denied once it exists: a new title, when it compacts, and deletion. It does not repeat an action the conversation's header already carries.</li>
+<li>The details screen states the session's model, tools, skills, and persona, and states them as read: nothing on it changes any of them, and it says that a different configuration is reached by forking.</li>
+<li>The details screen offers only what a conversation can still be given or denied once it exists: a new title, when it compacts, its variables, its export, and deletion. It does not repeat an action the conversation's header already carries.</li>
 <li>The details screen sets the size at which this conversation compacts and how much it keeps word for word, says the second can be at most half the first, and says why when a pair is refused (<a href="adrs.html#adr-060">ADR-060</a>).</li>
 <li>The details screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
 <li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
@@ -271,11 +272,13 @@ always measured on the spot.</p>
 <li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
 <li>Dismissing a dialog changes nothing; only picking in it does.</li>
-<li>The granted environment is chosen in a dialog listing every variable name the agent could grant, those from <code>.env</code> first, each with a checkbox (<a href="adrs.html#adr-048">ADR-048</a>). No value is shown, the model key is not listed, and a granted name that is no longer set is still listed and can be unticked.</li>
+<li>A variable is defined as a name and a value, the value typed into a field that hides it (<a href="adrs.html#adr-068">ADR-068</a>). Once entered a value is never shown again: the screen lists the names that are set, and replacing a value means typing it anew. A name the agent refuses says why, and nothing is changed.</li>
+<li>The details screen sets, replaces, and removes the conversation's variables, each change taking effect at the next tool call.</li>
 <li>A skill that ships off starts unticked in a configuration that did not choose its skills, and ticking it chooses them.</li>
-<li>Forking opens a configuration screen carrying the origin's settings, and creates the fork when it is confirmed.</li>
+<li>Starting or forking a conversation sets everything about it that can be set: its title, model, tools, skills, persona, variables, and when it compacts. The details screen repeats only what can still change once it exists.</li>
+<li>Forking opens a configuration screen carrying the origin's settings, its variables and thresholds included, and creates the fork when it is confirmed.</li>
 <li>The fork screen says that the whole conversation is copied and that the origin keeps its jobs.</li>
-<li>Starting a conversation reaches the same screen, prefilled with the most recent session's tools, skills, and grants, on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</li>
+<li>Starting a conversation reaches the same screen, prefilled with the most recent session's tools and skills, on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>), with no variables, the default thresholds, and a title left to be generated.</li>
 <li>Starting a conversation and creating a fork are each one action: the button stops offering while its request is out, so a press that lands twice creates one, and a refusal says why and offers it again.</li>
 <li>No screen offers to edit the configuration of a session that already exists.</li>
 <li>Enable-all and disable-all act on the whole list in one tap.</li>
@@ -284,8 +287,7 @@ always measured on the spot.</p>
 
 <h2>Files</h2>
 
-<p>Every conversation has a files screen: what its working directory holds, what to add to it, and the
-archive of the whole session. The directory is drawn as the tree it is &mdash; a cloned repository, an
+<p>Every conversation has a files screen: what its working directory holds, and what to add to it. The directory is drawn as the tree it is &mdash; a cloned repository, an
 unpacked archive &mdash; with directories first and each one folding in a tap. A tree of more than a
 hundred entries opens folded, so one large directory does not bury everything beside it.</p>
 
@@ -310,7 +312,7 @@ they are there.</p>
 <li>Upload progress is shown and a failed upload can be retried: in the composer, by tapping its chip.</li>
 <li>Files larger than 250 MB are refused before transfer begins.</li>
 <li>Uploads are deleted with the session that holds them.</li>
-<li>A session is exported to a zip from its files screen, and an archive is imported from the session list.</li>
+<li>A session is exported to a zip from its details screen, and an archive is imported from the session list.</li>
 </ul>
 </div>
 

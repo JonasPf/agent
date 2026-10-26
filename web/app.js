@@ -1100,6 +1100,10 @@ function coveredThrough(entries) {
   return covers;
 }
 
+// What compacting is, for the ? on its banner: the banner says what happened,
+// and this says what that means.
+const COMPACTION_TIP = 'When what the agent is sent grows past this conversation’s threshold (set in Details), or when you ask from the header, the model folds the older turns into a summary, editing the one before rather than rewriting it. The newest turns, up to the size kept word for word, are carried over unchanged. From then on the agent reads the summary in place of what it folded. Nothing is deleted: the folded turns stay in the transcript, found by search and in the history. The working directory is untouched. What the provider had cached starts over.';
+
 // compactionEntry is the banner a summary stands under. In the conversation it
 // says what the agent reads in place of what came before, and offers to edit
 // that and to search what it replaced; in the history it is a record, and
@@ -1109,8 +1113,10 @@ function compactionEntry(e, opts) {
   const n = el('div', 'compaction');
   const before = (e.tokens_before || 0).toLocaleString();
   const after = (e.tokens_after || 0).toLocaleString();
-  n.append(el('div', 't',
-    `⊙ COMPACTED · ${e.folded_turns || 0} turns · ${before} → ${after} tokens · cache reset`));
+  const head = el('div', 't');
+  head.append(el('span', null, `⊙ COMPACTED · ${e.folded_turns || 0} turns · ${before} → ${after} tokens · cache reset`),
+    help(COMPACTION_TIP));
+  n.append(head);
   if (o.history) {
     n.append(el('div', 'note', 'Written here. The summary in force is the newest one; it stood for everything dimmed above it.'));
     const body = el('div', 'bub md'); body.innerHTML = renderMarkdown(e.text || '');
@@ -1501,69 +1507,100 @@ async function chooseModel(current, pick) {
   await load('');
 }
 
-function envRow(name, on, change) {
-  const row = el('label', 'env-row');
-  row.dataset.name = name;
-  const cb = el('input');
-  cb.type = 'checkbox';
-  cb.checked = on;
-  cb.onchange = () => change(cb.checked);
-  row.append(cb, el('span', null, name));
-  return row;
+// envEditor edits a conversation's variables (ADR-068). A value is typed into a
+// field that hides it and is never shown again, so what is listed is the names
+// that are set, and replacing a value means typing it anew. apply is given each
+// change as {NAME: value, or null to remove}; it answers with the names now set,
+// or nothing to have them worked out here, and throws to refuse.
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+function secretInput(placeholder) {
+  const i = el('input', 'text secret');
+  i.type = 'password';
+  i.autocomplete = 'off';
+  i.placeholder = placeholder;
+  return i;
+}
+function envEditor(names, apply) {
+  let held = (names || []).slice().sort();
+  const box = el('div', 'envs');
+  const change = async c => {
+    let next;
+    try { next = await apply(c); }
+    catch (e) { toast({ title: 'Not saved', body: String(e.message) }); return; }
+    if (!next) {
+      const set = new Set(held);
+      for (const [k, v] of Object.entries(c)) { if (v === null) set.delete(k); else set.add(k); }
+      next = Array.from(set);
+    }
+    held = next.slice().sort();
+    draw();
+  };
+  const draw = () => {
+    box.innerHTML = '';
+    for (const name of held) {
+      const row = el('div', 'env-var');
+      row.dataset.name = name;
+      const plain = () => {
+        row.innerHTML = '';
+        const replace = el('button', 'act', 'replace');
+        const remove = el('button', 'act', 'remove');
+        replace.onclick = () => {
+          row.innerHTML = '';
+          const value = secretInput('new value');
+          const save = el('button', 'btn', 'Save');
+          const cancel = el('button', 'act', 'cancel');
+          save.onclick = () => change({ [name]: value.value });
+          cancel.onclick = plain;
+          row.append(el('span', 'env-name', name), value, save, cancel);
+          if (value.focus) value.focus();
+        };
+        remove.onclick = () => change({ [name]: null });
+        row.append(el('span', 'env-name', name), el('span', 'env-held', 'value hidden'), replace, remove);
+      };
+      plain();
+      box.append(row);
+    }
+    if (!held.length) box.append(el('div', 's', 'None.'));
+    const add = el('div', 'env-add');
+    const name = el('input', 'text env-new-name');
+    name.placeholder = 'NAME';
+    name.autocomplete = 'off';
+    name.spellcheck = false;
+    name.setAttribute('autocapitalize', 'characters');
+    const value = secretInput('value');
+    const go = el('button', 'btn', 'Add');
+    go.onclick = () => {
+      const n = String(name.value || '').trim();
+      if (!ENV_NAME.test(n)) {
+        toast({ title: 'Not added', body: `${n || 'A blank'} is not a variable name: letters, digits, and _, not starting with a digit.` });
+        return;
+      }
+      return change({ [n]: value.value });
+    };
+    add.append(name, value, go);
+    box.append(add);
+  };
+  draw();
+  return box;
 }
 
-// chooseGrants lists every name the agent could grant, ticked where this
-// configuration grants it, and applies each tick as it is made. Names only: the
-// values stay in the agent. A name already granted that the environment no
-// longer holds is listed too, so it is never carried forward out of sight.
-async function chooseGrants(current, change) {
-  const d = openDialog('Granted environment');
-  let chosen = current.slice();
-  d.body.append(el('p', 'note',
-    'Tick what this conversation’s tools may read. Only names are listed — values never leave ' +
-    'the agent — and the model key is never offered. Leave everything unticked unless a skill asks for one.'));
-  const filter = el('input', 'text');
-  filter.type = 'search';
-  filter.placeholder = 'filter names';
-  const lists = el('div');
-  d.body.append(filter, lists);
+const VARIABLES_NOTE = 'What this conversation’s tools and checks receive as environment variables: a token for one ' +
+  'repository, a key for one service. A value is hidden once it is entered and reaches no other conversation; a fork ' +
+  'starts with a copy. Exports carry the names, never the values.';
+const CONTEXT_NOTE = 'When what the agent is sent grows past the first number, the older turns are folded into a summary ' +
+  'and the newest are kept word for word, up to the second. The second can be at most half the first.';
 
-  const count = el('span', 's', '');
-  const done = el('button', 'btn primary dialog-done', 'Done');
-  done.onclick = () => closeDialog();
-  d.foot.append(count, el('span', 'sp'), done);
-  const tally = () => { count.textContent = chosen.length ? `${chosen.length} granted` : 'nothing granted'; };
-
-  let offered = [];
-  try { offered = await api('/env') || []; }
-  catch (e) { lists.append(el('div', 'empty', 'The environment could not be listed: ' + e.message)); }
-  const known = new Set(offered.map(x => x.name));
-  const missing = chosen.filter(n => !known.has(n));
-  const groups = [
-    ['from .env', offered.filter(x => x.from_env_file).map(x => x.name)],
-    ['environment', offered.filter(x => !x.from_env_file).map(x => x.name)],
-    ['granted, not set', missing],
-  ];
-  const draw = () => {
-    lists.innerHTML = '';
-    const q = String(filter.value || '').trim().toUpperCase();
-    for (const [label, names] of groups) {
-      const shown = names.filter(n => !q || n.toUpperCase().includes(q));
-      if (!shown.length) continue;
-      lists.append(el('h2', null, label));
-      for (const n of shown) {
-        lists.append(envRow(n, chosen.includes(n), on => {
-          chosen = on ? chosen.filter(x => x !== n).concat(n) : chosen.filter(x => x !== n);
-          tally();
-          change(chosen.slice());
-        }));
-      }
-    }
-    if (!offered.length && !missing.length) lists.append(el('div', 'empty', 'Nothing in the agent’s environment can be granted.'));
+// contextFields are the two numbers that say when a conversation compacts.
+function contextFields(v, compactAt, keep) {
+  const num = (cls, label, value) => {
+    const w = el('label', 'field');
+    const i = el('input', 'text ' + cls);
+    i.type = 'number'; i.min = '0'; i.step = '1000'; i.value = value == null ? '' : String(value);
+    w.append(el('span', 's', label), i);
+    v.append(w);
+    return i;
   };
-  filter.oninput = draw;
-  tally();
-  draw();
+  return [num('compact-at', 'compact at, in tokens', compactAt), num('keep-verbatim', 'keep word for word, in tokens', keep)];
 }
 
 // configEditor renders a configuration and returns a reader for it. It does not
@@ -1571,14 +1608,23 @@ async function chooseGrants(current, change) {
 // taken a turn, which is when model, tools, and skills stop being editable. It
 // is drawn from several answers, and returns null, having drawn nothing more,
 // once the screen it was drawing for has been replaced.
-async function configEditor(v, current, gen = drawing) {
+async function configEditor(v, current, gen = drawing, opts = {}) {
   const cfg = {
     model: current.model || null,
     enabled_tools: current.enabled_tools == null ? null : current.enabled_tools.slice(),
     enabled_skills: current.enabled_skills == null ? null : current.enabled_skills.slice(),
-    granted_env: (current.granted_env || []).slice(),
     persona: current.persona || '',
   };
+
+  // Everything else that can be set about a conversation is set here too, so
+  // nothing has to be set from its details afterwards. A fork starts from its
+  // origin's; a new conversation from what /preferences says it would get, and
+  // never from another conversation's variables.
+  v.append(el('h2', null, 'title'));
+  const title = el('input', 'text start-title');
+  title.value = opts.fork ? current.title || '' : '';
+  title.placeholder = opts.fork ? 'The origin’s title' : 'Named from the first message';
+  v.append(title);
 
   // The model is one line on the screen and a dialog to change it: the facts
   // that choose between hundreds of models do not fit in a select.
@@ -1661,28 +1707,28 @@ async function configEditor(v, current, gen = drawing) {
   v.append(pwrap);
   drawPersonas();
 
-  // Names, not values. The agent already holds the values; what a conversation
-  // is given is permission to see one, and a name is safe to show, export, and
-  // read back. The names are ticked from what the agent could grant, rather than
-  // typed from memory and found misspelled when a tool fails.
-  v.append(el('h2', null, 'granted environment'));
-  v.append(el('p', 'note',
-    'Variables this conversation\u2019s tools may read \u2014 a credential is granted here, not required ' +
-    'by a tool. Leave it empty unless a skill asks for one.'));
-  const envLine = el('div', 'env-line');
-  const summary = el('div', 'env-summary');
-  const drawGrants = () => {
-    summary.innerHTML = '';
-    if (!cfg.granted_env.length) summary.append(el('span', 's', 'Nothing granted.'));
-    for (const n of cfg.granted_env) summary.append(el('span', 'tag', n));
-  };
-  const envOpen = el('button', 'btn env-choice', 'Choose variables');
-  envOpen.onclick = () => chooseGrants(cfg.granted_env, next => { cfg.granted_env = next; drawGrants(); });
-  envLine.append(summary, envOpen);
-  v.append(envLine);
-  drawGrants();
+  const envStart = opts.fork ? (current.env || []) : [];
+  const envChange = {};
+  v.append(el('h2', null, 'variables'));
+  v.append(el('p', 'note', VARIABLES_NOTE));
+  v.append(envEditor(envStart, async change => {
+    for (const [k, val] of Object.entries(change)) {
+      if (val === null && !envStart.includes(k)) delete envChange[k]; else envChange[k] = val;
+    }
+  }));
 
-  return () => cfg;
+  const at = opts.fork ? current : (opts.defaults || {});
+  v.append(el('h2', null, 'context'));
+  v.append(el('p', 'note', CONTEXT_NOTE));
+  const [compactAt, keep] = contextFields(v, at.compact_at_tokens, at.keep_verbatim_tokens);
+  const n = i => String(i.value || '').trim() === '' ? undefined : Number(i.value);
+
+  return () => Object.assign({}, cfg, {
+    title: String(title.value || '').trim(),
+    compact_at_tokens: n(compactAt),
+    keep_verbatim_tokens: n(keep),
+    env: envChange,
+  });
 }
 
 // configFacts renders a configuration that cannot be changed. A conversation's
@@ -1724,15 +1770,6 @@ async function configFacts(v, s, gen = drawing) {
 
   v.append(el('h2', null, 'persona'));
   v.append(el('span', 'pill fixed', s.persona || 'default'));
-
-  v.append(el('h2', null, 'granted environment'));
-  const grants = s.granted_env || [];
-  if (!grants.length) v.append(el('div', 's', 'Nothing granted.'));
-  else {
-    const wrap = el('div');
-    for (const n of grants) wrap.append(el('span', 'pill fixed', n));
-    v.append(wrap);
-  }
   return true;
 }
 
@@ -1740,11 +1777,11 @@ async function viewNew(v) {
   const gen = drawing;
   setHeader('New conversation', true);
   const recent = state.sessions[0] || (await api('/sessions').catch(() => []) || [])[0] || {};
-  // Tools, skills, and grants come from the most recent conversation. The model
-  // is the one last chosen, which the most recent conversation need not be on.
+  // Tools and skills come from the most recent conversation. The model is the
+  // one last chosen, which the most recent conversation need not be on.
   const prefs = await api('/preferences').catch(() => null) || {};
   if (stale(gen)) return;
-  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }), gen);
+  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }), gen, { defaults: prefs });
   if (!read || stale(gen)) return;
   const start = el('button', 'btn primary', 'Start conversation');
   oneAtATime(start, 'Not started', async () => {
@@ -1772,8 +1809,8 @@ function oneAtATime(button, refused, fn) {
 
 // ---------- files ----------
 
-// A session's files are its working directory: what its tools see, what an
-// upload lands in, and what an export carries.
+// A session's files are its working directory: what its tools see, and what an
+// upload lands in.
 async function viewFiles(v) {
   const gen = drawing;
   const id = state.arg;
@@ -1796,9 +1833,7 @@ async function viewFiles(v) {
     file.value = '';
     render();
   };
-  const exp = el('button', 'btn', 'Export session');
-  exp.onclick = () => location.href = '/sessions/' + id + '/export';
-  bar.append(up, file, exp);
+  bar.append(up, file);
   v.append(bar);
 
   const entries = await api('/sessions/' + id + '/files');
@@ -1904,7 +1939,7 @@ async function viewFork(v) {
   v.append(el('p', 'note',
     'A fork copies this whole conversation into a new session. This one stays where it is, stays ' +
     'active, and keeps its jobs. The fork\'s configuration is chosen here and fixed once it exists.'));
-  const read = await configEditor(v, res.session, gen);
+  const read = await configEditor(v, res.session, gen, { fork: true });
   if (!read || stale(gen)) return;
   const go = el('button', 'btn primary', 'Create fork');
   oneAtATime(go, 'Not forked', async () => {
@@ -2148,9 +2183,7 @@ async function viewSettings(v) {
   const s = res.session;
   setHeader('Details', true);
 
-  const grants = (s.granted_env || []);
-  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools', 'all tools')} and ${describeSet(s.enabled_skills, 'skills', 'the default skills')}` +
-    (grants.length ? `, and may read ${grants.join(', ')}` : '');
+  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools', 'all tools')} and ${describeSet(s.enabled_skills, 'skills', 'the default skills')}`;
   v.append(el('p', 'note',
     `This conversation runs on ${runs}, fixed for its life. None of it can be changed here: ` +
     `a different configuration is a different conversation, which Fork makes, leaving this one as it is.`));
@@ -2180,19 +2213,8 @@ async function viewSettings(v) {
   // How the conversation is kept is not what it is: no prompt reads either
   // number, so they change here, for this conversation alone, at any time.
   v.append(el('h2', null, 'context'));
-  v.append(el('p', 'note',
-    'When what the agent is sent grows past the first number, the older turns are folded into a summary ' +
-    'and the newest are kept word for word, up to the second. The second can be at most half the first.'));
-  const num = (cls, label, value) => {
-    const w = el('label', 'field');
-    const i = el('input', 'text ' + cls);
-    i.type = 'number'; i.min = '0'; i.step = '1000'; i.value = String(value || 0);
-    w.append(el('span', 's', label), i);
-    v.append(w);
-    return i;
-  };
-  const compactAt = num('compact-at', 'compact at, in tokens', s.compact_at_tokens);
-  const keep = num('keep-verbatim', 'keep word for word, in tokens', s.keep_verbatim_tokens);
+  v.append(el('p', 'note', CONTEXT_NOTE));
+  const [compactAt, keep] = contextFields(v, s.compact_at_tokens || 0, s.keep_verbatim_tokens || 0);
   const save = el('button', 'btn', 'Save');
   save.onclick = async () => {
     const chosen = { compact_at_tokens: Number(compactAt.value), keep_verbatim_tokens: Number(keep.value) };
@@ -2204,6 +2226,22 @@ async function viewSettings(v) {
       `keeping ${chosen.keep_verbatim_tokens.toLocaleString()} word for word` });
   };
   v.append(save);
+
+  // Nor does any prompt read the variables: each change reaches the next tool
+  // call, and the conversation records it by name.
+  v.append(el('h2', null, 'variables'));
+  v.append(el('p', 'note', VARIABLES_NOTE));
+  v.append(envEditor(s.env, async change => {
+    const r = await patch('/sessions/' + id, { env: change });
+    return (r && r.env) || [];
+  }));
+
+  v.append(el('h2', null, 'export'));
+  v.append(el('p', 'note', 'The whole conversation as a zip: its transcript, its jobs and their logs, and its working ' +
+    'directory, to keep or to import into another agent. Variables go by name; their values stay here.'));
+  const exp = el('button', 'btn', 'Export conversation');
+  exp.onclick = () => location.href = '/sessions/' + id + '/export';
+  v.append(exp);
 
   if (!await configFacts(v, s, gen) || stale(gen)) return;
 
@@ -2642,7 +2680,7 @@ const TOOL_TIPS = {
   agent: 'The manifest’s `agent` block. The agent reads it to run the tool, and never sends it to the model.',
   timeout: 'The program is stopped after this, and the model is told the call failed.',
   prefix: 'Every table this tool creates in the shared database starts with this, so each tool’s tables are told apart. No two tools may share one.',
-  env: 'Passed to this tool on every call, in every conversation. Names only: values are never shown. A credential you grant one conversation is set on that conversation instead.',
+  env: 'Passed to this tool on every call, in every conversation, from the agent’s own environment. Names only: values are never shown. A credential for one conversation is set as that conversation’s variable instead, and takes the place of one named here.',
   reads: 'Paths this tool may read on top of what every tool gets.',
 };
 
