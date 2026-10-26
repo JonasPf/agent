@@ -108,15 +108,6 @@ type SessionConfig struct {
 	// Persona names the opening section of the system prompt. Empty is the
 	// built-in one, which is what every session had before there was a choice.
 	Persona string `json:"persona,omitempty"`
-	// GrantedEnv names the environment variables this conversation's tools
-	// receive beyond the ones every tool is promised. Names, never values: the
-	// value stays wherever the agent's own environment gets it, so a grant can
-	// be exported, read, and reasoned about without carrying a secret with it.
-	//
-	// It is a property of one conversation rather than of a tool, because a
-	// credential is granted rather than required — the manifest could only say
-	// every session or none, for the life of the deployment.
-	GrantedEnv []string `json:"granted_env,omitempty"`
 }
 
 // SessionCache is what a session's provider holds of it: the prefix its last
@@ -137,6 +128,14 @@ type Session struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
 	SessionConfig
+	// Env names the variables this conversation's tools and checks receive
+	// (ADR-068). Names only: the values are kept apart, for the agent alone,
+	// and changed with Store.ChangeSessionEnv, which keeps this in step.
+	Env []string `json:"env,omitempty"`
+	// LegacyGrants is what a session written before ADR-068 was granted from
+	// the agent's environment. It is read once, turned into variables of the
+	// session's own, and cleared.
+	LegacyGrants []string `json:"granted_env,omitempty"`
 	// Cache is what the provider holds of this conversation since its last
 	// call, or nil when nothing is known to be held.
 	Cache *SessionCache `json:"cache,omitempty"`

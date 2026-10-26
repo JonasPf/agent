@@ -61,16 +61,6 @@ func manifestEnvNames(t *testing.T) map[string]bool {
 var toolContract = map[string]bool{
 	"AGENT_URL": true, "AGENT_SESSION": true, "AGENT_JOB": true, "AGENT_TOKEN": true,
 	"AGENT_DB": true, "AGENT_DB_PREFIX": true, "TMPDIR": true,
-	// Granted per session rather than configured for the agent, and the value
-	// still comes from the environment — so these are documented, but as
-	// credentials to grant rather than as settings. See settingsAlsoGranted.
-}
-
-// settingsAlsoGranted are read from the agent's environment but reach a tool
-// only in a session granted them. They belong in the file: an operator has to
-// set them somewhere before any session can be granted them.
-var settingsAlsoGranted = map[string]bool{
-	"GH_TOKEN": true, "AGENT_REPO": true, "GITLAB_TOKEN": true,
 }
 
 func TestEverySettingIsInTheExampleEnvironment(t *testing.T) {
@@ -116,12 +106,6 @@ func TestEverySettingIsInTheExampleEnvironment(t *testing.T) {
 				"A setting an operator cannot find is a setting that does not exist.", name)
 		}
 	}
-	for name := range settingsAlsoGranted {
-		if !strings.Contains(documented, name) {
-			t.Errorf("%s is not in .env.example, and a session cannot be granted "+
-				"a variable the agent was never given", name)
-		}
-	}
 }
 
 // The other direction. A variable written in the file and read by nothing is
@@ -158,7 +142,7 @@ func TestTheExampleEnvironmentNamesNothingThatIsNotRead(t *testing.T) {
 	assigned := regexp.MustCompile(`(?m)^#?\s*([A-Z][A-Z0-9_]*)=`)
 	for _, m := range assigned.FindAllStringSubmatch(string(example), -1) {
 		name := m[1]
-		if read[name] || settingsAlsoGranted[name] {
+		if read[name] {
 			continue
 		}
 		t.Errorf(".env.example offers %s, which nothing reads. A setting that does "+

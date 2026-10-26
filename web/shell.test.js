@@ -728,7 +728,7 @@ test('the metrics window is chosen on the screen and kept in the address', async
   }
 });
 
-// ---------- granted environment ----------
+// ---------- the configuration screen ----------
 
 // The dialog a control opens is appended to the page, not to the view, so that
 // it can cover the whole screen and slide in over it.
@@ -751,7 +751,7 @@ async function startConversation(ctx, v) {
 // skills, no environment, unless the test says otherwise.
 function newScreen(routes) {
   return load(Object.assign({
-    '/sessions': [], '/models': [], '/preferences': {}, '/env': [],
+    '/sessions': [], '/models': [], '/preferences': {},
     '/tools': { tools: [] }, '/skills': { skills: [] },
     'POST /sessions': session({ id: 'NEW' }),
   }, routes));
@@ -1973,57 +1973,81 @@ test('closing the dialog keeps the model that was chosen', async () => {
   assert.strictEqual((await startConversation(ctx, v)).model, SMALL.id);
 });
 
-// ---------- the environment dialog ----------
+// ---------- variables, title, and thresholds when starting ----------
 
-test('the granted environment is ticked in a dialog of names, never typed', async () => {
+// envNames is the variables the editor lists as set.
+const envNames = v => findAll(v, 'env-var').map(r => r.dataset.name);
+
+// addVar types a variable into the editor's empty row and adds it.
+async function addVar(v, name, value) {
+  const row = find(v, 'env-add');
+  find(row, 'env-new-name').value = name;
+  find(row, 'secret').value = value;
+  await findAll(row, 'btn').find(b => b.textContent === 'Add').onclick();
+}
+
+// Everything that can be set about a conversation is set where it starts: the
+// variables, the title, and when it compacts, as well as its configuration.
+test('a new conversation is started with its variables, title, and thresholds', async () => {
   const ctx = newScreen({
-    '/sessions': [session({ granted_env: ['GH_TOKEN'] })],
-    '/env': [
-      { name: 'AGENT_REPO', from_env_file: true },
-      { name: 'GH_TOKEN', from_env_file: true },
-      { name: 'LANGUAGE', from_env_file: false },
-    ],
+    '/sessions': [session({ env: ['SOMEONE_ELSES'] })],
+    '/preferences': { compact_at_tokens: 40000, keep_verbatim_tokens: 10000 },
   });
   const v = node('div');
   await ctx.viewNew(v);
-  assert.strictEqual(findAll(v, 'text').filter(n => n.type === 'text').length, 0,
-    'the screen still has a field to type variable names into');
+  assert.deepStrictEqual(envNames(v), [], 'a new conversation took another conversation\'s variables');
+  assert.strictEqual(find(find(v, 'env-add'), 'secret').type, 'password', 'a value is typed into a field that shows it');
+  await addVar(v, 'DEPLOY_TOKEN', 'tok-1');
+  assert.deepStrictEqual(envNames(v), ['DEPLOY_TOKEN']);
+  assert.ok(!textOf(v).includes('tok-1'), 'a value is shown once it is entered');
 
-  const open = find(v, 'env-choice');
-  assert.ok(open, 'the granted environment is not a button that opens a dialog');
-  await open.onclick();
-  const dialog = openDialog(ctx);
-  assert.ok(dialog, 'the button opened no dialog');
-
-  const rows = findAll(dialog, 'env-row');
-  const box = name => rows.find(r => r.dataset.name === name).children.find(c => c.type === 'checkbox');
-  assert.deepStrictEqual(rows.map(r => r.dataset.name), ['AGENT_REPO', 'GH_TOKEN', 'LANGUAGE']);
-  assert.strictEqual(box('GH_TOKEN').checked, true, 'a name already granted is not ticked');
-  assert.strictEqual(box('AGENT_REPO').checked, false);
-  assert.ok(textOf(dialog).includes('.env'), 'the dialog does not say which names come from .env');
-
-  box('AGENT_REPO').checked = true;
-  box('AGENT_REPO').onchange();
-  find(dialog, 'dialog-done').onclick();
-  assert.strictEqual(openDialog(ctx), null, 'done left the dialog open');
-  assert.ok(textOf(find(v, 'env-summary')).includes('AGENT_REPO'), 'the screen does not show the new grant');
-  assert.deepStrictEqual((await startConversation(ctx, v)).granted_env, ['GH_TOKEN', 'AGENT_REPO']);
+  find(v, 'start-title').value = '  Deploys ';
+  assert.strictEqual(find(v, 'compact-at').value, '40000', 'the threshold offered is not the one a conversation gets');
+  assert.strictEqual(find(v, 'keep-verbatim').value, '10000');
+  find(v, 'compact-at').value = '60000';
+  const body = await startConversation(ctx, v);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(body.env)), { DEPLOY_TOKEN: 'tok-1' });
+  assert.strictEqual(body.title, 'Deploys');
+  assert.strictEqual(body.compact_at_tokens, 60000);
+  assert.strictEqual(body.keep_verbatim_tokens, 10000);
+  assert.strictEqual(body.granted_env, undefined, 'the screen still grants from the agent\'s environment');
 });
 
-// A name can be granted and then leave the environment. It must still be on
-// the list, or it could be carried into every new conversation unseen.
-test('a grant whose variable is gone is still listed, and can be unticked', async () => {
-  const ctx = newScreen({ '/sessions': [session({ granted_env: ['OLD_TOKEN'] })], '/env': [] });
+test('a name that is no variable name is not added', async () => {
+  const ctx = newScreen({});
   const v = node('div');
   await ctx.viewNew(v);
-  await find(v, 'env-choice').onclick();
-  const row = findAll(openDialog(ctx), 'env-row').find(r => r.dataset.name === 'OLD_TOKEN');
-  assert.ok(row, 'a grant no longer in the environment is not listed');
-  assert.ok(/not set/.test(textOf(openDialog(ctx))), 'the dialog does not say the variable is not set');
-  const cb = row.children.find(c => c.type === 'checkbox');
-  cb.checked = false;
-  cb.onchange();
-  assert.deepStrictEqual((await startConversation(ctx, v)).granted_env, []);
+  await addVar(v, 'MY-TOKEN', 'x');
+  assert.deepStrictEqual(envNames(v), []);
+  assert.strictEqual(JSON.stringify((await startConversation(ctx, v)).env || {}), '{}');
+});
+
+// A fork is a copy: it holds what its origin holds, and the screen that makes
+// it can take a variable away or give one a new value before it exists.
+test('a fork carries its origin\'s variables and thresholds, and can change them', async () => {
+  const ctx = load({
+    '/sessions/S1': { session: session({ id: 'S1', title: 'Deploys', env: ['ALPHA', 'BETA'], compact_at_tokens: 8000, keep_verbatim_tokens: 2000 }) },
+    '/models': [], '/preferences': {}, '/tools': { tools: [] }, '/skills': { skills: [] }, '/personas': { personas: [] },
+    'POST /sessions/S1/fork': session({ id: 'F1' }),
+  });
+  vm.runInContext("state.view = 'fork'; state.arg = 'S1';", ctx);
+  const v = node('div');
+  await ctx.viewFork(v);
+  assert.deepStrictEqual(envNames(v), ['ALPHA', 'BETA']);
+  assert.strictEqual(find(v, 'start-title').value, 'Deploys');
+  assert.strictEqual(find(v, 'compact-at').value, '8000');
+  const row = name => findAll(v, 'env-var').find(r => r.dataset.name === name);
+  await findAll(row('BETA'), 'act').find(b => b.textContent === 'remove').onclick();
+  findAll(row('ALPHA'), 'act').find(b => b.textContent === 'replace').onclick();
+  find(row('ALPHA'), 'secret').value = 'new';
+  await findAll(row('ALPHA'), 'btn').find(b => b.textContent === 'Save').onclick();
+  assert.deepStrictEqual(envNames(v), ['ALPHA']);
+  await findAll(v, 'btn').find(b => /Create fork/.test(b.textContent)).onclick();
+  const sent = ctx._calls.find(c => c.method === 'POST' && c.path === '/sessions/S1/fork');
+  const body = JSON.parse(sent.body);
+  assert.deepStrictEqual(body.env, { BETA: null, ALPHA: 'new' });
+  assert.strictEqual(body.compact_at_tokens, 8000);
+  assert.strictEqual(body.title, 'Deploys');
 });
 
 // ---------- skills that ship off ----------
@@ -2064,40 +2088,50 @@ test('all turns on the skills that ship off as well', async () => {
   assert.deepStrictEqual(Array.from((await startConversation(ctx, v)).enabled_skills).sort(), ['changing-yourself', 'scheduling']);
 });
 
-// What a conversation may read is part of what it is, so the controls screen
-// says it rather than leaving it to be discovered when a tool succeeds.
-test('the controls screen names the variables a conversation may read', async () => {
-  const ctx = load({
-    '/sessions/S1': { session: session({ id: 'S1', granted_env: ['GH_TOKEN', 'AGENT_REPO'] }) },
-    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [],
-  });
-  // route() is what fills in which session the screen is for; the view is then
-  // driven into a node of this test's own, so what it rendered can be read.
+function detailsScreen(sess, extra) {
+  const ctx = load(Object.assign({
+    '/sessions/S1': { session: sess },
+    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [], '/personas': { personas: [] },
+  }, extra));
   ctx.location.hash = '#settings/S1';
   ctx.route();
+  return ctx;
+}
+
+// What a conversation's tools receive is not fixed: the details screen lists
+// the names, and sets, replaces, and removes them there and then.
+test('the details screen changes a conversation\'s variables', async () => {
+  const ctx = detailsScreen(session({ id: 'S1', env: ['GH_TOKEN', 'AGENT_REPO'] }), {
+    'PATCH /sessions/S1': session({ id: 'S1', env: ['AGENT_REPO'] }),
+  });
   const v = node('div');
   await ctx.viewSettings(v);
-  // The first note is the summary of what this conversation is; the editor
-  // below it has prose of its own, which is not what is being asked about here.
-  const summary = findAll(v, 'note')[0].textContent;
-  assert.ok(summary.includes('GH_TOKEN') && summary.includes('AGENT_REPO'),
-    'the summary does not say which variables the conversation may read: ' + summary);
+  assert.deepStrictEqual(envNames(v), ['AGENT_REPO', 'GH_TOKEN']);
+  const row = findAll(v, 'env-var').find(r => r.dataset.name === 'GH_TOKEN');
+  await findAll(row, 'act').find(b => b.textContent === 'remove').onclick();
+  const sent = ctx._calls.filter(c => c.method === 'PATCH');
+  assert.deepStrictEqual(sent.map(c => JSON.parse(c.body)), [{ env: { GH_TOKEN: null } }]);
+  assert.deepStrictEqual(envNames(v), ['AGENT_REPO'], 'the list does not show what the conversation now holds');
+  await addVar(v, 'REGION', 'eu');
+  assert.deepStrictEqual(JSON.parse(ctx._calls.filter(c => c.method === 'PATCH')[1].body), { env: { REGION: 'eu' } });
 });
 
-// The opposite, so the line above is not simply always printed: a conversation
-// granted nothing says nothing about grants.
-test('a conversation granted nothing says nothing about grants', async () => {
-  const ctx = load({
-    '/sessions/S1': { session: session({ id: 'S1' }) },
-    '/tools': { tools: [] }, '/skills': { skills: [] }, '/models': [],
-  });
-  ctx.location.hash = '#settings/S1';
-  ctx.route();
+// An export is the conversation as a whole, so it is offered where the rest of
+// the conversation is: its details, not the files it holds.
+test('a conversation is exported from its details, not its files', async () => {
+  const ctx = detailsScreen(session({ id: 'S1' }));
   const v = node('div');
   await ctx.viewSettings(v);
-  const summary = findAll(v, 'note')[0].textContent;
-  assert.ok(!summary.includes('may read'),
-    'a conversation with no grants still claims it may read something: ' + summary);
+  const exp = findAll(v, 'btn').find(b => /export/i.test(b.textContent));
+  assert.ok(exp, 'the details screen offers no export');
+  exp.onclick();
+  assert.strictEqual(ctx.location.href, '/sessions/S1/export');
+
+  const files = load({ '/sessions/S1/files': [], '/sessions/S1': { session: session({ id: 'S1' }) } });
+  vm.runInContext("state.view = 'files'; state.arg = 'S1';", files);
+  const fv = node('div');
+  await files.viewFiles(fv);
+  assert.ok(!findAll(fv, 'btn').some(b => /export/i.test(b.textContent)), 'the files screen still exports');
 });
 
 // The title is the one thing about a conversation that is not fixed once it
@@ -2190,7 +2224,7 @@ test('the details screen names the configuration the conversation is fixed on', 
     '/sessions/S1': {
       session: session({
         id: 'S1', model: 'acme/fast', persona: 'terse',
-        enabled_tools: ['shell'], enabled_skills: ['research'], granted_env: ['GH_TOKEN'],
+        enabled_tools: ['shell'], enabled_skills: ['research'],
       })
     },
     '/tools': { tools: [{ name: 'shell' }, { name: 'browse' }] },
@@ -2207,7 +2241,6 @@ test('the details screen names the configuration the conversation is fixed on', 
   assert.ok(shown.includes('research') && !shown.includes('write'),
     'the skills the conversation runs with are not the ones shown: ' + shown.join(', '));
   assert.ok(shown.includes('terse'), 'the persona is not shown: ' + shown.join(', '));
-  assert.ok(shown.includes('GH_TOKEN'), 'the granted variables are not shown: ' + shown.join(', '));
   assert.ok(findAll(v, 'n').some(c => c.textContent === 'acme/fast'),
     'the model the conversation runs on is not shown');
 });

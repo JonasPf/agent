@@ -1366,8 +1366,8 @@ tool named. The field stays for now, and the next decision about it is whether a
 manifest, is where a tool should be granted a variable.</p>
 </div>
 
-<div class="adr" id="adr-045">
-<div class="meta">ADR-045 · accepted</div>
+<div class="adr superseded" id="adr-045">
+<div class="meta">ADR-045 · superseded by <a href="#adr-068">ADR-068</a></div>
 <h3>A session grants the environment, not a manifest</h3>
 <p><em>What a grant is stands; how it is chosen has moved. <a href="#adr-048">ADR-048</a> replaces the
 typed list of names with a list to tick.</em></p>
@@ -1470,8 +1470,8 @@ so a change to one points at the other. CI could build the Dockerfile and run th
 one description; that is not done here.</p>
 </div>
 
-<div class="adr" id="adr-048">
-<div class="meta">ADR-048 · accepted</div>
+<div class="adr superseded" id="adr-048">
+<div class="meta">ADR-048 · superseded by <a href="#adr-068">ADR-068</a></div>
 <h3>A grant is ticked from the names the agent holds</h3>
 <h4>Context</h4>
 <p><a href="#adr-045">ADR-045</a> made a grant a list of names a person typed, and the interface offered
@@ -2133,6 +2133,40 @@ option, but it would still mix the two parts in one list, where one object separ
 is out of place, rather than loading with settings silently ignored. A misspelt setting is refused for
 the same reason instead of falling back to its default. The Tools screen shows the two parts apart:
 what the model sees, and what the agent uses.</p>
+</div>
+
+<div class="adr" id="adr-068">
+<div class="meta">ADR-068 · accepted</div>
+<h3>A conversation holds its own variables</h3>
+<h4>Context</h4>
+<p>A conversation could read variables from the agent's own environment, by name
+(<a href="#adr-045">ADR-045</a>), ticked from the names the agent held (<a href="#adr-048">ADR-048</a>).
+So a credential had to be put in the agent's environment &mdash; <code>.env</code>, then a restart &mdash;
+before any conversation could be given it, every conversation drew on the same pool, and a grant was
+fixed for the conversation's life although no prompt reads it.</p>
+<h4>Decision</h4>
+<p>A conversation holds its own environment variables, names and values, which its tools and checks
+receive. They are defined when it is started or forked, and can be set, replaced, or removed at any
+point in its life from its details, since nothing in the prompt reads them: the next tool call or
+check gets what is set then. A fork starts with a copy of its origin's; a new conversation starts with
+none, so one conversation's credential never reaches another without being entered there.</p>
+<p>A value is stored in the session's own directory beside its transcript, which no tool's sandbox
+reaches, and leaves it only for a tool or check of that conversation. No route returns a value and an
+export carries only the names: what the interface and the API can say is which names a conversation
+holds. A change is written into the conversation as an event naming the variables and not their values,
+so it is visible where it happened. The names the agent sets on every call &mdash; the tool contract,
+<code>TMPDIR</code>, <code>HOME</code> &mdash; and the ones every tool already receives, such as
+<code>PATH</code>, cannot be defined, and are refused by name rather than quietly dropped.</p>
+<p>The pass-through goes: <code>granted_env</code> and <code>GET /env</code> are removed. A conversation
+granted names before this keeps them, holding the values the agent's environment had when it was first
+read afterwards.</p>
+<h4>Consequences</h4>
+<p>A credential is added to one conversation without touching the deployment, and goes with the
+conversation. A credential two conversations need is entered twice, or carried by a fork. A value
+cannot be read back, so a mistyped one is replaced rather than corrected. A tool's manifest can still
+name a variable from the agent's environment (<code>agent.env</code>), which stays the way a key every
+conversation needs reaches one tool; a conversation's own variable of the same name takes its place in
+that conversation.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

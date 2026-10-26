@@ -37,13 +37,16 @@ paths:
       description: >-
         A configuration field left out is taken from the session named by
         `from`, or the agent's defaults. Naming a model makes it the one the
-        next conversation starts on.
+        next conversation starts on. Variables are never taken from another
+        session: a new conversation holds only those the request sets. Every
+        refusal is decided before anything is created.
       requestBody:
         content:
           application/json:
             schema:
               allOf:
                 - $ref: "#/components/schemas/Config"
+                - $ref: "#/components/schemas/Start"
                 - type: object
                   properties:
                     from: {type: string, description: A session whose configuration to start from.}
@@ -53,6 +56,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Session"}
+        "400": {$ref: "#/components/responses/Error"}
 
   /sessions/{id}:
     parameters:
@@ -72,12 +76,14 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
     patch:
       tags: [sessions]
-      summary: Rename a session, or change when it compacts.
+      summary: Rename a session, change when it compacts, or set its variables.
       description: >-
-        Nothing here shapes the prompt. The model, tools, skills, grants, and
-        persona are fixed for a session's life and are refused; fork to change
-        them. Every refusal is decided before anything is applied, so a refused
-        request changes nothing.
+        Nothing here shapes the prompt. The model, tools, skills, and persona
+        are fixed for a session's life and are refused; fork to change them.
+        A change of variables is written into the conversation as an event
+        naming them, and reaches the next tool call or check. Every refusal is
+        decided before anything is applied, so a refused request changes
+        nothing.
       requestBody:
         required: true
         content:
@@ -91,6 +97,7 @@ paths:
                   type: integer
                   minimum: 0
                   description: At most half of compact_at_tokens, as it stands after this request.
+                env: {$ref: "#/components/schemas/EnvChange"}
       responses:
         "200":
           description: The session as changed.
@@ -208,18 +215,22 @@ paths:
       summary: Copy the conversation into a new session, under a configuration of its own.
       description: >-
         Every entry but the origin's prompt is copied, with the working
-        directory. A field left out keeps the origin's. The origin keeps its
-        jobs.
+        directory and the variables. A field left out keeps the origin's. The
+        origin keeps its jobs.
       requestBody:
         content:
           application/json:
-            schema: {$ref: "#/components/schemas/Config"}
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/Config"
+                - $ref: "#/components/schemas/Start"
       responses:
         "201":
           description: The fork.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Session"}
+        "400": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
 
   /sessions/{id}/compare:
@@ -887,30 +898,15 @@ paths:
       summary: What the next conversation starts on.
       responses:
         "200":
-          description: The model last chosen.
+          description: The model last chosen, and when a conversation compacts unless it says.
           content:
             application/json:
               schema:
                 type: object
                 properties:
                   model: {type: string}
-
-  /env:
-    get:
-      tags: [system]
-      summary: The variable names a session could be granted. Names only, never values; the model key is never listed.
-      responses:
-        "200":
-          description: The names.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    name: {type: string}
-                    from_env_file: {type: boolean, description: Written in the agent's .env, rather than only in its environment.}
+                  compact_at_tokens: {type: integer}
+                  keep_verbatim_tokens: {type: integer}
 
   /metrics:
     get:
@@ -1125,8 +1121,29 @@ components:
         model: {type: string}
         enabled_tools: {type: array, nullable: true, items: {type: string}}
         enabled_skills: {type: array, nullable: true, items: {type: string}}
-        granted_env: {type: array, nullable: true, items: {type: string}, description: Variable names this session's tools may read.}
         persona: {type: string, description: Empty is the built-in.}
+
+    Start:
+      type: object
+      description: >-
+        What a conversation can be started or forked with beyond its
+        configuration. An absent field is the default for a new conversation,
+        and the origin's for a fork.
+      properties:
+        title: {type: string, description: Trimmed. Blank is generated from the first message, or the origin's for a fork.}
+        compact_at_tokens: {type: integer, minimum: 2000}
+        keep_verbatim_tokens: {type: integer, minimum: 0, description: At most half of compact_at_tokens.}
+        env: {$ref: "#/components/schemas/EnvChange"}
+
+    EnvChange:
+      type: object
+      description: >-
+        Variables to set or remove. A string sets the name to that value; null
+        removes it; a name not mentioned is left as it was. A name the agent
+        sets on every tool call (the AGENT_ variables, TMPDIR, HOME), one every
+        tool already receives (PATH and the rest), or one that is not a
+        variable name is refused. Values are write-only: no route returns one.
+      additionalProperties: {type: string, nullable: true}
 
     Session:
       allOf:
@@ -1135,6 +1152,7 @@ components:
           properties:
             id: {type: string}
             title: {type: string}
+            env: {type: array, items: {type: string}, description: The names of the variables this session's tools and checks receive. Never their values.}
             cache:
               type: object
               nullable: true

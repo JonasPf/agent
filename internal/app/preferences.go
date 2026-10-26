@@ -72,6 +72,10 @@ func (a *App) rememberModel(model string) {
 	_ = a.store.PutPreferences(p)
 }
 
+// hPreferences says what the next conversation starts on, so the screen that
+// starts one offers what it would get if nothing were changed.
 func (a *App) hPreferences(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, 200, map[string]string{"model": a.startingModel()})
+	compactAt, keep := a.defaultThresholds()
+	writeJSON(w, 200, map[string]any{"model": a.startingModel(),
+		"compact_at_tokens": compactAt, "keep_verbatim_tokens": keep})
 }

@@ -44,14 +44,14 @@ func installEnvTool(t *testing.T, a *App, name string) {
 	}
 }
 
-// toolEnv runs the named tool in a session granted grants, and returns the
-// variable names the subprocess actually saw.
-func toolEnv(t *testing.T, a *App, name string, grants ...string) map[string]bool {
+// toolEnv runs the named tool in a new session, and returns the variable
+// names the subprocess actually saw.
+func toolEnv(t *testing.T, a *App, name string) map[string]bool {
 	t.Helper()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tool did not load: %+v", failures)
 	}
-	s, _ := a.NewSession(SessionConfig{Model: "test/model", GrantedEnv: grants}, "")
+	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	res := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, name, json.RawMessage(`{}`))
 	if !res.OK {
 		t.Fatalf("%s: %s (stderr %s)", name, res.Error, res.stderr)
@@ -92,95 +92,14 @@ func TestAToolStillGetsWhatTheContractPromisesIt(t *testing.T) {
 	}
 }
 
-// A credential reaches a tool because the conversation it is running in was
-// granted it. This is what lets one session push to a repository while every
-// other conversation on the same agent cannot see the token at all.
-func TestOnlyASessionGrantedACredentialReceivesIt(t *testing.T) {
-	t.Setenv("GH_TOKEN", "ghp-example")
+// Nothing reads the agent's own environment on a conversation's behalf any
+// more: a variable the agent was started with reaches no tool unless a manifest
+// names it, whatever any conversation holds.
+func TestTheAgentsOwnEnvironmentReachesNoToolThroughAConversation(t *testing.T) {
+	t.Setenv("GH_TOKEN", "ghp-from-the-deployment")
 	a := newTestApp(t)
 	installEnvTool(t, a, "envcheck")
-
-	if !toolEnv(t, a, "envcheck", "GH_TOKEN")["GH_TOKEN"] {
-		t.Error("a session granted a credential did not receive it")
-	}
 	if toolEnv(t, a, "envcheck")["GH_TOKEN"] {
-		t.Error("a session granted nothing received the credential anyway")
-	}
-}
-
-// A grant is a property of one conversation. Two sessions on the same agent,
-// one granted and one not, must not be able to reach the same secret — that is
-// the whole reason this moved off the manifest, where it was all of them or
-// none of them, for the life of the deployment.
-func TestAGrantDoesNotLeakIntoAnotherSession(t *testing.T) {
-	t.Setenv("GH_TOKEN", "ghp-example")
-	a := newTestApp(t)
-	installEnvTool(t, a, "envcheck")
-	if _, failures := a.tools.Load(a); len(failures) > 0 {
-		t.Fatalf("tool did not load: %+v", failures)
-	}
-
-	granted, _ := a.NewSession(SessionConfig{Model: "test/model", GrantedEnv: []string{"GH_TOKEN"}}, "")
-	plain, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-
-	saw := func(id string) bool {
-		res := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: id}, "envcheck", json.RawMessage(`{}`))
-		if !res.OK {
-			t.Fatalf("envcheck: %s", res.Error)
-		}
-		for _, v := range strings.Fields(res.Content) {
-			if v == "GH_TOKEN" {
-				return true
-			}
-		}
-		return false
-	}
-	if !saw(granted.ID) {
-		t.Error("the granted session did not get the credential")
-	}
-	if saw(plain.ID) {
-		t.Error("a session that was granted nothing reached another session's credential")
-	}
-}
-
-// Granting a variable that is not set must not put an empty one in its place: a
-// tool checks whether it has a credential by asking whether it is there.
-func TestAGrantedVariableThatIsUnsetIsAbsentRatherThanEmpty(t *testing.T) {
-	os.Unsetenv("NOT_SET_ANYWHERE")
-	a := newTestApp(t)
-	installEnvTool(t, a, "envcheck")
-
-	if toolEnv(t, a, "envcheck", "NOT_SET_ANYWHERE")["NOT_SET_ANYWHERE"] {
-		t.Error("an unset variable was passed as an empty one")
-	}
-}
-
-// The model key is the reason this allow-list exists at all, and a grant must
-// not be a way to hand it back. It is the one name that cannot be granted, and
-// granting it is refused rather than quietly dropped.
-func TestTheModelKeyCannotBeGranted(t *testing.T) {
-	t.Setenv("OPENROUTER_API_KEY", "sk-should-not-be-visible")
-	a := newTestApp(t)
-	installEnvTool(t, a, "envcheck")
-
-	if toolEnv(t, a, "envcheck", "OPENROUTER_API_KEY")["OPENROUTER_API_KEY"] {
-		t.Error("the model key reached a tool because a session asked for it")
-	}
-}
-
-// A session says which grants it holds, so what a conversation can reach is
-// readable rather than inferred.
-func TestASessionReportsTheGrantsItHolds(t *testing.T) {
-	a := newTestApp(t)
-	s, err := a.NewSession(SessionConfig{Model: "test/model", GrantedEnv: []string{"GH_TOKEN"}}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := a.store.Session(s.ID)
-	if got == nil {
-		t.Fatal("the session is not there")
-	}
-	if len(got.GrantedEnv) != 1 || got.GrantedEnv[0] != "GH_TOKEN" {
-		t.Errorf("granted_env = %v, want [GH_TOKEN]", got.GrantedEnv)
+		t.Error("a variable from the agent's own environment reached a tool")
 	}
 }

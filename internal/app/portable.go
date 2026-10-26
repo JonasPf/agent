@@ -163,7 +163,14 @@ func (a *App) ImportSession(r io.ReaderAt, size int64) (*Session, error) {
 			entries = append(entries, e)
 		}
 	}
+	// An archive carries the names of the session's variables and never their
+	// values, so it arrives holding none. One written before ADR-068 carries
+	// what it was granted, which is adopted as on any other session.
+	sess.Env = nil
 	if err := a.store.ImportSession(&sess, entries); err != nil {
+		return nil, err
+	}
+	if err := a.store.adoptGrants(sess.ID); err != nil {
 		return nil, err
 	}
 
