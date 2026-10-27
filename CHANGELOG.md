@@ -16,6 +16,12 @@
   a link: tap it to open or download the file, with no trip to Files. Your
   attachments are links too. Only names of files that are really there
   become links.
+- **A fork keeps what its conversation installed.** A program downloaded or
+  a script installed with pip in a conversation stopped working in a fork
+  of it: the copy dropped links and made every file non-executable. A fork
+  now copies files with their permissions and links as links, and a link
+  into the original's folder points into the fork's own, so it keeps
+  working after the original is deleted.
 
 ## 2026-10-26
 

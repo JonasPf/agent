@@ -777,7 +777,10 @@ two files.</p>
 
 <p>A fork carries files as well as words: it starts from a copy of the origin's directory, so the copy
 continues with the files the conversation was working on, and neither session's later writes reach the
-other. A compaction touches the directory not at all — the session is the same session, and its files
+other. It is a copy a program still runs from: a file keeps its permissions, so what was executable
+stays executable, and a link is copied as a link. A link to a place inside the origin's directory
+points to the same place inside the fork's, so nothing in the fork reaches back into a directory its
+tools cannot read, and that may since have been deleted. A compaction touches the directory not at all — the session is the same session, and its files
 are where it left them.</p>
 
 <p>A tool may write a link in its directory to anywhere: the sandbox confines what the tool opens,
@@ -796,6 +799,7 @@ delete landed is refused rather than written into the place the delete just empt
 <li>A session's tools run in that session's directory, and no other session's tools can read it.</li>
 <li>A file uploaded to a session is written there, and its tools see it immediately. It never replaces a file already there: a taken name gets a number, and the answer names the path it landed at.</li>
 <li>A fork starts from a copy of its origin's directory; writes after that are independent.</li>
+<li>What a tool installed in a session's directory runs in its fork, after the origin is deleted too: a file keeps its permissions, a link stays a link, and a link into the origin's directory points into the fork's.</li>
 <li>A compaction leaves the working directory unchanged.</li>
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>
 <li>Asked about particular paths, the listing answers for those alone, without walking the directory: the ones that are files there. A path that names nothing, a directory, or a place a link leads out to is left out.</li>

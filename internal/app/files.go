@@ -258,8 +258,10 @@ func (a *App) fillWorkspaceFile(id string, root *os.Root, rel string, f *os.File
 	return rel, n, nil
 }
 
-// copyTree copies a directory recursively. A missing source is not an error: a
-// session that never wrote a file has nothing to carry.
+// copyTree copies a directory recursively, so that what a tool installed in it
+// still runs in the copy: a file keeps its mode, and a link is copied as a link
+// rather than followed. A missing source is not an error: a session that never
+// wrote a file has nothing to carry.
 func copyTree(src, dst string) error {
 	if _, err := os.Stat(src); os.IsNotExist(err) {
 		return nil
@@ -273,28 +275,65 @@ func copyTree(src, dst string) error {
 			return err
 		}
 		target := filepath.Join(dst, rel)
-		if d.IsDir() {
+		switch {
+		case d.IsDir():
 			return os.MkdirAll(target, 0o755)
+		case d.Type()&fs.ModeSymlink != 0:
+			return copyLink(p, target, src, dst)
+		case d.Type().IsRegular():
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+			return copyFile(p, target, info.Mode().Perm())
 		}
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		in, err := os.Open(p)
-		if err != nil {
-			return err
-		}
-		defer in.Close()
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		out, err := os.Create(target)
-		if err != nil {
-			return err
-		}
-		defer out.Close()
-		_, err = io.Copy(out, in)
-		return err
+		return nil
 	})
+}
+
+// copyLink copies the link at p to target. One that names a place inside src
+// names the same place inside dst: left as it was, the copy would reach back
+// into the directory it came from, which its tools cannot read and which may
+// since have been deleted.
+func copyLink(p, target, src, dst string) error {
+	to, err := os.Readlink(p)
+	if err != nil {
+		return err
+	}
+	if filepath.IsAbs(to) {
+		if rel, err := filepath.Rel(src, to); err == nil && filepath.IsLocal(rel) {
+			to = filepath.Join(dst, rel)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	return os.Symlink(to, target)
+}
+
+// copyFile copies a regular file with the permissions it had, set after the
+// write so the umask does not narrow them.
+func copyFile(p, target string, perm fs.FileMode) error {
+	in, err := os.Open(p)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	out, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(target, perm)
 }
 
 // DeleteSession removes a conversation and everything it owns: its transcript,
