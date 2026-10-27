@@ -1,0 +1,64 @@
+{
+  "cases": [
+    {
+      "name": "lists speech models when none is named",
+      "prompt": "Turn this sentence into an mp3 for me: \"The garden opens at nine.\" Pick a speech model yourself.",
+      "tools": ["call_model", "bash", "read"],
+      "expect": {
+        "tool": "call_model",
+        "args": { "list": "speech" }
+      }
+    },
+    {
+      "name": "a speaking model is given the words, not instructions",
+      "prompt": "Use google/gemini-3.8-flash-tts with the voice Kore to say exactly this and save it as welcome.mp3: Welcome to the greenhouse.",
+      "tools": ["call_model", "bash", "read"],
+      "expect": {
+        "tool": "call_model",
+        "args": { "model": "google/gemini-3.8-flash-tts", "voice": "Kore", "output": "welcome.mp3" },
+        "args_match": { "prompt": "^\\s*Welcome to the greenhouse\\.?\\s*$" }
+      }
+    },
+    {
+      "name": "transcribes a recording with times when asked",
+      "prompt": "Transcribe interview.mp3 with mistralai/voxtral-mini-transcribe-3-0. I need to know when each part was said.",
+      "tools": ["call_model", "bash", "read"],
+      "files": { "interview.mp3": "ID3" },
+      "expect": {
+        "tool": "call_model",
+        "args": { "model": "mistralai/voxtral-mini-transcribe-3-0", "files": ["interview.mp3"], "timestamps": true }
+      }
+    },
+    {
+      "name": "attaches an image for a model that sees",
+      "prompt": "Ask google/gemini-3.8-flash what chart.png shows.",
+      "tools": ["call_model", "bash", "read"],
+      "files": { "chart.png": "PNG" },
+      "expect": {
+        "tool": "call_model",
+        "args": { "model": "google/gemini-3.8-flash", "files": ["chart.png"] }
+      }
+    },
+    {
+      "name": "asks a reasoning model for effort on a hard call",
+      "prompt": "Get a second opinion from google/gemini-4-argon, thinking hard about it: should a single-user app with a 2 GB SQLite database move to Postgres? Tell me what it says.",
+      "tools": ["call_model", "bash", "read"],
+      "expect": {
+        "tool": "call_model",
+        "args": { "model": "google/gemini-4-argon", "reasoning": "high" },
+        "clean": true
+      }
+    },
+    {
+      "name": "puts a yes/no question to a deciding model",
+      "prompt": "Use the decision model liquid/d1.1 to decide, as a yes/no question, whether this support ticket describes a bug: \"The export button does nothing when I click it.\"",
+      "tools": ["call_model", "bash", "read"],
+      "expect": {
+        "tool": "call_model",
+        "args": { "model": "liquid/d1.1" },
+        "args_match": { "prompt": "export button", "questions": "noul" },
+        "clean": true
+      }
+    }
+  ]
+}

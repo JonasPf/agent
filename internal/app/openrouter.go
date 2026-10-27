@@ -58,8 +58,12 @@ type OpenRouter struct {
 	mu      sync.Mutex
 	models  []ModelInfo
 	fetched time.Time
-	keyInfo *KeyInfo
-	keyAt   time.Time
+	// catalog is every model the gateway lists, of every kind, for
+	// call_model; models above is the ones a conversation can run on.
+	catalog   []CatalogModel
+	catalogAt time.Time
+	keyInfo   *KeyInfo
+	keyAt     time.Time
 	// keyAsked is when a background fetch of the key was last started, so a
 	// gateway that is down is asked once a minute rather than on every status.
 	keyAsked time.Time
@@ -157,12 +161,18 @@ func (o *OpenRouter) waitBeforeRetry(ctx context.Context, attempt int, last erro
 }
 
 func (o *OpenRouter) do(ctx context.Context, method, path string, body any) (*http.Response, error) {
+	return o.doURL(ctx, method, o.base+path, body)
+}
+
+// doURL is do for an address outside the versioned API: the decision endpoint
+// is the gateway's alpha, beside it rather than under it.
+func (o *OpenRouter) doURL(ctx context.Context, method, url string, body any) (*http.Response, error) {
 	var r io.Reader
 	if body != nil {
 		b, _ := json.Marshal(body)
 		r = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, o.base+path, r)
+	req, err := http.NewRequestWithContext(ctx, method, url, r)
 	if err != nil {
 		return nil, err
 	}
@@ -350,6 +360,12 @@ type ChatRequest struct {
 	Usage    struct {
 		Include bool `json:"include"`
 	} `json:"usage"`
+	// Reasoning asks a model that reasons for an effort: low, medium, or high.
+	Reasoning *ReasoningOpt `json:"reasoning,omitempty"`
+}
+
+type ReasoningOpt struct {
+	Effort string `json:"effort"`
 }
 
 type ChatResult struct {

@@ -15,8 +15,9 @@ import (
 // which can create a conversation holding a credential and then send it the
 // message that spends it; a tool that could reach that could hand itself
 // anything the operator had ever set. The tool API offers what the shipped
-// tools call — the calling conversation's jobs, the skills it has, and
-// search — and the sandbox keeps a tool off the operator's port.
+// tools call — the calling conversation's jobs, the skills it has, search,
+// and a call to another model made on its behalf — and the sandbox keeps a
+// tool off the operator's port.
 //
 // Every request names the call it belongs to with a token issued for that call
 // and revoked when it ends. The call, not the request, says which conversation
@@ -94,6 +95,7 @@ func (a *App) toolRoutes() http.Handler {
 	mux.HandleFunc("GET /skills/{name}/files/{path...}", a.tSkillFile)
 	mux.HandleFunc("GET /search", a.hSearch)
 	mux.HandleFunc("GET /entry", a.tEntry)
+	mux.HandleFunc("POST /model", a.tModel)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		g, ok := a.calls.lookup(token)
