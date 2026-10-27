@@ -190,6 +190,57 @@ func TestTheListingAnswersForThePathsAskedAbout(t *testing.T) {
 	}
 }
 
+// "A fork starts from a copy of its origin's directory": whatever a tool
+// installed there works in the fork too. Copied file by file as plain data, a
+// program lost its executable bit and a link was left out, so a binary or a pip
+// script installed in one conversation was gone from its fork. A link
+// into the origin's own directory now points into the fork's, so the fork still
+// runs once the origin is deleted.
+func TestAForkRunsWhatItsOriginInstalled(t *testing.T) {
+	a := newTestApp(t)
+	dir := t.TempDir()
+	writeTool(t, dir, "installer", "#!/bin/sh\n"+
+		"mkdir -p bin\n"+
+		"printf '#!/bin/sh\\necho installed\\n' > bin/hello\n"+
+		"chmod 755 bin/hello\n"+
+		"ln -s hello bin/relative\n"+
+		"ln -s \"$PWD/bin/hello\" bin/absolute\n"+
+		"printf '{\"ok\":true,\"content\":\"done\"}'\n")
+	writeTool(t, dir, "runner", "#!/bin/sh\n"+
+		"printf '{\"ok\":true,\"content\":\"%s / %s / %s\"}' "+
+		"\"$(./bin/hello 2>&1)\" \"$(./bin/relative 2>&1)\" \"$(./bin/absolute 2>&1)\"\n")
+	a.tools.dir = dir
+	if _, f := a.tools.Load(a); len(f) > 0 {
+		t.Fatalf("load failures: %v", f)
+	}
+	origin := newSession(t, a)
+	if res := callTool(t, a, origin.ID, "installer"); res.Content != "done" {
+		t.Fatalf("installer said %q", res.Content)
+	}
+	const want = "installed / installed / installed"
+	if res := callTool(t, a, origin.ID, "runner"); res.Content != want {
+		t.Fatalf("the origin runs %q, want %q", res.Content, want)
+	}
+
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, httptest.NewRequest("POST", "/sessions/"+origin.ID+"/fork", strings.NewReader(`{}`)))
+	if w.Code != 201 {
+		t.Fatalf("fork status = %d: %s", w.Code, w.Body.String())
+	}
+	var fork Session
+	if err := json.Unmarshal(w.Body.Bytes(), &fork); err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	a.routes().ServeHTTP(w, httptest.NewRequest("DELETE", "/sessions/"+origin.ID, nil))
+	if w.Code != 204 {
+		t.Fatalf("delete status = %d: %s", w.Code, w.Body.String())
+	}
+	if res := callTool(t, a, fork.ID, "runner"); res.Content != want {
+		t.Errorf("the fork runs %q, want %q", res.Content, want)
+	}
+}
+
 // Uploads are deleted with the session that holds them.
 func TestDeletingASessionRemovesItsWorkingDirectory(t *testing.T) {
 	a := newTestApp(t)
