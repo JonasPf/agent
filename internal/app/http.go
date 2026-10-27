@@ -1122,7 +1122,16 @@ func (a *App) hSessionFiles(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such session")
 		return
 	}
-	files, err := a.sessionFiles(id)
+	var files []SessionFile
+	var err error
+	if asked := r.URL.Query()["path"]; len(asked) > maxFilesAsked {
+		fail(w, 400, "at most %d paths at a time", maxFilesAsked)
+		return
+	} else if len(asked) > 0 {
+		files, err = a.sessionFilesNamed(id, asked)
+	} else {
+		files, err = a.sessionFiles(id)
+	}
 	if err != nil {
 		fail(w, 500, "%v", err)
 		return

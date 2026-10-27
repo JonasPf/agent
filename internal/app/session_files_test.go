@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,6 +147,46 @@ func TestForkCopiesTheWorkingDirectory(t *testing.T) {
 	}
 	if res := callTool(t, a, pred.ID, "catter"); res.Content != "carried across" {
 		t.Errorf("predecessor read %q; a copy is not a share", res.Content)
+	}
+}
+
+// A page linking the files a conversation mentions asks the listing about
+// just those paths, rather than reading a tree that can run to thousands of
+// files. It hears back the ones that are files there, and nothing for a guess
+// that names nothing, a directory, or a link out of the session's directory.
+func TestTheListingAnswersForThePathsAskedAbout(t *testing.T) {
+	a := newTestApp(t)
+	s := newSession(t, a)
+	if w := upload(t, a, s.ID, "notes.txt", "hello"); w.Code != 201 {
+		t.Fatalf("upload status = %d: %s", w.Code, w.Body.String())
+	}
+	ws := a.sessionWorkspace(s.ID)
+	if err := os.MkdirAll(filepath.Join(ws, "out", "frames"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws, "out", "clip.mp4"), []byte("video"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/hostname", filepath.Join(ws, "away.txt")); err != nil {
+		t.Fatal(err)
+	}
+
+	q := url.Values{"path": {"out/clip.mp4", "notes.txt", "out/frames", "missing.wav", "away.txt", "../x.txt", "notes.txt"}}
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, httptest.NewRequest("GET", "/sessions/"+s.ID+"/files?"+q.Encode(), nil))
+	if w.Code != 200 {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	var files []SessionFile
+	if err := json.Unmarshal(w.Body.Bytes(), &files); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range files {
+		got = append(got, fmt.Sprintf("%s:%d", f.Path, f.Bytes))
+	}
+	if want := "out/clip.mp4:5 notes.txt:5"; strings.Join(got, " ") != want {
+		t.Errorf("answered %v, want %s", got, want)
 	}
 }
 

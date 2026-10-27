@@ -208,6 +208,25 @@ function splitSessionIds(text) {
   return parts;
 }
 
+// mentionPath reads a name a conversation used as a path in its working
+// directory: a relative one as written, an absolute one through the
+// directory's own name, which is the session id. A word with no extension, a
+// path somewhere else, and one that climbs out are not this conversation's
+// files, and read as null.
+function mentionPath(name, sessionId) {
+  let p = String(name || '');
+  if (p.startsWith('/')) {
+    const at = sessionId ? p.indexOf('/' + sessionId + '/') : -1;
+    if (at < 0) return null;
+    p = p.slice(at + sessionId.length + 2);
+  }
+  p = p.replace(/^(\.\/)+/, '');
+  const parts = p.split('/');
+  if (parts.some(s => !s || s === '.' || s === '..')) return null;
+  if (parts.length === 1 && !/\.[A-Za-z][A-Za-z0-9]{0,9}$/.test(p)) return null;
+  return p;
+}
+
 // ---- waiting ----
 
 // waitingLabel is how long the agent has been working, as it ticks: seconds
@@ -396,7 +415,7 @@ function snippetParts(snippet) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { toolResult, resultBody, resultPreview, callBody, callPreview,
     eventLabel, eventDetail, eventTime, isFailure,
-    speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds,
+    speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds, mentionPath,
     waitingLabel, conversationText, transcriptRows, snippetParts, takenBack, liveEntries,
     cacheState, cacheLabel, nextCall, cacheHit, callLine };
 }

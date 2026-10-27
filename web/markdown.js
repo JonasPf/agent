@@ -23,6 +23,39 @@ function safeHref(url) {
   return /^(https?:\/\/|mailto:|\/|#)/i.test(String(url || '').trim());
 }
 
+// ---- files ----
+
+// MENTION is a run of the characters a path is written with. Whatever else a
+// sentence puts around a path ends it: a quote, a bracket, a comma, a colon
+// and a line number, markdown's stars.
+const MENTION = /[^\s"'`<>()[\]{}|,;:!?*&\\\u0000]+/g;
+
+// splitMentions splits text into the files it names and the text between
+// them. file says where a name opens, or null for a name that is not a file;
+// a full stop ending the sentence is not part of the name.
+function splitMentions(text, file) {
+  const src = String(text == null ? '' : text);
+  const parts = [];
+  const add = t => { if (t) parts.push({ text: t }); };
+  let at = 0;
+  for (const m of src.matchAll(MENTION)) {
+    const name = m[0].replace(/\.+$/, '');
+    const href = name && file(name);
+    if (!href) continue;
+    add(src.slice(at, m.index));
+    parts.push({ text: name, href });
+    at = m.index + name.length;
+  }
+  add(src.slice(at));
+  return parts;
+}
+
+// fileLink is the anchor for a file, around markup already made safe. The
+// address is the page's own, never the model's.
+function fileLink(href, html) {
+  return '<a class="file" href="' + escapeHTML(href) + '" target="_blank" rel="noopener noreferrer">' + html + '</a>';
+}
+
 // ---- inline ----
 
 const MARK = '\u0000';
@@ -34,12 +67,20 @@ const HELD = /\u0000(\d+)\u0000/;
 // each one in the source is shown as the replacement character first: left
 // in, one shaped like a placeholder was read as one, and inside a code span
 // named the span itself and never stopped being restored.
-function inline(src) {
+//
+// Given opts.file, a file the line names — a whole code span, or a path in the
+// text — is a link to it.
+function inline(src, opts) {
   const held = [];
   const hold = html => MARK + (held.push(html) - 1) + MARK;
+  const file = (opts || {}).file;
 
   let s = String(src == null ? '' : src).replace(/\u0000/g, '\uFFFD')
-    .replace(/`([^`]+)`/g, (m, c) => hold('<code>' + escapeHTML(c) + '</code>'));
+    .replace(/`([^`]+)`/g, (m, c) => {
+      const code = '<code>' + escapeHTML(c) + '</code>';
+      const href = file && file(c.trim());
+      return hold(href ? fileLink(href, code) : code);
+    });
   s = escapeHTML(s);
 
   const link = (text, href) => {
@@ -52,6 +93,8 @@ function inline(src) {
   s = s.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (m, text, href) => link(text, href));
   s = s.replace(/(^|[\s(])(https?:\/\/[^\s<]*[^\s<.,:;!?)\]])/g,
     (m, pre, url) => pre + link(url, url));
+  // After the links, so a path inside an address stays part of the address.
+  if (file) s = splitMentions(s, file).map(p => p.href ? hold(fileLink(p.href, p.text)) : p.text).join('');
 
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/__([^_]+)__/g, '<strong>$1</strong>')
@@ -67,8 +110,8 @@ function inline(src) {
 
 // inlineLines renders text whose newlines are line breaks — a wrapped paragraph
 // or list item. A break the writer typed is a break they meant.
-function inlineLines(text) {
-  return text.split('\n').map(inline).join('<br>');
+function inlineLines(text, opts) {
+  return text.split('\n').map(line => inline(line, opts)).join('<br>');
 }
 
 // ---- blocks ----
@@ -91,9 +134,11 @@ function cells(line) {
   return line.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim());
 }
 
-function renderMarkdown(src) {
+// renderMarkdown renders a turn. opts.file, when given, says where a file the
+// turn names opens, or null for a name that is not one.
+function renderMarkdown(src, opts) {
   const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
-  return blocks(lines).map(b => b.html).join('');
+  return blocks(lines, opts).map(b => b.html).join('');
 }
 
 // markdownSettled is how much of an answer still arriving can be rendered once
@@ -113,7 +158,7 @@ function markdownSettled(src) {
 }
 
 // blocks reads lines into the blocks they make, each with the line it starts on.
-function blocks(lines) {
+function blocks(lines, opts) {
   const out = [];
   let i = 0;
   const push = (line, html) => out.push({ line, html });
@@ -141,7 +186,7 @@ function blocks(lines) {
     const head = HEADING.exec(line);
     if (head) {
       const n = head[1].length;
-      push(at, '<h' + n + '>' + inline(head[2].trim()) + '</h' + n + '>');
+      push(at, '<h' + n + '>' + inline(head[2].trim(), opts) + '</h' + n + '>');
       i++;
       continue;
     }
@@ -149,7 +194,7 @@ function blocks(lines) {
     if (QUOTE.test(line)) {
       const body = [];
       while (i < lines.length && QUOTE.test(lines[i])) body.push(QUOTE.exec(lines[i++])[1]);
-      push(at, '<blockquote>' + renderMarkdown(body.join('\n')) + '</blockquote>');
+      push(at, '<blockquote>' + renderMarkdown(body.join('\n'), opts) + '</blockquote>');
       continue;
     }
 
@@ -169,7 +214,7 @@ function blocks(lines) {
       }
       const tag = ordered ? 'ol' : 'ul';
       push(at, '<' + tag + '>'
-        + items.map(t => '<li>' + inlineLines(t) + '</li>').join('')
+        + items.map(t => '<li>' + inlineLines(t, opts) + '</li>').join('')
         + '</' + tag + '>');
       continue;
     }
@@ -181,21 +226,21 @@ function blocks(lines) {
       const rows = [];
       while (i < lines.length && lines[i].trim() && lines[i].includes('|')) rows.push(cells(lines[i++]));
       push(at, '<table><thead><tr>'
-        + header.map(c => '<th>' + inline(c) + '</th>').join('')
+        + header.map(c => '<th>' + inline(c, opts) + '</th>').join('')
         + '</tr></thead><tbody>'
-        + rows.map(r => '<tr>' + r.map(c => '<td>' + inline(c) + '</td>').join('') + '</tr>').join('')
+        + rows.map(r => '<tr>' + r.map(c => '<td>' + inline(c, opts) + '</td>').join('') + '</tr>').join('')
         + '</tbody></table>');
       continue;
     }
 
     const para = [];
     while (i < lines.length && lines[i].trim() && !starts(lines[i])) para.push(lines[i++]);
-    push(at, '<p>' + inlineLines(para.join('\n')) + '</p>');
+    push(at, '<p>' + inlineLines(para.join('\n'), opts) + '</p>');
   }
 
   return out;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { renderMarkdown, markdownSettled };
+  module.exports = { renderMarkdown, markdownSettled, splitMentions };
 }

@@ -386,14 +386,32 @@ paths:
     get:
       tags: [files]
       summary: Everything in the session's working directory, directories included.
+      description: >-
+        Given one or more path parameters, answers for those paths alone
+        instead of walking the tree: the ones that are files there, in the
+        order asked. A path that names nothing, a directory, or a place a link
+        leads out of the directory to is left out, not refused. This is how the
+        interface learns which files a conversation mentions.
+      parameters:
+        - name: path
+          in: query
+          required: false
+          description: A path relative to the working directory. Repeatable, at most 200.
+          schema:
+            type: array
+            maxItems: 200
+            items: {type: string}
+          style: form
+          explode: true
       responses:
         "200":
-          description: The tree, flattened.
+          description: The tree, flattened; or the files among the paths asked about.
           content:
             application/json:
               schema:
                 type: array
                 items: {$ref: "#/components/schemas/FileEntry"}
+        "400": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
     post:
       tags: [files]

@@ -40,6 +40,13 @@ function node(tag) {
       this.parent.children = this.parent.children.filter(c => c !== this);
       this.parent = null;
     },
+    replaceWith(x) {
+      if (!this.parent) return;
+      const kids = this.parent.children;
+      kids[kids.indexOf(this)] = x;
+      x.parent = this.parent;
+      this.parent = null;
+    },
     scrollHeight: 0, scrollTop: 0, clientHeight: 0
   };
   return n;
@@ -2914,4 +2921,72 @@ test('each answer names the provider that served its call', async () => {
   assert.strictEqual(answers.length, 2);
   assert.match(find(answers[0], 'cachehit').textContent, /90% cached.* · Decart$/, 'an answer does not name the provider that served it');
   assert.strictEqual(find(answers[1], 'cachehit').textContent, 'no cache hit', 'an answer with no recorded provider names one, or says it has none');
+});
+
+// ---------- files a conversation names ----------
+
+// filesThere answers the page's questions about which paths are files, from
+// the set given, and records what was asked.
+function filesThere(ctx, there) {
+  const asked = [];
+  const fetch = ctx.fetch;
+  ctx.fetch = async (p, opts) => {
+    const [base, query] = p.split('?');
+    if (base !== '/sessions/S1/files' || !query) return fetch(p, opts);
+    const paths = new URLSearchParams(query).getAll('path');
+    asked.push(...paths);
+    const found = paths.filter(x => there.has(x)).map(x => ({ path: x, bytes: 1 }));
+    return { ok: true, status: 200, text: async () => JSON.stringify(found) };
+  };
+  return asked;
+}
+
+// links returns the hrefs of the file links under a node, drawn as anchors or
+// as markup.
+function fileLinks(n) {
+  const out = findAll(n, 'file').map(a => a.href);
+  const walk = x => {
+    for (const m of String(x._html || '').matchAll(/<a class="file" href="([^"]+)"/g)) out.push(m[1]);
+    for (const c of x.children || []) walk(c);
+  };
+  walk(n);
+  return out.sort();
+}
+
+const tick = () => new Promise(r => setImmediate(r));
+
+// "A file the conversation names opens from where it is named": the agent says
+// where it put something, a tool says what it wrote, the operator attaches a
+// clip, and each name is a link to the file — once the page knows the file is
+// there, so no link points at nothing.
+test('a file the conversation names opens from where it is named', async () => {
+  const at = new Date().toISOString();
+  const ctx = conversationScreen(session({ id: 'S1' }), [
+    { seq: 0, type: 'message', role: 'user', text: 'Make a voiceover for this clip\n\nAttached: clip.mov', created_at: at },
+    { seq: 1, type: 'message', role: 'assistant', text: 'Here it is: `voiceover.mp4`. The draft.mp4 is gone.', created_at: at,
+      tool_calls: [{ id: 'c1', name: 'bash', arguments: '{"command":"ffmpeg -i clip.mov voiceover.mp4"}' }] },
+    { seq: 2, type: 'message', role: 'tool', tool_name: 'bash', tool_call_id: 'c1', created_at: at,
+      tool_result: { ok: true, content: 'wrote /app/workspace/S1/audio/clean.wav' } }
+  ]);
+  const asked = filesThere(ctx, new Set(['clip.mov', 'voiceover.mp4', 'audio/clean.wav']));
+  await ctx.viewSession(node('div'));
+  await tick();
+
+  assert.deepStrictEqual(fileLinks(ctx._id('transcript')), [
+    '/sessions/S1/files/audio/clean.wav', '/sessions/S1/files/clip.mov', '/sessions/S1/files/clip.mov',
+    '/sessions/S1/files/voiceover.mp4', '/sessions/S1/files/voiceover.mp4'
+  ], 'each file is a link wherever it is named: the attachment, the answer, the call, and the result');
+  assert.ok(asked.includes('draft.mp4'), 'a name was linked without asking whether it is a file: ' + asked);
+});
+
+// A file the agent writes while the conversation is open is a link from the
+// message that names it, as soon as that message arrives.
+test('a file named by a message that arrives is linked when it is there', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }), []);
+  filesThere(ctx, new Set(['out/final.mp4']));
+  await ctx.viewSession(node('div'));
+  ctx.handle({ kind: 'entry', session_id: 'S1', entry: {
+    seq: 0, type: 'message', role: 'assistant', text: 'Done: out/final.mp4', created_at: new Date().toISOString() } });
+  await tick();
+  assert.deepStrictEqual(fileLinks(ctx._id('transcript')), ['/sessions/S1/files/out/final.mp4']);
 });

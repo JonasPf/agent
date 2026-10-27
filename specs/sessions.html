@@ -798,6 +798,7 @@ delete landed is refused rather than written into the place the delete just empt
 <li>A fork starts from a copy of its origin's directory; writes after that are independent.</li>
 <li>A compaction leaves the working directory unchanged.</li>
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>
+<li>Asked about particular paths, the listing answers for those alone, without walking the directory: the ones that are files there. A path that names nothing, a directory, or a place a link leads out to is left out.</li>
 <li>A path that would leave the session's directory is refused, whether it climbs out or passes through a link that points out. A link that stays inside reads as the file it names; deleting a link removes the link and never what it names; an upload never writes through one.</li>
 <li>Deleting a session deletes its directory.</li>
 <li>Deleting a session that is working stops its turn first, a job's wake included. Nothing that turn would have written afterwards brings back the session, its transcript, its jobs, or its directory.</li>

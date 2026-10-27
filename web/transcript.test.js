@@ -375,3 +375,23 @@ test('the next call is not priced without a price, and a model with no cache pri
   assert.strictEqual(cacheLabel(cacheState({ tokens: 5000, expires_at: new Date(Date.now() + 3599000).toISOString(), kept_by: 'agent' }, Date.now())),
     'cache 5,000 tok · 59:59');
 });
+
+// ---- files a conversation names ----
+
+const { mentionPath } = require('./transcript.js');
+
+// A name is a file of this conversation's when it is a path in its working
+// directory: relative as written, or absolute through the directory's own name,
+// which is the session id.
+test('a name is read as a path in the working directory, or as none', () => {
+  const id = '1A17DB70D028CF59650DA';
+  assert.strictEqual(mentionPath('out.mp4', id), 'out.mp4');
+  assert.strictEqual(mentionPath('./audio/clean.wav', id), 'audio/clean.wav');
+  assert.strictEqual(mentionPath('/app/workspace/' + id + '/audio/clean.wav', id), 'audio/clean.wav');
+  assert.strictEqual(mentionPath('/app/workspace/2C41F09B7DA35E86104B7/out.mp4', id), null, 'another conversation\'s file');
+  assert.strictEqual(mentionPath('/etc/hostname', id), null);
+  assert.strictEqual(mentionPath('../out.mp4', id), null);
+  assert.strictEqual(mentionPath('frames/', id), null, 'a directory');
+  assert.strictEqual(mentionPath('words', id), null, 'a word with no extension');
+  assert.strictEqual(mentionPath('1.2.3', id), null, 'a version');
+});
