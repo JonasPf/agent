@@ -296,6 +296,13 @@ message as a chip that shows its progress, until the message is sent. An upload 
 the conversation, so the message names the files it carries, and that line is how the agent learns
 they are there.</p>
 
+<p>A file the conversation names opens from where it is named. The agent says where it put something,
+a tool call names a path, a result says what it wrote, a message names its attachments: each name is
+a link to the file, a relative path as written and an absolute one through the session's own
+directory. The page links a name only once it has asked the server whether it is a file there, so no
+link points at nothing. A file written while the conversation is open is linked from the messages that
+arrive after it, and from earlier ones the next time the conversation is opened.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -306,6 +313,8 @@ they are there.</p>
 <li>A tree of more than a hundred entries opens with its directories folded; a smaller one opens in full.</li>
 <li>A file attached from the composer shows as a chip with its upload progress, and stays until the message is sent or it is taken off.</li>
 <li>A message sent with attachments names each one, as a path in the working directory; a message may be only its attachments.</li>
+<li>A file the conversation names opens from where it is named: in the agent's text, a tool call or its result, and a message's attachments.</li>
+<li>A name is a link only when it is a file in the session's directory. One that names nothing, a directory, or another session's file stays text.</li>
 <li>A message is not sent while one of its files is still uploading or has failed to.</li>
 <li>The files screen states what the session occupies on disk, split between its files and its transcript.</li>
 <li>Images are passed to models that accept them; other files are made available to the agent's file tools.</li>

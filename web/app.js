@@ -15,6 +15,10 @@ const put = (p, b) => api(p, { method: 'PUT', headers: { 'content-type': 'applic
 const patch = (p, b) => api(p, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const del = p => api(p, { method: 'DELETE' });
 
+// sessionFileURL is where one of a session's files opens: the Files screen's
+// rows, and a file the conversation names.
+const sessionFileURL = (id, p) => '/sessions/' + id + '/files/' + p.split('/').map(encodeURIComponent).join('/');
+
 // The server refuses a file over this, so the interface refuses it first: on a
 // phone, sending it all only to be told so costs minutes of data.
 const MAX_UPLOAD = 250 << 20;
@@ -598,6 +602,9 @@ async function viewSession(v) {
   // What arrives over the socket while the transcript is on its way collects
   // here, to be kept: the transcript was read before it was written.
   state.entries = [];
+  // Which of the names the conversation uses are its files is asked afresh
+  // each time it is opened: files come and go between visits.
+  state.files = { id: state.arg, have: new Set(), asked: new Set() };
   // An answer that was arriving belongs to the conversation it was arriving
   // in, which finishes it where this page is no longer looking.
   state.streaming = '';
@@ -937,6 +944,8 @@ function renderTranscript() {
   if (!t) return;
   const atBottom = atEnd();
   t.innerHTML = '';
+  const pending = new Set();
+  const files = mentions(pending);
   const rows = transcriptRows(state.entries);
   const carried = rows.filter(r => r.part === 'carried');
   let group = null;
@@ -959,11 +968,75 @@ function renderTranscript() {
       into.append(el('div', 'unread-mark', 'unread'));
       marked = true;
     }
-    into.append(part === 'summary' ? compactionEntry(e, { carried: carried.length }) : renderEntry(e, { revert: true }));
+    into.append(part === 'summary'
+      ? compactionEntry(e, { carried: carried.length, files })
+      : renderEntry(e, { revert: true, files }));
   }
   addTail(t);
   if (atBottom) scrollDown();
   renderStatus();
+  // Asked once per name while the conversation is open: drawn again, it asks
+  // only about names it has not asked about, so the redraw ends there.
+  const asked = state.files ? state.files.asked : new Set();
+  return linkLater([...pending].filter(p => !asked.has(p)), renderTranscript);
+}
+
+// ---- files the conversation names ----
+
+// A file the conversation names is a link to it once the page knows the file
+// is there, so no link points at nothing. Drawing links what is already known
+// and collects the rest; the page then asks the server about those, in one
+// request per hundred, and draws again if any of them are files.
+
+// mentions says where a name the conversation on screen uses opens, or null.
+// A name it does not know yet goes into pending, to be asked about.
+function mentions(pending) {
+  const f = state.files;
+  if (!f || !state.session || f.id !== state.session.id) return null;
+  return name => {
+    const p = mentionPath(name, f.id);
+    if (!p) return null;
+    if (f.have.has(p)) return sessionFileURL(f.id, p);
+    if (pending) pending.add(p);
+    return null;
+  };
+}
+
+// MENTIONS_ASKED is the most names one drawing asks about. A tool's output can
+// name hundreds of things shaped like files; past this, they stay text.
+const MENTIONS_ASKED = 500;
+
+// linkLater asks which of paths are files, and redraws when any are.
+async function linkLater(paths, redraw) {
+  const f = state.files;
+  if (!f || !paths.length) return;
+  let found = false;
+  const ask = paths.slice(0, MENTIONS_ASKED);
+  for (let i = 0; i < ask.length; i += 100) {
+    const batch = ask.slice(i, i + 100);
+    for (const p of batch) f.asked.add(p);
+    let got;
+    try { got = await api('/sessions/' + f.id + '/files?' + batch.map(p => 'path=' + encodeURIComponent(p)).join('&')); }
+    catch (e) { break; }
+    for (const x of got || []) if (!x.dir && !f.have.has(x.path)) { f.have.add(x.path); found = true; }
+  }
+  // Read for a conversation since left, the answer is not this one's.
+  if (found && state.files === f) redraw();
+}
+
+// linkedText puts text into a node exactly as it is, with each file it names
+// that is known to be there a link to it. Built from parts, so nothing but text
+// and anchors is inserted.
+function linkedText(n, text, file) {
+  const parts = file ? splitMentions(text, file) : [];
+  if (!parts.some(p => p.href)) { n.textContent = text; return n; }
+  for (const p of parts) {
+    if (!p.href) { n.append(document.createTextNode(p.text)); continue; }
+    const a = el('a', 'file', p.text);
+    a.href = p.href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    n.append(a);
+  }
+  return n;
 }
 
 // appendEntry adds one entry that arrived to the conversation on screen. A
@@ -978,10 +1051,15 @@ function appendEntry(e) {
   if (state.readFrom != null && e.seq > state.readFrom && !t.querySelector('.unread-mark')) {
     t.append(el('div', 'unread-mark', 'unread'));
   }
-  t.append(renderEntry(e, { revert: true }));
+  const pending = new Set();
+  const n = renderEntry(e, { revert: true, files: mentions(pending) });
+  t.append(n);
   addTail(t);
   if (atBottom) scrollDown();
   renderStatus();
+  // Asked again even about a name asked before: an entry that arrives is often
+  // the one saying the file it names has just been written.
+  return linkLater([...pending], () => n.replaceWith(renderEntry(e, { revert: true, files: mentions() })));
 }
 
 // The tail of the conversation is what stands after its last entry: the answer
@@ -1072,10 +1150,10 @@ function paintStream(s, text) {
   if (text.length < s.upTo) { s.settled.innerHTML = ''; s.upTo = 0; }
   const cut = s.upTo + markdownSettled(text.slice(s.upTo));
   if (cut > s.upTo) {
-    s.settled.insertAdjacentHTML('beforeend', renderMarkdown(text.slice(s.upTo, cut)));
+    s.settled.insertAdjacentHTML('beforeend', renderMarkdown(text.slice(s.upTo, cut), { file: mentions() }));
     s.upTo = cut;
   }
-  s.tail.innerHTML = renderMarkdown(text.slice(s.upTo));
+  s.tail.innerHTML = renderMarkdown(text.slice(s.upTo), { file: mentions() });
 }
 
 // The agent writes markdown, so the agent's turn is rendered as markdown — the
@@ -1083,10 +1161,10 @@ function paintStream(s, text) {
 // escapes it before it does. What the operator typed stays exactly as typed:
 // rendering it would rewrite their own words back at them, and a job's wake is
 // the stored prompt, not prose.
-function bubble(e) {
+function bubble(e, file) {
   const b = el('div', 'bub');
-  if (e.role === 'assistant') { b.className = 'bub md'; b.innerHTML = renderMarkdown(e.text); }
-  else b.textContent = e.text;
+  if (e.role === 'assistant') { b.className = 'bub md'; b.innerHTML = renderMarkdown(e.text, { file }); }
+  else linkedText(b, e.text, file);
   return b;
 }
 
@@ -1127,7 +1205,7 @@ function compactionEntry(e, opts) {
     ? 'Everything before this is folded into the summary below. The agent reads it in place of those messages, then the turns underneath, carried over word for word.'
     : 'Everything before this is folded into the summary below. The agent reads it in place of those messages.'));
 
-  const body = el('div', 'bub md'); body.innerHTML = renderMarkdown(e.text || '');
+  const body = el('div', 'bub md'); body.innerHTML = renderMarkdown(e.text || '', { file: o.files });
   n.append(body);
 
   const bar = el('div', 'row');
@@ -1155,7 +1233,7 @@ function compactionEntry(e, opts) {
 // that draws entries — the history, a comparison's columns — offers one.
 function renderEntry(e, opts) {
   const o = opts || {};
-  if (e.type === 'compaction') return compactionEntry(e);
+  if (e.type === 'compaction') return compactionEntry(e, { files: o.files });
   if (e.type === 'prompt') return promptEntry(e);
   if (e.type === 'event') {
     // Laid out as a log line — clock, kind, detail — so it cannot be read as
@@ -1178,7 +1256,7 @@ function renderEntry(e, opts) {
     head.style.cursor = 'pointer';
     const hint = resultPreview(body);
     const peek = hint ? el('span', 'peek', '  ·  ' + hint) : null;
-    const pre = el('pre', null, body);
+    const pre = linkedText(el('pre'), body, o.files);
     // A failure is open by default: an error the operator has to go looking for
     // is an error they will not see.
     const show = open => { pre.hidden = !open; if (peek) peek.hidden = open; };
@@ -1222,7 +1300,7 @@ function renderEntry(e, opts) {
     who.append(back);
   }
   w.append(who);
-  if (e.text) w.append(bubble(e));
+  if (e.text) w.append(bubble(e, o.files));
   for (const c of (e.tool_calls || [])) {
     // A call previews what it asked for exactly as its result previews what came
     // back: half an exchange is not readable on its own.
@@ -1231,7 +1309,7 @@ function renderEntry(e, opts) {
     head.style.cursor = 'pointer';
     const hint = callPreview(c.arguments);
     const peek = hint ? el('span', 'peek', '  ·  ' + hint) : null;
-    const pre = el('pre', null, callBody(c.arguments));
+    const pre = linkedText(el('pre'), callBody(c.arguments), o.files);
     const show = open => { pre.hidden = !open; if (peek) peek.hidden = open; };
     show(false);
     head.onclick = () => show(pre.hidden);
@@ -1850,7 +1928,7 @@ async function viewFiles(v) {
   const fold = state.fileFolds[id] || (state.fileFolds[id] = { folded: entries.length > OPEN_TREE_MAX, flipped: new Set() });
   const isFolded = p => fold.folded !== fold.flipped.has(p);
   const tree = el('div', 'tree');
-  const fileURL = p => '/sessions/' + id + '/files/' + p.split('/').map(encodeURIComponent).join('/');
+  const fileURL = p => sessionFileURL(id, p);
   const draw = () => {
     tree.innerHTML = '';
     const walk = (dir, depth) => {

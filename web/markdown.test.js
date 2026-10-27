@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { renderMarkdown, markdownSettled } = require('./markdown.js');
+const { renderMarkdown, markdownSettled, splitMentions } = require('./markdown.js');
 
 // The agent writes markdown whether or not anything renders it. What must never
 // happen is the other direction: model output becoming markup of its own.
@@ -185,4 +185,41 @@ test('a NUL in model output is shown, and never read as a marker', () => {
   assert.match(code, /<code>�0�<\/code>/);
   assert.match(text, /ok �5� here/);
   assert.match(mixed, /<a href="https:\/\/example.com"/);
+});
+
+// ---- files a conversation names ----
+
+// file stands in for the page, which knows two files and where each opens.
+const files = { 'out.mp4': '/f/out.mp4', 'audio/clean.wav': '/f/audio/clean.wav' };
+const file = name => files[name] || null;
+
+test('a file named in a code span is a link to it', () => {
+  const h = renderMarkdown('Saved to `out.mp4`.', { file });
+  assert.match(h, /<a class="file" href="\/f\/out\.mp4" target="_blank" rel="noopener noreferrer"><code>out\.mp4<\/code><\/a>\.<\/p>/);
+});
+
+test('a file named in running text is a link to it, and the full stop after it is not', () => {
+  const h = renderMarkdown('The audio is in audio/clean.wav.', { file });
+  assert.match(h, /in <a class="file" href="\/f\/audio\/clean\.wav"[^>]*>audio\/clean\.wav<\/a>\.<\/p>/);
+});
+
+test('a file named in emphasis is linked and stays emphasised', () => {
+  const h = renderMarkdown('**out.mp4** is ready', { file });
+  assert.match(h, /<strong><a class="file" href="\/f\/out\.mp4"[^>]*>out\.mp4<\/a><\/strong>/);
+});
+
+test('a name that is not a file there stays text', () => {
+  const h = renderMarkdown('See `draft.mp4`, notes.txt and https://example.com/out.mp4', { file });
+  assert.doesNotMatch(h, /class="file"/);
+});
+
+test('without a way to find files, nothing is linked as one', () => {
+  assert.doesNotMatch(renderMarkdown('`out.mp4` and out.mp4'), /<a/);
+});
+
+test('plain text splits into the files it names and the text between them', () => {
+  assert.deepStrictEqual(splitMentions('wrote out.mp4, then "audio/clean.wav".', file), [
+    { text: 'wrote ' }, { text: 'out.mp4', href: '/f/out.mp4' }, { text: ', then "' },
+    { text: 'audio/clean.wav', href: '/f/audio/clean.wav' }, { text: '".' }]);
+  assert.deepStrictEqual(splitMentions('nothing here', file), [{ text: 'nothing here' }]);
 });

@@ -91,6 +91,37 @@ func (a *App) sessionFiles(id string) ([]SessionFile, error) {
 	return out, nil
 }
 
+// maxFilesAsked is the most paths one request may ask about.
+const maxFilesAsked = 200
+
+// sessionFilesNamed answers for particular paths instead of the whole tree:
+// those that are files in the session's directory, in the order asked. One
+// that names nothing, a directory, or a place a link leads out to is left out
+// rather than refused, because what is asked is a guess at what a conversation
+// meant by a word.
+func (a *App) sessionFilesNamed(id string, paths []string) ([]SessionFile, error) {
+	root, err := a.workspaceRoot(id)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	out := []SessionFile{}
+	seen := map[string]bool{}
+	for _, p := range paths {
+		rel, err := workspacePath(id, p)
+		if err != nil || seen[rel] {
+			continue
+		}
+		seen[rel] = true
+		info, err := root.Stat(rel)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		out = append(out, SessionFile{Path: rel, Bytes: info.Size(), ModifiedAt: info.ModTime()})
+	}
+	return out, nil
+}
+
 // dirBytes is what a directory occupies, counting regular files only. A missing
 // directory is zero rather than an error.
 func dirBytes(dir string) int64 {

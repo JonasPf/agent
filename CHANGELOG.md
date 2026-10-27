@@ -11,6 +11,11 @@
 - **A failed title no longer stops the agent.** If the call that names a new
   conversation failed, the agent crashed. Now the conversation is named after
   the first line of your message and everything carries on.
+- **A file the conversation names opens from there.** When the agent says
+  where it put something, or a tool says what it wrote, the file's name is
+  a link: tap it to open or download the file, with no trip to Files. Your
+  attachments are links too. Only names of files that are really there
+  become links.
 
 ## 2026-10-26
 
