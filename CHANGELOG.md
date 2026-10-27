@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-27
+
+- **A conversation's name is a name.** The title a new conversation is given
+  is now asked for as a name for your first message, not as an answer to it.
+  A message like "make a voiceover for this clip" could come back titled with
+  the model's reply — "I can't help with this request as stated" — and now
+  can't: anything longer than six words is set aside for the first line of
+  your message.
+- **A failed title no longer stops the agent.** If the call that names a new
+  conversation failed, the agent crashed. Now the conversation is named after
+  the first line of your message and everything carries on.
+
 ## 2026-10-26
 
 - **A conversation keeps its own variables.** Under "variables", when you
