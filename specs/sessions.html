@@ -29,7 +29,7 @@ private one of its own, so a session is always something a person started and ca
 <table>
 <tr><th>Field</th><th>Meaning</th></tr>
 <tr><td><code>id</code></td><td>ULID. Sortable by creation time, short enough to paste. It addresses the same conversation for as long as the conversation exists.</td></tr>
-<tr><td><code>title</code></td><td>Given when the conversation is started or forked, or else generated from the first user message, and editable from the session's details at any time. A title given by hand is kept: nothing regenerates over it.</td></tr>
+<tr><td><code>title</code></td><td>Given when the conversation is started or forked, or else generated from the first user message, and editable from the session's details at any time. The model is handed the message to name, not to answer; when it fails, or replies with more than the six words a title may run to, the message's own first line is the title. A title given by hand is kept: nothing regenerates over it.</td></tr>
 <tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life. A conversation that names none starts on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</td></tr>
 <tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
 <tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
@@ -44,6 +44,7 @@ private one of its own, so a session is always something a person started and ca
 <ul>
 <li>Every session appears in the session list; none are hidden by kind or origin.</li>
 <li>A session receives a title within one turn of its first user message.</li>
+<li>A title names the conversation and is never the model's answer to it: a reply of more than six words, or a title call that fails, leaves the first line of the message as the title, and the agent keeps running.</li>
 <li>A title given by hand is not overwritten by the one the model would generate.</li>
 <li>A session's model, tools, skills, and persona cannot be changed once the session exists.</li>
 <li>A tool or check receives a conversation's variables only in that conversation, and a conversation with none reaches no value another holds.</li>
