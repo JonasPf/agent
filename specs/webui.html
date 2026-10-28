@@ -37,9 +37,10 @@ because the rail is the way back.</p>
 the rest. Personas are chosen when a conversation starts and written rarely, so they are behind More.</p>
 
 <p>Every screen has an address of its own, and reaching a screen changes it. A skill or persona being
-read or written is a screen, so the browser's back button leaves it for the list it was opened from.
-Saving or deleting leaves the same way: back to that list when it is behind the editor, and otherwise
-the list in the editor's place, so the history never holds a list twice.</p>
+read is a screen, and being written is another, so the browser's back button leaves the editor for the
+document and the document for the list. Saving an edit leaves for the document the same way; saving a
+new one, or deleting one, leaves for the list: back to it when it is behind the editor, and otherwise
+it in the editor's place, so the history never holds a screen twice.</p>
 
 <p>A screen is drawn from requests that answer in their own time, so two screens opened one after the
 other can answer in the wrong order. The screen on the address bar is the one on the pane: a draw that
@@ -67,7 +68,7 @@ middle.</p>
 <li>The rail links Jobs, Tools, Skills, and More; personas are reached from More.</li>
 <li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
 <li>An address naming a conversation that no longer exists opens a screen saying so, under a header of its own that offers nothing acting on another conversation; a screen whose answers are refused for any other reason says that instead of staying blank.</li>
-<li>Saving or deleting a skill or persona returns to the list it was opened from without adding the list to the history a second time.</li>
+<li>Saving an edit to a skill or persona returns to it, and saving a new one or deleting one returns to the list, in each case without adding the screen returned to to the history a second time.</li>
 <li>A screen still loading when another is opened paints nothing: the pane shows the conversation the address names, with one composer under it.</li>
 <li>Whatever screen was left before its answers came back &mdash; a new conversation, a fork, a conversation's details, the More panel, a skill or persona &mdash; adds no section, button, or header action to the screen that replaced it.</li>
 <li>A view's actions are one list, whether laid along the header or folded behind one button.</li>
@@ -456,13 +457,25 @@ uses to run it. It is drawn in <a href="mock-tools.html">the Tools mock</a>.</p>
 
 <p>Skills and personas are the same kind of thing on disk &mdash; a Markdown file with frontmatter that
 the operator writes &mdash; so they are listed, written, and deleted through one screen, and only the
-wording differs.</p>
+wording differs. A skill may also be a folder of files (<a href="adrs.html#adr-069">ADR-069</a>).</p>
+
+<p>Opening one is reading it. Its front matter is a block of its own at the top, in the accent, with
+the description set large: it is the one line every prompt carries, and the agent decides from it
+alone whether to read the rest. Below it each file is a tab, the main one first. Markdown is rendered
+as a document, a CSV is shown as its table, and any file can be shown as its source instead, the main
+file's front matter marked in it. Writing is a screen of its own, reached from the document: the same
+block holds the name, the description, and for a skill whether it is on by default, and each file is
+a tab to write or preview, with files added, renamed, and removed there. It is drawn in
+<a href="mock-skills.html">the Skills mock</a>.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every job, tool, skill, and persona is viewable without the agent.</li>
-<li>A skill or persona the operator wrote is created, edited, and deleted in the interface, with its name, its one-line description, and its body.</li>
+<li>A skill or persona the operator wrote is created, edited, and deleted in the interface, with its name, its one-line description, and its body, and a skill with its other files.</li>
+<li>A skill or persona opens to be read, its front matter in a block of its own above its files and its description rendered.</li>
+<li>Each of a skill's files is a tab. Markdown is rendered, a CSV is shown as its table, and any file can be shown as its source, with a main file's front matter marked in it.</li>
+<li>The skills list says how many files a skill has, when it has more than one.</li>
 <li>One that ships in the image is shown read-only, and says so rather than offering an edit that would fail.</li>
 <li>A save that is refused says why and leaves what is on disk unchanged.</li>
 <li>A new skill or persona under a name already taken is refused, and the one of that name is kept: a document is changed by opening it, never by writing a new one over it.</li>

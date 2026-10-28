@@ -223,3 +223,12 @@ test('plain text splits into the files it names and the text between them', () =
     { text: 'audio/clean.wav', href: '/f/audio/clean.wav' }, { text: '".' }]);
   assert.deepStrictEqual(splitMentions('nothing here', file), [{ text: 'nothing here' }]);
 });
+
+// A document is hard-wrapped to a width as it is written, as a skill is; read
+// as one, its newlines are spaces, and emphasis may span the wrap.
+test('a document reads its wrapped lines as one paragraph', () => {
+  const h = renderMarkdown('The conversation is the **wrong\nplace** for it.\n\n- one item\n  wrapped', { soft: true });
+  assert.match(h, /<p>The conversation is the <strong>wrong place<\/strong> for it\.<\/p>/);
+  assert.match(h, /<li>one item wrapped<\/li>/);
+  assert.match(renderMarkdown('a\nb'), /a<br>b/, 'a chat turn lost the breaks its writer typed');
+});

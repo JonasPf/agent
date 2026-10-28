@@ -32,7 +32,12 @@ type EvalCase struct {
 	// tool that operates on files cannot be evaluated without them: a prompt
 	// that says "the file already exists" against an empty directory tests the
 	// model's willingness to hallucinate, not the tool's description.
-	Files  map[string]string `json:"files,omitempty"`
+	Files map[string]string `json:"files,omitempty"`
+	// Skills are written into the operator's skill root for the case's turn,
+	// by path — "trip/SKILL.md", "trip/packing.md" — for the same reason: a
+	// case about a skill that is not there tests whether the model will
+	// invent one.
+	Skills map[string]string `json:"skills,omitempty"`
 	Expect Expect            `json:"expect"`
 }
 
@@ -239,6 +244,15 @@ func (a *App) RunEvalCase(ctx context.Context, model string, c EvalCase) (res Ev
 	start := time.Now()
 	defer func() { res.Took = time.Since(start) }()
 
+	if len(c.Skills) > 0 {
+		done, err := a.seedSkills(c.Skills)
+		if err != nil {
+			res.Err = err
+			return res
+		}
+		defer done()
+	}
+
 	cfg := SessionConfig{Model: model, EnabledTools: c.Tools}
 	s, err := a.NewSession(cfg, "")
 	if err != nil {
@@ -259,6 +273,23 @@ func (a *App) RunEvalCase(ctx context.Context, model string, c EvalCase) (res Ev
 	res.Record = readTurn(a.store.Entries(s.ID))
 	res.Failures = c.Expect.Check(res.Record)
 	return res
+}
+
+// seedSkills writes a case's skills into the operator's skill root and loads
+// them, and the func it returns takes them away again. An eval's root is its
+// own, so nothing the operator wrote is there to be taken away with them.
+func (a *App) seedSkills(skills map[string]string) (func(), error) {
+	root := a.skills.UserDir()
+	done := func() {
+		_ = os.RemoveAll(root)
+		a.skills.Load()
+	}
+	if err := seedFiles(root, skills); err != nil {
+		done()
+		return nil, err
+	}
+	a.skills.Load()
+	return done, nil
 }
 
 // seedFiles writes a case's fixtures into its working directory. A path that
@@ -385,6 +416,9 @@ func RunEvals(model string, only []string, w io.Writer) error {
 
 	cfg.DataDir = dir
 	cfg.Workspace = filepath.Join(dir, "workspace")
+	// The skills are the ones that ship, and whatever a case brings: not the
+	// operator's, which would make a case pass on one machine and not another.
+	cfg.UserSkillsDir = filepath.Join(dir, "skills")
 	if err := os.MkdirAll(cfg.Workspace, 0o755); err != nil {
 		return err
 	}

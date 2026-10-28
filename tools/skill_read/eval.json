@@ -15,8 +15,51 @@
       }
     },
     {
+      "name": "reads the file a skill points to",
+      "prompt": "I'm going to Lisbon for a week in November. Make me a packing list.",
+      "tools": [
+        "skill_read",
+        "bash",
+        "clock",
+        "read",
+        "write",
+        "edit"
+      ],
+      "skills": {
+        "trip-planning/SKILL.md": "---\nname: trip-planning\ndescription: Use when the operator plans a trip or asks what to pack — build the itinerary, and keep the packing list in the working directory.\n---\n\nA trip is three things kept apart: the itinerary, the packing list, and the bookings.\n\n## The packing list\n\nNever write a packing list from scratch. Read `packing.md` first: it is the list every trip starts from, and what to add for the weather. Then write the trip's own list to `lists/packing-<place>.md`.\n",
+        "trip-planning/packing.md": "# Packing\n\nStart from these, every trip:\n\n- passport\n- phone charger\n- medication, in days plus two\n\nThen look up the forecast for the dates and add layers or drop them.\n"
+      },
+      "expect": {
+        "tool": "skill_read",
+        "args": {
+          "name": "trip-planning",
+          "file": "packing.md"
+        },
+        "clean": true
+      }
+    },
+    {
       "name": "reads keeping-records before logging a measurement",
       "prompt": "My blood pressure this morning was 128 over 82. Keep track of it for me.",
+      "tools": [
+        "skill_read",
+        "bash",
+        "clock",
+        "read",
+        "write",
+        "edit"
+      ],
+      "expect": {
+        "tool": "skill_read",
+        "args": {
+          "name": "keeping-records"
+        },
+        "clean": true
+      }
+    },
+    {
+      "name": "reads keeping-records before remembering a list",
+      "prompt": "Remember these for me: I want to read Piranesi, The Dispossessed, and Stoner at some point.",
       "tools": [
         "skill_read",
         "bash",

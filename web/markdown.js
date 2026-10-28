@@ -109,8 +109,11 @@ function inline(src, opts) {
 }
 
 // inlineLines renders text whose newlines are line breaks — a wrapped paragraph
-// or list item. A break the writer typed is a break they meant.
+// or list item. A break the writer typed is a break they meant. A document,
+// given opts.soft, is wrapped to a width as it is written, so there a newline
+// is a space.
 function inlineLines(text, opts) {
+  if ((opts || {}).soft) return inline(text.replace(/\n/g, ' '), opts);
   return text.split('\n').map(line => inline(line, opts)).join('<br>');
 }
 
@@ -135,7 +138,8 @@ function cells(line) {
 }
 
 // renderMarkdown renders a turn. opts.file, when given, says where a file the
-// turn names opens, or null for a name that is not one.
+// turn names opens, or null for a name that is not one; opts.soft reads it as
+// a document, whose newlines are spaces.
 function renderMarkdown(src, opts) {
   const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
   return blocks(lines, opts).map(b => b.html).join('');

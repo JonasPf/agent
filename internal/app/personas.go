@@ -25,6 +25,8 @@ type Persona struct {
 	// Editable is whether the operator wrote this one. The built-in is not.
 	Editable bool   `json:"editable"`
 	Body     string `json:"-"`
+	// Source is the file as written; the built-in has no file, only its text.
+	Source string `json:"-"`
 }
 
 // defaultPersona is the name of the one built in. A session that chose no
@@ -54,7 +56,7 @@ func (p *Personas) Load() {
 	defer p.mu.Unlock()
 	p.personas = map[string]*Persona{
 		defaultPersona: {Name: defaultPersona, Description: defaultPersonaDescription,
-			Body: persona, Bytes: len(persona)},
+			Body: persona, Bytes: len(persona), Source: persona},
 	}
 	docs, failures := loadAuthoredDir(p.dir, true)
 	p.failures = failures
@@ -67,7 +69,7 @@ func (p *Personas) Load() {
 			continue
 		}
 		p.personas[d.Name] = &Persona{Name: d.Name, Description: d.Description,
-			Body: d.Body, Bytes: d.Bytes, Editable: true}
+			Body: d.Body, Bytes: d.Bytes, Source: d.Source, Editable: true}
 	}
 }
 

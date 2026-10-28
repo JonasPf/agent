@@ -914,6 +914,85 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
 .changelog h1 { font-size: 15px; }
 .changelog h2 { font-size: 13.5px; }
 
+/* ---------- a skill or a persona ----------
+   Read at a reading width however wide the list behind it was. The front matter
+   is set apart in the accent, because its description is the one line every
+   prompt carries; below it each file is a tab, rendered or as written. */
+
+.authored { max-width: 880px; margin: 0 auto; }
+.fm {
+  background: var(--soft); border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: var(--r); padding: 13px 16px 14px;
+}
+.fm .lbl {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 11px; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--accent); font-weight: 650;
+}
+.fm .lbl .tags { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
+.fm .lbl .tags .tag { margin: 0 0 0 4px; background: var(--card); }
+.fm .lbl .tags .tag.on { background: var(--soft); }
+.fm .desc { margin: 10px 0 0; padding-left: 12px; border-left: 3px solid var(--accent); font-size: 16px; line-height: 1.5; }
+.fm .desc p { margin: 0; }
+.fm .why { margin: 7px 0 0 15px; font-size: 12px; color: var(--muted); }
+.fm .fields {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; padding-top: 10px; font-size: 12.5px;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 30%, var(--line)); color: var(--muted);
+}
+.fm .fields b { font: 500 12.5px var(--mono); color: var(--fg); margin-left: 4px; }
+.fm label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 0; }
+.fm input.text { margin-bottom: 0; }
+.fm input.text:disabled { background: transparent; border-style: dashed; color: var(--muted); font-family: var(--mono); }
+.fm textarea.desc-in {
+  display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line-2); border-left: 3px solid var(--accent);
+  background: var(--card); border-radius: var(--r-sm); padding: 8px 10px; font-size: 15px; line-height: 1.5;
+  resize: none; field-sizing: content; min-height: 2.6em;
+}
+.fm textarea.desc-in:focus { border-color: var(--accent); outline: none; }
+.fm .count { font-size: 11.5px; color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; gap: 10px; }
+.fm .pill { margin-top: 4px; }
+
+.filebar { display: flex; align-items: flex-end; gap: 10px; margin-top: 22px; border-bottom: 1px solid var(--line); }
+.filebar .tabs { display: flex; gap: 2px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+.filebar .tabs::-webkit-scrollbar { display: none; }
+.filebar .tab {
+  flex: none; cursor: pointer; background: none; border: 1px solid transparent; border-bottom: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0; padding: 6px 12px 7px; font: 500 12.5px var(--mono);
+  color: var(--muted); display: inline-flex; align-items: center; gap: 6px; margin-bottom: -1px;
+}
+.filebar .tab:hover { color: var(--fg); }
+.filebar .tab.on { background: var(--card); border-color: var(--line); color: var(--fg); }
+.filebar .tab .main { font: 600 9.5px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.filebar .tab.add { color: var(--accent); font-family: var(--sans); }
+.filebar .seg { flex: none; display: inline-flex; background: var(--sunk); border: 1px solid var(--line); border-radius: 99px; padding: 2px; margin-bottom: 6px; }
+.filebar .seg button { border: 0; background: none; border-radius: 99px; padding: 2px 11px; font-size: 12.5px; color: var(--fg-2); cursor: pointer; }
+.filebar .seg button.on { background: var(--card); color: var(--fg); font-weight: 600; box-shadow: 0 1px 2px rgba(30, 24, 16, .12); }
+.authored .file { background: var(--card); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 var(--r) var(--r); padding: 16px 18px 18px; }
+.authored .file .md { font-size: 14.5px; }
+.fileinfo { font-size: 12px; color: var(--muted); margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.fileinfo .grow { flex: 1; }
+pre.src { margin: 0; font: 12.5px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
+pre.src .fmline { color: var(--accent); }
+pre.src .fence { color: var(--muted); }
+.authored .file textarea.text { margin: 0; min-height: 340px; font: 12.5px/1.6 var(--mono); resize: vertical; }
+.pathrow { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.pathrow input {
+  flex: 1; min-width: 0; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--card);
+  padding: 6px 10px; font: 13px var(--mono);
+}
+.btn.small { padding: 2px 10px; font-size: 12.5px; }
+.authored .finish { display: flex; justify-content: flex-end; gap: 8px; border-top: 0; padding-top: 0; margin-top: 18px; }
+
+@media (max-width: 560px) {
+  .fm { padding: 12px 13px 13px; }
+  .fm .lbl .tags { margin-left: 0; width: 100%; }
+  .fm .lbl .tags .tag { margin: 0 4px 0 0; }
+  .authored .file { padding: 13px 13px 15px; }
+  /* The tabs get the whole width; the toggle sits above them, on the right. */
+  .filebar { flex-wrap: wrap; gap: 0; }
+  .filebar .seg { order: -1; margin-left: auto; }
+  .filebar .tabs { flex-basis: 100%; }
+}
+
 /* ---------- toast ---------- */
 
 .toast {

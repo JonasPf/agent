@@ -2,9 +2,27 @@ package app
 
 import (
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
+	"unicode/utf8"
 )
+
+// skillMain is the file that makes a folder a skill. A skill that needs more
+// than one file is a folder holding it and the files beside it; one that needs
+// a single file can still be just <name>.md.
+const skillMain = "SKILL.md"
+
+// SkillFile is one file beside SKILL.md, by its path inside the skill's folder.
+// The agent reads one with skill_read; nothing in the index names it.
+type SkillFile struct {
+	Path  string `json:"path"`
+	Body  string `json:"body"`
+	Bytes int    `json:"bytes"`
+}
 
 type Skill struct {
 	Name        string `json:"name"`
@@ -21,7 +39,13 @@ type Skill struct {
 	Editable bool   `json:"editable"`
 	Body     string `json:"-"`
 	Path     string `json:"-"`
+	// Source is the main file as written, and Files the others beside it.
+	Source string      `json:"-"`
+	Files  []SkillFile `json:"-"`
 }
+
+// Main is the name of the file the skill's front matter and body are in.
+func (sk *Skill) Main() string { return filepath.Base(sk.Path) }
 
 type Skills struct {
 	// shipped ships in the image and is read-only. user is beside the data and
@@ -50,12 +74,19 @@ func (s *Skills) Load() {
 	s.skills = map[string]*Skill{}
 	s.failures = nil
 
-	shipped, failures := loadAuthoredDir(s.shipped, false)
-	s.failures = append(s.failures, failures...)
-	user, failures := loadAuthoredDir(s.user, true)
-	s.failures = append(s.failures, failures...)
+	var docs []*authored
+	for _, root := range []struct {
+		dir      string
+		editable bool
+	}{{s.shipped, false}, {s.user, true}} {
+		files, failures := loadAuthoredDir(root.dir, root.editable)
+		s.failures = append(s.failures, failures...)
+		folders, failures := loadSkillFolders(root.dir, root.editable)
+		s.failures = append(s.failures, failures...)
+		docs = append(docs, append(files, folders...)...)
+	}
 
-	for _, d := range append(shipped, user...) {
+	for _, d := range docs {
 		sk, err := skillFrom(d)
 		if err != nil {
 			s.failures = append(s.failures, LoadFailure{Dir: d.Path, Reason: err.Error()})
@@ -77,7 +108,8 @@ func (s *Skills) Load() {
 // skillFrom reads the one field a skill has beyond a name and a description.
 func skillFrom(d *authored) (*Skill, error) {
 	sk := &Skill{Name: d.Name, Description: d.Description, Body: d.Body,
-		Bytes: d.Bytes, Path: d.Path, Editable: d.Editable, DefaultEnabled: true}
+		Bytes: d.Bytes, Path: d.Path, Editable: d.Editable, DefaultEnabled: true,
+		Source: d.Source, Files: d.Files}
 	// Anything but on or off is refused rather than read as one of them: a typo
 	// here would otherwise put a skill meant to be off into every conversation,
 	// and nothing on screen would say why.
@@ -90,6 +122,116 @@ func skillFrom(d *authored) (*Skill, error) {
 		return nil, fmt.Errorf("malformed frontmatter: default must be on or off, not %q", v)
 	}
 	return sk, nil
+}
+
+// loadSkillFolders reads every skill in root that is a folder. A folder with no
+// SKILL.md, or with a file that is not text, is a failure on screen rather than
+// a skill that is quietly missing, or one whose file skill_read cannot return.
+func loadSkillFolders(root string, editable bool) ([]*authored, []LoadFailure) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, nil
+	}
+	var docs []*authored
+	var failures []LoadFailure
+	for _, e := range entries {
+		// A hidden folder is not a skill: it is where a save is put together
+		// before it replaces the one it changes.
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		where := e.Name() + "/" + skillMain
+		d, err := readAuthored(filepath.Join(root, e.Name(), skillMain), editable)
+		if err != nil {
+			if os.IsNotExist(err) {
+				err = fmt.Errorf("a skill that is a folder needs a %s", skillMain)
+			}
+			failures = append(failures, LoadFailure{Dir: where, Reason: err.Error()})
+			continue
+		}
+		if d.Files, err = readSkillFiles(filepath.Join(root, e.Name())); err != nil {
+			failures = append(failures, LoadFailure{Dir: where, Reason: err.Error()})
+			continue
+		}
+		for _, f := range d.Files {
+			d.Bytes += f.Bytes
+		}
+		docs = append(docs, d)
+	}
+	return docs, failures
+}
+
+// readSkillFiles reads the files beside SKILL.md, sorted by path. Hidden files
+// are left out — a Finder's .DS_Store is not part of anything the operator
+// wrote.
+func readSkillFiles(dir string) ([]SkillFile, error) {
+	var files []SkillFile
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path != dir && strings.HasPrefix(d.Name(), ".") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		rel = filepath.ToSlash(rel)
+		if rel == skillMain {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !utf8.Valid(b) {
+			return fmt.Errorf("%s is not text, and skill_read returns a skill's files as text", rel)
+		}
+		files = append(files, SkillFile{Path: rel, Body: string(b), Bytes: len(b)})
+		return nil
+	})
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, err
+}
+
+// checkSkillFiles refuses a set of files that could not be written as given. A
+// path is joined to the skill's folder, so one that could climb out of it, or
+// take SKILL.md's place, would write somewhere the operator did not ask.
+func checkSkillFiles(files []SkillFile) error {
+	seen := map[string]bool{}
+	for _, f := range files {
+		if f.Path == "" {
+			return fmt.Errorf("a file needs a path")
+		}
+		if len(f.Path) > 200 {
+			return fmt.Errorf("a file's path is at most 200 characters")
+		}
+		for _, part := range strings.Split(f.Path, "/") {
+			if part == "" || part == "." || part == ".." || strings.HasPrefix(part, ".") {
+				return fmt.Errorf("%q is not a path inside the skill: each part is a name, and none starts with a dot", f.Path)
+			}
+			for _, r := range part {
+				if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '-' || r == '_' || r == '.') {
+					return fmt.Errorf("a file's path holds letters, digits, dots, hyphens, underscores, and slashes; %q does not", f.Path)
+				}
+			}
+		}
+		if strings.EqualFold(f.Path, skillMain) {
+			return fmt.Errorf("%s is the skill's main file; its text is the body", skillMain)
+		}
+		if seen[f.Path] {
+			return fmt.Errorf("there are two files at %s", f.Path)
+		}
+		seen[f.Path] = true
+		if strings.TrimSpace(f.Body) == "" {
+			return fmt.Errorf("%s is empty", f.Path)
+		}
+	}
+	return nil
 }
 
 // parseSkill reads one skill from the text of its file.
@@ -135,19 +277,83 @@ func (s *Skills) Failures() []LoadFailure {
 //
 // A saved skill is not in the prompt of any session already running. It reaches
 // the sessions started after it, the way a written memory does.
-func (s *Skills) Save(name, description, body string, defaultEnabled bool) error {
+//
+// A skill with files is written as a folder, and one without as a single file;
+// whichever form it had before is removed, so a skill is only ever on disk once.
+func (s *Skills) Save(name, description, body string, defaultEnabled bool, files []SkillFile) error {
 	if existing := s.Get(name); existing != nil && !existing.Editable {
 		return fmt.Errorf("%q ships with the agent and cannot be edited here", name)
+	}
+	if err := checkAuthored(name, description, body); err != nil {
+		return err
+	}
+	if err := checkSkillFiles(files); err != nil {
+		return err
 	}
 	on := "on"
 	if !defaultEnabled {
 		on = "off"
 	}
-	if err := saveAuthored(s.user, name, description, map[string]string{"default": on}, body); err != nil {
-		return err
+	fields := map[string]string{"default": on}
+	single, folder := filepath.Join(s.user, name+".md"), filepath.Join(s.user, name)
+	if len(files) == 0 {
+		if err := saveAuthored(s.user, name, description, fields, body); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(folder); err != nil {
+			return err
+		}
+	} else {
+		if err := replaceSkillFolder(s.user, name, renderAuthored(name, description, fields, body), files); err != nil {
+			return err
+		}
+		if err := os.Remove(single); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 	}
 	s.Load()
 	return nil
+}
+
+// replaceSkillFolder puts a skill's folder together beside the one it replaces,
+// then swaps it in, so a save that fails part way leaves the old one whole.
+func replaceSkillFolder(root, name string, main []byte, files []SkillFile) error {
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(root, "."+name+".")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	write := func(rel string, b []byte) error {
+		p := filepath.Join(tmp, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		return os.WriteFile(p, b, 0o644)
+	}
+	if err := write(skillMain, main); err != nil {
+		return err
+	}
+	for _, f := range files {
+		if err := write(f.Path, []byte(f.Body)); err != nil {
+			return fmt.Errorf("%s: %w", f.Path, err)
+		}
+	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return err
+	}
+	folder := filepath.Join(root, name)
+	old := tmp + ".old"
+	if err := os.Rename(folder, old); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(tmp, folder); err != nil {
+		os.Rename(old, folder)
+		return err
+	}
+	return os.RemoveAll(old)
 }
 
 // Delete removes one of the operator's skills and reloads.
@@ -159,7 +365,14 @@ func (s *Skills) Delete(name string) error {
 	if !existing.Editable {
 		return fmt.Errorf("%q ships with the agent and cannot be deleted here", name)
 	}
-	if err := deleteAuthored(s.user, name); err != nil {
+	// By where it was loaded from: a folder goes whole.
+	var err error
+	if existing.Main() == skillMain {
+		err = os.RemoveAll(filepath.Dir(existing.Path))
+	} else {
+		err = os.Remove(existing.Path)
+	}
+	if err != nil {
 		return err
 	}
 	s.Load()

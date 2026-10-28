@@ -2169,6 +2169,41 @@ conversation needs reaches one tool; a conversation's own variable of the same n
 that conversation.</p>
 </div>
 
+<div class="adr" id="adr-069">
+<div class="meta">ADR-069 · accepted</div>
+<h3>A skill can be a folder of files</h3>
+<h4>Context</h4>
+<p>A skill was one Markdown file. A skill that needs a reference beside its procedure &mdash; a
+checklist, a table of values, a longer worked example &mdash; had to inline it, which makes the one
+file the agent reads before the work longer than the work needs, or leave it out. The common format
+for agent skills is a folder holding <code>SKILL.md</code> and the files it refers to, read in steps:
+the procedure first, a reference when the procedure says it is needed. And the Skills screen showed a
+skill as a raw text box, its description no different from its body.</p>
+<h4>Decision</h4>
+<p>A skill is either <code>&lt;name&gt;.md</code> or a folder holding <code>SKILL.md</code> and any
+files beside it, in folders of their own if it likes. <code>SKILL.md</code>'s front matter is the
+skill's, exactly as a single file's is: the index carries one line for the folder, and nothing about
+its other files. <code>skill_read</code> returns <code>SKILL.md</code>'s body followed by the paths of
+the other files, and takes an optional <code>file</code> to return one of them as stored. Files are
+read as text; a file that is not text makes the skill fail to load, with the file named, rather than
+load a skill whose file <code>skill_read</code> could not return.</p>
+<p>The interface writes a skill with files as a folder and one without as a single file, removing the
+other form, so a skill is on disk once. A folder is assembled beside the one it replaces and swapped
+in, so a save that fails part way leaves the old one whole. A file's path is joined to the folder, so
+one that could leave it, start with a dot, or take <code>SKILL.md</code>'s place is refused. A save
+that does not mention the files keeps them, so a client that does not know a skill can have files
+does not delete them by saving.</p>
+<p>The Skills screen opens a skill to be read (<a href="mock-skills.html">the Skills mock</a>): its
+front matter in a block of its own, the description set large because it is the one line every
+prompt carries, and each file a tab, rendered or as written. Writing it is a screen of its own with
+an address.</p>
+<h4>Consequences</h4>
+<p>Reading a reference costs a second call, which is the point: a skill's procedure is read before
+every piece of work it covers, and its references only when they are needed. Personas stay one
+file each; a persona is the whole opening of the prompt, and has nothing to read later. Shipped
+skills are unchanged: each is still one file, and a folder is there for the operator's.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

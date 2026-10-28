@@ -91,6 +91,7 @@ func (a *App) toolRoutes() http.Handler {
 	mux.HandleFunc("PATCH /jobs/{id}", a.ownJob(a.hPatchJob))
 	mux.HandleFunc("DELETE /jobs/{id}", a.ownJob(a.hDeleteJob))
 	mux.HandleFunc("GET /skills/{name}", a.tSkill)
+	mux.HandleFunc("GET /skills/{name}/files/{path...}", a.tSkillFile)
 	mux.HandleFunc("GET /search", a.hSearch)
 	mux.HandleFunc("GET /entry", a.tEntry)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -149,15 +150,50 @@ func (a *App) ownJob(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// tSkill reads a skill the calling conversation has, and no other.
+// tSkill reads a skill the calling conversation has, and no other: its body,
+// and the paths of the files beside it, which are read one at a time.
 func (a *App) tSkill(w http.ResponseWriter, r *http.Request) {
+	sk := a.callerSkill(w, r)
+	if sk == nil {
+		return
+	}
+	files := make([]map[string]any, 0, len(sk.Files))
+	for _, f := range sk.Files {
+		files = append(files, map[string]any{"path": f.Path, "bytes": f.Bytes})
+	}
+	writeJSON(w, 200, map[string]any{"name": sk.Name, "description": sk.Description, "body": sk.Body, "files": files})
+}
+
+// tSkillFile reads one file of a skill the calling conversation has.
+func (a *App) tSkillFile(w http.ResponseWriter, r *http.Request) {
+	sk := a.callerSkill(w, r)
+	if sk == nil {
+		return
+	}
+	want := r.PathValue("path")
+	var have []string
+	for _, f := range sk.Files {
+		if f.Path == want {
+			writeJSON(w, 200, map[string]any{"path": f.Path, "body": f.Body})
+			return
+		}
+		have = append(have, f.Path)
+	}
+	if len(have) == 0 {
+		fail(w, 404, "the skill %s has no file %q; it is one file, and skill_read without a file reads it", sk.Name, want)
+		return
+	}
+	fail(w, 404, "the skill %s has no file %q; its files are %s", sk.Name, want, strings.Join(have, ", "))
+}
+
+func (a *App) callerSkill(w http.ResponseWriter, r *http.Request) *Skill {
 	sess := a.store.Session(caller(r).SessionID)
 	sk := a.skills.Get(r.PathValue("name"))
 	if sess == nil || sk == nil || !sess.skillEnabled(sk) {
 		fail(w, 404, "no such skill in this conversation")
-		return
+		return nil
 	}
-	writeJSON(w, 200, map[string]any{"name": sk.Name, "description": sk.Description, "body": sk.Body})
+	return sk
 }
 
 // tEntry reads one entry whole. A search hit is a dozen words around the match,

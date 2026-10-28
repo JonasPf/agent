@@ -44,3 +44,28 @@ func TestNoFilesIsNotAnError(t *testing.T) {
 		t.Errorf("a case with no fixtures failed: %v", err)
 	}
 }
+
+// A case about a skill that is not there tests the model's willingness to
+// invent one. A case can bring the skills it is about, as the operator's own,
+// for its turn only.
+func TestEvalSkillsAreLoadedForTheCaseAndGoneAfter(t *testing.T) {
+	a := newTestApp(t)
+	done, err := a.seedSkills(map[string]string{
+		"trip/SKILL.md":   "---\nname: trip\ndescription: Use when a trip is planned.\n---\nRead packing.md.\n",
+		"trip/packing.md": "- chargers\n",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sk := a.skills.Get("trip")
+	if sk == nil || len(sk.Files) != 1 || sk.Files[0].Path != "packing.md" {
+		t.Fatalf("the case's skill did not load with its file: %+v", sk)
+	}
+	done()
+	if a.skills.Get("trip") != nil {
+		t.Error("the case's skill outlived the case")
+	}
+	if _, err := a.seedSkills(map[string]string{"../escaped.md": "no"}); err == nil {
+		t.Error("a case wrote a skill outside the skills root")
+	}
+}

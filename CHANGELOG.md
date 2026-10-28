@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-28
+
+- **A skill reads like a document.** Opening a skill on the Skills screen
+  shows it rendered, with its description set apart at the top: that one
+  line is what every conversation sees, and how the agent decides to open
+  the rest. Switch to Source to see the file as written. Editing is its own
+  screen, with a preview, and Save brings you back to the skill.
+- **A skill can have more than one file.** Add a file to one of your skills
+  — a checklist, a table, a longer example — and the skill becomes a folder
+  with SKILL.md and the files beside it. Each file is a tab, and a CSV shows
+  as a table. The agent reads SKILL.md first and opens the other files
+  when SKILL.md says to.
+- **Remembering is keeping records.** Asking the agent to remember, note,
+  or keep a list of something now sends it to the same skill as tracking a
+  measurement: a list goes in `lists/`, a fact or preference in `notes/`,
+  and a series in `log/`, all in the conversation's own folder. Before it
+  writes anything with a date it now checks the clock and lets the shell
+  write the date, because a long conversation was putting tomorrow's date
+  on evening entries.
+
 ## 2026-10-27
 
 - **A conversation's name is a name.** The title a new conversation is given
