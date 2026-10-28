@@ -39,6 +39,10 @@
 - **A skill's scripts run.** A skill installed with scripts can have them
   run by any conversation that has the skill; no conversation can change
   them. Reading a skill now shows it as stored, front matter included.
+- **A skill's name is lowercase words joined by hyphens,** like
+  `voice-over`, the same form other agents' skills use. A name written any
+  other way (`Voice_Over`) is refused when you save or install it, and says
+  how to write it.
 
 ## 2026-10-27
 

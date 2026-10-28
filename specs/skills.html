@@ -26,6 +26,12 @@ about when and how to use one.</p>
 
 <h2>Form</h2>
 
+<p>A skill's name is lowercase words joined by hyphens &mdash; <code>keeping-records</code>,
+<code>voice-over</code> &mdash; the form the common Agent Skills format gives one, so a skill written
+here loads wherever skills are read, and two names never differ only by case or by a hyphen against an
+underscore. A tool's name is the other form, words joined by underscores, because it is the name of a
+function the model calls.</p>
+
 <pre><code>skills/scheduling.md
 
 ---
@@ -73,6 +79,7 @@ rather than twenty documents' worth.</p>
 <ul>
 <li>The system prompt lists the name and description of every skill enabled for the session, and no skill's body.</li>
 <li>A skill's description is a single line.</li>
+<li>A skill's name is lowercase words of letters and digits joined by single hyphens, starting with a letter, as the Agent Skills format names one; any other is refused on save and on install, and a skill on disk with one is skipped, saying so.</li>
 <li>The index opens by saying to read a skill with <code>skill_read</code> before the work it covers, and again after compaction; an empty index says only that there are none.</li>
 <li>Every shipped skill's description begins with when to use it.</li>
 <li>Reading a skill is a tool call visible in the transcript.</li>
