@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -107,6 +108,9 @@ func (s *Skills) Load() {
 
 // skillFrom reads the one field a skill has beyond a name and a description.
 func skillFrom(d *authored) (*Skill, error) {
+	if err := validSkillName(d.Name); err != nil {
+		return nil, err
+	}
 	sk := &Skill{Name: d.Name, Description: d.Description, Body: d.Body,
 		Bytes: d.Bytes, Path: d.Path, Editable: d.Editable, DefaultEnabled: true,
 		Source: d.Source, Files: d.Files}
@@ -280,7 +284,23 @@ func (s *Skills) Failures() []LoadFailure {
 //
 // A skill with files is written as a folder, and one without as a single file;
 // whichever form it had before is removed, so a skill is only ever on disk once.
+// validSkillName holds a skill to the name the Agent Skills format gives one:
+// lowercase words of letters and digits joined by single hyphens, starting
+// with a letter. A skill written here then loads wherever skills are read, and
+// its name never differs from another only by case or by - against _.
+func validSkillName(name string) error {
+	if !skillName.MatchString(name) || len(name) > 64 {
+		return fmt.Errorf("a skill's name is lowercase words joined by hyphens, such as voice-over; %q is not", name)
+	}
+	return nil
+}
+
+var skillName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
 func (s *Skills) Save(name, description, body string, defaultEnabled bool, files []SkillFile) error {
+	if err := validSkillName(name); err != nil {
+		return err
+	}
 	if existing := s.Get(name); existing != nil && !existing.Editable {
 		return fmt.Errorf("%q ships with the agent and cannot be edited here", name)
 	}

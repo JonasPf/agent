@@ -99,6 +99,9 @@ func (a *App) draftedSkill(sessionID, dir string) (*Skill, []SkillFile, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s/%s: %v (it opens with front matter: ---, name:, description:, ---)", rel, skillMain, err)
 	}
+	if err := validSkillName(sk.Name); err != nil {
+		return nil, nil, fmt.Errorf("%s/%s: %v", rel, skillMain, err)
+	}
 	if err := checkAuthored(sk.Name, sk.Description, sk.Body); err != nil {
 		return nil, nil, fmt.Errorf("%s/%s: %v", rel, skillMain, err)
 	}
