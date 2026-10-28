@@ -12,6 +12,12 @@ import (
 // tens; a turn that reaches a hundred is one that will not stop by itself.
 const maxRounds = 100
 
+// maxRepeats is how many rounds running a turn may make the same calls and be
+// refused the same way before it stops. A provider that dropped a tool call's
+// arguments had the model send one broken call 96 times, until the round
+// limit: the fourth identical refusal tells nothing the third did not.
+const maxRepeats = 3
+
 type turnOpts struct {
 	UserText string
 	JobID    string
@@ -62,6 +68,8 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 	}
 
 	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID}
+	var lastRefusal string
+	repeats := 0
 
 	// A turn runs until the model stops calling tools, or for maxRounds rounds.
 	// It was bounded at twelve, which a task of any size passes in a minute or
@@ -114,16 +122,36 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 		}
 		msgs = append(msgs, m)
 
+		results := make([]toolResult, 0, len(res.ToolCalls))
 		for _, c := range res.ToolCalls {
 			result := a.tools.Call(ctx, tc, c.Name, json.RawMessage(c.Arguments))
+			results = append(results, result)
 			body, _ := json.Marshal(result)
 			emit(Entry{Type: "message", Role: "tool", ToolCallID: c.ID, ToolName: c.Name,
 				ToolResult: body, Stderr: result.stderr, JobID: opts.JobID})
 			msgs = append(msgs, ChatMessage{Role: "tool", ToolCallID: c.ID, Name: c.Name,
 				Content: string(body)})
 		}
-		// The results are stored before the stop, so the transcript ends on what
-		// the tools returned and the next message carries on from there.
+		// The results are stored before either stop, so the transcript ends on
+		// what the tools returned and the next message carries on from there.
+		refusal := roundRefusal(res.ToolCalls, results)
+		switch {
+		case refusal == "":
+			repeats = 0
+		case refusal == lastRefusal:
+			repeats++
+		default:
+			repeats = 1
+		}
+		lastRefusal = refusal
+		if repeats == maxRepeats {
+			first := res.ToolCalls[0]
+			a.appendEvent(s.ID, Entry{EventKind: "repeat_limit", Text: fmt.Sprintf(
+				"stopped after the same call failed the same way %d rounds running — %s: %s; "+
+					"send \"continue\" to carry on, or say what to change",
+				maxRepeats, first.Name, results[0].Error)})
+			break
+		}
 		if round == maxRounds {
 			a.appendEvent(s.ID, Entry{EventKind: "round_limit", Text: fmt.Sprintf(
 				"stopped after %d rounds of tool calls without an answer; send \"continue\" to carry on",
@@ -135,6 +163,29 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 	a.maybeCompact(ctx, s)
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return nil
+}
+
+// roundRefusal is what a round asked for and was refused, when every call in
+// it failed: each call's name, its arguments with the keys in order, and its
+// error. A round in which anything succeeded refuses nothing, and is "". Two
+// rounds with the same refusal asked for the same thing and were told the same
+// no.
+func roundRefusal(calls []ToolCall, results []toolResult) string {
+	var b strings.Builder
+	for i, c := range calls {
+		if results[i].OK {
+			return ""
+		}
+		args := c.Arguments
+		var v any
+		if json.Unmarshal([]byte(c.Arguments), &v) == nil {
+			if canon, err := json.Marshal(v); err == nil {
+				args = string(canon)
+			}
+		}
+		fmt.Fprintf(&b, "%s\x00%s\x00%s\x00", c.Name, args, results[i].Error)
+	}
+	return b.String()
 }
 
 // systemChatMessage renders the prompt in force. It carries no cache marker:

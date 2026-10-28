@@ -43,6 +43,11 @@
   `voice-over`, the same form other agents' skills use. A name written any
   other way (`Voice_Over`) is refused when you save or install it, and says
   how to write it.
+- **A turn going in circles stops.** If the agent makes the same failing
+  call three times in a row, it stops and says which call and what error,
+  instead of trying again until the 100-round limit. Send "continue" to
+  carry on. A provider that garbled tool calls had one conversation repeat
+  a broken call 96 times; it would now have stopped after three.
 
 ## 2026-10-27
 
