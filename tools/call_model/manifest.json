@@ -1,0 +1,67 @@
+{
+  "name": "call_model",
+  "description": "Make one call to another model and get back what it produced. The model you name decides what the call is. A model that writes text is sent prompt as a request, with files attached (images, audio, video, PDF, text), and answers in text; use one that reasons, with reasoning set, for a hard question. A model that speaks says prompt aloud exactly as written, in voice, and the audio (mp3, or WAV from a model that gives raw samples) is written into the working directory: prompt is then the words to say, not instructions. A model that transcribes is sent one audio file and returns the transcript, with each segment's times if timestamps is set. A model that decides answers typed questions about the state in prompt. To find a model, call with list set to a kind, and words in prompt to narrow it. The called model sees only what this call sends, not this conversation. Every call costs money; the result says how much. Files go inline, at most 20 MB per call: to transcribe a video, extract its audio with ffmpeg first.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "model": {
+        "type": "string",
+        "description": "The model to call, as the gateway names it, e.g. google/gemini-3.8-flash. Required unless list is set."
+      },
+      "prompt": {
+        "type": "string",
+        "description": "Required, except to transcribe or to list. For a model that writes: the whole request, with everything it needs to know, since it sees nothing else. For one that speaks: the exact words to say. For one that decides: the state to decide about. With list: words that must appear in the model's id or name."
+      },
+      "files": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Paths in the working directory to send. A model that writes takes the kinds it lists; one that transcribes takes exactly one audio file."
+      },
+      "voice": {
+        "type": "string",
+        "description": "For a model that speaks: one of its voices, as list shows them."
+      },
+      "output": {
+        "type": "string",
+        "description": "For a model that speaks: the path to write the audio to. Default speech-<time>.mp3; WAV audio takes .wav instead."
+      },
+      "language": {
+        "type": "string",
+        "description": "For a model that transcribes: the recording's language as an ISO 639-1 code, e.g. en or de. Detected if left out."
+      },
+      "timestamps": {
+        "type": "boolean",
+        "description": "For a model that transcribes: return each segment with its start and end in seconds."
+      },
+      "reasoning": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "description": "For a model that writes and reasons: how much effort to spend."
+      },
+      "questions": {
+        "type": "object",
+        "description": "For a model that decides: questions keyed by a name of your own. Each has type (noul for yes/no, choice, or score), instructions (the question), and for choice an object of option → description, for score a list of levels from lowest to highest, as criteria."
+      },
+      "list": {
+        "type": "string",
+        "enum": [
+          "text",
+          "speech",
+          "transcription",
+          "decisions"
+        ],
+        "description": "Instead of calling a model, list the models of this kind with their prices, and for speech their voices."
+      }
+    }
+  },
+  "agent": {
+    "db_prefix": "call_model_",
+    "timeout_seconds": 600
+  }
+}

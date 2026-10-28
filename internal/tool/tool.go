@@ -97,6 +97,10 @@ func emit(r result) {
 
 var client = &http.Client{Timeout: 30 * time.Second}
 
+// SetAPITimeout is for a tool whose request the agent takes long to answer: a
+// call to another model can run for minutes.
+func SetAPITimeout(d time.Duration) { client.Timeout = d }
+
 // API calls the agent's HTTP API — the same one the interface uses. body is
 // encoded as JSON when non-nil; out is filled from the response when non-nil.
 // Any failure ends the call, because a tool that cannot reach the system has

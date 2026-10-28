@@ -1544,7 +1544,7 @@ has needed one.</p>
 </div>
 
 <div class="adr" id="adr-051">
-<div class="meta">ADR-051 · accepted</div>
+<div class="meta">ADR-051 · accepted · amended by <a href="#adr-070">ADR-070</a></div>
 <h3>A tool reaches the agent on an API of its own, and cannot reach the operator's</h3>
 <h4>Context</h4>
 <p>Tools reached the agent over <code>AGENT_URL</code>, the operator's own API. The filesystem sandbox kept
@@ -2202,6 +2202,42 @@ an address.</p>
 every piece of work it covers, and its references only when they are needed. Personas stay one
 file each; a persona is the whole opening of the prompt, and has nothing to read later. Shipped
 skills are unchanged: each is still one file, and a folder is there for the operator's.</p>
+</div>
+
+<div class="adr" id="adr-070">
+<div class="meta">ADR-070 · accepted · amends ADR-051 · builds on ADR-002</div>
+<h3>A tool calls other models through the agent</h3>
+<h4>Context</h4>
+<p>A conversation runs on one model, chosen for the conversation: cheap enough to hold a long one,
+good enough at tools. Some work wants another model for one step. A recording is transcribed by a
+speech-to-text model, a script is read aloud by a speech model, a hard choice is put to a model that
+reasons, a video is described by one that sees. The gateway carries all of these (<a
+href="#adr-002">ADR-002</a>): speech, transcription, and typed decisions each on an endpoint of its own,
+and media sent to chat models as parts of a message.</p>
+<p>Without a way to reach them, a conversation asked for a voice-over installed a recogniser and a
+voice in its own directory &mdash; 1.1&nbsp;GB, downloaded again by every conversation that needed it
+&mdash; and sent the script to a read-aloud service the operator has no agreement with. Choosing a
+media model for the conversation instead would not have helped: an attachment reaches the model as a
+path in the message, never as its bytes, and every turn of the conversation would pay that model's
+price.</p>
+<h4>Decision</h4>
+<p>One tool, <code>call_model</code>, makes a single call to any model the gateway lists, and the
+named model decides the call: one that writes text is sent a chat completion with the files attached,
+one that speaks is sent the text to read, one that transcribes is sent audio, and one that decides is
+sent a state and typed questions. It also lists the models of a kind, so the agent can find one.</p>
+<p>The agent makes the call, not the tool. The tool sends the request to the tool API
+(<a href="#adr-051">ADR-051</a>, which this amends: it now offers a model call to the calling
+conversation), naming files by path; the agent reads them from the calling conversation's directory,
+calls the gateway with its own key, writes audio back into that directory, and adds the cost to the
+conversation's. The key never reaches a tool, and no call goes uncounted.</p>
+<p>It is one call and not a conversation: the model it reaches has no tools and no loop, and sees only
+what the call sends. This is not a subagent (<a href="#adr-012">ADR-012</a> stands).</p>
+<h4>Consequences</h4>
+<p>Transcribing, speaking, describing, and deciding cost a call each instead of a download each, and a
+conversation stays on the model it chose. The agent has to know which model to name; the list is how
+it finds one, and a skill can name the one that worked. Files go to the gateway inline, so a call
+carries at most 20&nbsp;MB of them: a longer recording is cut down to its audio first. The decision
+endpoint is the gateway's alpha, and may change under the tool.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

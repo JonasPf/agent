@@ -19,6 +19,14 @@
   writes anything with a date it now checks the clock and lets the shell
   write the date, because a long conversation was putting tomorrow's date
   on evening entries.
+- **The agent can call other models.** A new tool, `call_model`, makes one
+  call to any model OpenRouter offers while the conversation stays on its
+  own: have a speech model read a script aloud, transcribe a recording with
+  timestamps, show an image or a clip to a model that sees, put a hard
+  question to a model that reasons, or a yes/no question to a decision
+  model. The agent makes the call with its own key, and what it costs is
+  added to the conversation's cost. A voice-over no longer needs a 1 GB
+  download in every conversation.
 
 ## 2026-10-27
 

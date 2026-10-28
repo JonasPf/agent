@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>call_model — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>call_model</code></h1>
+<p class="lede">One call to another model: text, speech, transcription, or a decision.</p>
+
+<h2>What it does</h2>
+<p>A conversation runs on one model. This tool reaches any other the gateway lists for a single call,
+and the model named decides what the call is (<a href="adrs.html#adr-070">ADR-070</a>):</p>
+
+<table>
+<tr><th>The model</th><th>Is sent</th><th>Returns</th></tr>
+<tr><td>writes text</td><td><code>prompt</code> as the request, each of <code>files</code> attached as what it is &mdash; image, audio, video, PDF, or text &mdash; and <code>reasoning</code> when given</td><td>its answer</td></tr>
+<tr><td>speaks</td><td><code>prompt</code> as the words to say, exactly as written, in <code>voice</code></td><td>the path of the audio written into the conversation's directory, at <code>output</code> when given: an mp3, or a WAV from a model that gives only raw samples, as Gemini's do</td></tr>
+<tr><td>transcribes</td><td>the one audio file in <code>files</code>, and <code>language</code> when given</td><td>the transcript, and with <code>timestamps</code> each segment's start and end in seconds</td></tr>
+<tr><td>decides</td><td><code>prompt</code> as the state, and <code>questions</code> as given; no files</td><td>each question's answer, with its confidence where the model gives one</td></tr>
+</table>
+
+<p>Given <code>list</code> &mdash; <code>text</code>, <code>speech</code>, <code>transcription</code>, or
+<code>decisions</code> &mdash; and no model, it calls nothing and lists the models of that kind instead,
+with what they cost and, for speech, their voices; <code>prompt</code> then narrows the list, every word
+matching the model's id or name. That is how the agent finds a model to name.</p>
+
+<p>The agent makes the call, not the tool: the tool hands the request to the tool API, naming files by
+path, and the agent reads them from the calling conversation's directory, calls the gateway with its
+own key, writes audio back there, and adds the cost to the conversation's. Every result says what the
+call cost, except one that spoke: the gateway knows what speech cost only some fifteen seconds after
+the audio, and a voice-over of ten lines should not wait two and a half minutes for its bills. That
+cost is added to the conversation when the gateway reports it.</p>
+
+<div class="note">
+<strong>Why one tool and not one per kind.</strong> What differs between them is the model, and the
+model is a parameter. A tool per kind would be a tool to add every time the gateway offered another
+kind of output. The cost is a parameter whose meaning moves with the model: <code>prompt</code> is an
+instruction to a model that writes, and the very words to say to one that speaks. The description says
+so, and an eval case holds each.
+</div>
+
+<p>What the model cannot take is refused before anything is sent: a file of a kind the model does not
+accept, naming the kinds it does; a file outside the conversation's directory; more than 20&nbsp;MB of
+files in one call, which is what the gateway is sent inline. A longer recording goes as its audio,
+extracted with <code>ffmpeg</code> first.</p>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>model</code></td><td>The model to call, as the gateway names it. Required unless <code>list</code> is given.</td></tr>
+<tr><td><code>prompt</code></td><td>The request; the words to say; the state to decide on; or, with <code>list</code>, words to narrow it by.</td></tr>
+<tr><td><code>files</code></td><td>Paths in the working directory to send with the call.</td></tr>
+<tr><td><code>voice</code></td><td>For a model that speaks: one of its voices.</td></tr>
+<tr><td><code>output</code></td><td>For a model that speaks: where to write the audio. Default <code>speech-&lt;time&gt;.mp3</code>; a WAV takes <code>.wav</code> in place of <code>.mp3</code>.</td></tr>
+<tr><td><code>language</code></td><td>For a model that transcribes: the recording's language, as an ISO 639-1 code.</td></tr>
+<tr><td><code>timestamps</code></td><td>For a model that transcribes: return timed segments.</td></tr>
+<tr><td><code>reasoning</code></td><td>For a model that writes and reasons: <code>low</code>, <code>medium</code>, or <code>high</code>.</td></tr>
+<tr><td><code>questions</code></td><td>For a model that decides: questions keyed by a name of your own, each with <code>type</code> (<code>noul</code>, <code>choice</code>, or <code>score</code>), <code>instructions</code>, and, for a choice or a score, <code>criteria</code>.</td></tr>
+<tr><td><code>list</code></td><td>Instead of calling: list the models of this kind.</td></tr>
+</table>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A model that writes text is sent the prompt with each file attached as its kind, and the reasoning effort when given; its answer is the result.</li>
+<li>A model that speaks is sent the prompt as the words to say, in the voice given; the audio is written into the conversation's directory and the result names the file.</li>
+<li>A model that gives only raw samples is asked for them when it refuses mp3, and they are written as a WAV of the rate and channels the gateway names.</li>
+<li>A model that transcribes is sent its one audio file; the result is the transcript, with each segment's times when timestamps are asked for.</li>
+<li>A model that decides is sent the prompt as the state and the questions as given; the result is each question's answer.</li>
+<li>Listing a kind calls no model and returns that kind's models with their prices, and for speech their voices.</li>
+<li>A file the model does not accept is refused before anything is sent, and the refusal names what the model accepts.</li>
+<li>A path outside the conversation's directory, or more than 20&nbsp;MB of files, is refused before anything is sent.</li>
+<li>Every call's cost is added to the conversation's cost and stated in the result, except speech's: the gateway reports that some seconds after the audio, so the call returns without it and the cost is added to the conversation once reported.</li>
+<li>The gateway's key is never given to the tool.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-bash.html">← bash</a> · <a href="tool-clock.html">clock →</a></footer>
+</div>
+</body></html>

@@ -46,6 +46,7 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 <table>
 <tr><th>Tool</th><th>For</th></tr>
 <tr><td><a href="tool-bash.html"><code>bash</code></a></td><td>Run a shell command in the session's working directory.</td></tr>
+<tr><td><a href="tool-call_model.html"><code>call_model</code></a></td><td>One call to another model: text, speech, transcription, or a decision.</td></tr>
 <tr><td><a href="tool-clock.html"><code>clock</code></a></td><td>The current date and time, in UTC and in the operator's zone.</td></tr>
 <tr><td><a href="tool-edit.html"><code>edit</code></a></td><td>Replace an exact string in a workspace file.</td></tr>
 <tr><td><a href="tool-read.html"><code>read</code></a></td><td>Read a file from the session's working directory.</td></tr>
@@ -360,6 +361,7 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 <tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
 <tr><td><code>skill_read</code></td><td>Load the full text of a skill.</td></tr>
+<tr><td><code>call_model</code></td><td>One call to another model, made by the agent with its own key and counted in the conversation's cost (<a href="adrs.html#adr-070">ADR-070</a>).</td></tr>
 </table>
 
 <h3>Searching the web</h3>
