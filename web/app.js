@@ -1862,7 +1862,7 @@ async function viewNew(v) {
   const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }), gen, { defaults: prefs });
   if (!read || stale(gen)) return;
   const start = el('button', 'btn primary', 'Start conversation');
-  oneAtATime(start, 'Not started', async () => {
+  oneAtATime(start, 'Not started', 'Starting…', async () => {
     const s = await post('/sessions', read());
     location.hash = '#session/' + s.id;
   });
@@ -1872,14 +1872,18 @@ async function viewNew(v) {
 
 // oneAtATime makes a button that creates something a single action. A tap that
 // lands twice would otherwise create two, so the button stops offering while
-// its request is out; a refusal says why, and offers it again.
-function oneAtATime(button, refused, fn) {
+// its request is out, and says what it is doing, since a disabled button looks
+// like one that ignored the tap; a refusal says why, and offers it again.
+function oneAtATime(button, refused, working, fn) {
   button.onclick = async () => {
     if (button.disabled) return;
+    const label = button.textContent;
     button.disabled = true;
+    button.textContent = working;
     try { await fn(); }
     catch (e) {
       button.disabled = false;
+      button.textContent = label;
       toast({ title: refused, body: String(e.message) });
     }
   };
@@ -2040,13 +2044,19 @@ async function viewFork(v) {
   const res = await api('/sessions/' + id);
   if (stale(gen)) return;
   setHeader('Fork', true);
+  // The copy is the working directory as well as the transcript, and it is
+  // made before the fork exists: for a conversation that installed a speech
+  // model that is gigabytes, and a minute. Said before the tap, and on the
+  // button during it.
+  const size = fmtBytes(res.session.disk_bytes || 0);
   v.append(el('p', 'note',
-    'A fork copies this whole conversation into a new session. This one stays where it is, stays ' +
-    'active, and keeps its jobs. The fork\'s configuration is chosen here and fixed once it exists.'));
+    'A fork copies this whole conversation into a new session — ' + size + ' of files and transcript, ' +
+    'which takes a while when it is large. This one stays where it is, stays active, and keeps its jobs. ' +
+    'The fork\'s configuration is chosen here and fixed once it exists.'));
   const read = await configEditor(v, res.session, gen, { fork: true });
   if (!read || stale(gen)) return;
   const go = el('button', 'btn primary', 'Create fork');
-  oneAtATime(go, 'Not forked', async () => {
+  oneAtATime(go, 'Not forked', 'Copying ' + size + '…', async () => {
     const succ = await post('/sessions/' + id + '/fork', read());
     location.hash = '#session/' + succ.id;
   });

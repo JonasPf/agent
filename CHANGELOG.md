@@ -43,6 +43,11 @@
   `voice-over`, the same form other agents' skills use. A name written any
   other way (`Voice_Over`) is refused when you save or install it, and says
   how to write it.
+- **Forking says it is working.** A fork copies the conversation's files
+  as well as its words, which for a large one takes a minute. The fork
+  screen now says how much it will copy, and the button reads "Copying
+  2.4 GB…" until the fork is ready, instead of looking as though nothing
+  happened. Starting a conversation says "Starting…" the same way.
 
 ## 2026-10-27
 

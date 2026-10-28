@@ -2936,6 +2936,55 @@ test('starting a conversation or a fork is one action, however often it is press
   }
 });
 
+// A fork copies the conversation's whole working directory before it answers,
+// which for one holding a speech model is gigabytes and a minute. The button
+// sat there looking pressed-and-ignored, so it now says what it is doing, and
+// the screen says before the press how much there is to copy.
+test('a fork says how much it is copying, before and while it does', async () => {
+  const there = session({ id: 'S1', title: 'Voiceover', disk_bytes: 2600000000 });
+  const ctx = load({
+    '/sessions': [there], '/sessions/S1': { session: there }, '/preferences': { model: 'x/y' }, '/models': [],
+    '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [] }, '/personas': { personas: [] },
+  });
+  let answer;
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => (o && o.method === 'POST' && p === '/sessions/S1/fork')
+    ? new Promise(r => { answer = () => r({ ok: true, status: 201, text: async () => '{"id":"S2"}' }); })
+    : fetch(p, o);
+  vm.runInContext("state.view = 'fork'; state.arg = 'S1';", ctx);
+  await ctx.render();
+  assert.match(textOf(ctx._id('view')), /2\.42 GB/, 'the screen does not say how much a fork copies');
+  const button = findAll(ctx._id('view'), 'btn').find(b => b.textContent === 'Create fork');
+  const pressed = button.onclick();
+  await new Promise(r => setImmediate(r));
+  assert.ok(button.disabled, 'the button still offers while the fork is under way');
+  assert.match(button.textContent, /Copying 2\.42 GB/, 'the button does not say it is working: ' + button.textContent);
+  answer();
+  await pressed;
+  assert.strictEqual(ctx.location.hash, '#session/S2');
+});
+
+test('a start says it is starting, and a refused one offers itself again as it was', async () => {
+  const ctx = load({
+    '/sessions': [], '/preferences': { model: 'x/y' }, '/models': [],
+    '/tools': { tools: [{ name: 'bash' }] }, '/skills': { skills: [] }, '/personas': { personas: [] },
+  });
+  let refuse;
+  const fetch = ctx.fetch;
+  ctx.fetch = (p, o) => (o && o.method === 'POST' && p === '/sessions')
+    ? new Promise(r => { refuse = () => r({ ok: false, status: 500, text: async () => '{"error":"disk full"}' }); })
+    : fetch(p, o);
+  vm.runInContext("state.view = 'new';", ctx);
+  await ctx.render();
+  const button = findAll(ctx._id('view'), 'btn').find(b => b.textContent === 'Start conversation');
+  const pressed = button.onclick();
+  await new Promise(r => setImmediate(r));
+  assert.match(button.textContent, /Starting/, 'the button does not say it is working');
+  refuse();
+  await pressed;
+  assert.strictEqual(button.textContent, 'Start conversation', 'a refused start kept saying it was working');
+});
+
 test('a refused start says why and can be pressed again', async () => {
   const ctx = load({
     '/sessions': [], '/preferences': { model: 'x/y' }, '/models': [],
