@@ -1,21 +1,7 @@
 # Changelog
 
-## 2026-10-27
+## 2026-10-28
 
-- **A conversation's name is a name.** The title a new conversation is given
-  is now asked for as a name for your first message, not as an answer to it.
-  A message like "make a voiceover for this clip" could come back titled with
-  the model's reply — "I can't help with this request as stated" — and now
-  can't: anything longer than six words is set aside for the first line of
-  your message.
-- **A failed title no longer stops the agent.** If the call that names a new
-  conversation failed, the agent crashed. Now the conversation is named after
-  the first line of your message and everything carries on.
-- **A file the conversation names opens from there.** When the agent says
-  where it put something, or a tool says what it wrote, the file's name is
-  a link: tap it to open or download the file, with no trip to Files. Your
-  attachments are links too. Only names of files that are really there
-  become links.
 - **A skill reads like a document.** Opening a skill on the Skills screen
   shows it rendered, with its description set apart at the top: that one
   line is what every conversation sees, and how the agent decides to open
@@ -33,6 +19,29 @@
   writes anything with a date it now checks the clock and lets the shell
   write the date, because a long conversation was putting tomorrow's date
   on evening entries.
+
+## 2026-10-27
+
+- **A conversation's name is a name.** The title a new conversation is given
+  is now asked for as a name for your first message, not as an answer to it.
+  A message like "make a voiceover for this clip" could come back titled with
+  the model's reply — "I can't help with this request as stated" — and now
+  can't: anything longer than six words is set aside for the first line of
+  your message.
+- **A failed title no longer stops the agent.** If the call that names a new
+  conversation failed, the agent crashed. Now the conversation is named after
+  the first line of your message and everything carries on.
+- **A file the conversation names opens from there.** When the agent says
+  where it put something, or a tool says what it wrote, the file's name is
+  a link: tap it to open or download the file, with no trip to Files. Your
+  attachments are links too. Only names of files that are really there
+  become links.
+- **A fork keeps what its conversation installed.** A program downloaded or
+  a script installed with pip in a conversation stopped working in a fork
+  of it: the copy dropped links and made every file non-executable. A fork
+  now copies files with their permissions and links as links, and a link
+  into the original's folder points into the fork's own, so it keeps
+  working after the original is deleted.
 
 ## 2026-10-26
 
