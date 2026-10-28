@@ -26,9 +26,16 @@
 <a href="skills.html">Skills</a>: the prompt carries every skill's name and one-line description, and
 nothing more. The bodies are what this tool reaches.</p>
 
+<p>A skill that is a folder (<a href="adrs.html#adr-069">ADR-069</a>) is read in two steps.
+Without a <code>file</code>, this returns <code>SKILL.md</code>'s body and, after it, the path and size
+of every other file in the folder with the call that reads one. With a <code>file</code>, it returns
+that file exactly as stored. The procedure says when a reference is needed; the reference is read
+then, not with it.</p>
+
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
 <tr><td><code>name</code></td><td>The skill's name, as it appears in the prompt's index. Required.</td></tr>
+<tr><td><code>file</code></td><td>One of the skill's other files, by the path listed after its text. Left out, the skill itself is read.</td></tr>
 </table>
 <div class="note">
 <strong>Why the index is in the prompt and the bodies are not.</strong> A skill body is long. Putting every one in the prompt would spend the session's cheapest, most cacheable tokens on instructions that most conversations never need. Putting none of it there would leave the agent unable to know what exists. The index is the smallest thing that makes the rest reachable, and reading one is a visible call rather than an invisible inclusion.
@@ -58,7 +65,10 @@ would read as a skill with no instructions in it and proceed on.</p>
 <li>A skill that exists with an empty body fails rather than returning nothing.</li>
 <li>An empty name is refused.</li>
 <li>A name is matched as it appears in the prompt's index.</li>
-<li>Only skills indexed in this session's prompt are readable from it.</li>
+<li>Only skills indexed in this session's prompt are readable from it, and so are only their files.</li>
+<li>A skill that is a folder returns <code>SKILL.md</code>'s body, then the path of each other file and how to read one; a skill of one file returns its body alone.</li>
+<li>A <code>file</code> returns that file of the skill exactly as stored.</li>
+<li>A <code>file</code> the skill does not have fails, quoting the path given and naming the files it does have.</li>
 <li>The description says to read a skill before the work it covers, and again once compaction has folded its text away.</li>
 </ul>
 </div>

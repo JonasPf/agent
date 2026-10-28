@@ -7,6 +7,10 @@
       "name": {
         "type": "string",
         "description": "The skill's name, as the skills index lists it."
+      },
+      "file": {
+        "type": "string",
+        "description": "One of the skill's other files, by the path listed after the skill's own text. Leave it out to read the skill itself, which is where to start: it says when the other files are needed."
       }
     },
     "required": [

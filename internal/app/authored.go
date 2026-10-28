@@ -30,6 +30,11 @@ type authored struct {
 	Fields map[string]string
 	Bytes  int
 	Path   string
+	// Source is the main file as it is on disk, front matter and all, so the
+	// interface shows what was written rather than a rendering of it.
+	Source string
+	// Files are the ones beside the main file, for a kind that is a folder.
+	Files []SkillFile
 	// Editable is whether this document came from the operator's root. A shipped
 	// one is refused an edit rather than silently copied into the writable root,
 	// because two documents of the same name is the one state nothing on screen
@@ -101,27 +106,33 @@ func loadAuthoredDir(dir string, editable bool) ([]*authored, []LoadFailure) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
-		path := filepath.Join(dir, e.Name())
-		b, err := os.ReadFile(path)
+		d, err := readAuthored(filepath.Join(dir, e.Name()), editable)
 		if err != nil {
 			failures = append(failures, LoadFailure{Dir: e.Name(), Reason: err.Error()})
 			continue
 		}
-		fields, body, err := parseFrontmatter(string(b))
-		if err != nil {
-			failures = append(failures, LoadFailure{Dir: e.Name(), Reason: err.Error()})
-			continue
-		}
-		if fields["name"] == "" || fields["description"] == "" {
-			failures = append(failures, LoadFailure{Dir: e.Name(), Reason: errFrontmatter.Error()})
-			continue
-		}
-		docs = append(docs, &authored{
-			Name: fields["name"], Description: fields["description"], Body: body,
-			Fields: fields, Bytes: len(b), Path: path, Editable: editable,
-		})
+		docs = append(docs, d)
 	}
 	return docs, failures
+}
+
+// readAuthored reads one document from its file.
+func readAuthored(path string, editable bool) (*authored, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	fields, body, err := parseFrontmatter(string(b))
+	if err != nil {
+		return nil, err
+	}
+	if fields["name"] == "" || fields["description"] == "" {
+		return nil, errFrontmatter
+	}
+	return &authored{
+		Name: fields["name"], Description: fields["description"], Body: body,
+		Fields: fields, Bytes: len(b), Path: path, Source: string(b), Editable: editable,
+	}, nil
 }
 
 type frontmatterError struct{}
@@ -148,8 +159,9 @@ func validAuthoredName(name string) error {
 	return nil
 }
 
-// saveAuthored writes one document into the operator's root.
-func saveAuthored(dir, name, description string, fields map[string]string, body string) error {
+// checkAuthored refuses a document that is missing what it needs, before
+// anything is written.
+func checkAuthored(name, description, body string) error {
 	if err := validAuthoredName(name); err != nil {
 		return err
 	}
@@ -161,6 +173,14 @@ func saveAuthored(dir, name, description string, fields map[string]string, body 
 	}
 	if strings.TrimSpace(body) == "" {
 		return fmt.Errorf("a body is required")
+	}
+	return nil
+}
+
+// saveAuthored writes one document into the operator's root.
+func saveAuthored(dir, name, description string, fields map[string]string, body string) error {
+	if err := checkAuthored(name, description, body); err != nil {
+		return err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

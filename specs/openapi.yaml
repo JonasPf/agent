@@ -785,7 +785,7 @@ paths:
       - $ref: "#/components/parameters/DocName"
     get:
       tags: [skills]
-      summary: One skill, body included.
+      summary: One skill, every file included.
       responses:
         "200":
           description: The skill.
@@ -1415,7 +1415,8 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
-        bytes: {type: integer}
+        bytes: {type: integer, description: Every file of the skill together.}
+        files: {type: integer, description: How many files the skill is, its main one included.}
         default_enabled: {type: boolean}
         enabled: {type: boolean}
         editable: {type: boolean, description: False for one that ships with the agent.}
@@ -1425,9 +1426,23 @@ components:
       properties:
         name: {type: string}
         description: {type: string}
-        body: {type: string}
+        body: {type: string, description: The main file after its front matter.}
+        source: {type: string, description: The main file as it is on disk, front matter and all.}
+        main: {type: string, description: "The main file's name: SKILL.md for a skill that is a folder, <name>.md otherwise."}
+        files:
+          type: array
+          description: The files beside SKILL.md, sorted by path; empty for a skill of one file.
+          items: {$ref: "#/components/schemas/SkillFile"}
+        bytes: {type: integer}
         default_enabled: {type: boolean}
         editable: {type: boolean}
+
+    SkillFile:
+      type: object
+      properties:
+        path: {type: string, description: "Inside the skill's folder, with / between its parts."}
+        body: {type: string}
+        bytes: {type: integer, description: Ignored when written.}
 
     SkillWrite:
       type: object
@@ -1437,6 +1452,14 @@ components:
         description: {type: string}
         body: {type: string}
         default_enabled: {type: boolean, default: true}
+        files:
+          type: array
+          description: >-
+            The files beside the main one. Given, they replace the skill's files, and
+            a skill with any is written as a folder; an empty list makes it one file
+            again. Left out, the files it has are kept. A path that would leave the
+            folder, starts with a dot, or names SKILL.md is refused.
+          items: {$ref: "#/components/schemas/SkillFile"}
 
     Persona:
       type: object
@@ -1452,6 +1475,7 @@ components:
         name: {type: string}
         description: {type: string}
         body: {type: string}
+        source: {type: string, description: The file as it is on disk; the built-in's text.}
         editable: {type: boolean}
 
     PersonaWrite:

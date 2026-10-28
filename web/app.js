@@ -3046,9 +3046,14 @@ async function viewAuthored(v, kind) {
   const gen = drawing;
   const spec = AUTHORED[kind];
   const title = kind === 'skills' ? 'Skills' : 'Personas';
-  // Each document, and a new one, has an address of its own, so the back button
-  // returns to this list. A name holds no '+', so '+new' is never a document.
-  if (state.arg) return editAuthored(kind, state.arg === '+new' ? null : decodeURIComponent(state.arg), gen);
+  // Each document, its editor, and a new one have an address of their own, so
+  // the back button retraces them. A name holds no '+', so '+new' is never a
+  // document.
+  if (state.arg === '+new') return editAuthored(kind, null, gen);
+  if (state.arg) {
+    const name = decodeURIComponent(state.arg);
+    return state.arg2 === 'edit' ? editAuthored(kind, name, gen) : showAuthored(kind, name, gen);
+  }
   setHeader(title, true, [{ label: 'New ' + spec.one, fn: () => location.hash = '#' + kind + '/+new' }]);
   const data = await api(spec.path);
   if (stale(gen)) return;
@@ -3068,8 +3073,9 @@ async function viewAuthored(v, kind) {
     const m = el('div', 'm');
     m.append(el('div', 'n', s.name), el('div', 's', s.description));
     const tags = el('div');
-    tags.append(el('span', 'tag', s.bytes + ' bytes'));
     if (!s.editable) tags.append(el('span', 'tag', 'ships with the agent'));
+    if (s.files > 1) tags.append(el('span', 'tag on', s.files + ' files'));
+    tags.append(el('span', 'tag', fmtBytes(s.bytes)));
     if (kind === 'skills' && s.default_enabled === false) tags.append(el('span', 'tag', 'off unless chosen'));
     m.append(tags);
     row.append(m);
@@ -3081,101 +3087,351 @@ async function viewAuthored(v, kind) {
 function viewSkills(v) { return viewAuthored(v, 'skills'); }
 function viewPersonas(v) { return viewAuthored(v, 'personas'); }
 
-// editAuthored opens one document for reading, and for writing when it is the
-// operator's. What ships in the image is read-only: writing a copy would shadow
-// the original until the next deployment brought it back, which is the one state
-// nothing on screen could explain.
+// loadAuthored fetches one document, or says there is none and answers null.
+// Opened and left before its answer came back, it draws nothing, not over the
+// screen that replaced it and not its Delete in that header.
+async function loadAuthored(kind, name, gen) {
+  const spec = AUTHORED[kind];
+  let doc;
+  try { doc = await api(spec.path + '/' + encodeURIComponent(name)); }
+  catch (e) {
+    if (stale(gen)) return null;
+    setHeader(name, true);
+    $('view').append(el('div', 'empty', 'There is no ' + spec.one + ' called ' + name + '.'));
+    return null;
+  }
+  return stale(gen) ? null : doc;
+}
+
+// docFiles is a document as the files it is on disk: the main one first, then
+// a skill's others in the order they sort.
+function docFiles(doc) {
+  // The blank line after the front matter is the file's, not the body's.
+  const main = { path: doc.main || doc.name + '.md', body: String(doc.body || '').replace(/^\n+/, ''),
+    source: doc.source || doc.body, main: true };
+  return [main].concat((doc.files || []).map(f => ({ path: f.path, body: f.body, source: f.body })));
+}
+
+// utf8Bytes is how much room text takes on disk, which is what a size says.
+const utf8Bytes = s => {
+  let n = 0;
+  for (const ch of String(s == null ? '' : s)) {
+    const c = ch.codePointAt(0);
+    n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+  }
+  return n;
+};
+
+const authoredPath = (kind, name) => '#' + kind + '/' + encodeURIComponent(name);
+
+// deleteAuthoredAction is the header's Delete for a document the operator wrote.
+const deleteAuthoredAction = (kind, doc) => ({
+  label: 'Delete', danger: true, fn: async () => {
+    try { await del(AUTHORED[kind].path + '/' + encodeURIComponent(doc.name)); backToList(kind); }
+    catch (e) { toast({ title: 'Not deleted', body: String(e.message) }); }
+  }
+});
+
+// showAuthored opens one document to read. Its front matter is set apart at
+// the top, because the description is the one part every conversation sees;
+// below it, each file is a tab, rendered or as written.
+async function showAuthored(kind, name, gen = drawing) {
+  const spec = AUTHORED[kind];
+  const doc = await loadAuthored(kind, name, gen);
+  if (!doc) return;
+  const v = $('view');
+  v.innerHTML = '';
+  setHeader(doc.name, true, doc.editable ? [
+    { label: 'Edit', fn: () => location.hash = authoredPath(kind, doc.name) + '/edit' },
+    deleteAuthoredAction(kind, doc),
+  ] : null);
+  const page = el('div', 'authored');
+  v.append(page);
+  if (!doc.editable) {
+    page.append(el('p', 'note', 'This ' + spec.one + ' ships with the agent. It is read-only here; ' +
+      'copy it under another name to write your own.'));
+  }
+  page.append(frontMatter(kind, doc));
+  page.append(fileViewer(kind, doc, docFiles(doc)));
+}
+
+// frontMatter is the block every prompt or picker reads: the description, set
+// large, and the fields beside it.
+function frontMatter(kind, doc) {
+  const box = el('div', 'fm');
+  const lbl = el('div', 'lbl', 'Front matter');
+  const tags = el('span', 'tags');
+  tags.append(el('span', 'tag', doc.editable ? 'yours' : 'ships with the agent'));
+  if (kind === 'skills') {
+    tags.append(el('span', 'tag' + (doc.default_enabled !== false ? ' on' : ''),
+      doc.default_enabled !== false ? 'on by default' : 'off unless chosen'));
+  }
+  lbl.append(tags);
+  const desc = el('div', 'desc md');
+  desc.innerHTML = renderMarkdown(doc.description);
+  box.append(lbl, desc, el('p', 'why', kind === 'skills'
+    ? 'The line every conversation’s prompt carries. The agent decides from it alone whether to open the rest.'
+    : 'What you are shown when you choose a persona for a conversation.'));
+  const fields = el('div', 'fields');
+  const field = (k, val) => { const f = el('span', null, k); f.append(el('b', null, val)); fields.append(f); };
+  field('name', doc.name);
+  if (kind === 'skills') {
+    field('default', doc.default_enabled !== false ? 'on' : 'off');
+    field('files', String(1 + (doc.files || []).length));
+  }
+  field('size', fmtBytes(doc.bytes || utf8Bytes(doc.source || doc.body)));
+  box.append(fields);
+  return box;
+}
+
+// fileViewer shows a document's files one at a time: a tab each, and whether
+// the open one is shown rendered or as its source.
+function fileViewer(kind, doc, files) {
+  const box = el('div', 'docfiles');
+  const bar = el('div', 'filebar');
+  const tabs = el('div', 'tabs');
+  const seg = el('div', 'seg');
+  const pane = el('div', 'file');
+  bar.append(tabs, seg);
+  box.append(bar, pane);
+  let at = 0, raw = false;
+  const draw = () => {
+    tabs.innerHTML = '';
+    files.forEach((f, i) => {
+      const t = el('button', 'tab' + (i === at ? ' on' : ''), f.path);
+      if (f.main) t.append(el('span', 'main', 'main'));
+      t.onclick = () => { at = i; draw(); };
+      tabs.append(t);
+    });
+    seg.innerHTML = '';
+    for (const [label, on] of [['Rendered', false], ['Source', true]]) {
+      const b = el('button', raw === on ? 'on' : '', label);
+      b.onclick = () => { raw = on; draw(); };
+      seg.append(b);
+    }
+    const f = files[at];
+    pane.innerHTML = '';
+    const info = el('p', 'fileinfo');
+    if (kind === 'skills' && files.length > 1) {
+      info.append(el('span', null, f.main
+        ? 'What skill_read returns first, with the other files named after it.'
+        : 'Read with skill_read, file “' + f.path + '”.'));
+    }
+    info.append(el('span', 'grow'), el('span', null, fmtBytes(utf8Bytes(f.main ? f.source : f.body))));
+    pane.append(info, fileBody(f, raw));
+  };
+  draw();
+  return box;
+}
+
+// fileBody draws one file. Markdown is rendered as the transcript renders it,
+// a CSV as its table, and anything else as it was written. Its source shows a
+// main file's front matter in the accent, as the same block as the one above.
+function fileBody(f, raw) {
+  if (raw) {
+    const pre = el('pre', 'src');
+    const lines = String(f.source).split('\n');
+    let inFront = f.main && lines[0] === '---';
+    lines.forEach((line, i) => {
+      const fence = inFront && line === '---';
+      pre.append(el('span', fence ? 'fence' : inFront ? 'fmline' : null, line + (i < lines.length - 1 ? '\n' : '')));
+      if (fence && i > 0) inFront = false;
+    });
+    return pre;
+  }
+  if (f.main || /\.(md|markdown)$/i.test(f.path)) {
+    const md = el('div', 'md');
+    md.innerHTML = renderMarkdown(f.body, { soft: true });
+    return md;
+  }
+  if (/\.csv$/i.test(f.path)) return csvTable(f.body);
+  return el('pre', 'src', f.body);
+}
+
+// csvRows reads CSV as written by hand or by a spreadsheet: commas between
+// fields, quotes around a field that holds one, and a doubled quote inside.
+function csvRows(text) {
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  const src = String(text).replace(/\r\n?/g, '\n');
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (quoted) {
+      if (c === '"' && src[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') quoted = false;
+      else cell += c;
+    } else if (c === '"') quoted = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+
+function csvTable(text) {
+  const [head, ...rows] = csvRows(text);
+  const box = el('div', 'md');
+  const table = el('table');
+  const tr = (cells, tag) => { const r = el('tr'); for (const c of cells) r.append(el(tag, null, c)); return r; };
+  const thead = el('thead'); thead.append(tr(head || [], 'th'));
+  const tbody = el('tbody'); for (const r of rows) tbody.append(tr(r, 'td'));
+  table.append(thead, tbody);
+  box.append(table);
+  return box;
+}
+
+// editAuthored opens one document for writing, or a new one. What ships in the
+// image is read-only: writing a copy would shadow the original until the next
+// deployment brought it back, which is the one state nothing on screen could
+// explain — so it opens to be read instead.
 async function editAuthored(kind, name, gen = drawing) {
   const spec = AUTHORED[kind];
   let doc = null;
   if (name) {
-    try { doc = await api(spec.path + '/' + encodeURIComponent(name)); }
-    catch (e) {
-      if (stale(gen)) return;
-      setHeader(name, true);
-      $('view').append(el('div', 'empty', 'There is no ' + spec.one + ' called ' + name + '.'));
-      return;
-    }
+    doc = await loadAuthored(kind, name, gen);
+    if (!doc) return;
+    if (!doc.editable) return showAuthored(kind, name, gen);
   }
-  // Opened and left before its answer came back, the editor draws nothing:
-  // not over the screen that replaced it, and not its Delete in that header.
   if (stale(gen)) return;
   const v = $('view');
   v.innerHTML = '';
-  const editable = !doc || doc.editable;
+  setHeader(doc ? doc.name : 'New ' + spec.one, true, doc ? [deleteAuthoredAction(kind, doc)] : null);
+  const page = el('div', 'authored');
+  v.append(page);
 
-  if (doc && !editable) {
-    setHeader(doc.name, true);
-    v.append(el('p', 'note', 'This ' + spec.one + ' ships with the agent. It is read-only here; ' +
-      'copy it under another name to write your own.'));
-    v.append(el('div', 's', doc.description));
-    const pre = el('pre', null, doc.body);
-    pre.style.whiteSpace = 'pre-wrap'; pre.style.fontSize = '13px';
-    v.append(pre);
-    return;
-  }
-
-  setHeader(doc ? doc.name : 'New ' + spec.one, true, doc ? [{
-    label: 'Delete', danger: true, fn: async () => {
-      try { await del(spec.path + '/' + encodeURIComponent(doc.name)); backToList(kind); }
-      catch (e) { toast({ title: 'Not deleted', body: String(e.message) }); }
-    }
-  }] : null);
-
-  v.append(el('h2', null, 'name'));
+  const fm = el('div', 'fm');
+  fm.append(el('div', 'lbl', 'Front matter'));
+  fm.append(el('label', null, 'name'));
   const nameInput = el('input', 'text');
   nameInput.placeholder = 'one-word-name';
   if (doc) { nameInput.value = doc.name; nameInput.disabled = true; }
-  v.append(nameInput);
+  fm.append(nameInput);
 
-  v.append(el('h2', null, 'description'));
-  v.append(el('p', 'note', kind === 'skills'
-    ? 'One line. This is what the agent reads in every prompt to decide whether to open the skill.'
-    : 'One line, so you can tell them apart when you start a conversation.'));
-  const desc = el('input', 'text');
+  fm.append(el('label', null, kind === 'skills' ? 'description — the line every prompt carries' : 'description'));
+  // One line, which wraps rather than scrolls out of sight: a description says
+  // when to use a skill, and that is a sentence, not a word.
+  const desc = el('textarea', 'desc-in');
+  desc.rows = 2;
   if (doc) desc.value = doc.description;
-  v.append(desc);
-
-  v.append(el('h2', null, 'body'));
-  const body = el('textarea', 'text');
-  body.rows = 20;
-  if (doc) body.value = doc.body;
-  v.append(body);
+  const count = el('div', 'count');
+  const counted = el('span');
+  count.append(el('span', null, kind === 'skills'
+    ? 'One line. Say when to use it before what is in it.'
+    : 'One line, so you can tell them apart when you start a conversation.'), counted);
+  const recount = () => { counted.textContent = desc.value.length + ' characters'; };
+  desc.onkeydown = e => { if (e.key === 'Enter') e.preventDefault(); };
+  desc.oninput = () => { desc.value = desc.value.replace(/[\r\n]+/g, ' '); recount(); };
+  recount();
+  fm.append(desc, count);
 
   let on = doc ? doc.default_enabled !== false : true;
   if (kind === 'skills') {
-    v.append(el('h2', null, 'by default'));
-    v.append(el('p', 'note', 'A skill that is on by default is indexed in every conversation that did ' +
-      'not choose its skills. Turn it off for one a conversation should set out to use.'));
+    fm.append(el('label', null, 'by default'));
     const toggle = el('button', 'pill' + (on ? ' on' : ''), on ? 'on by default' : 'off unless chosen');
     toggle.onclick = () => {
       on = !on;
       toggle.className = 'pill' + (on ? ' on' : '');
       toggle.textContent = on ? 'on by default' : 'off unless chosen';
     };
-    v.append(toggle);
+    fm.append(toggle);
   }
+  page.append(fm);
+
+  // The files being written: the main one, whose text is the body, then a
+  // skill's others. Only the open one is on screen, so what was typed into it
+  // is read back before anything else is drawn or saved.
+  const files = doc ? docFiles(doc) : [{ path: kind === 'skills' ? 'SKILL.md' : 'body', body: '', main: true }];
+  let at = 0, preview = false, typing = null;
+  const keep = () => {
+    if (!typing) return;
+    files[at].body = typing.body.value;
+    if (typing.path) files[at].path = typing.path.value;
+  };
+  const bar = el('div', 'filebar');
+  const tabs = el('div', 'tabs');
+  const seg = el('div', 'seg');
+  const pane = el('div', 'file');
+  bar.append(tabs, seg);
+  page.append(bar, pane);
+  const draw = () => {
+    tabs.innerHTML = '';
+    files.forEach((f, i) => {
+      const t = el('button', 'tab' + (i === at ? ' on' : ''), f.path || 'new file');
+      if (f.main) t.append(el('span', 'main', 'main'));
+      t.onclick = () => { keep(); at = i; draw(); };
+      tabs.append(t);
+    });
+    if (kind === 'skills') {
+      const add = el('button', 'tab add', '+ File');
+      add.onclick = () => { keep(); files.push({ path: '', body: '' }); at = files.length - 1; preview = false; draw(); };
+      tabs.append(add);
+    }
+    seg.innerHTML = '';
+    for (const [label, on] of [['Write', false], ['Preview', true]]) {
+      const b = el('button', preview === on ? 'on' : '', label);
+      b.onclick = () => { keep(); preview = on; draw(); };
+      seg.append(b);
+    }
+    const f = files[at];
+    pane.innerHTML = '';
+    typing = null;
+    if (preview) { pane.append(fileBody(f, false)); return; }
+    let path = null;
+    if (f.main) {
+      pane.append(el('p', 'fileinfo', 'The main file. The front matter above is written at its top.'));
+    } else {
+      const row = el('div', 'pathrow');
+      path = el('input');
+      path.placeholder = 'notes.md';
+      path.value = f.path;
+      path.oninput = () => { f.path = path.value; tabs.children[at].textContent = path.value || 'new file'; };
+      const remove = el('button', 'btn small danger', 'Remove file');
+      remove.onclick = () => { files.splice(at, 1); at = 0; typing = null; draw(); };
+      row.append(path, remove);
+      pane.append(row);
+    }
+    const body = el('textarea', 'text');
+    body.rows = 20;
+    body.value = f.body;
+    pane.append(body);
+    typing = { body, path };
+  };
+  draw();
 
   const save = el('button', 'btn primary', 'Save');
   save.onclick = async () => {
-    const payload = { name: nameInput.value.trim(), description: desc.value.trim(), body: body.value };
-    if (kind === 'skills') payload.default_enabled = on;
+    keep();
+    const [main, ...rest] = files;
+    const payload = { name: nameInput.value.trim(), description: desc.value.trim(), body: main.body };
+    if (kind === 'skills') {
+      payload.default_enabled = on;
+      payload.files = rest.map(f => ({ path: f.path.trim(), body: f.body }));
+    }
     try {
       if (doc) {
-        await api(spec.path + '/' + encodeURIComponent(doc.name), {
-          method: 'PUT', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+        await put(spec.path + '/' + encodeURIComponent(doc.name), payload);
+        backToDoc(kind, doc.name);
       } else {
         await post(spec.path, payload);
+        backToList(kind);
       }
-      backToList(kind);
     } catch (e) {
       toast({ title: 'Not saved', body: String(e.message) });
     }
   };
-  const done = el('div', 'finish'); done.append(save);
-  v.append(done);
+  const cancel = el('button', 'btn', 'Cancel');
+  cancel.onclick = () => doc ? backToDoc(kind, doc.name) : backToList(kind);
+  const done = el('div', 'finish'); done.append(cancel, save);
+  page.append(done);
+}
+
+// backToDoc leaves an editor for the document it was editing, the same way
+// backToList leaves for the list.
+function backToDoc(kind, name) {
+  const here = authoredPath(kind, name);
+  if (state.from === here) history.back();
+  else location.replace(here);
 }
 
 // backToList leaves an editor for its list: back, when the list is where the

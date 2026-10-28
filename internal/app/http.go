@@ -955,8 +955,8 @@ func (a *App) hSkills(w http.ResponseWriter, r *http.Request) {
 			enabled = sess.skillEnabled(s)
 		}
 		out = append(out, map[string]any{"name": s.Name, "description": s.Description,
-			"bytes": s.Bytes, "default_enabled": s.DefaultEnabled, "enabled": enabled,
-			"editable": s.Editable})
+			"bytes": s.Bytes, "files": 1 + len(s.Files), "default_enabled": s.DefaultEnabled,
+			"enabled": enabled, "editable": s.Editable})
 	}
 	writeJSON(w, 200, map[string]any{"skills": out, "failures": a.skills.Failures()})
 }
@@ -967,8 +967,19 @@ func (a *App) hSkill(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"name": s.Name, "description": s.Description,
-		"body": s.Body, "default_enabled": s.DefaultEnabled, "editable": s.Editable})
+	writeJSON(w, 200, skillDoc(s))
+}
+
+// skillDoc is one skill as the interface shows it: its main file as written,
+// and every file beside it.
+func skillDoc(s *Skill) map[string]any {
+	files := s.Files
+	if files == nil {
+		files = []SkillFile{}
+	}
+	return map[string]any{"name": s.Name, "description": s.Description,
+		"body": s.Body, "source": s.Source, "main": s.Main(), "files": files, "bytes": s.Bytes,
+		"default_enabled": s.DefaultEnabled, "editable": s.Editable}
 }
 
 // hSaveSkill writes one of the operator's skills. A skill that ships in the
@@ -983,13 +994,20 @@ func (a *App) hSaveSkill(w http.ResponseWriter, r *http.Request) {
 		Description    string `json:"description"`
 		Body           string `json:"body"`
 		DefaultEnabled *bool  `json:"default_enabled"`
+		// Files left out are the files the skill has, so a client that does
+		// not know a skill can have them does not delete them by saving.
+		Files *[]SkillFile `json:"files"`
 	}
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
+	var files []SkillFile
 	if name := r.PathValue("name"); name != "" {
 		in.Name = name
+		if existing := a.skills.Get(name); existing != nil && in.Files == nil {
+			files = existing.Files
+		}
 	} else if a.skills.Get(in.Name) != nil {
 		// A POST is a new skill. Under a name already taken it would replace
 		// one without a word; a skill is changed by a PUT to its own address.
@@ -1002,7 +1020,10 @@ func (a *App) hSaveSkill(w http.ResponseWriter, r *http.Request) {
 	if in.DefaultEnabled != nil {
 		on = *in.DefaultEnabled
 	}
-	if err := a.skills.Save(in.Name, in.Description, in.Body, on); err != nil {
+	if in.Files != nil {
+		files = *in.Files
+	}
+	if err := a.skills.Save(in.Name, in.Description, in.Body, on, files); err != nil {
 		fail(w, 409, "%v", err)
 		return
 	}
@@ -1012,8 +1033,7 @@ func (a *App) hSaveSkill(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "the skill was written but does not load")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"name": s.Name, "description": s.Description,
-		"body": s.Body, "default_enabled": s.DefaultEnabled, "editable": s.Editable})
+	writeJSON(w, 200, skillDoc(s))
 }
 
 func (a *App) hDeleteSkill(w http.ResponseWriter, r *http.Request) {
@@ -1042,7 +1062,7 @@ func (a *App) hPersona(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"name": p.Name, "description": p.Description,
-		"body": p.Body, "editable": p.Editable})
+		"body": p.Body, "source": p.Source, "editable": p.Editable})
 }
 
 // hSavePersona writes one of the operator's personas. The built-in is refused:

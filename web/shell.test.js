@@ -2324,7 +2324,7 @@ test('a skill you wrote is saved with its name, description, and body', async ()
   vm.runInContext("state.view = 'skills';", ctx);
   await ctx.editAuthored('skills', null);
   const v = ctx._id('view');
-  const [name, desc] = findAll(v, 'text').filter(n => n.tagName === 'input');
+  const name = findAll(v, 'text').find(n => n.tagName === 'input'), desc = find(v, 'desc-in');
   const body = findAll(v, 'text').find(n => n.tagName === 'textarea');
   name.value = 'watering';
   desc.value = 'When to water.';
@@ -2333,7 +2333,7 @@ test('a skill you wrote is saved with its name, description, and body', async ()
   const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/skills');
   assert.strictEqual(sent.length, 1, 'saving did not write exactly one skill');
   assert.deepStrictEqual(JSON.parse(sent[0].body),
-    { name: 'watering', description: 'When to water.', body: 'Twice a week.', default_enabled: true });
+    { name: 'watering', description: 'When to water.', body: 'Twice a week.', default_enabled: true, files: [] });
 });
 
 test('a skill you wrote can be turned off by default, and deleted', async () => {
@@ -2378,10 +2378,15 @@ test('the address of a skill, or of a new persona, opens it', async () => {
     '/skills/watering': { name: 'watering', description: 'When to water.', body: 'Twice a week.', editable: true, default_enabled: true },
     '/personas': PERSONAS,
   });
-  vm.runInContext("state.view = 'skills'; state.arg = 'watering';", ctx);
+  vm.runInContext("state.view = 'skills'; state.arg = 'watering'; state.arg2 = undefined;", ctx);
+  await ctx.viewAuthored(ctx._id('view'), 'skills');
+  assert.match(textOf(find(ctx._id('view'), 'file')), /Twice a week/, 'the address of a skill did not open it');
+  assert.ok(ctx._id('head-acts').children.some(b => /Edit/.test(b.textContent)), 'a skill you wrote offers no edit');
+
+  vm.runInContext("state.arg2 = 'edit';", ctx);
   await ctx.viewAuthored(ctx._id('view'), 'skills');
   const body = findAll(ctx._id('view'), 'text').find(n => n.tagName === 'textarea');
-  assert.ok(body, 'the address of a skill did not open it');
+  assert.ok(body, 'the address of a skill\'s editor did not open it');
   assert.strictEqual(body.value, 'Twice a week.');
 
   vm.runInContext("state.view = 'personas'; state.arg = '+new';", ctx);
@@ -2399,7 +2404,7 @@ test('saving goes back to the list the editor was opened from', async () => {
   vm.runInContext("state.view = 'skills'; state.from = '#skills';", ctx);
   await ctx.editAuthored('skills', null);
   const v = ctx._id('view');
-  const [name, desc] = findAll(v, 'text').filter(n => n.tagName === 'input');
+  const name = findAll(v, 'text').find(n => n.tagName === 'input'), desc = find(v, 'desc-in');
   name.value = 'watering'; desc.value = 'When to water.';
   findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Twice a week.';
   await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
@@ -2415,12 +2420,98 @@ test('saving an editor opened directly lands on the list in its place', async ()
   ctx.location.hash = '#skills/+new';
   await ctx.editAuthored('skills', null);
   const v = ctx._id('view');
-  const [name, desc] = findAll(v, 'text').filter(n => n.tagName === 'input');
+  const name = findAll(v, 'text').find(n => n.tagName === 'input'), desc = find(v, 'desc-in');
   name.value = 'watering'; desc.value = 'When to water.';
   findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Twice a week.';
   await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
   assert.strictEqual(ctx.location.hash, '#skills');
   assert.deepStrictEqual(ctx._replaced, ['#skills'], 'the list was pushed, not put in the editor\'s place');
+});
+
+// A skill can be more than one file. Its front matter is set apart at the top,
+// each file is a tab, markdown is rendered and a CSV is a table, and the source
+// of the main file shows the front matter as written.
+const TRIP = {
+  name: 'trip', description: 'Use when a trip is planned — keep the `packing` list.', editable: true, default_enabled: false,
+  main: 'SKILL.md', bytes: 120, body: '## Before anything\n\nRead packing.md.\n',
+  source: '---\nname: trip\ndescription: Use when a trip is planned.\ndefault: off\n---\n\n## Before anything\n\nRead packing.md.\n',
+  files: [
+    { path: 'packing.md', body: '- chargers\n- passport\n', bytes: 21 },
+    { path: 'checklist.csv', body: 'item,note\n"passport","check, twice"\n', bytes: 34 },
+  ],
+};
+
+test('a skill opens with its front matter set apart and every file a tab', async () => {
+  const ctx = load({ '/skills/trip': TRIP });
+  vm.runInContext("state.view = 'skills'; state.arg = 'trip'; state.arg2 = undefined;", ctx);
+  await ctx.viewAuthored(ctx._id('view'), 'skills');
+  const v = ctx._id('view');
+  const fm = find(v, 'fm');
+  assert.ok(fm, 'there is no front matter block');
+  assert.match(find(fm, 'desc').innerHTML, /<code>packing<\/code>/, 'the description is not rendered');
+  assert.match(textOf(fm), /off unless chosen/, 'the front matter does not say whether it is on by default');
+  assert.match(textOf(fm), /files\s*3/, 'the front matter does not say how many files there are');
+
+  const tabs = () => findAll(v, 'tab');
+  assert.deepStrictEqual(tabs().map(t => t.textContent), ['SKILL.md', 'packing.md', 'checklist.csv']);
+  assert.match(find(v, 'file').children.map(c => c.innerHTML).join(''), /<h2>Before anything<\/h2>/, 'SKILL.md is not rendered');
+
+  tabs()[1].onclick();
+  assert.match(find(find(v, 'file'), 'md').innerHTML, /<li>chargers<\/li>/, 'a markdown file is not rendered');
+
+  tabs()[2].onclick();
+  const cells = findAll(find(v, 'file'), 'md')[0].children[0].children[1].children[0].children.map(c => c.textContent);
+  assert.deepStrictEqual(cells, ['passport', 'check, twice'], 'a CSV is not shown as its table');
+
+  tabs()[0].onclick();
+  find(v, 'seg').children.find(b => b.textContent === 'Source').onclick();
+  const src = find(find(v, 'file'), 'src');
+  assert.ok(src, 'there is no source view');
+  assert.deepStrictEqual(findAll(src, 'fmline').map(l => l.textContent.trim()),
+    ['name: trip', 'description: Use when a trip is planned.', 'default: off'], 'the front matter is not marked in the source');
+});
+
+test('a file is added to a skill, and saving goes back to the skill', async () => {
+  const ctx = load({ '/skills/trip': TRIP });
+  vm.runInContext("state.view = 'skills'; state.from = '#skills/trip';", ctx);
+  let backs = 0;
+  ctx.history.back = () => { backs++; };
+  await ctx.editAuthored('skills', 'trip');
+  const v = ctx._id('view');
+  findAll(v, 'tab').find(t => t.textContent === '+ File').onclick();
+  const path = find(v, 'pathrow').children[0];
+  path.value = 'ref/flights.md';
+  findAll(v, 'text').find(n => n.tagName === 'textarea').value = 'Book early.';
+  // Moving to another tab keeps what was typed.
+  findAll(v, 'tab')[0].onclick();
+  assert.deepStrictEqual(findAll(v, 'tab').map(t => t.textContent).slice(0, 4), ['SKILL.md', 'packing.md', 'checklist.csv', 'ref/flights.md']);
+  await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
+  const sent = ctx._calls.filter(c => c.method === 'PUT' && c.path === '/skills/trip');
+  assert.strictEqual(sent.length, 1, 'saving did not write the skill');
+  assert.deepStrictEqual(JSON.parse(sent[0].body).files.map(f => f.path), ['packing.md', 'checklist.csv', 'ref/flights.md']);
+  assert.strictEqual(JSON.parse(sent[0].body).files[2].body, 'Book early.');
+  assert.strictEqual(backs, 1, 'saving an edit did not go back to the skill');
+});
+
+test('a file is removed from a skill', async () => {
+  const ctx = load({ '/skills/trip': TRIP });
+  vm.runInContext("state.view = 'skills';", ctx);
+  await ctx.editAuthored('skills', 'trip');
+  const v = ctx._id('view');
+  findAll(v, 'tab').find(t => t.textContent === 'packing.md').onclick();
+  findAll(v, 'btn').find(b => b.textContent === 'Remove file').onclick();
+  await findAll(v, 'btn').find(b => /Save/.test(b.textContent)).onclick();
+  const sent = ctx._calls.filter(c => c.method === 'PUT' && c.path === '/skills/trip');
+  assert.deepStrictEqual(JSON.parse(sent[0].body).files.map(f => f.path), ['checklist.csv']);
+  assert.strictEqual(ctx.location.hash, '#skills/trip', 'saving did not land on the skill');
+});
+
+test('the skills list says how many files a skill has', async () => {
+  const ctx = load({ '/skills': { skills: [{ name: 'trip', description: 'Trips.', bytes: 2048, files: 3, editable: true }] } });
+  const v = node('div');
+  await ctx.viewAuthored(v, 'skills');
+  const tags = findAll(v, 'tag').map(t => t.textContent);
+  assert.ok(tags.includes('3 files'), 'the list does not say the skill has three files: ' + tags.join(', '));
 });
 
 test('a persona is written through the same screen, in its own words', async () => {
@@ -2438,7 +2529,7 @@ test('a persona is written through the same screen, in its own words', async () 
   // indexed like a skill.
   assert.ok(!findAll(e, 'pill').some(p => /by default/.test(p.textContent)),
     'a persona offers a default-enabled switch, which means nothing for a persona');
-  const [name, desc] = findAll(e, 'text').filter(n => n.tagName === 'input');
+  const name = findAll(e, 'text').find(n => n.tagName === 'input'), desc = find(e, 'desc-in');
   const body = findAll(e, 'text').find(n => n.tagName === 'textarea');
   name.value = 'terse';
   desc.value = 'Says little.';

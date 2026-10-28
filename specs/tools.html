@@ -297,6 +297,7 @@ is fixed there.</p>
 <li>The eval model is configurable and defaults to one that is free to run.</li>
 <li>A case can require that the tool under test was never rejected during the turn.</li>
 <li>A case can seed files into its own working directory, so a tool that operates on files is evaluated against files that exist rather than against a prompt that claims they do.</li>
+<li>A case can bring skills of its own, loaded for its turn as the operator's and gone after it, so a case about a skill is evaluated against one that exists; an eval's skills are the shipped ones and the case's, never the operator's.</li>
 <li>A provider rate limit is retried rather than reported as a failed case.</li>
 </ul>
 </div>
