@@ -823,7 +823,7 @@ place the rest of the inherited context already lives.</p>
 </div>
 
 <div class="adr" id="adr-033">
-<div class="meta">ADR-033 · accepted</div>
+<div class="meta">ADR-033 · accepted · amended by <a href="#adr-071">ADR-071</a></div>
 <h3>The agent does not modify itself</h3>
 <h4>Context</h4>
 <p>The specification led with an agent that writes its own tools, and said it writes its own skills too.
@@ -1616,7 +1616,7 @@ agent knows either client exists.</p>
 </div>
 
 <div class="adr" id="adr-053">
-<div class="meta">ADR-053 · accepted</div>
+<div class="meta">ADR-053 · accepted · amended by <a href="#adr-071">ADR-071</a></div>
 <h3>The operator writes skills and personas through the interface; the agent still cannot</h3>
 <h4>Context</h4>
 <p><a href="#adr-033">ADR-033</a> removed self-modification: the agent does not write tools and does not
@@ -2238,6 +2238,44 @@ conversation stays on the model it chose. The agent has to know which model to n
 it finds one, and a skill can name the one that worked. Files go to the gateway inline, so a call
 carries at most 20&nbsp;MB of them: a longer recording is cut down to its audio first. The decision
 endpoint is the gateway's alpha, and may change under the tool.</p>
+</div>
+
+<div class="adr" id="adr-071">
+<div class="meta">ADR-071 · accepted · amends ADR-033, ADR-053</div>
+<h3>The agent drafts skills, and the operator installs them</h3>
+<h4>Context</h4>
+<p><a href="#adr-033">ADR-033</a> took self-modification out and deleted the skill that told the agent
+how to write a skill, because the kernel refused the write it described. <a href="#adr-053">ADR-053</a>
+gave the writing to the operator, in the interface. Then a conversation that had worked out a
+voice-over over some ninety turns wrote down what it had learned, the operator pasted it into the Skills
+screen, and a fresh conversation did the same task in eight rounds with no detour. That loop &mdash; a
+conversation learns a task, the next one starts from it &mdash; is what skills are for, and three things
+made it harder than it needed to be. The agent could not see the format: <code>skill_read</code> returned
+a skill without its front matter, and the skill folders are outside what a tool can read, so asked to copy
+one it asked the operator to paste it. Carrying the draft across meant copying it into a form field by
+hand. And a skill's scripts, once installed, could not be run from where they landed.</p>
+<h4>Decision</h4>
+<p>The agent drafts a skill in its own working directory, as <code>skills/&lt;name&gt;/</code>:
+<code>SKILL.md</code>, the files it refers to, and its test cases under <code>evals/</code> in the layout
+<code>claude plugin eval</code> reads. A shipped skill, <code>writing-skills</code>, says how, and when to
+offer one: after a task of several steps has worked and could be asked for again. Its reason to exist is
+back, because the writing it describes is in the one directory the agent may write.</p>
+<p><code>skill_read</code> returns a skill's main file as stored, front matter included, so every skill
+is an example of the format and a revision can start from the whole of it.</p>
+<p>The operator installs a draft from the conversation's files: a folder holding <code>SKILL.md</code>
+offers to be installed. It is checked as a save is, and a shipped name is refused. A name the operator
+already has is replaced only once the interface has named the skill it will overwrite, because a skill
+takes a few rounds to get right and each is another install. Installing is the approval: nothing the
+agent writes reaches a skill folder any other way.</p>
+<p>A conversation's tools can read, and so run, the files of the skill folders that conversation has,
+and write none of them. <code>skill_read</code> names where they are.</p>
+<h4>Consequences</h4>
+<p>A lesson becomes a skill in two taps instead of a copy and a paste, and the agent can revise one it
+has. A skill can carry scripts, which are code: the Skills screen shows every file, and the operator
+reads them before installing, so <a href="#adr-053">ADR-053</a>'s argument that prose is the safe form
+now holds for what the operator chooses to install rather than for what the agent can do. A skill
+folder holds text only, so a test's sample video stays out and its prompt says what kind of input it
+needs. A skill still cannot install what it depends on; it says what it needs.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

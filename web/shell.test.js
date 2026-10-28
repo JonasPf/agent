@@ -1722,6 +1722,53 @@ test('a large tree opens folded', async () => {
   assert.deepStrictEqual(rowsOf(v), ['repo/', 'notes.txt']);
 });
 
+// A skill the agent drafted is a folder holding SKILL.md, and it is installed
+// from where it is: the folder offers it, and installing over one of the
+// operator's skills asks first, naming the skill it would replace (ADR-071).
+test('a drafted skill installs from its folder, asking before it replaces one', async () => {
+  const ctx = filesScreen([DIR('skills'), DIR('skills/voice-over'), FILE('skills/voice-over/SKILL.md'),
+    FILE('skills/voice-over/scripts/mux.sh'), DIR('src'), FILE('src/main.go')]);
+  const sent = [];
+  const fetch = ctx.fetch;
+  ctx.fetch = async (p, opts) => {
+    if (p !== '/skills/install') return fetch(p, opts);
+    const body = JSON.parse(opts.body);
+    sent.push(body);
+    if (!body.replace) return { ok: false, status: 409, text: async () => JSON.stringify({ error: 'you already have a skill named "voice-over"; installing this replaces it' }) };
+    return { ok: true, status: 201, text: async () => JSON.stringify({ name: 'voice-over' }) };
+  };
+  const asked = [];
+  ctx.confirm = q => { asked.push(q); return true; };
+  const v = node('div');
+  await ctx.viewFiles(v);
+  const row = name => findAll(v, 'row-item').find(r => find(r, 'n').textContent === name);
+  assert.ok(!find(row('src/'), 'install'), 'a folder without SKILL.md offers to be installed');
+  const install = find(row('voice-over/'), 'install');
+  assert.ok(install, 'the skill folder does not offer to be installed');
+  await install.onclick({ stopPropagation() {} });
+  assert.deepStrictEqual(sent, [{ session_id: 'S1', path: 'skills/voice-over', replace: false },
+    { session_id: 'S1', path: 'skills/voice-over', replace: true }]);
+  assert.strictEqual(asked.length, 1);
+  assert.match(asked[0], /voice-over/, 'the question does not name the skill it replaces');
+  assert.strictEqual(ctx.location.hash, '#skills/voice-over', 'installed, the skill does not open');
+});
+
+test('a skill is not replaced when the operator says no', async () => {
+  const ctx = filesScreen([DIR('voice-over'), FILE('voice-over/SKILL.md')]);
+  const sent = [];
+  const fetch = ctx.fetch;
+  ctx.fetch = async (p, opts) => {
+    if (p !== '/skills/install') return fetch(p, opts);
+    sent.push(JSON.parse(opts.body));
+    return { ok: false, status: 409, text: async () => JSON.stringify({ error: 'you already have a skill named "voice-over"; installing this replaces it' }) };
+  };
+  ctx.confirm = () => false;
+  const v = node('div');
+  await ctx.viewFiles(v);
+  await find(findAll(v, 'row-item')[0], 'install').onclick({ stopPropagation() {} });
+  assert.strictEqual(sent.length, 1, 'it replaced the skill without a yes');
+});
+
 // ---------- the tools screen ----------
 
 const SANDBOX = {

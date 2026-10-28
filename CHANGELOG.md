@@ -27,6 +27,18 @@
   model. The agent makes the call with its own key, and what it costs is
   added to the conversation's cost. A voice-over no longer needs a 1 GB
   download in every conversation.
+- **The agent can write you a skill.** When a task of several steps has
+  worked, the agent offers to save it as a skill. Say yes and it drafts one
+  in the conversation's files, under `skills/<name>/`: the steps that
+  worked and the traps it hit, any scripts it needs, and a few test cases
+  it runs before handing it over. Nothing is installed until you do it.
+- **Install a skill from a conversation's files.** In Files, a folder
+  holding `SKILL.md` has **install as skill**. If you already have a skill
+  of that name, it asks before replacing it, so you can go round a few
+  times until a skill is right. Installed, the skill opens to be read.
+- **A skill's scripts run.** A skill installed with scripts can have them
+  run by any conversation that has the skill; no conversation can change
+  them. Reading a skill now shows it as stored, front matter included.
 
 ## 2026-10-27
 

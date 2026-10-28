@@ -70,6 +70,7 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("GET /skills", a.hSkills)
 	mux.HandleFunc("POST /skills", a.hSaveSkill)
+	mux.HandleFunc("POST /skills/install", a.hInstallSkill)
 	mux.HandleFunc("GET /skills/{name}", a.hSkill)
 	mux.HandleFunc("PUT /skills/{name}", a.hSaveSkill)
 	mux.HandleFunc("DELETE /skills/{name}", a.hDeleteSkill)

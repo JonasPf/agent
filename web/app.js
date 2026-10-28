@@ -1929,6 +1929,7 @@ async function viewFiles(v) {
   const isFolded = p => fold.folded !== fold.flipped.has(p);
   const tree = el('div', 'tree');
   const fileURL = p => sessionFileURL(id, p);
+  const drafts = new Set(files.filter(f => /(^|\/)SKILL\.md$/.test(f.path)).map(f => f.path.replace(/\/?SKILL\.md$/, '')));
   const draw = () => {
     tree.innerHTML = '';
     const walk = (dir, depth) => {
@@ -1944,6 +1945,13 @@ async function viewFiles(v) {
           m.append(el('div', 'n', n.name + '/'), el('div', 's', !n.children.length ? 'empty'
             : `${n.children.length} item${n.children.length === 1 ? '' : 's'} · ${fmtBytes(n.bytes)}`));
           row.append(m);
+          // A folder holding SKILL.md is a skill the agent drafted, and is
+          // installed from where it is.
+          if (drafts.has(n.path)) {
+            const inst = el('span', 'tag install', 'install as skill');
+            inst.onclick = async e => { e.stopPropagation(); await installSkill(id, n.path); };
+            row.append(inst);
+          }
           row.onclick = () => {
             if (fold.flipped.has(n.path)) fold.flipped.delete(n.path); else fold.flipped.add(n.path);
             draw();
@@ -1970,6 +1978,24 @@ async function viewFiles(v) {
   };
   draw();
   v.append(tree);
+}
+
+// installSkill installs a skill the agent drafted in this conversation's
+// directory as one of the operator's (ADR-071). Installing is the approval, so
+// it does not replace a skill of the operator's without asking, by name; once
+// installed, the skill opens, to be read.
+async function installSkill(sessionId, path) {
+  const send = replace => post('/skills/install', { session_id: sessionId, path, replace });
+  let sk;
+  try { sk = await send(false); }
+  catch (e) {
+    const taken = /already have a skill named "([^"]+)"/.exec(String(e.message));
+    if (!taken) { toast({ title: 'Not installed', body: String(e.message) }); return; }
+    if (!confirm('Replace your skill “' + taken[1] + '” with this draft? The version installed now is gone unless you kept a copy.')) return;
+    try { sk = await send(true); }
+    catch (e2) { toast({ title: 'Not installed', body: String(e2.message) }); return; }
+  }
+  location.hash = authoredPath('skills', sk.name);
 }
 
 // A tree with more entries than this opens with its directories folded, so a

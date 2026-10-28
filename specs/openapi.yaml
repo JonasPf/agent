@@ -780,6 +780,35 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
 
+  /skills/install:
+    post:
+      tags: [skills]
+      summary: Install a skill from a folder in a conversation's working directory.
+      description: >-
+        The folder holds SKILL.md, whose front matter names the skill, and every
+        other file in it becomes the skill's. It is checked as a save is. Over a
+        skill the operator already has, it is refused with 409 unless replace is
+        true; a name that ships is refused either way (ADR-071).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, path]
+              properties:
+                session_id: {type: string}
+                path: {type: string, description: "The folder, relative to the working directory."}
+                replace: {type: boolean, description: "Replace a skill of the same name the operator has."}
+      responses:
+        "201":
+          description: The skill as installed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Skill"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
   /skills/{name}:
     parameters:
       - $ref: "#/components/parameters/DocName"
