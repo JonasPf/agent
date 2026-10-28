@@ -273,9 +273,9 @@ func TestSkillReadReadsAFolderSkillAndEachOfItsFiles(t *testing.T) {
 	}
 
 	res := call(`{"name":"trip"}`)
-	if !res.OK || !strings.HasPrefix(res.Content, "Read packing.md first.") || !strings.Contains(res.Content, "packing.md") ||
+	if !res.OK || !strings.Contains(res.Content, "---\nRead packing.md first.") || !strings.Contains(res.Content, "packing.md") ||
 		!strings.Contains(res.Content, `"file"`) {
-		t.Errorf("skill_read trip = %+v, want SKILL.md's body, then packing.md named with how to read it", res)
+		t.Errorf("skill_read trip = %+v, want SKILL.md, then packing.md named with how to read it", res)
 	}
 	if res := call(`{"name":"trip","file":"packing.md"}`); !res.OK || res.Content != "Chargers are one item per device.\n" {
 		t.Errorf("skill_read trip packing.md = %+v, want the file exactly as stored", res)

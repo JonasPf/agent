@@ -341,7 +341,8 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// Whatever the tool did, it did it here: what the directory holds is
 	// measured again rather than read from what was kept.
 	defer tc.App.workspaceChanged(tc.SessionID)
-	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, t.Agent.Reads, nil)
+	reads := append(append([]string(nil), t.Agent.Reads...), tc.App.skillFolders(tc.SessionID)...)
+	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, reads, nil)
 	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
 	cmd.Dir = workspace
 	if abs, err := filepath.Abs(workspace); err == nil {

@@ -31,8 +31,10 @@ func main() {
 		tool.OK(f.Body)
 	}
 	var skill struct {
-		Body  string `json:"body"`
-		Files []struct {
+		Body   string `json:"body"`
+		Source string `json:"source"`
+		Dir    string `json:"dir"`
+		Files  []struct {
 			Path  string `json:"path"`
 			Bytes int    `json:"bytes"`
 		} `json:"files"`
@@ -41,14 +43,26 @@ func main() {
 	if skill.Body == "" {
 		tool.Failf("no skill named %q", name)
 	}
+	// The file as stored, front matter included: every skill is then an
+	// example of the format, and one being revised is seen whole.
+	text := skill.Source
+	if text == "" {
+		text = skill.Body
+	}
 	if len(skill.Files) == 0 {
-		tool.OK(skill.Body)
+		tool.OK(text)
 	}
 	// The other files are named after the text that refers to them, with the
-	// call that reads one, so the model does not have to guess at either.
+	// call that reads one, so the model does not have to guess at either; and
+	// where they are, because a script among them runs from there.
 	var sb strings.Builder
-	sb.WriteString(strings.TrimRight(skill.Body, "\n"))
-	fmt.Fprintf(&sb, "\n\n---\nThis skill has more files. Read one with skill_read, its path as \"file\" — "+
+	sb.WriteString(strings.TrimRight(text, "\n"))
+	sb.WriteString("\n\n---\n")
+	if skill.Dir != "" {
+		fmt.Fprintf(&sb, "This skill's files are in %s, readable and runnable from there with bash "+
+			"(e.g. python3 %s/%s) and not writable. ", skill.Dir, skill.Dir, skill.Files[0].Path)
+	}
+	fmt.Fprintf(&sb, "Read one with skill_read, its path as \"file\" — "+
 		"for example {\"name\": %q, \"file\": %q}:\n", name, skill.Files[0].Path)
 	for _, f := range skill.Files {
 		fmt.Fprintf(&sb, "- %s (%d bytes)\n", f.Path, f.Bytes)

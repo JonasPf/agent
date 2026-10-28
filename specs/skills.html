@@ -90,9 +90,11 @@ rather than twenty documents' worth.</p>
 
 <h2>Who writes a skill</h2>
 
-<p><strong>The operator does</strong> &mdash; in the interface, or on the filesystem. A skill is a
-Markdown file the person running the agent writes. The agent reads skills and does not write them
-(<a href="adrs.html#adr-033">ADR-033</a>, <a href="adrs.html#adr-053">ADR-053</a>).</p>
+<p><strong>The operator does</strong> &mdash; in the interface, or on the filesystem &mdash; and the
+agent drafts. A skill is a Markdown file, or a folder of them, that the person running the agent puts
+in place. The agent reads skills, and writes drafts of them only in its own working directory, from
+where the operator installs one (<a href="adrs.html#adr-033">ADR-033</a>,
+<a href="adrs.html#adr-053">ADR-053</a>, <a href="adrs.html#adr-071">ADR-071</a>).</p>
 
 <p>There are two roots. Skills that <strong>ship in the image</strong> are read-only: the image is
 replaced on every deployment, so an edit there would be lost at the next upgrade. Skills the
@@ -101,15 +103,28 @@ are created, edited, and deleted on the Skills panel.</p>
 
 <p>Neither root is writable by a tool &mdash; neither is in any path the sandbox allows a tool to write
 &mdash; so the boundary is the operating system's, not the agent's good manners. The interface is the
-operator, and writes; the agent reads.</p>
+operator, and writes; the agent reads. What a tool may read is the folders of the skills its own
+conversation has, so a skill that carries a script can run it from where it is installed;
+<code>skill_read</code> says where that is.</p>
 
 <p>A skill the operator writes may not take the name of one that ships: a name is an identifier, and two
 skills answering to one would make the index a lie about what <code>skill_read</code> returns. The
 collision is refused and said out loud.</p>
 
-<p>What survives from before is the reason skills existed: a lesson worth keeping is worth writing down,
-and prose is the safe form for it. When the agent works something out that the next attempt should start
-from, it says so, and the operator decides whether it becomes a skill.</p>
+<p>What survives from before is the reason skills existed: a lesson worth keeping is worth writing down.
+When a task of several steps has worked and could be asked for again, the agent offers to write it down,
+and the <code>writing-skills</code> skill says how: as <code>skills/&lt;name&gt;/</code> in its working
+directory, with <code>SKILL.md</code>, any scripts and references it needs, and test cases under
+<code>evals/</code> in the layout <code>claude plugin eval</code> reads &mdash; <code>evals/&lt;case&gt;/prompt.md</code>,
+<code>case.yaml</code>, and one statement per file in <code>graders/</code> &mdash; run once by the agent
+itself before it hands the draft over.</p>
+
+<p>The operator installs it from the conversation's files, where a folder holding <code>SKILL.md</code>
+offers to be installed. It is checked as a save is. A skill of the same name the operator already has is
+replaced, because a skill takes a few rounds to get right, but only after the interface has said which
+skill it will overwrite; a name that ships is refused. A folder holds text only: a script, a reference,
+a test case's prompt, never the sample video a test was run on. A skill with scripts is code, and the
+operator reads it on the Skills screen before deciding.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -127,6 +142,10 @@ from, it says so, and the operator decides whether it becomes a skill.</p>
 <li>A file whose path would leave the skill's folder, starts with a dot, is empty, repeats another's, or names <code>SKILL.md</code> is refused, and nothing is stored.</li>
 <li>A save that leaves the files out keeps the ones the skill has.</li>
 <li>The interface sets whether a skill is on by default, and the choice survives a reload.</li>
+<li>A folder in a conversation's working directory holding <code>SKILL.md</code> is installed as a skill through the API, named by its front matter, with every other file in the folder as the skill's.</li>
+<li>Installing over a skill the operator already has is refused unless the request says to replace it, and the refusal names that skill; a name that ships is refused either way.</li>
+<li>A folder that would be refused as a save &mdash; no front matter, a description over one line, a file that is not text &mdash; is refused as an install, says why, and nothing is stored.</li>
+<li>A tool can read and run the files of a skill folder its conversation has, cannot write them, and cannot read a skill its conversation does not have.</li>
 </ul>
 </div>
 
@@ -136,6 +155,7 @@ from, it says so, and the operator decides whether it becomes a skill.</p>
 <tr><th>Skill</th><th>Teaches</th></tr>
 <tr><td><code>scheduling</code></td><td>How to turn a condition into a shell command, which is nearly always possible; when it genuinely is not; choosing expiry and interval.</td></tr>
 <tr><td><code>keeping-records</code></td><td>How to keep whatever the operator asks to have remembered &mdash; a series that accumulates (measurements, appointments, incidents), a list with no dates, or a note of a fact, a preference, or a decision &mdash; as files in the session's working directory; that every date written comes from <code>clock</code> in the same turn; and how to read any of it back with a command.</td></tr>
+<tr><td><code>writing-skills</code></td><td>When to offer to turn a task that worked into a skill, and how to draft one in the working directory: a description that says when, a lean <code>SKILL.md</code> that explains why, scripts for work that repeats, test cases in the layout <code>claude plugin eval</code> reads, a run of them before handing it over, and how the operator installs it.</td></tr>
 <tr><td><code>researching</code></td><td>How to answer a question from the web: plan narrow searches, read the page rather than the snippet, rank sources from primary to unverified, keep findings in a file as they accumulate, and give every claim its source.</td></tr>
 </table>
 

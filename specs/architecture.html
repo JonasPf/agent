@@ -382,7 +382,7 @@ itself in front of every tool, and that second run restricts itself and becomes 
 
 <p><strong>A tool reads and writes its own session's working directory, and nothing else.</strong> Both
 halves are an allow-list, so a path that was never considered is denied rather than permitted
-(<a href="adrs.html#adr-034">ADR-034</a>). Four things are allowed beyond the working directory, and each
+(<a href="adrs.html#adr-034">ADR-034</a>). Five things are allowed beyond the working directory, and each
 is what lets a tool run at all rather than a convenience:</p>
 
 <table>
@@ -391,10 +391,11 @@ is what lets a tool run at all rather than a convenience:</p>
 <tr><td>The tool directory</td><td>read</td><td>A tool loads its own executable and the helper beside it. The agent's own program text, not the operator's data.</td></tr>
 <tr><td>The database file and its <code>-wal</code> and <code>-shm</code> journals</td><td>read, write</td><td>A tool is handed <code>AGENT_DB</code> on purpose and may keep its own tables. Narrowed from the data directory, which holds every session's transcript.</td></tr>
 <tr><td><code>AGENT_READ_PATHS</code></td><td>read</td><td>Named by the operator. A browser installed outside the system roots is the case it exists for.</td></tr>
+<tr><td>The folders of the skills the conversation has</td><td>read</td><td>A skill can carry a script, run from where it is installed (<a href="adrs.html#adr-071">ADR-071</a>). Only the skills this conversation has; the rest of the skill directory stays denied.</td></tr>
 </table>
 
 <p>Everything else is denied: the home directory, the repository the agent runs from, another session's
-working directory, the skill directory, and the file holding the model API key &mdash; which needs no
+working directory, the skills the conversation does not have, and the file holding the model API key &mdash; which needs no
 rule of its own, because it is in no allowed path. The temporary directory is inside the session's own
 working directory too, so a tool's scratch files are as visible and as confined as everything else it
 writes.</p>

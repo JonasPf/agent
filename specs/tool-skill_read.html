@@ -60,13 +60,13 @@ would read as a skill with no instructions in it and proceed on.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A known name returns the skill's body in full, exactly as stored.</li>
+<li>A known name returns the skill's main file in full, exactly as stored, front matter included.</li>
 <li>An unknown name fails and quotes the name given.</li>
 <li>A skill that exists with an empty body fails rather than returning nothing.</li>
 <li>An empty name is refused.</li>
 <li>A name is matched as it appears in the prompt's index.</li>
 <li>Only skills indexed in this session's prompt are readable from it, and so are only their files.</li>
-<li>A skill that is a folder returns <code>SKILL.md</code>'s body, then the path of each other file and how to read one; a skill of one file returns its body alone.</li>
+<li>A skill that is a folder returns <code>SKILL.md</code>, then the folder's path, which a tool can read and run files from, then the path of each other file and how to read one; a skill of one file returns that file alone.</li>
 <li>A <code>file</code> returns that file of the skill exactly as stored.</li>
 <li>A <code>file</code> the skill does not have fails, quoting the path given and naming the files it does have.</li>
 <li>The description says to read a skill before the work it covers, and again once compaction has folded its text away.</li>

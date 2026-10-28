@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,7 +164,15 @@ func (a *App) tSkill(w http.ResponseWriter, r *http.Request) {
 	for _, f := range sk.Files {
 		files = append(files, map[string]any{"path": f.Path, "bytes": f.Bytes})
 	}
-	writeJSON(w, 200, map[string]any{"name": sk.Name, "description": sk.Description, "body": sk.Body, "files": files})
+	// The source is the file as stored, front matter and all, so a skill is an
+	// example of the format and a revision starts from the whole of it. A
+	// folder says where it is: its scripts run from there (ADR-071).
+	dir := ""
+	if sk.Main() == skillMain {
+		dir = absOr(filepath.Dir(sk.Path))
+	}
+	writeJSON(w, 200, map[string]any{"name": sk.Name, "description": sk.Description, "body": sk.Body,
+		"source": sk.Source, "dir": dir, "files": files})
 }
 
 // tSkillFile reads one file of a skill the calling conversation has.

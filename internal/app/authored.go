@@ -171,6 +171,13 @@ func checkAuthored(name, description, body string) error {
 	if strings.ContainsAny(description, "\r\n") {
 		return fmt.Errorf("a description is a single line")
 	}
+	// A YAML block is how other skill formats spread a description over
+	// lines. The front matter here is read a line at a time, so the block's
+	// marker would become the whole description.
+	switch description {
+	case "|", ">", "|-", ">-", "|+", ">+":
+		return fmt.Errorf("a description is one line, written on the description: line itself; a YAML block (%s) is not read", description)
+	}
 	if strings.TrimSpace(body) == "" {
 		return fmt.Errorf("a body is required")
 	}
