@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-30
+
+- **The voice-over skill comes with the agent.** Send a video and ask for a
+  voice-over: the agent transcribes the narration, tidies it, speaks it in a
+  synthesized voice, and puts it back on the video at full length. A silent
+  screen recording gets a narration written from what it shows. It used to
+  exist only where it had been installed by hand; every deployment now has
+  it.
+
 ## 2026-10-29
 
 - **The agent installs the programs it needs.** A new `packages` tool finds
