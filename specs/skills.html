@@ -47,6 +47,10 @@ longer example &mdash; in folders of their own if it likes. The index carries th
 <code>skill_read</code> returns <code>SKILL.md</code> with the other files' paths after it, and reads
 any one of them when the procedure says it is needed (<a href="adrs.html#adr-069">ADR-069</a>).</p>
 
+<p>A skill that needs a program the image does not ship says which package to install with
+<a href="tool-packages.html"><code>packages</code></a>. It names a major version, such as
+<code>ffmpeg_8-headless</code>, when the version matters (<a href="adrs.html#adr-072">ADR-072</a>).</p>
+
 <pre><code>skills/trip-planning/SKILL.md
 skills/trip-planning/packing.md
 skills/trip-planning/ref/checklist.csv</code></pre>

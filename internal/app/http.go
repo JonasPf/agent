@@ -1285,7 +1285,7 @@ func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "archives larger than 500 MB are refused")
 		return
 	}
-	s, err := a.ImportSession(tmp, n)
+	s, missing, err := a.ImportSession(tmp, n)
 	if err != nil {
 		code := 400
 		if strings.Contains(err.Error(), "already here") {
@@ -1294,7 +1294,10 @@ func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, code, "%v", err)
 		return
 	}
-	writeJSON(w, 201, a.enrich(s))
+	writeJSON(w, 201, struct {
+		*Session
+		PackagesMissing []string `json:"packages_missing,omitempty"`
+	}{a.enrich(s), missing})
 }
 
 func (a *App) hModels(w http.ResponseWriter, r *http.Request) {

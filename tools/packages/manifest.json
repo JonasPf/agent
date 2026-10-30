@@ -1,0 +1,24 @@
+{
+  "name": "packages",
+  "description": "Find and install a program this environment does not ship, from Nix's stable release nixos-26.05. Search first: search takes words that must all appear in a package's name or description, and lists matching packages with their versions. Then install the exact names the search listed. An installed program is on PATH in this conversation's bash and checks from your next call; other conversations do not have it unless they install it too. Some programs come in major versions as separate packages, e.g. ffmpeg_7-headless and ffmpeg_8-headless, python312 and python313: name one when the version matters. Prefer a -headless or -minimal variant when there is one; it is smaller. Python libraries do not come from here: use `pip install --user <library>` in bash. Called with neither search nor install, it lists what this conversation has installed. Installs run one at a time across the agent and may take a minute or more; one that would leave less than 2 GB of disk free is refused.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "search": {
+        "type": "string",
+        "description": "Words to find packages by, e.g. \"ffmpeg\" or \"pdf to text\". Every word must match the package's name or description."
+      },
+      "install": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Package names to install, exactly as a search listed them, e.g. [\"ffmpeg_8-headless\"]."
+      }
+    }
+  },
+  "agent": {
+    "db_prefix": "packages_",
+    "timeout_seconds": 1560
+  }
+}

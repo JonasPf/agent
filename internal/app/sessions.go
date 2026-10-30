@@ -90,6 +90,13 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	if err := copyTree(a.sessionWorkspace(origin.ID), a.ensureWorkspace(fork.ID)); err != nil {
 		return nil, err
 	}
+	// Its packages are not in that directory: the fork roots the same store
+	// paths, so it keeps them when the origin goes, and copies none of them.
+	if len(origin.Packages) > 0 && a.pkgs != nil {
+		if missing := a.pkgs.keep(context.Background(), fork.ID, origin.Packages); len(missing) > 0 {
+			return nil, fmt.Errorf("the fork could not keep these packages: %s", strings.Join(missing, ", "))
+		}
+	}
 	// And its variables: a copy, so a change to either reaches only that one.
 	carried := map[string]*string{}
 	for name, v := range a.store.SessionEnv(origin.ID) {
@@ -138,6 +145,7 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 		// The operator made the fork from a conversation in front of them;
 		// what it copied is not news.
 		x.ReadThrough = readThrough
+		x.Packages = append([]Package(nil), origin.Packages...)
 	})
 	if err != nil {
 		return nil, err

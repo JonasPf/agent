@@ -193,6 +193,7 @@ func (s *Scheduler) runCheck(ctx context.Context, j *Job, sess *Session) (bool, 
 	// conversation gets — what a program needs to start, and that conversation's
 	// variables — and never the agent's whole environment, which holds the model key.
 	cmd.Env = append(toolBaseEnv(), sessionVars(s.app.store.SessionEnv(sess.ID))...)
+	cmd.Env = s.app.withPackages(cmd.Env, sess.ID)
 	cmd.Env = append(cmd.Env, "TMPDIR="+tmp, "HOME="+home)
 	// Killing the shell does not close pipes a grandchild still holds, and
 	// CombinedOutput waits for every writer. WaitDelay bounds that wait, so the

@@ -3,6 +3,7 @@ module agent
 go 1.25.0
 
 require (
+	github.com/andybalholm/brotli v1.2.7
 	github.com/coder/websocket v1.8.15
 	modernc.org/sqlite v1.57.0
 )
