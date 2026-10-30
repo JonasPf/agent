@@ -164,3 +164,121 @@ func TestARunawayTurnStopsAtTheRoundLimitAndSaysSo(t *testing.T) {
 		t.Errorf("the next message did not carry on: the model was called %d times in all", got)
 	}
 }
+
+// argsModel answers each round with a call to tool carrying the arguments
+// args gives for that round, and with text once args has none to give.
+func argsModel(t *testing.T, tool string, args func(n int) (string, bool), final string) (*httptest.Server, *atomic.Int64) {
+	t.Helper()
+	var rounds atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		var chunk []byte
+		// Only a call that offers tools is a round; titling the conversation is not.
+		if !strings.Contains(string(body), `"`+tool+`"`) {
+			chunk, _ = json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"content": "A title"}}}})
+		} else if a, ok := args(int(rounds.Add(1))); ok {
+			chunk, _ = json.Marshal(map[string]any{"choices": []any{map[string]any{
+				"delta": map[string]any{"tool_calls": []any{map[string]any{
+					"index": 0, "id": fmt.Sprintf("call_%d", rounds.Load()),
+					"function": map[string]any{"name": tool, "arguments": a},
+				}}}}}})
+		} else {
+			chunk, _ = json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"content": final}}}})
+		}
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &rounds
+}
+
+// failingToolApp is an agent with one tool that always fails the same way.
+func failingToolApp(t *testing.T) *App {
+	t.Helper()
+	a := newTestApp(t)
+	dir := t.TempDir()
+	writeTool(t, dir, "picky", "#!/bin/sh\nprintf '{\"ok\":false,\"error\":\"name a model\"}'\n")
+	a.tools.dir = dir
+	if _, f := a.tools.Load(a); len(f) > 0 {
+		t.Fatalf("load failures: %v", f)
+	}
+	return a
+}
+
+func sendAndWait(t *testing.T, a *App, id, text string) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("POST", "/sessions/"+id+"/messages", strings.NewReader(`{"text":"`+text+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	a.routes().ServeHTTP(w, req)
+	if w.Code != 202 {
+		t.Fatalf("send status = %d: %s", w.Code, w.Body.String())
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for a.Busy(id) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if a.Busy(id) {
+		t.Fatal("the turn never stopped")
+	}
+}
+
+// "A turn whose model makes the same calls three rounds running, failing the
+// same way each time, stops and writes an event naming the call, the error,
+// and how to carry on." A provider that dropped a tool call's arguments had
+// the model send the same broken call 96 times, until the round limit; the
+// fourth identical failure tells nothing the third did not.
+func TestATurnRepeatingAFailingCallStopsAndSaysSo(t *testing.T) {
+	a := failingToolApp(t)
+	srv, rounds := argsModel(t, "picky", func(int) (string, bool) { return `{"files":["audio2.wav"]}`, true }, "")
+	a.or = NewOpenRouter("test-key")
+	a.or.base = srv.URL
+	s := newSession(t, a)
+
+	sendAndWait(t, a, s.ID, "Transcribe audio2.wav")
+	if got := rounds.Load(); got != 3 {
+		t.Errorf("the model was called %d times, want 3", got)
+	}
+	var stop *Entry
+	for _, e := range a.store.Entries(s.ID) {
+		if e.Type == "event" && e.EventKind == "repeat_limit" {
+			stop = &e
+		}
+	}
+	if stop == nil {
+		t.Fatal("the turn stopped without an entry saying why")
+	}
+	for _, want := range []string{"picky", "name a model", "3", "continue"} {
+		if !strings.Contains(stop.Text, want) {
+			t.Errorf("the stop says %q; it must name %q", stop.Text, want)
+		}
+	}
+
+	sendAndWait(t, a, s.ID, "continue")
+	if got := rounds.Load(); got <= 3 {
+		t.Errorf("the next message did not carry on: the model was called %d times in all", got)
+	}
+}
+
+// A model trying something different each round is working the problem, and
+// is left to: only the same call failing the same way counts.
+func TestAFailingCallThatChangesIsLeftToRun(t *testing.T) {
+	a := failingToolApp(t)
+	srv, rounds := argsModel(t, "picky", func(n int) (string, bool) {
+		return fmt.Sprintf(`{"files":["take%d.wav"]}`, n), n <= 6
+	}, "Gave up on that.")
+	a.or = NewOpenRouter("test-key")
+	a.or.base = srv.URL
+	s := newSession(t, a)
+
+	sendAndWait(t, a, s.ID, "Transcribe each take")
+	if got := rounds.Load(); got != 7 {
+		t.Errorf("the model was called %d times, want all 7 rounds", got)
+	}
+	for _, e := range a.store.Entries(s.ID) {
+		if e.EventKind == "repeat_limit" {
+			t.Errorf("a turn whose calls changed was stopped: %q", e.Text)
+		}
+	}
+}

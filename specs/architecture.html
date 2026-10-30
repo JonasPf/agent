@@ -180,13 +180,23 @@ conversation a provider accepts, and the operator's next message &mdash; "contin
 carries on from there. A job wake that reaches the limit stops the same way; the next wake starts its
 own turn.</p>
 
+<p>A turn also stops when it is going in circles: when the model makes the same calls three rounds
+running and they fail the same way each time &mdash; the same tools, the same arguments, the same
+error. A provider that dropped part of a tool call's arguments had the model send one broken call 96
+times, at the price of a round each, until the hundred-round limit; the fourth identical refusal says
+nothing the third did not. The turn writes a <code>repeat_limit</code> event naming the call and the
+error, and the next message carries on as it does after the round limit. A round in which any call
+succeeds, or in which anything about the calls changed, is the model working the problem, and resets
+the count.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A turn runs as many rounds of tool calls as the model asks for, up to a hundred, and ends on what the model said.</li>
 <li>A turn that reaches a hundred rounds stops, stores the results of its last tool calls, and writes an event naming the limit and saying how to carry on.</li>
 <li>The next message after a stopped turn carries on: the model is called again with everything the stopped turn wrote.</li>
-<li>A turn never ends without writing an entry: an answer, a failure that says what went wrong, or the stop at the limit.</li>
+<li>A turn whose model makes the same calls three rounds running, failing the same way each time, stops and writes an event naming the call, the error, and how to carry on; a round whose calls changed, or in which one succeeded, does not count towards it.</li>
+<li>A turn never ends without writing an entry: an answer, a failure that says what went wrong, or the stop at a limit.</li>
 </ul>
 </div>
 
