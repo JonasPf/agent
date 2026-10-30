@@ -367,6 +367,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	// same name; the contract goes last, so nothing stands in for it.
 	cmd.Env = append(toolBaseEnv(), declaredEnv(t.Agent.Env)...)
 	cmd.Env = append(cmd.Env, sessionVars(tc.vars())...)
+	cmd.Env = tc.App.withPackages(cmd.Env, tc.SessionID)
 	cmd.Env = append(cmd.Env,
 		"AGENT_DB="+r.dbPath,
 		"AGENT_DB_PREFIX="+t.Agent.DBPrefix,

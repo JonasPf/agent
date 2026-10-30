@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>packages — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>packages</code></h1>
+<p class="lede">Find and install a program the image does not ship.</p>
+
+<h2>What it does</h2>
+<p>Given <code>search</code>, it lists the packages whose name or description matches every word, each
+with its name, version, and description. Given <code>install</code>, it installs the packages named
+and says, for each, the version, the path in the store, and the disk it took. Given neither, it lists
+what this conversation has installed.</p>
+
+<p>Packages come from the stable Nix release, <code>nixos-26.05</code>
+(<a href="adrs.html#adr-072">ADR-072</a>). Search reads the package list the release publishes, and an
+install takes the revision that list belongs to, so what a search finds is what an install gets. The
+agent checks for a newer revision at most once a day.</p>
+
+<p>The agent installs, not the tool: the tool hands the names to the tool API, and the agent fetches
+the packages into its store. From the next tool call on, their programs are on the conversation's
+<code>PATH</code>, in <code>bash</code> and in its jobs' checks. Another conversation's
+<code>PATH</code> does not have them; it installs them too, and finds them already downloaded. The
+store lives on a volume of its own; when the agent starts, it roots every conversation's packages
+again, and fetches any the store no longer holds.</p>
+
+<p>A release carries some programs in more than one major version, each its own package:
+<code>ffmpeg_7-headless</code> and <code>ffmpeg_8-headless</code>, <code>python312</code> and
+<code>python313</code>. Name one when the version matters. Within a release a version only gets
+fixes.</p>
+
+<p>The description says all of this, and that Python libraries come from <code>pip</code>, not from
+here. No skill repeats it.</p>
+
+<p>A package is not removed from a conversation: one left on <code>PATH</code> costs nothing, and
+deleting the conversation frees it. The store has no screen of its own either. Each install is a tool
+result in its conversation, and the 2&nbsp;GB rule keeps the disk from filling.</p>
+
+<table>
+<tr><th>Case</th><th>Result</th></tr>
+<tr><td>A name the release does not have</td><td>Refused, naming the closest names it does have.</td></tr>
+<tr><td>A package the release's binary cache does not hold</td><td>Refused. Nothing is built here.</td></tr>
+<tr><td>An install that would leave less than 2&nbsp;GB of disk free</td><td>Refused before downloading, naming its size and what is free.</td></tr>
+<tr><td>Another install is running</td><td>Waits for it, then runs. Installs run one at a time across the agent.</td></tr>
+<tr><td>A package already installed in this conversation</td><td>Succeeds, saying it was already there.</td></tr>
+</table>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>search</code></td><td>Words to find packages by.</td></tr>
+<tr><td><code>install</code></td><td>Package names to install.</td></tr>
+</table>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A search returns the release's packages matching every word, with name, version, and description, and runs no Nix evaluation.</li>
+<li>An install fetches the named packages from the revision the search list belongs to; the result names each one's version, store path, and disk taken.</li>
+<li>An installed package's programs run in the conversation's <code>bash</code> and checks, under the sandbox, from the next call on.</li>
+<li>Another conversation's <code>PATH</code> does not include what this one installed.</li>
+<li>Called with neither parameter, it lists the conversation's installed packages.</li>
+<li>A name the release does not have is refused, and the refusal names the closest names.</li>
+<li>A package the binary cache does not hold is refused, and nothing is built.</li>
+<li>An install that would leave less than 2&nbsp;GB of disk free is refused before anything is downloaded, naming its size.</li>
+<li>Two installs at once run one after the other.</li>
+<li>A conversation's packages are still on its <code>PATH</code> after the agent restarts, fetched again if the store lost them.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-edit.html">← edit</a> · <a href="tool-read.html">read →</a></footer>
+</div>
+</body></html>

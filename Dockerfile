@@ -3,17 +3,18 @@
 # any part of the agent is a new image, and an upgrade is running it — nothing
 # is ever modified in place.
 #
-# Two stages. The first compiles the agent and every tool the way `task build`
-# does, and fetches the two binaries that are not built here. The second carries
-# them, the interface, the skills, and the userland the tools need — a shell,
+# Three stages. The first compiles the agent and every tool the way `task build`
+# does, and fetches the two binaries that are not built here. The second fetches
+# a static Nix. The third carries them, the interface, the skills, and the
+# userland the tools need — a shell,
 # because tools/bash execs /bin/sh; git, gh and glab, because the agent proposes
 # changes — to itself, and to whatever other repository it is asked to work on —
 # by opening a pull request; chromium, because reading most of
 # the web means running it; curl, wget, python3, perl, and the document and
-# imaging programs listed below, because a shell is only as useful as the
-# programs it can call and nothing in the container can install one. The sandbox
-# needs nothing here: Landlock is the kernel's, and the agent
-# asks for it itself. Nothing else: no package manager state.
+# imaging programs listed below, because they are what a conversation reaches
+# for first. Anything else a conversation asks for, the agent installs with Nix
+# (ADR-072). The sandbox needs nothing here: Landlock is the kernel's, and the
+# agent asks for it itself.
 
 FROM golang:1.25-bookworm AS build
 WORKDIR /src
@@ -92,6 +93,17 @@ RUN set -eu; \
     echo "${sha}  ${tarball}" | sha256sum -c -; \
     tar -xzf "$tarball" --strip-components=1 -C /out bin/glab
 
+# Nix, built static, from the release conversations install from (ADR-072). A
+# static nix runs from /usr/local/bin and needs nothing in /nix, which is the
+# store and lives on a volume of its own: a nix kept inside it would outlive the
+# image that brought it.
+FROM docker.io/nixos/nix:2.35.4 AS nix
+ARG NIXPKGS=08d3a97586f6b6343b3b5e799980773629432610
+RUN nix --extra-experimental-features 'nix-command flakes' build --no-link --print-out-paths \
+      "github:NixOS/nixpkgs/${NIXPKGS}#nixStatic" > /out \
+ && for p in $(cat /out); do if [ -e "$p/bin/nix" ]; then cp -L "$p/bin/nix" /nix-static; fi; done \
+ && /nix-static --version
+
 FROM debian:bookworm-slim
 # git for the clone and the push. ca-certificates is what makes every outbound
 # call verifiable, the model gateway included. The sandbox adds nothing to this
@@ -120,7 +132,7 @@ RUN apt-get update \
       curl wget python3 perl \
       poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
       python3-pip python3-venv python3-numpy python3-pil \
-      unzip jq file tini \
+      unzip jq file tini xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # The agent runs as one user, and it is not root. The data and workspace
@@ -131,6 +143,7 @@ WORKDIR /app
 COPY --from=build /out/agent /app/agent
 COPY --from=build /out/gh /usr/local/bin/gh
 COPY --from=build /out/glab /usr/local/bin/glab
+COPY --from=nix /nix-static /usr/local/bin/nix
 COPY --from=build /out/tools /app/tools
 COPY web /app/web
 COPY skills /app/skills
@@ -147,8 +160,14 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 # Only the state is the agent's. What the image ships stays root's: the agent
 # never writes it, and a recursive chown over /app copied every binary into a
 # layer of its own, a hundred megabytes each deployment pulled twice.
+#
+# /nix is the Nix store, and the agent's too: it installs what conversations ask
+# for, and no tool can write it. It belongs on a volume of its own, because a
+# store path must be /nix/store and cannot live under /app/state; without one,
+# every conversation's packages are fetched again after each deployment.
 RUN mkdir -p /app/state/data /app/state/workspace /app/state/skills /app/state/personas \
-    && chown -R agent:agent /app/state
+      /nix/store /nix/var/nix \
+    && chown -R agent:agent /app/state /nix
 
 USER agent
 # Two roots and nothing else. /app/state is what outlives the container and is

@@ -152,6 +152,11 @@ type Session struct {
 	// stays active and keeps its jobs, so no identifier ever comes to address
 	// different content and nothing has to be followed forward.
 	ForkedFrom string `json:"forked_from"`
+	// Packages are what this conversation installed from Nix, by their exact
+	// store paths (ADR-072). They live in the shared store, not in the
+	// working directory; a fork, an import, and a restart put back these
+	// paths rather than asking the release again.
+	Packages []Package `json:"packages,omitempty"`
 	// Comparison names the comparison this session is a candidate of, for as
 	// long as that comparison is undecided. Keeping one candidate clears it and
 	// deletes the rest, so a non-empty value always means a decision is still

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-29
+
+- **The agent installs the programs it needs.** A new `packages` tool finds
+  a program in Nix's stable release and installs it, so a conversation that
+  needs `ffmpeg`, `imagemagick`, or almost anything else asks for it instead
+  of working around its absence. What a conversation installs is on its own
+  PATH and nobody else's, but it is downloaded only once: two conversations
+  installing the same program share one copy, and neither can change it. A
+  fork has its origin's programs without copying them, and deleting a
+  conversation removes the ones no other conversation uses. An install that
+  would leave less than 2 GB of disk free is refused.
+
 ## 2026-10-28
 
 - **A skill reads like a document.** Opening a skill on the Skills screen
@@ -48,6 +60,11 @@
   instead of trying again until the 100-round limit. Send "continue" to
   carry on. A provider that garbled tool calls had one conversation repeat
   a broken call 96 times; it would now have stopped after three.
+- **Forking says it is working.** A fork copies the conversation's files
+  as well as its words, which for a large one takes a minute. The fork
+  screen now says how much it will copy, and the button reads "Copying
+  2.4 GB…" until the fork is ready, instead of looking as though nothing
+  happened. Starting a conversation says "Starting…" the same way.
 
 ## 2026-10-27
 

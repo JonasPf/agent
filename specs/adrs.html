@@ -2278,6 +2278,78 @@ folder holds text only, so a test's sample video stays out and its prompt says w
 needs. A skill still cannot install what it depends on; it says what it needs.</p>
 </div>
 
+<div class="adr" id="adr-072">
+<div class="meta">ADR-072 · accepted · amends <a href="#adr-058">ADR-058</a></div>
+<h3>Programs come from Nix: the agent installs them into a store every conversation reads and none writes</h3>
+<h4>Context</h4>
+<p><a href="#adr-058">ADR-058</a> shipped a userland and left everything else to <code>pip install
+--user</code>, one conversation at a time. A program is not a Python library. A voice-over needed
+<code>ffmpeg</code>, and each conversation fetched its own through a Python wheel, 105&nbsp;MB apiece;
+an earlier one downloaded 2.2&nbsp;GB of tools and models, which its fork then copied. ADR-058 refused
+the shared cache that would have saved this, because a cache two conversations can write is a channel
+between them.</p>
+<p>Nix's store is a shared cache that cannot be used that way. A package lives at a path named by a
+hash of what it is made from, and nothing changes a path once it exists, so what one conversation
+installs another can run but not alter. Its cost is memory. Measured on the server, 1.9&nbsp;GB of RAM
+with about 560&nbsp;MB free beside the running agent:</p>
+<table>
+<tr><th>Step</th><th>Peak memory</th></tr>
+<tr><td>Work out what a package needs</td><td>136&nbsp;MB for <code>hello</code>, 414&nbsp;MB for <code>ffmpeg</code></td></tr>
+<tr><td>Fetch the package set</td><td>475&nbsp;MB</td></tr>
+<tr><td>Install, 16 downloads at once (Nix's default)</td><td>killed at 500&nbsp;MB</td></tr>
+<tr><td>Install, 2 downloads at once</td><td>413&nbsp;MB</td></tr>
+<tr><td><code>nix search</code>, first run for a package set</td><td>4.5&nbsp;GB</td></tr>
+</table>
+<p>Most of the first two rows is Nix unpacking the package set into a cache of its own. Unpacked by
+<code>tar</code> instead, which took 16&nbsp;MB, and evaluated read-only from that directory,
+<code>ffmpeg-headless</code> took 137&nbsp;MB and <code>hello</code> 82&nbsp;MB.</p>
+<h4>Decision</h4>
+<p>The image carries Nix, with one store owned by the agent's user. The agent installs; a tool reads
+and runs what is in the store and writes none of it. A conversation asks through
+<a href="tool-packages.html"><code>packages</code></a>: it searches, then installs by name.</p>
+<p>Packages come from the stable release, <code>nixos-26.05</code>, at its newest revision, checked at
+most once a day. Moving to the next release is a change to the agent, made twice a year. Only what the
+release's binary cache holds is installed; nothing is built here. Search reads the package list the
+release publishes beside each revision, never <code>nix search</code>. An install evaluates the
+release's source, which <code>tar</code> unpacks once per revision into the agent's data. One install
+runs at a time, two downloads at a time, and an install that would leave less than 2&nbsp;GB of disk
+free is refused.</p>
+<p>What a conversation installed is on its <code>PATH</code> and on no other's. A fork has its origin's
+packages without copying them. Deleting a conversation removes the packages no other one installed. An
+export names its packages and an import installs those exact paths.</p>
+<h4>Alternatives</h4>
+<ul>
+<li><strong>pixi (conda-forge).</strong> Less memory (318&nbsp;MB) and a search built in. But an
+environment is written for the one path it was installed at, so a fork's copy breaks, and on ext4 it
+hard-links its files to the shared cache, so a conversation that writes its environment writes
+everyone's.</li>
+<li><strong>pkgx.</strong> 158&nbsp;MB of memory, but 1.5&nbsp;GB of disk for <code>ffmpeg</code>, and a
+shared directory any conversation can write.</li>
+<li><strong>apt in the image.</strong> Changes the whole system and needs root, so every program would
+be a pull request.</li>
+<li><strong>nixpkgs-unstable, or <code>nix search</code> from a cache built in CI.</strong> Unstable
+rebuilds often, so installs a week apart share little; stable is fixes only. A search cache is tied to
+one package set, and the published list makes it unnecessary.</li>
+<li><strong>Exact versions, or a flake per skill.</strong> Each pinned package set is another source
+to fetch and unpack, and shares nothing with the others. Instead a skill names a major version when it
+matters (<code>ffmpeg_8-headless</code>), and a release holds each version to fixes for its six
+months.</li>
+</ul>
+<h4>Consequences</h4>
+<p>A program is downloaded once for every conversation: <code>ffmpeg-headless</code> is 302&nbsp;MB in
+the store instead of 105&nbsp;MB in each conversation, and a fork copies none of it. An export stops
+being the whole of a conversation: it names the packages, and the importing agent fetches them.</p>
+<p>A conversation can list the store and see what others installed. Those are public packages that
+nothing can change, so this is accepted. Older conversations keep the exact paths they installed; a new
+revision or release changes only later installs. Installing needs <code>channels.nixos.org</code> and
+<code>cache.nixos.org</code>. Python libraries stay with <code>pip</code>, one copy per conversation, as
+ADR-058 accepted.</p>
+<p>A store path must be under <code>/nix/store</code>, so the store cannot live in
+<code>/app/state</code>, and a deployment mounts a second volume at <code>/nix</code>. Without one, every
+conversation's packages are fetched again when the agent starts. The release's source takes some
+350&nbsp;MB of the agent's data, one revision at a time.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

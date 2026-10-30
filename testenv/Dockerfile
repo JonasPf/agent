@@ -14,12 +14,17 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends chromium curl wget python3 perl \
       poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
       python3-pip python3-venv python3-numpy python3-pil \
-      unzip jq file tini \
+      unzip jq file tini xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # PID 1 is tini, as it is in the runtime image, so a process a test leaves in the
 # background is collected when it exits the way it is in production.
 ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# Nix, which the agent installs a conversation's programs with (ADR-072). The
+# same script installs it in CI.
+COPY install-nix.sh /tmp/install-nix.sh
+RUN sh /tmp/install-nix.sh && rm /tmp/install-nix.sh
 
 # gh and glab, which the runtime image fetches from their own releases rather
 # than from apt. The userland test proves the shell can run what the image

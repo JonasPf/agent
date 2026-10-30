@@ -303,7 +303,9 @@ platform, because a deployment the agent is shaped around is a deployment it can
 nor a toolchain. Everything that outlives the container &mdash; transcripts, the database, and session
 working directories &mdash; is under one mounted volume, so a redeploy replaces the process and keeps
 every conversation, job, and file. The two directories inside it are not a boundary; the sandbox is
-(<a href="adrs.html#adr-039">ADR-039</a>).</p>
+(<a href="adrs.html#adr-039">ADR-039</a>). The Nix store holding the programs conversations installed
+is a second volume, at <code>/nix</code>, because a store path cannot be anywhere else
+(<a href="adrs.html#adr-072">ADR-072</a>).</p>
 
 <p>One thing reaches the phone without the phone asking: a push about an unread message, sent to the
 push service of a device the operator registered (<a href="adrs.html#adr-066">ADR-066</a>). The push
@@ -392,7 +394,7 @@ itself in front of every tool, and that second run restricts itself and becomes 
 
 <p><strong>A tool reads and writes its own session's working directory, and nothing else.</strong> Both
 halves are an allow-list, so a path that was never considered is denied rather than permitted
-(<a href="adrs.html#adr-034">ADR-034</a>). Five things are allowed beyond the working directory, and each
+(<a href="adrs.html#adr-034">ADR-034</a>). Six things are allowed beyond the working directory, and each
 is what lets a tool run at all rather than a convenience:</p>
 
 <table>
@@ -402,6 +404,7 @@ is what lets a tool run at all rather than a convenience:</p>
 <tr><td>The database file and its <code>-wal</code> and <code>-shm</code> journals</td><td>read, write</td><td>A tool is handed <code>AGENT_DB</code> on purpose and may keep its own tables. Narrowed from the data directory, which holds every session's transcript.</td></tr>
 <tr><td><code>AGENT_READ_PATHS</code></td><td>read</td><td>Named by the operator. A browser installed outside the system roots is the case it exists for.</td></tr>
 <tr><td>The folders of the skills the conversation has</td><td>read</td><td>A skill can carry a script, run from where it is installed (<a href="adrs.html#adr-071">ADR-071</a>). Only the skills this conversation has; the rest of the skill directory stays denied.</td></tr>
+<tr><td>The Nix store, <code>/nix/store</code></td><td>read</td><td>The programs conversations installed (<a href="adrs.html#adr-072">ADR-072</a>). Every path in it is named by a hash of its content, so reading another conversation's package reads a public package nothing can change.</td></tr>
 </table>
 
 <p>Everything else is denied: the home directory, the repository the agent runs from, another session's
@@ -412,7 +415,8 @@ writes.</p>
 
 <p>The tool directory and the skill directory are readable and never writable. The agent does not
 install tools and does not write skills; the operator does, on the filesystem
-(<a href="adrs.html#adr-033">ADR-033</a>).</p>
+(<a href="adrs.html#adr-033">ADR-033</a>). The Nix store is readable and never writable too: the
+agent writes it, when a conversation asks for a package, and no tool does.</p>
 
 <p>Where neither primitive is available the system enforces nothing, and says so: at startup, in
 <code>/status</code>, and on the settings screen. A sandbox that silently does nothing is worse than
@@ -462,7 +466,7 @@ operator's port there.</p>
 <ul>
 <li>A tool can read and write its own session's working directory, and can run the interpreters it needs.</li>
 <li>A tool cannot read or write any other path: not another session's directory, not the operator's home directory, not the repository the agent runs from, and not the file holding the API key.</li>
-<li>A tool cannot write the tool directory or the skill directory, and is refused by the operating system rather than by its own good manners.</li>
+<li>A tool cannot write the tool directory, the skill directory, or the Nix store, and is refused by the operating system rather than by its own good manners.</li>
 <li>A tool may read and write the database file it is handed, and no other file in the data directory.</li>
 <li>A path named in <code>AGENT_READ_PATHS</code> is readable and still not writable, and the paths in force are visible in <code>/status</code>.</li>
 <li>A check command is confined exactly as a tool is: the same files, the same ports, and the environment a tool in its conversation receives &mdash; what a program needs to start and that conversation's variables, never the model API key.</li>

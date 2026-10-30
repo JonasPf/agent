@@ -63,7 +63,11 @@ type Sandbox struct {
 // is readable through it, the agent's included. A tool that needs it says so in
 // its manifest, and only web_browse does — web_search no longer starts a
 // browser, so it no longer asks for the tree (ADR-059).
-var linuxReads = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt"}
+//
+// /nix/store holds the programs conversations installed (ADR-072). A path there
+// is named by a hash of its content and nothing changes it, so reading another
+// conversation's package reads a public package, and only the agent writes it.
+var linuxReads = []string{"/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc", "/opt", "/nix/store"}
 
 // linuxDevices is what a program opens before any of its own code runs. They are
 // named one by one rather than granting /dev, because a grant on the directory

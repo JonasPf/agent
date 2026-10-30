@@ -97,6 +97,8 @@ func (a *App) toolRoutes() http.Handler {
 	mux.HandleFunc("GET /search", a.hSearch)
 	mux.HandleFunc("GET /entry", a.tEntry)
 	mux.HandleFunc("POST /model", a.tModel)
+	mux.HandleFunc("GET /packages", a.tSearchPackages)
+	mux.HandleFunc("POST /packages", a.tInstallPackages)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		g, ok := a.calls.lookup(token)

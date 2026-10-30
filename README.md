@@ -119,7 +119,7 @@ transcripts.
 
 ## Deploy
 
-One image, one container, one volume. Nothing in this repository names a hosting
+One image, one container, two volumes. Nothing in this repository names a hosting
 platform: the image is a plain OCI image, and anything that runs one runs it.
 
 ```
@@ -129,15 +129,16 @@ merge to main    → .github/workflows/release.yml builds the image, pushes it t
 ```
 
 The image is built by CI and pulled by tag; the server never compiles anything.
-`Dockerfile` is two stages — build the agent, every tool, and a pinned `gh`, then
-a Debian runtime with `git`, `gh`, `chromium`, `curl`, `wget`, `python3`, and
-`perl`, the userland the tools need and nothing else. The sandbox needs no package: Landlock is the kernel's.
+`Dockerfile` is three stages — build the agent, every tool, and a pinned `gh`;
+fetch a static `nix`; then a Debian runtime with `git`, `gh`, `chromium`, `curl`,
+`wget`, `python3`, `perl`, and `nix`. Anything else a conversation needs, the agent
+installs with Nix (ADR-072). The sandbox needs no package: Landlock is the kernel's.
 
 The runtime is Debian because tools are subprocesses: `tools/bash` execs
 `/bin/sh`, and the model writes GNU-flavoured shell. `agent -health` is the
 container's health check, so it depends on nothing but the agent.
 
-### The volume
+### The volumes
 
 Everything that outlives the container is under `/app/state`. Mount one volume
 there and a redeploy keeps every conversation, job, and file.
@@ -156,11 +157,20 @@ directory included, whether or not it shares a mount. Both are derived from
 `AGENT_STATE`, so the layout is one decision rather than two that have to
 agree.
 
+The programs conversations install need a second volume, at `/nix`. That is the
+Nix store, and it cannot move under `/app/state`: every program in Nix's
+download cache has `/nix/store` built into it, so a store anywhere else would
+have to compile everything, and the agent compiles nothing. Without the volume,
+each redeploy empties the store, and the agent fetches every conversation's
+packages again when it starts; until a conversation's are back, its programs
+are missing.
+
 ### Running it
 
 ```sh
 docker run -d --name agent \
   -v agent-state:/app/state \
+  -v agent-nix:/nix \
   -e OPENROUTER_API_KEY=sk-... \
   -p 127.0.0.1:7770:7770 \
   ghcr.io/<owner>/agent:latest
@@ -203,9 +213,11 @@ runs, and nothing in the repository is shaped around it.
    `ghcr.io/<owner>/agent:latest`.
 2. **Environment**: `OPENROUTER_API_KEY`. A credential for one piece of work,
    such as `GH_TOKEN`, is set on the conversation doing it instead.
-3. **Advanced → Volumes**: one volume mount, `agent-state` → `/app/state`.
+3. **Advanced → Volumes**: two volume mounts, `agent-state` → `/app/state` and
+   `agent-nix` → `/nix`.
 4. **Advanced → Resources**: a memory limit. A single-user agent on a shared host
-   without one takes the machine down with it; 512 MB is enough.
+   without one takes the machine down with it; 512 MB is enough. An install
+   adds up to about 160 MB while it runs, one at a time.
 5. **Advanced → Security**: switch on Basic Auth and set a user and password.
    This is the whole of the access control.
 6. **Domains**: the hostname, port 7770, HTTPS on, Let's Encrypt.
