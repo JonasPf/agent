@@ -337,7 +337,8 @@ func copyFile(p, target string, perm fs.FileMode) error {
 }
 
 // DeleteSession removes a conversation and everything it owns: its transcript,
-// its metadata, its jobs, and its working directory.
+// its metadata, its jobs, and its working directory. The packages it installed
+// leave the store unless another conversation installed them too.
 func (a *App) DeleteSession(id string) error {
 	// Its turns stop first, so a model call already under way is not paid for
 	// to produce an answer nobody can read.
@@ -348,6 +349,9 @@ func (a *App) DeleteSession(id string) error {
 	a.forgetSession(id)
 	if !validSessionID(id) {
 		return nil
+	}
+	if a.pkgs != nil {
+		a.pkgs.forget(id)
 	}
 	return os.RemoveAll(a.sessionWorkspace(id))
 }

@@ -49,6 +49,7 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 <tr><td><a href="tool-call_model.html"><code>call_model</code></a></td><td>One call to another model: text, speech, transcription, or a decision.</td></tr>
 <tr><td><a href="tool-clock.html"><code>clock</code></a></td><td>The current date and time, in UTC and in the operator's zone.</td></tr>
 <tr><td><a href="tool-edit.html"><code>edit</code></a></td><td>Replace an exact string in a workspace file.</td></tr>
+<tr><td><a href="tool-packages.html"><code>packages</code></a></td><td>Find and install a program the image does not ship.</td></tr>
 <tr><td><a href="tool-read.html"><code>read</code></a></td><td>Read a file from the session's working directory.</td></tr>
 <tr><td><a href="tool-schedule.html"><code>schedule</code></a></td><td>Create, list, edit, and delete the jobs that make future work visible.</td></tr>
 <tr><td><a href="tool-session_search.html"><code>session_search</code></a></td><td>Full-text search across transcripts.</td></tr>
@@ -182,6 +183,7 @@ defined is absent.</p>
 </table>
 
 <p>Beyond that list, and the handful any program needs to start at all &mdash; <code>PATH</code>,
+which begins with the programs the conversation installed (<a href="adrs.html#adr-072">ADR-072</a>),
 the locale, the certificate paths &mdash; a tool receives a variable only because the
 conversation it is running in holds it (<a href="adrs.html#adr-068">ADR-068</a>), or because its
 manifest names one from the agent's own environment. A conversation's variable belongs to it, not to a
@@ -363,6 +365,7 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
 <tr><td><code>skill_read</code></td><td>Load the full text of a skill.</td></tr>
 <tr><td><code>call_model</code></td><td>One call to another model, made by the agent with its own key and counted in the conversation's cost (<a href="adrs.html#adr-070">ADR-070</a>).</td></tr>
+<tr><td><code>packages</code></td><td>Find and install a program from Nix's stable release. The agent installs it into a store every conversation reads and none writes (<a href="adrs.html#adr-072">ADR-072</a>).</td></tr>
 </table>
 
 <h3>Searching the web</h3>

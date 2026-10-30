@@ -48,13 +48,19 @@ leaving a session to assemble it (<a href="adrs.html#adr-058">ADR-058</a>) &mdas
 English and German, and <code>python3</code> carrying <code>pip</code>, <code>numpy</code> and
 <code>pillow</code>. The description lists them, so they are reached for rather than rebuilt.</p>
 
+<p>A program the image does not ship is installed with <a href="tool-packages.html"><code>packages</code></a>,
+which the agent fetches into a store the shell can run from and cannot write
+(<a href="adrs.html#adr-072">ADR-072</a>). It is on <code>PATH</code> from the next call. The description
+says so.</p>
+
 <p><code>$HOME</code> is a directory inside the session's own, created for each call beside
 <code>$TMPDIR</code>. The container user's home is granted to no tool, so a program that keeps state
 there &mdash; <code>pip</code> with <code>--user</code>, <code>npm</code>, <code>git</code> &mdash;
 used to fail on a path it never named. It is now writable, which makes
-<code>pip install --user</code> the way to get a package the image does not ship. What it installs
-belongs to that conversation and no other: two sessions installing the same package each download it,
-because a cache they could both write is exactly the channel the sandbox exists to close.</p>
+<code>pip install --user</code> the way to get a Python library the image does not ship. What it
+installs belongs to that conversation and no other: two sessions installing the same library each
+download it, because a cache they could both write is exactly the channel the sandbox exists to
+close.</p>
 
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
@@ -125,6 +131,7 @@ from as though it were the whole answer.</p>
 <li>A command reaching outside the session's directory is refused by the sandbox, not by the tool.</li>
 <li><code>curl</code>, <code>wget</code>, <code>python3</code>, and <code>perl</code> are installed and run in the shell under the sandbox, and the description says they are there.</li>
 <li><code>pdftotext</code>, <code>tesseract</code> with both its languages, <code>pip</code>, <code>numpy</code>, <code>pillow</code>, <code>jq</code>, <code>unzip</code>, and <code>file</code> run in the shell under the sandbox too, and the description says they are there.</li>
+<li>A program installed with <code>packages</code> runs in the shell under the sandbox, and the shell cannot change it.</li>
 <li><code>$HOME</code> is inside the session's own working directory and is writable, so what one session keeps there is invisible to every other.</li>
 <li><code>pip install --user</code> resolves to a path inside the session's working directory, rather than to a home directory no tool can write.</li>
 </ul>

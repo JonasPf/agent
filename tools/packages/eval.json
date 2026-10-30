@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "name": "searches for a program the image does not ship",
+      "prompt": "Convert clip.mov into a small animated gif. ffmpeg is not installed here.",
+      "tools": ["packages", "bash", "read"],
+      "files": { "clip.mov": "not really a movie" },
+      "expect": {
+        "tool": "packages",
+        "args_match": { "search": "(?i)ffmpeg" }
+      }
+    },
+    {
+      "name": "names the major version asked for",
+      "prompt": "Install ffmpeg 7 for this conversation, not 8. A search already found ffmpeg_7-headless 7.1.5 and ffmpeg_8-headless 8.1.3.",
+      "tools": ["packages", "bash", "read"],
+      "expect": {
+        "tool": "packages",
+        "args": { "install": ["ffmpeg_7-headless"] }
+      }
+    },
+    {
+      "name": "a Python library comes from pip, not from here",
+      "prompt": "Install the Python library requests so a script can use it.",
+      "tools": ["packages", "bash", "read"],
+      "expect": {
+        "tool": "bash",
+        "args_match": { "command": "pip3? install --user .*requests" },
+        "not_tools": ["packages"]
+      }
+    },
+    {
+      "name": "lists what this conversation installed",
+      "prompt": "Which packages have you installed in this conversation so far? Check rather than guess.",
+      "tools": ["packages", "bash", "read"],
+      "expect": {
+        "tool": "packages"
+      }
+    }
+  ]
+}

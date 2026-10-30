@@ -704,6 +704,7 @@ still running. A fork that should carry the schedule creates it again, deliberat
 <li>A fork copies every transcript entry of its origin, in order, compactions included, except the origin's prompt entry; it has one prompt entry, its own, written from its configuration.</li>
 <li>A fork of a compacted conversation sends the model what its origin sends: each compaction it copies covers the copies of the entries it covered, wherever the copy puts them.</li>
 <li>A fork starts from a copy of its origin's working directory; writes after that are independent.</li>
+<li>A fork has its origin's installed packages on its <code>PATH</code>, without copying them.</li>
 <li>The origin stays active, keeps its jobs, and is modified only by one <code>fork</code> event.</li>
 <li>The fork records its origin, and the interface links both ways.</li>
 <li>A fork accepts a configuration; anything not given is inherited from the origin.</li>
@@ -775,6 +776,11 @@ that session, and a job never interleaves with a turn in progress.</p>
 tool call means a file in it. Nothing is shared: two conversations writing <code>notes.txt</code> write
 two files.</p>
 
+<p>The programs a session installs are not in its directory. They live in the agent's Nix store, which
+every session reads and none writes, and are on that session's <code>PATH</code>
+(<a href="adrs.html#adr-072">ADR-072</a>). Two sessions installing the same package share one copy, and
+neither can change it.</p>
+
 <p>A fork carries files as well as words: it starts from a copy of the origin's directory, so the copy
 continues with the files the conversation was working on, and neither session's later writes reach the
 other. It is a copy a program still runs from: a file keeps its permissions, so what was executable
@@ -804,7 +810,7 @@ delete landed is refused rather than written into the place the delete just empt
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>
 <li>Asked about particular paths, the listing answers for those alone, without walking the directory: the ones that are files there. A path that names nothing, a directory, or a place a link leads out to is left out.</li>
 <li>A path that would leave the session's directory is refused, whether it climbs out or passes through a link that points out. A link that stays inside reads as the file it names; deleting a link removes the link and never what it names; an upload never writes through one.</li>
-<li>Deleting a session deletes its directory.</li>
+<li>Deleting a session deletes its directory, and removes from the store the packages no remaining session installed.</li>
 <li>Deleting a session that is working stops its turn first, a job's wake included. Nothing that turn would have written afterwards brings back the session, its transcript, its jobs, or its directory.</li>
 <li>A session reports what it occupies on disk: its transcript and its working directory.</li>
 <li>A session changed from several sides at once &mdash; a turn counting its cost, the operator renaming it or moving where it compacts, a page reading it through &mdash; keeps every change, in memory and on disk. A title the model writes for it never lands over one the operator chose meanwhile.</li>
@@ -822,9 +828,11 @@ the one it was rather than a copy of it, and its links, its jobs, and its files 
 identifier already present is therefore a conflict and the import is refused rather than merged.</p>
 
 <div class="note">
-<strong>An archive is the whole of a conversation.</strong> A session owns everything it carries, so
-there is nothing outside the zip that an import would have to reach for and nothing wider that importing
-one could change.
+<strong>An archive is the whole of a conversation, except its programs.</strong> A session owns
+everything it carries, so there is nothing outside the zip that an import would have to reach for and
+nothing wider that importing one could change. The one exception is the packages it installed, which
+live in the shared store (<a href="adrs.html#adr-072">ADR-072</a>). <code>meta.json</code> names
+them by their exact store paths, and the import fetches those same paths from the binary cache.
 </div>
 
 <div class="ac">
@@ -833,6 +841,7 @@ one could change.
 <li>An export carries the session's metadata, transcript, jobs, their run logs, and working directory.</li>
 <li>An import restores all of them, in whichever agent reads the archive.</li>
 <li>An imported transcript is searchable and its jobs run.</li>
+<li>An import installs the exact packages its archive names, and the answer says which it could not fetch.</li>
 <li>An import naming a session already present is refused, and says which.</li>
 <li>An archive that is not a session is refused and nothing is altered.</li>
 <li>An archive is accepted up to 500 MB — larger than the largest file a session may hold, so a session that was exported can be imported back — and is read from disk rather than from memory.</li>

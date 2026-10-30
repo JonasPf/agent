@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-29
+
+- **The agent installs the programs it needs.** A new `packages` tool finds
+  a program in Nix's stable release and installs it, so a conversation that
+  needs `ffmpeg`, `imagemagick`, or almost anything else asks for it instead
+  of working around its absence. What a conversation installs is on its own
+  PATH and nobody else's, but it is downloaded only once: two conversations
+  installing the same program share one copy, and neither can change it. A
+  fork has its origin's programs without copying them, and deleting a
+  conversation removes the ones no other conversation uses. An install that
+  would leave less than 2 GB of disk free is refused.
+
 ## 2026-10-28
 
 - **A skill reads like a document.** Opening a skill on the Skills screen

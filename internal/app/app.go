@@ -178,6 +178,9 @@ type App struct {
 	hub      *Hub
 	sched    *Scheduler
 	push     *Pusher
+	// pkgs installs the programs a conversation asks for from Nix (ADR-072);
+	// nil where there is no Nix, which says so rather than installing.
+	pkgs *Packages
 
 	// calls are the tool calls running now, which the tool API answers; toolAddr
 	// is where it listens.
@@ -287,6 +290,7 @@ func Run() error {
 		or:       NewOpenRouter(cfg.APIKey),
 		hub:      NewHub(),
 		queues:   map[string]chan func(){},
+		pkgs:     newPackages(cfg.DataDir, defaultNixSource),
 	}
 	if a.push, err = newPusher(cfg.DataDir, a.unreadMessage); err != nil {
 		return err
@@ -306,6 +310,11 @@ func Run() error {
 
 	a.sched = NewScheduler(a)
 	go a.sched.Run(context.Background())
+
+	// The store at /nix outlives the container only where a volume holds it.
+	// Every conversation's packages are rooted again, and fetched again if the
+	// store did not survive.
+	go a.pkgs.restore(a)
 
 	mux := a.routes()
 	log.Printf("agent listening on %s (workspace %s)", cfg.Addr, cfg.Workspace)

@@ -82,7 +82,7 @@ jobs:
             chromium curl wget python3 perl \
             poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
             python3-pip python3-venv python3-numpy python3-pil \
-            unzip jq
+            unzip jq xz-utils
 
       - name: Report the browser
         run: /usr/bin/chromium --version
@@ -102,6 +102,11 @@ jobs:
             | tar -xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_${arch}/bin/gh"
           curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/glab_${GLAB_VERSION}_linux_${arch}.tar.gz" \
             | tar -xz --strip-components=1 -C /usr/local/bin bin/glab
+
+      # Nix, which the agent installs a conversation's programs with (ADR-072).
+      # testenv/Dockerfile runs the same script.
+      - name: Install Nix
+        run: sh testenv/install-nix.sh
 
       - name: task check
         run: task check

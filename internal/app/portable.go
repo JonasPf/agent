@@ -2,6 +2,7 @@ package app
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +20,9 @@ import (
 //
 // A session owns everything it carries, so the archive is the whole of it: there
 // is nothing outside the zip for an import to reach for, and nothing wider that
-// importing one could change.
+// importing one could change. The one exception is the programs it installed,
+// which live in the shared Nix store: meta.json names their exact paths, and an
+// import fetches those (ADR-072).
 
 const (
 	exportMeta       = "meta.json"
@@ -115,10 +118,30 @@ func (a *App) ExportSession(w io.Writer, id string) error {
 	return zw.Close()
 }
 
-// ImportSession restores a session from an archive. It keeps the session's own
+// ImportSession restores a session from an archive, and then the packages it
+// installed: an archive names them by their exact store paths, since they live
+// in the shared store and not in the zip (ADR-072). It answers the paths it
+// could not fetch; the conversation is imported either way.
+func (a *App) ImportSession(r io.ReaderAt, size int64) (*Session, []string, error) {
+	s, err := a.importArchive(r, size)
+	if err != nil {
+		return nil, nil, err
+	}
+	var missing []string
+	if a.pkgs == nil {
+		for _, pk := range s.Packages {
+			missing = append(missing, pk.Paths...)
+		}
+	} else if len(s.Packages) > 0 {
+		missing = a.pkgs.keep(context.Background(), s.ID, s.Packages)
+	}
+	return s, missing, nil
+}
+
+// importArchive restores what an archive carries. It keeps the session's own
 // identifier, so an archive read back is the conversation it was rather than a
 // copy of it — and an identifier already present is a conflict, not a merge.
-func (a *App) ImportSession(r io.ReaderAt, size int64) (*Session, error) {
+func (a *App) importArchive(r io.ReaderAt, size int64) (*Session, error) {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return nil, fmt.Errorf("not a session archive: %w", err)
