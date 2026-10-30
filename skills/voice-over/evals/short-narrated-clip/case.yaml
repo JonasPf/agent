@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: short-narrated-clip
+expected_outcome: |
+  voiceover.mp4 is clip.mov with the narration replaced by a synthesized voice reading a cleaned-up
+  version of what was said, and it runs as long as the original.

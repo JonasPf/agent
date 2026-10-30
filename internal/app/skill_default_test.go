@@ -158,7 +158,7 @@ func TestEveryShippedSkillShipsOn(t *testing.T) {
 // conversation that did not choose its skills.
 func TestTheRequiredSkillsShipOn(t *testing.T) {
 	shipped := NewSkills(filepath.Join("..", "..", "skills"), "")
-	for _, name := range []string{"scheduling", "keeping-records", "researching", "writing-skills"} {
+	for _, name := range []string{"scheduling", "keeping-records", "researching", "writing-skills", "voice-over"} {
 		sk := shipped.Get(name)
 		if sk == nil {
 			t.Errorf("%s is not shipped", name)
