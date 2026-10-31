@@ -2347,7 +2347,8 @@ ADR-058 accepted.</p>
 <p>A store path must be under <code>/nix/store</code>, so the store cannot live in
 <code>/app/state</code>, and a deployment mounts a second volume at <code>/nix</code>. Without one, every
 conversation's packages are fetched again when the agent starts. The release's source takes some
-350&nbsp;MB of the agent's data, one revision at a time.</p>
+485&nbsp;MB of the agent's disk, one revision at a time: on the server, its 53,000 small files hold
+197&nbsp;MB and take 485&nbsp;MB.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
