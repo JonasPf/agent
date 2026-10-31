@@ -5,7 +5,7 @@
 # It is CI's environment written down (.github/workflows/check.yml), and a
 # change to one belongs in the other: Debian bookworm, the Go the image builds
 # with, the Debian chromium package the runtime image installs, node 22 for
-# web/*.test.js, and Task. Off Linux the kernel is the container VM's, which is
+# web/*.test.js, the ffmpeg conversations install for the video skills, and Task. Off Linux the kernel is the container VM's, which is
 # Linux with Landlock, so this is where the whole suite runs — the agent does not
 # build on the host at all (ADR-056).
 FROM docker.io/library/golang:1.25-bookworm
@@ -23,8 +23,8 @@ ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Nix, which the agent installs a conversation's programs with (ADR-072). The
 # same script installs it in CI.
-COPY install-nix.sh /tmp/install-nix.sh
-RUN sh /tmp/install-nix.sh && rm /tmp/install-nix.sh
+COPY install-nix.sh install-ffmpeg.sh /tmp/
+RUN sh /tmp/install-nix.sh && sh /tmp/install-ffmpeg.sh && rm /tmp/install-nix.sh /tmp/install-ffmpeg.sh
 
 # gh and glab, which the runtime image fetches from their own releases rather
 # than from apt. The userland test proves the shell can run what the image

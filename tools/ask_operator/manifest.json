@@ -1,0 +1,58 @@
+{
+  "name": "ask_operator",
+  "description": "Stop and ask the operator for what a chat reply handles badly, on a screen made for it. Use it for a choice between options; several answers at once, such as a form, settings, or details for a task; approving or changing a plan, a list, a table, or a script before you spend money or do something hard to undo; feedback on a mockup, a design, or a draft they should see and click through; and a choice that has to be seen, such as pictures side by side. Give message, saying what you need and why, and then one of two things. questions is a form the interface draws for you, and is the right choice whenever a form will do. page is an HTML file in the working directory, for what a form cannot do: dragging, previewing, editing something long. A page must hold everything it needs, its styles, scripts, and images, because it runs in a box with no network. Inside it, ask.answer(text) proposes an answer and await ask.save(name, text) saves a file beside the page. The result has a link: put it in your reply and end your turn. Nothing waits in this call. Their answer arrives as their next message, saying whether they answered or declined, and they may leave it unanswered. A plain question that fits in a sentence goes in your reply instead. A finished report or file they only need to read is a link to the file. Never use this for passwords, API keys, tokens, or card numbers: whatever the operator enters reaches you and the model provider.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "message": {
+        "type": "string",
+        "description": "What you need from the operator and why, in a sentence or two. It is shown above the form or page."
+      },
+      "questions": {
+        "type": "array",
+        "description": "A form. Give this or page, not both.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "A short name for this answer, unique in the form."
+            },
+            "label": {
+              "type": "string",
+              "description": "The question as the operator reads it. Defaults to name."
+            },
+            "type": {
+              "type": "string",
+              "enum": ["text", "long_text", "number", "yes_no", "choice", "choices"],
+              "description": "choice picks one option, choices any number of them."
+            },
+            "options": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "The options, for choice and choices."
+            },
+            "default": {
+              "type": "string",
+              "description": "What the field starts with. For choices, options joined by commas."
+            },
+            "required": {
+              "type": "boolean",
+              "description": "Whether the form cannot be sent without this answer."
+            }
+          },
+          "required": ["name", "type"]
+        }
+      },
+      "page": {
+        "type": "string",
+        "description": "An HTML file in the working directory, holding everything it needs. Give this or questions, not both."
+      }
+    },
+    "required": ["message"]
+  },
+  "agent": {
+    "db_prefix": "ask_operator_",
+    "timeout_seconds": 30
+  }
+}

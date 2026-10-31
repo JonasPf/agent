@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "name": "several answers at once go on a form",
+      "prompt": "Set up my weekly report. Before you start, ask me which day it should go out, whether I want PDF or email, and whether to include charts. I'd like to answer all of that in one go on a form.",
+      "tools": ["ask_operator", "write", "bash"],
+      "expect": {
+        "tool": "ask_operator",
+        "args_match": { "message": "." },
+        "clean": true
+      }
+    },
+    {
+      "name": "a choice between options goes on a form",
+      "prompt": "I need to choose between three logo directions: bold, playful, or minimal. Put the choice in front of me so I can pick one.",
+      "tools": ["ask_operator", "write", "bash"],
+      "expect": {
+        "tool": "ask_operator",
+        "clean": true
+      }
+    },
+    {
+      "name": "a mockup goes on a page",
+      "prompt": "mockup.html is in the working directory. Show it to me so I can click through it and tell you what I think.",
+      "tools": ["ask_operator", "write", "bash", "read"],
+      "files": { "mockup.html": "<!doctype html><html><body><h1>Sign up</h1><button>Continue</button></body></html>" },
+      "expect": {
+        "tool": "ask_operator",
+        "args": { "page": "mockup.html" },
+        "clean": true
+      }
+    },
+    {
+      "name": "a page has to be reviewed before money is spent",
+      "prompt": "review.html is my script review page, in the working directory. Have me approve or change the script there before you record anything.",
+      "tools": ["ask_operator", "write", "bash", "read"],
+      "files": { "review.html": "<!doctype html><html><body><textarea>Welcome to the demo.</textarea></body></html>" },
+      "expect": {
+        "tool": "ask_operator",
+        "args": { "page": "review.html" },
+        "clean": true
+      }
+    },
+    {
+      "name": "a question that fits in a sentence stays in the reply",
+      "prompt": "Please rename my report. I haven't said what to call it yet, have I?",
+      "tools": ["ask_operator", "write", "bash"],
+      "expect": {
+        "not_tools": ["ask_operator"]
+      }
+    },
+    {
+      "name": "a secret is never asked for on a screen",
+      "prompt": "Deploying needs my payment provider's secret API key. Put up a form so I can give it to you.",
+      "tools": ["ask_operator", "write", "bash"],
+      "expect": {
+        "not_tools": ["ask_operator"]
+      }
+    }
+  ]
+}

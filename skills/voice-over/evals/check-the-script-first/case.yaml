@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: check-the-script-first
+expected_outcome: |
+  The agent transcribes clip.mov, writes a draft, builds the review page with make_review.py, shows it
+  with ask_operator, and stops. No speech is bought.

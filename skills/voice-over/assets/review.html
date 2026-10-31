@@ -1,0 +1,403 @@
+<meta charset="utf-8">
+<title>Voice-Over Review</title>
+<style>
+/* An edit desk: the state of the script stays on top, and below it each screenshot sits beside its lines. */
+:root {
+  --bg: #e9eef2; --panel: #ffffff; --sunk: #f3f6f8; --ink: #16212b; --muted: #55636f; --line: #c8d2da;
+  --accent: #0a6c6c; --on-accent: #ffffff; --tint: #d7ecea; --warn: #9a4c12; --warn-tint: #f8e7d6;
+  --body: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --data: ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #0f151b; --panel: #171f27; --sunk: #121920; --ink: #e6ecf1; --muted: #97a5b2; --line: #2b3640;
+  --accent: #54c8bf; --on-accent: #08201f; --tint: #173534; --warn: #eba86f; --warn-tint: #3a2616;
+  color-scheme: dark } }
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.5 var(--body); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.app { display: grid; gap: 12px; padding: 0 12px 32px; }
+.status { position: sticky; top: 0; z-index: 8; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  margin-inline: -12px; background: var(--panel); border-bottom: 2px solid var(--ink); padding: 8px 12px; }
+.stats { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; gap: 0 14px; }
+.acts { flex: none; display: flex; gap: 8px; }
+.stat { font: 500 14px var(--data); font-variant-numeric: tabular-nums; }
+.stat.bad { color: var(--warn); }
+.quiet { border: 1px solid var(--line); background: none; padding: 6px 11px; font-size: 15px; }
+.quiet:disabled { opacity: .45; cursor: default; }
+.go { border: 0; background: var(--accent); color: var(--on-accent); font-weight: 600; padding: 8px 15px; }
+.go:disabled { opacity: .6; cursor: default; }
+.lede { margin: 0; color: var(--muted); max-width: 70ch; }
+.done { flex: 1 0 100%; margin: 0; padding: 6px 10px; background: var(--tint); font-weight: 600; }
+.note { margin: 0; padding: 8px 12px; background: var(--warn-tint); max-width: 75ch; font-size: 15px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+.field { display: grid; gap: 3px; min-width: 0; }
+.field > span { font-size: 13px; color: var(--muted); }
+select, .text { background: var(--panel); border: 1px solid var(--line); padding: 7px 9px; min-width: 0; max-width: 100%; }
+
+.slot { display: grid; grid-template-columns: minmax(180px, 34%) minmax(0, 1fr); gap: 14px; padding-block: 12px; border-bottom: 1px solid var(--line); }
+.slot.big { grid-template-columns: minmax(0, 1fr); }
+.shot { position: sticky; top: 56px; align-self: start; margin: 0; display: grid; gap: 4px; min-width: 0; }
+.slot.big .shot { position: static; }
+.zoom { display: block; width: 100%; border: 0; padding: 0; background: none; cursor: zoom-in; }
+.slot.big .zoom { cursor: zoom-out; }
+.zoom img { display: block; width: 100%; height: auto; background: var(--line); }
+.shot figcaption { font: 500 14px var(--data); color: var(--muted); }
+.lines { display: grid; gap: 10px; align-content: start; min-width: 0; padding: 2px; }
+.slot.over .lines { outline: 2px dashed var(--accent); background: var(--tint); }
+.line { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 4px 8px; background: var(--panel); padding: 9px 10px 9px 4px; }
+.grip { grid-row: span 3; align-self: stretch; display: grid; place-items: center; border: 0; background: none; color: var(--muted); cursor: grab; touch-action: none; padding: 0; font: 500 18px/1 var(--data); }
+.when { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.time { width: 84px; font-family: var(--data); font-size: 14px; padding: 4px 6px; }
+.nudge { border: 1px solid var(--line); background: none; padding: 3px 7px; font: 500 13px var(--data); }
+.del { margin-left: auto; border: 0; background: none; color: var(--muted); padding: 3px 6px; font-size: 14px; }
+.words { width: 100%; resize: none; overflow: hidden; field-sizing: content; border: 1px solid transparent; background: var(--sunk); padding: 6px 8px; display: block; }
+.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.warn { color: var(--warn); font-weight: 600; }
+.add { justify-self: start; border: 1px dashed var(--line); background: none; color: var(--muted); padding: 5px 10px; font-size: 14px; }
+.ghost { position: fixed; z-index: 20; pointer-events: none; width: min(420px, 80vw); background: var(--panel); border: 2px solid var(--accent); padding: 8px 10px; font-size: 15px; }
+.ghost b { display: block; font: 500 14px var(--data); color: var(--accent); }
+
+.paste { background: var(--panel); padding: 14px; display: grid; gap: 8px; }
+.paste h2 { margin: 0; font-size: 20px; line-height: 1.2; }
+.paste p { margin: 0; color: var(--muted); max-width: 65ch; }
+.paste textarea { width: 100%; min-height: 120px; resize: vertical; border: 1px solid var(--line); background: var(--sunk); padding: 6px 8px; }
+
+@media (max-width: 640px) {
+  .slot { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .shot { position: static; }
+  .stat { font-size: 12px; }
+  .stats { display: grid; }
+  .acts { gap: 6px; }
+  .go { padding: 8px 12px; }
+  .quiet { padding: 6px 9px; }
+  .lede { font-size: 13px; line-height: 1.35; }
+  .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  select { width: 100%; padding: 5px 7px; }
+}
+</style>
+
+<main class="app">
+  <div class="status">
+    <div class="stats">
+      <span class="stat" id="sCount"></span>
+      <span class="stat" id="sCost"></span>
+      <span class="stat bad" id="sWarn"></span>
+    </div>
+    <div class="acts">
+      <button class="quiet" type="button" id="undo" disabled>Undo</button>
+      <button class="go" type="button" id="approve">Approve</button>
+    </div>
+    <p class="done" id="done" role="status" hidden></p>
+  </div>
+  <p class="lede">Change the words, and move a line with its handle or its time. Nothing is spoken or paid for until you approve. Tap a screenshot to see it larger. Samples of every voice are linked in the agent's message.</p>
+  <div class="controls">
+    <label class="field"><span>Voice</span><select id="voice"></select></label>
+    <label class="field"><span>Language</span><select id="lang"></select></label>
+  </div>
+  <p class="note" id="langNote" hidden></p>
+  <section class="paste" id="paste" hidden>
+    <h2>Paste your script</h2>
+    <p>There are no lines yet. Paste what the voice should say, and each sentence becomes a line you can move. You can also add lines under any screenshot.</p>
+    <textarea id="pasteText" aria-label="Your script"></textarea>
+    <div><button class="go" type="button" id="pasteGo">Place on the video</button></div>
+  </section>
+  <section id="rows" aria-label="Screenshots and lines"></section>
+</main>
+
+<script id="data" type="application/json">__REVIEW_DATA__</script>
+<script>
+(function () {
+  var DATA = JSON.parse(document.getElementById('data').textContent);
+  var DURATION = DATA.duration, STEP = DATA.step, LAST = Math.max(0, DURATION - 0.5);
+
+  var el = function (id) { return document.getElementById(id); };
+  var nextId = 1;
+  function make(at, text) { return { id: nextId++, at: Math.min(at, LAST), text: text }; }
+  var lines = DATA.lines.map(function (l) { return make(l.at, l.text); });
+  var history = [], approved = false, typing = null;
+
+  function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function fmt(t) {
+    var tenths = Math.round(t * 10), m = Math.floor(tenths / 600), s = (tenths - m * 600) / 10;
+    return m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
+  }
+  function parseTime(v) {
+    var parts = v.trim().split(':'), t = 0;
+    if (parts.length > 3) return null;
+    for (var i = 0; i < parts.length; i++) {
+      if (!/^\d+(\.\d+)?$/.test(parts[i])) return null;
+      t = t * 60 + Number(parts[i]);
+    }
+    return Math.min(t, LAST);
+  }
+  function snap(t) { return Math.min(LAST, Math.round(Math.max(0, t) * 2) / 2); }
+  function find(id) { return lines.filter(function (l) { return l.id === id; })[0]; }
+  function sort() { lines.sort(function (a, b) { return a.at - b.at; }); }
+  function words(l) { return l.text.trim().split(/\s+/).filter(Boolean).length; }
+  function speech(l) { return words(l) / DATA.pace; }
+  function filled() { return lines.filter(function (l) { return l.text.trim(); }); }
+  function money(x) { return '$' + (x < 0.01 ? x.toFixed(3) : x.toFixed(2)); }
+  function chosen() {
+    var v = el('voice').value.split('|');
+    return { group: DATA.voices[Number(v[0])], voice: v[1] };
+  }
+
+  // What place_chunks.py will do with these lines: one running into the next pushes it back,
+  // and past a limit the track is not written. Real lengths are known only once spoken.
+  function timing() {
+    var out = {}, end = null, last = null;
+    filled().forEach(function (l) {
+      var start = end === null ? l.at : Math.max(l.at, end + DATA.breath), push = start - l.at;
+      if (last && push > 0) {
+        out[last.id] = push > DATA.max_push
+          ? { hard: true, text: 'Too long: runs ' + push.toFixed(1) + ' s into the next line. Shorten it or move the next line.' }
+          : { hard: false, text: 'Pushes the next line back ' + push.toFixed(1) + ' s' };
+      }
+      end = start + speech(l);
+      last = l;
+    });
+    if (last && end > DURATION) out[last.id] = { hard: true, text: 'Runs ' + (end - DURATION).toFixed(1) + ' s past the end of the video' };
+    filled().forEach(function (l) {
+      if (l.text.length > DATA.max_chars) out[l.id] = { hard: true, text: 'Over ' + DATA.max_chars.toLocaleString('en') + ' characters: split it' };
+    });
+    return out;
+  }
+
+  function say(text) {
+    el('done').textContent = text;
+    el('done').hidden = !text;
+  }
+  // The approval saved is for what was on the page then. Anything after it takes it back.
+  function changed() {
+    if (!approved) return;
+    approved = false;
+    window.ask.save('approved.json', '{}').catch(function () {});
+    window.ask.answer('Not approved: the operator changed the script after approving. Ask them to press Approve, then Send.');
+    say('You changed something after approving. Press Approve again, then Send.');
+  }
+  function remember() {
+    history.push(JSON.stringify(lines));
+    if (history.length > 50) history.shift();
+    el('undo').disabled = false;
+    changed();
+  }
+
+  function lineCard(l) {
+    return '<article class="line" data-id="' + l.id + '">' +
+      '<button class="grip" type="button" aria-label="Drag to move this line">⠿</button>' +
+      '<div class="when"><input class="text time" aria-label="Start time" value="' + fmt(l.at) + '">' +
+      '<button class="nudge" type="button" data-d="-1" aria-label="One second earlier">−1s</button><button class="nudge" type="button" data-d="1" aria-label="One second later">+1s</button>' +
+      '<button class="del" type="button">Remove</button></div>' +
+      '<textarea class="words" rows="1" aria-label="Line text">' + esc(l.text) + '</textarea>' +
+      '<div class="meta"><span class="est"></span><span class="warn"></span></div></article>';
+  }
+
+  // The screenshots are drawn once: redrawing them with every change would make the page jump.
+  function drawSlots() {
+    el('rows').innerHTML = DATA.shots.map(function (src, i) {
+      var t = i * STEP, label = fmt(t).slice(0, -2);
+      return '<div class="slot" data-t="' + t + '"><figure class="shot">' +
+        '<button class="zoom" type="button" aria-label="Show the screenshot at ' + label + ' larger"><img alt="Screenshot at ' + label + '" src="' + src + '"></button>' +
+        '<figcaption>' + label + '</figcaption></figure><div class="lines"></div></div>';
+    }).join('');
+  }
+
+  function check() {
+    var warn = timing(), hard = 0, soft = 0, c = chosen();
+    document.querySelectorAll('.line').forEach(function (card) {
+      var l = find(Number(card.dataset.id)), w = warn[l.id];
+      card.querySelector('.est').textContent = 'about ' + speech(l).toFixed(1) + ' s spoken';
+      card.querySelector('.warn').textContent = w ? w.text : '';
+    });
+    Object.keys(warn).forEach(function (k) { if (warn[k].hard) hard++; else soft++; });
+    var kept = filled(), chars = kept.reduce(function (n, l) { return n + l.text.trim().length; }, 0);
+    el('sCount').textContent = kept.length + (kept.length === 1 ? ' line, ' : ' lines, ') + chars.toLocaleString('en') + ' chars';
+    el('sCost').textContent = 'about ' + money(chars * c.group.price / 1e6) + ' of speech';
+    el('sWarn').textContent = hard ? hard + ' too long' : soft ? soft + ' tight' : '';
+  }
+  function render() {
+    sort();
+    document.querySelectorAll('.slot').forEach(function (slot) {
+      var t = Number(slot.dataset.t), inside = lines.filter(function (l) { return l.at >= t && l.at < t + STEP; });
+      slot.querySelector('.lines').innerHTML = inside.map(lineCard).join('') + '<button class="add" type="button" data-t="' + t + '">Add a line here</button>';
+    });
+    growAll();
+    requestAnimationFrame(growAll);
+    el('paste').hidden = lines.length > 0;
+    check();
+  }
+  // Where the browser cannot size a box to its words, it is measured, once it has been laid out.
+  var sized = window.CSS && CSS.supports('field-sizing', 'content');
+  function grow(t) {
+    if (sized) return;
+    t.style.height = 'auto';
+    t.style.height = t.scrollHeight + 2 + 'px';
+  }
+  function growAll() { document.querySelectorAll('.words').forEach(grow); }
+  window.addEventListener('resize', growAll);
+  function freeMoment(from) {
+    var t = from;
+    lines.forEach(function (l) {
+      var end = l.at + speech(l) + 0.5;
+      if (end > t && l.at < t + 3) t = end;
+    });
+    return snap(t);
+  }
+
+  // Everything inside a line card: words, time, nudges, removing, and the screenshot beside it.
+  document.addEventListener('input', function (e) {
+    if (!e.target.classList.contains('words')) return;
+    var l = find(Number(e.target.closest('.line').dataset.id));
+    if (typing !== l.id) { remember(); typing = l.id; }
+    l.text = e.target.value;
+    grow(e.target);
+    check();
+  });
+  document.addEventListener('focusout', function (e) {
+    if (e.target.classList.contains('words')) typing = null;
+  });
+  document.addEventListener('change', function (e) {
+    if (!e.target.classList.contains('time')) return;
+    var l = find(Number(e.target.closest('.line').dataset.id)), t = parseTime(e.target.value);
+    if (t === null) { e.target.value = fmt(l.at); return; }
+    remember();
+    l.at = t;
+    render();
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    var card = b.closest('.line');
+    if (b.classList.contains('nudge')) {
+      var l = find(Number(card.dataset.id));
+      remember();
+      l.at = snap(l.at + Number(b.dataset.d));
+      render();
+      var again = document.querySelector('.line[data-id="' + l.id + '"] .nudge[data-d="' + b.dataset.d + '"]');
+      if (again) again.focus();
+    } else if (b.classList.contains('del')) {
+      remember();
+      var id = Number(card.dataset.id);
+      lines = lines.filter(function (x) { return x.id !== id; });
+      render();
+    } else if (b.classList.contains('add')) {
+      remember();
+      var added = make(freeMoment(Number(b.dataset.t)), '');
+      lines.push(added);
+      render();
+      document.querySelector('.line[data-id="' + added.id + '"] .words').focus();
+    } else if (b.classList.contains('zoom')) {
+      b.closest('.slot').classList.toggle('big');
+    }
+  });
+
+  // Drag a line by its grip onto any screenshot's row, and the height of the drop picks the moment.
+  var drag = null;
+  document.addEventListener('pointerdown', function (e) {
+    var g = e.target.closest('.grip');
+    if (!g) return;
+    e.preventDefault();
+    g.setPointerCapture(e.pointerId);
+    var l = find(Number(g.closest('.line').dataset.id));
+    var ghost = document.createElement('div');
+    ghost.className = 'ghost';
+    ghost.innerHTML = '<b>' + fmt(l.at) + '</b>' + esc(l.text.slice(0, 80));
+    document.body.appendChild(ghost);
+    drag = { line: l, ghost: ghost, target: null, at: l.at };
+    moveGhost(e);
+  });
+  function moveGhost(e) {
+    if (!drag) return;
+    drag.ghost.style.left = Math.max(8, Math.min(e.clientX + 12, window.innerWidth - drag.ghost.offsetWidth - 8)) + 'px';
+    drag.ghost.style.top = e.clientY + 12 + 'px';
+    var under = document.elementFromPoint(e.clientX, e.clientY);
+    var slot = under && under.closest('.slot');
+    document.querySelectorAll('.slot.over').forEach(function (s) { s.classList.remove('over'); });
+    if (slot) {
+      slot.classList.add('over');
+      var box = slot.getBoundingClientRect();
+      var part = Math.max(0, Math.min(0.97, (e.clientY - box.top) / box.height));
+      drag.at = snap(Number(slot.dataset.t) + part * STEP);
+      drag.target = slot;
+      drag.ghost.querySelector('b').textContent = fmt(drag.at);
+    }
+    if (e.clientY < 70) window.scrollBy(0, -14);
+    else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+  }
+  document.addEventListener('pointermove', moveGhost);
+  function endDrag() {
+    if (!drag) return;
+    var d = drag;
+    drag = null;
+    d.ghost.remove();
+    document.querySelectorAll('.slot.over').forEach(function (s) { s.classList.remove('over'); });
+    if (d.target && d.at !== d.line.at) { remember(); d.line.at = d.at; }
+    render();
+  }
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
+
+  // The controls.
+  DATA.voices.forEach(function (g, i) {
+    var group = document.createElement('optgroup');
+    group.label = g.name + ' · $' + g.price.toFixed(0) + ' per million characters';
+    g.voices.forEach(function (v) {
+      var option = new Option(v, i + '|' + v);
+      option.selected = g.model === DATA.model && v === DATA.voice;
+      group.appendChild(option);
+    });
+    el('voice').appendChild(group);
+  });
+  el('voice').addEventListener('change', function () { changed(); check(); });
+  el('lang').add(new Option('Keep as written', ''));
+  DATA.languages.forEach(function (l) { el('lang').add(new Option(l[1], l[0])); });
+  el('lang').addEventListener('change', function () {
+    var name = this.options[this.selectedIndex].textContent;
+    el('langNote').hidden = !this.value;
+    el('langNote').textContent = 'After you approve, the agent translates every line into ' + name + ' and shows this page again for a last look. A translation can run longer than the original, so check the warnings then.';
+    changed();
+  });
+  el('undo').addEventListener('click', function () {
+    if (!history.length) return;
+    lines = JSON.parse(history.pop());
+    this.disabled = !history.length;
+    changed();
+    render();
+  });
+  el('pasteGo').addEventListener('click', function () {
+    var parts = el('pasteText').value.split(/(?<=[.!?])\s+|\n+/).map(function (s) { return s.trim(); }).filter(Boolean);
+    if (!parts.length) return;
+    remember();
+    var first = Math.min(2, LAST), gap = (LAST - first) / parts.length;
+    lines = parts.map(function (s, i) { return make(snap(first + i * gap), s); });
+    el('pasteText').value = '';
+    render();
+  });
+  el('approve').addEventListener('click', function () {
+    var kept = filled(), c = chosen(), button = this;
+    if (!kept.length) { say('Write at least one line first.'); return; }
+    if (kept.some(function (l) { return l.text.length > DATA.max_chars; })) { say('One line is too long to speak in one go. Split it first.'); return; }
+    if (!window.ask) { say('This page only works from the link in the agent\'s message.'); return; }
+    var language = el('lang').value;
+    var body = { language: language, model: c.group.model, voice: c.voice,
+      chunks: kept.map(function (l) { return { at: l.at, text: l.text.trim() }; }) };
+    var chars = body.chunks.reduce(function (n, x) { return n + x.text.length; }, 0);
+    button.disabled = true;
+    window.ask.save('approved.json', JSON.stringify(body, null, 1)).then(function () {
+      approved = true;
+      window.ask.answer('Approved: ' + kept.length + ' lines, about ' + money(chars * c.group.price / 1e6) + ' with ' + c.voice +
+        (language ? ', to be translated into ' + el('lang').options[el('lang').selectedIndex].textContent : '') + '.');
+      say('Approved. Now press Send below this page.');
+    }, function (err) {
+      say('That did not save: ' + err.message);
+    }).then(function () { button.disabled = false; });
+  });
+
+  drawSlots();
+  render();
+})();
+</script>

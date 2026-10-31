@@ -309,6 +309,22 @@ test('a tool call that logged nothing offers no toggle', () => {
   assert.strictEqual(findAll(n, 'logs').length, 0);
 });
 
+// A screen a tool opened stays in sight when the result is folded, and whether
+// or not the agent repeats the link in its reply.
+test('a tool result that opens a screen offers it', () => {
+  const ctx = load();
+  const n = ctx.renderEntry(toolEntry({ tool_name: 'ask_operator', tool_result: { ok: true,
+    content: 'Ready. Put this link in your reply: [Open](#toolpanel/ask_operator/S1/20261031-1200-ab)' } }));
+  const open = findAll(n, 'btn');
+  assert.strictEqual(open.length, 1);
+  assert.strictEqual(open[0].href, '#toolpanel/ask_operator/S1/20261031-1200-ab');
+});
+
+test('a tool result with no screen offers none', () => {
+  const ctx = load();
+  assert.strictEqual(findAll(ctx.renderEntry(toolEntry({})), 'btn').length, 0);
+});
+
 // A tool that failed is already open at its error. The logs stay behind the
 // toggle even then: the error is the answer, the logs are the evidence.
 test('a failed call opens its error and still folds its logs away', () => {

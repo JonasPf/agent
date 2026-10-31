@@ -1264,6 +1264,14 @@ function renderEntry(e, opts) {
     head.onclick = () => show(pre.hidden);
     if (peek) head.append(peek);
     n.append(head, pre);
+    // A tool that opens a screen says so with a link to it. It stays in sight
+    // when the result is folded, and whether or not the agent repeats it.
+    const screen = !failed && panelLink(body);
+    if (screen) {
+      const open = el('a', 'btn', 'Open');
+      open.href = screen;
+      n.append(open);
+    }
     // What the tool wrote to standard error, behind a toggle of its own. It has
     // always been kept with the result and never shown, which made a tool that
     // half-worked unreadable from here. It stays closed even when the call
@@ -2366,6 +2374,12 @@ async function viewSettings(v) {
 }
 
 // ---------- panels ----------
+
+// panelLink is the link to a tool's screen in what the tool returned, if any.
+function panelLink(text) {
+  const m = /#toolpanel\/[\w-]+\/[\w/-]+/.exec(String(text || ''));
+  return m ? m[0] : '';
+}
 
 async function viewToolPanel(v) {
   const gen = drawing;

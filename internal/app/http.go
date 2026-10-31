@@ -1188,7 +1188,26 @@ func (a *App) hSessionFile(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "%s is a directory, not a file", rel)
 		return
 	}
+	confineFile(w, rel)
 	http.ServeContent(w, r, path.Base(rel), info.ModTime(), f)
+}
+
+// filePolicy is what a file from a working directory may do when a browser opens
+// it. Such a file is whatever the agent wrote or fetched, and it is served from
+// the agent's own address, where the operator's login opens every route, so it
+// runs as nobody: scripts work, and it can see what it holds and reach nothing
+// else. The same policy keeps a page inside ask_operator's box (ADR-073).
+const filePolicy = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; " +
+	"style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; " +
+	"form-action 'none'; base-uri 'none'"
+
+// confineFile sets what a file is opened under. A PDF goes without the sandbox:
+// a browser will not show one in a sandbox, and does not run it on this origin.
+func confineFile(w http.ResponseWriter, rel string) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if !strings.EqualFold(path.Ext(rel), ".pdf") {
+		w.Header().Set("Content-Security-Policy", filePolicy)
+	}
 }
 
 func (a *App) hDeleteSessionFile(w http.ResponseWriter, r *http.Request) {

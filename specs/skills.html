@@ -168,12 +168,26 @@ operator reads it on the Skills screen before deciding.</p>
 <tr><td><code>keeping-records</code></td><td>How to keep whatever the operator asks to have remembered &mdash; a series that accumulates (measurements, appointments, incidents), a list with no dates, or a note of a fact, a preference, or a decision &mdash; as files in the session's working directory; that every date written comes from <code>clock</code> in the same turn; and how to read any of it back with a command.</td></tr>
 <tr><td><code>writing-skills</code></td><td>When to offer to turn a task that worked into a skill, and how to draft one in the working directory: a description that says when, a lean <code>SKILL.md</code> that explains why, scripts for work that repeats, test cases in the layout <code>claude plugin eval</code> reads, a run of them before handing it over, and how the operator installs it.</td></tr>
 <tr><td><code>researching</code></td><td>How to answer a question from the web: plan narrow searches, read the page rather than the snippet, rank sources from primary to unverified, keep findings in a file as they accumulate, and give every claim its source.</td></tr>
+<tr><td><code>voice-over</code></td><td>How to put a synthesized voice on a video: transcribe it with times, clean up the narration, let the operator change the words, timing, language, and voice on a page shown through <a href="tool-ask_operator.html"><code>ask_operator</code></a>, then speak each line and place it at its moment. A video with no audio takes its script from that page.</td></tr>
+<tr><td><code>video-edit</code></td><td>How to cut parts out of videos and join them: find the moments from times or from what was said, cut exactly, fit clips that do not match, and carry on a long job that a time limit stopped. It comes before a voice-over, because a cut moves every time after it.</td></tr>
 </table>
+
+<p>These two carry scripts, and <code>task check</code> runs them from <code>testenv/skills</code> on real
+video, with the review page in the real <code>ask_operator</code> panel in a real browser
+(<a href="adrs.html#adr-075">ADR-075</a>).</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every required skill ships, loads, and is on by default.</li>
+<li>The voice-over review page holds a screenshot every 30 seconds, each the frame at its time, beside the lines that start there, and fits what <code>ask_operator</code> will load.</li>
+<li>On that page the operator changes a line's words and time, by dragging with a mouse or a finger or by typing, and picks the language and the voice, and the cost follows.</li>
+<li>Approve saves the script beside the page, and any change after it takes the approval back, so Send cannot carry a script the operator no longer means.</li>
+<li>A video with no draft starts the page empty, and a script pasted there reaches speech the way a draft does.</li>
+<li>An approval that names a new language asks for a translation and a last look before anything is spoken.</li>
+<li>A cut lands on the frame asked for, sound and picture stay together across a join, and whole clips that match are joined without re-encoding.</li>
+<li>A long edit stopped by its time limit carries on from where it stopped when run again, and sources are never changed.</li>
+<li>A recording too long for a turn is stopped before anything is done, and goes on only with the operator's agreement.</li>
 </ul>
 </div>
 

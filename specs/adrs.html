@@ -2351,6 +2351,88 @@ conversation's packages are fetched again when the agent starts. The release's s
 197&nbsp;MB and take 485&nbsp;MB.</p>
 </div>
 
+<div class="adr" id="adr-073">
+<div class="meta">ADR-073 · accepted</div>
+<h3>A file from a working directory opens as nobody</h3>
+<h4>Context</h4>
+<p>The agent cannot change the copy of itself that is running: that is the promise in the overview.
+<code>GET /sessions/{id}/files/{path}</code> broke it from the side. It served a working directory's
+files at the agent's own address, with no restriction, so an <code>.html</code> file opened as a page
+of the agent. A browser sends such a page the operator's login, and from there every route answers,
+<code>POST /skills/install</code> among them. The page could be one the agent wrote, or one it saved
+from the web while following instructions planted there. Thirty-one such files were in working
+directories when this was found, none of them doing this; the gap was checked from the headers and
+the routes, and not by attempting it.</p>
+<h4>Decision</h4>
+<p>Every file from that route carries <code>X-Content-Type-Options: nosniff</code> and a
+<code>Content-Security-Policy</code> that sandboxes it without <code>allow-same-origin</code> and loads
+nothing from anywhere. Scripts stay on, so a mockup still works when opened. It applies by route and not
+by file type, because a file with no extension is sniffed into a page. A PDF is the one exception: a
+browser refuses to show one in a sandbox, and does not run it on this origin.</p>
+<h4>Consequences</h4>
+<p>A page opened this way sees what it holds and nothing else, so it cannot load a font, an image, or
+a script from elsewhere, or a file beside it. The interface's own requests read these files as before:
+the policy governs a document, not a fetch. A page that has to give something back goes through
+<a href="tool-ask_operator.html"><code>ask_operator</code></a>.</p>
+</div>
+
+<div class="adr" id="adr-074">
+<div class="meta">ADR-074 · accepted</div>
+<h3>The agent asks for input on a screen it does not control</h3>
+<h4>Context</h4>
+<p>A chat reply is a poor way to choose between mockups, fix the timing of a voice-over, or fill in
+ten answers. What these need is a page the agent can make for the occasion, which is exactly what
+<a href="#adr-073">ADR-073</a> confines: an agent-written page must not act as the operator.</p>
+<p>The Model Context Protocol has met the same need, and this agent does not speak that protocol, so
+nothing here has to match its wire format. Its elicitation has a form mode, where the client draws a
+flat form, and a URL mode, which sends the person to a page so that a secret never passes through the
+client. URL mode is built for the opposite of this case, since here the answer is meant to reach the
+agent. Its Apps extension is the closest relative: a tool's result names HTML that the host runs in a
+sandboxed iframe, talking over <code>postMessage</code>.</p>
+<h4>Decision</h4>
+<p>One tool, <a href="tool-ask_operator.html"><code>ask_operator</code></a>, with a required message
+saying what is needed and why, and either questions, for a form the panel draws, or a page, for what a
+form cannot do. The name says what the model should use it for. A separate tool for mockups, or a
+voice-over tool, would each have needed this one.</p>
+<p>The turn ends after the call, and the answer arrives as the operator's next message. Nothing is held
+open: a question can sit for days, across a restart, and costs no rounds.</p>
+<p>A page runs in <code>&lt;iframe sandbox="allow-scripts" srcdoc&gt;</code> behind the same policy as
+ADR-073, and reaches the panel by two messages. It can save a file beside itself, and it can propose an
+answer. Only Send and Decline speak to the conversation, and they sit in the panel, which is reviewed
+code, where the page cannot reach. A page therefore cannot approve itself, which matters because the
+agent wrote it, and approving is what it was asked to wait for. As in elicitation, an answer says
+whether it was accepted or declined, and walking away sends nothing.</p>
+<h4>Consequences</h4>
+<p>The agent gets something it lacked: it can stop and be told. What the operator enters reaches the
+model and its provider, so the tool says never to ask for a secret, and the screen says so too.</p>
+<p>A page holds everything it needs, because the box has no network. A skill can ship one as a text
+file, which <a href="skills.html">a skill folder</a> permits; what it cannot do is ship a sample video
+or audio, and a page that needs those must embed them. A page cannot play a working-directory file
+by address: the box has no origin to ask from. Anyone able to open a link can open the ask, but that
+is the operator, behind the login, and what opens is a box with a button only they can press.</p>
+</div>
+
+<div class="adr" id="adr-075">
+<div class="meta">ADR-075 · accepted</div>
+<h3>The video skills ship in the image, with their tests</h3>
+<h4>Context</h4>
+<p><code>voice-over</code> and <code>video-edit</code> were worked out in a conversation and would have
+reached the operator the way any draft does, by Install. But the review page in
+<code>voice-over</code> needs <a href="#adr-074"><code>ask_operator</code></a>, so the two have to arrive
+together, and these are the first skills that carry code enough to break. A draft's tests live in
+whatever conversation ran them.</p>
+<h4>Decision</h4>
+<p>Both ship in <code>skills/</code>, on by default. Their scripts are tested by <code>task check</code>
+from <code>testenv/skills</code>, outside the skill's folder, so that a test that needs ffmpeg and a browser
+is not part of what a conversation can read. Those tests run on real video, and the page runs in the real
+panel. The skills' own <code>evals/</code> stay beside them, for the agent to be tried against.</p>
+<h4>Consequences</h4>
+<p>The test environment gains the ffmpeg a conversation installs with
+<a href="tool-packages.html"><code>packages</code></a>, from the release the image pins, so the scripts are
+tested on what they will run on. <code>task check</code> takes minutes longer. A skill that ships cannot be edited on the Skills screen: changing either now takes a commit.
+An installed copy under the same name stops loading, and the Skills screen says why.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

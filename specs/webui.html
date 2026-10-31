@@ -305,9 +305,16 @@ directory. The page links a name only once it has asked the server whether it is
 link points at nothing. A file written while the conversation is open is linked from the messages that
 arrive after it, and from earlier ones the next time the conversation is opened.</p>
 
+<p>A file in a working directory is whatever the agent wrote or fetched, and it opens at the agent's own
+address, where the operator's login reaches every route. So it opens as nobody
+(<a href="adrs.html#adr-073">ADR-073</a>): a page's scripts run, and it can reach nothing, neither the
+agent nor the network.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
+<li>A file opened from a working directory runs with no origin and no network, whatever its name, so a page the agent wrote cannot use the operator's login.</li>
+<li>A PDF opened from a working directory still shows.</li>
 <li>A file can be uploaded from a phone, including from the camera and the photo library.</li>
 <li>An uploaded file is written to the session's working directory and appears in its file list.</li>
 <li>An upload never replaces a file already there: a name already taken gets a number &mdash; <code>image.jpg</code>, then <code>image-2.jpg</code> &mdash; and the message names each file where it landed. Two photos from a phone's camera, both called <code>image.jpg</code>, are two files.</li>
