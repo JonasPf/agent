@@ -1,0 +1,5 @@
+schema_version: "1.1"
+name: operator-writes-the-script
+expected_outcome: |
+  clip2.mov has no audio and the operator will write the words. The agent says so, builds an empty
+  review page, shows it with ask_operator, and stops, without writing a script of its own.

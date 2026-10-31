@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-10-31
+
+- **The agent can ask you on a proper screen.** When a chat reply would be
+  awkward, the agent can stop and send you a link instead: a form with
+  choices and fields, or a page it made for the occasion, such as a mockup
+  to click through or a script to correct. You answer with Send or Decline,
+  and it carries on from there. A page cannot answer for you, and nothing
+  you do reaches the conversation until you press one of the two. What you
+  enter goes to the agent and its model, so never enter a password there.
+- **A page in a conversation's files opens safely.** An HTML file the agent
+  wrote used to open with your login, able to do whatever you can. It now
+  opens with no access to the agent or the network. Its scripts still run,
+  but it cannot load anything from elsewhere.
+- **The agent can put a voice on a video.** Send a recording and it
+  transcribes it, tidies the narration, and sends you a page with a
+  screenshot every 30 seconds beside the lines. Change the words, drag a line
+  to a better moment, and pick the voice and language while the cost updates.
+  Nothing is spoken until you approve. A video with no sound works too: paste
+  your script there. If you installed your own `voice-over` skill, this one
+  replaces it, and the Skills screen says so until you remove the old copy.
+- **The agent can cut and join videos.** Give it times, or describe the part
+  to remove. Cuts land on the exact frame, recordings that do not match are
+  fitted together, and long jobs carry on by themselves. Your originals are
+  never changed.
+
 ## 2026-10-29
 
 - **The agent installs the programs it needs.** A new `packages` tool finds

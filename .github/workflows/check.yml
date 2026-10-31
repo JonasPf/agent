@@ -108,5 +108,10 @@ jobs:
       - name: Install Nix
         run: sh testenv/install-nix.sh
 
+      # The ffmpeg a conversation installs, for the scripts shipped skills carry.
+      # testenv/Dockerfile runs the same script.
+      - name: Install ffmpeg
+        run: sh testenv/install-ffmpeg.sh
+
       - name: task check
         run: task check

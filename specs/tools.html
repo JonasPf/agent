@@ -45,6 +45,7 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 
 <table>
 <tr><th>Tool</th><th>For</th></tr>
+<tr><td><a href="tool-ask_operator.html"><code>ask_operator</code></a></td><td>Stop and ask the operator for what a chat reply handles badly: a form, or a page in a box.</td></tr>
 <tr><td><a href="tool-bash.html"><code>bash</code></a></td><td>Run a shell command in the session's working directory.</td></tr>
 <tr><td><a href="tool-call_model.html"><code>call_model</code></a></td><td>One call to another model: text, speech, transcription, or a decision.</td></tr>
 <tr><td><a href="tool-clock.html"><code>clock</code></a></td><td>The current date and time, in UTC and in the operator's zone.</td></tr>
@@ -337,8 +338,12 @@ never the constraint.</p>
 
 <p>A tool that stores data may ship a panel to display it. The panel is a JavaScript module the web
 interface loads and mounts under that tool's name &mdash; a tool that kept a list would show the
-list. No shipped tool has one now: <code>notes</code> did, and was removed
-(<a href="adrs.html#adr-063">ADR-063</a>).</p>
+list. The panel receives the element to draw in, the interface's <code>api</code> and <code>el</code>,
+and reads anything further from the address: <code>#toolpanel/&lt;name&gt;/&lt;anything&gt;</code>
+opens it, so a link can open a panel on one conversation's work. A tool's result that holds such a
+link gets an Open button in the transcript. <code>notes</code> had a panel and was removed
+(<a href="adrs.html#adr-063">ADR-063</a>);
+<a href="tool-ask_operator.html"><code>ask_operator</code></a> has the one that ships now.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -347,6 +352,7 @@ list. No shipped tool has one now: <code>notes</code> did, and was removed
 <li>A tool without a panel is still fully usable.</li>
 <li>A panel that fails to load reports the failure and does not prevent the rest of the interface from working.</li>
 <li>Panels read tool data through the API, not by querying the database directly.</li>
+<li>A link to a panel opens it from a tool's result, with the rest of the address left for the panel to read.</li>
 </ul>
 </div>
 

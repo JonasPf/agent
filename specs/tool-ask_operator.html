@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ask_operator — Agent Spec</title>
+<link rel="stylesheet" href="style.css"></head>
+<body>
+<nav class="top"><div class="wrap">
+<span class="brand">AGENT SPEC</span>
+<a href="index.html">Overview</a>
+<a href="architecture.html">Architecture</a>
+<a href="sessions.html">Sessions</a>
+<a href="jobs.html">Jobs</a>
+<a class="here" href="tools.html">Tools</a>
+<a href="skills.html">Skills</a>
+<a href="webui.html">Web UI</a>
+<a href="api.html">API</a>
+<a href="adrs.html">ADRs</a>
+</div></nav>
+<div class="wrap">
+
+<h1><code>ask_operator</code></h1>
+<p class="lede">Stop and ask the operator for what a chat reply handles badly, on a screen made for it.</p>
+
+<h2>Why it exists</h2>
+<p>Some answers do not fit in a chat: a choice that has to be seen, ten answers at once, a script whose
+words and timing need correcting before money is spent on it. The agent can write a page for any of
+these, and until now had no safe way to show one and get something back. See
+<a href="adrs.html#adr-074">ADR-074</a>.</p>
+
+<p>It is for a choice between options, several answers at once, approving or changing a plan, list,
+table, or script before something costly or hard to undo, feedback on a mockup or design, and a choice
+that has to be seen. A question that fits in a sentence belongs in a reply, and a finished report is a
+link to its file.</p>
+
+<h2>How it works</h2>
+<ol>
+<li>The agent calls the tool with a <code>message</code> saying what it needs and why, and either
+<code>questions</code> or a <code>page</code>.</li>
+<li>The tool records the ask in <code>asks/&lt;id&gt;.json</code> in the working directory, and returns
+a link to its panel, <code>#toolpanel/ask_operator/&lt;session&gt;/&lt;id&gt;</code>.</li>
+<li>The agent puts the link in its reply and ends its turn. The transcript also offers the link as an
+Open button on the tool's result. Nothing waits in the call.</li>
+<li>The panel names the conversation, shows the message, and warns where an answer goes. It draws the
+form, or runs the page in a box.</li>
+<li>The operator presses Send or Decline, and the panel posts their answer as an ordinary message,
+which starts the next turn. Leaving the screen sends nothing.</li>
+</ol>
+
+<table>
+<tr><th>Parameter</th><th>Meaning</th></tr>
+<tr><td><code>message</code></td><td>What is needed and why. Required.</td></tr>
+<tr><td><code>questions</code></td><td>A form, as a list. Each has a <code>name</code>, a <code>type</code> of <code>text</code>, <code>long_text</code>, <code>number</code>, <code>yes_no</code>, <code>choice</code>, or <code>choices</code>, and optionally a <code>label</code>, <code>options</code>, <code>default</code>, and <code>required</code>.</td></tr>
+<tr><td><code>page</code></td><td>An HTML file in the working directory, at most 16&nbsp;MB, holding everything it needs.</td></tr>
+</table>
+
+<h2>What a page can do</h2>
+<table>
+<tr><th>Call</th><th>What it does</th></tr>
+<tr><td><code>ask.answer(text)</code></td><td>Proposes an answer. It is shown on the screen, and goes nowhere until Send.</td></tr>
+<tr><td><code>await ask.save(name, text)</code></td><td>Saves a file of up to 900&nbsp;KB beside the page, and returns its path. The answer names every file saved.</td></tr>
+</table>
+<p>A page has no origin and no network. It cannot use the operator's login, load anything from
+elsewhere, or reach a file by its address, so it embeds what it shows.</p>
+
+<div class="note">
+<strong>A page cannot answer for the operator.</strong> The agent writes the page, and the page is
+often how the agent asks for approval, so a page able to send would be able to approve itself. Send and
+Decline are in the panel, outside the box.
+</div>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>An ask with no message, with neither questions nor a page, or with both, is refused and says why.</li>
+<li>A page that is missing, outside the working directory, not <code>.html</code>, or over 16&nbsp;MB is refused.</li>
+<li>Questions of an unknown type, with a repeated name, or a choice with no options are refused.</li>
+<li>An accepted ask is recorded in the working directory and returns a link to this conversation's panel.</li>
+<li>The screen names the conversation asking, shows the message, and warns that what is entered reaches the agent and its model.</li>
+<li>A page runs, and can propose an answer and save a file, but cannot reach the agent or the network.</li>
+<li>A page saves only in its own folder; a name that climbs out is refused.</li>
+<li>Nothing reaches the conversation until Send or Decline is pressed, and a page cannot press either.</li>
+<li>A required answer holds Send back and says what is missing.</li>
+<li>An answer says what was asked and that it was answered, with each value, the page's proposal, the files saved, and any note.</li>
+<li>Decline says so, needs no answer, and carries a reason if one was given.</li>
+<li>A tool result holding a panel link shows an Open button, in sight while the result is folded.</li>
+</ul>
+</div>
+
+<footer><a href="tools.html">← Tools</a> · <a href="tool-bash.html">bash →</a></footer>
+</div>
+</body></html>
