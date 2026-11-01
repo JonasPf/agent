@@ -78,15 +78,15 @@ longer line up.
      from the frames.
    - Then run `python3 /app/skills/voice-over/scripts/place_chunks.py --check`. It prints each
      chunk's start and what the narrator says there. Read that column: it must be the same thought as
-     the chunk. `~` marks a near match, so look at it twice. `TIGHT` means the chunk will probably
-     run into the next, so shorten it now, while that is free. Fix `chunks.json` until it runs clean.
+     the chunk. `~` marks a near match, so look at it twice. `TIGHT` means the next chunk will probably
+     cut this one off, so shorten it now, while that is free. Fix `chunks.json` until it runs clean.
 5. **Let the operator check it, and stop.** Speech is the step that costs money and is hardest to
    redo. Build the page with `python3 /app/skills/voice-over/scripts/make_review.py INPUT.mov`,
    adding `--voice NAME` if the request named one, with `timeout_seconds: 900`. It holds a screenshot
    every 30 seconds beside the lines that start there. Call `ask_operator` with `page`
    `review/review.html` and a `message` saying the script is ready to check. Put its link in your
-   reply with the samples link from `references/voices.md`, and end the turn. On the page they change
-   the words, move lines, pick the language and voice, and see the cost as they go.
+   reply, and end the turn. On the page they change the words, drag lines along the video, pick the
+   language and voice, hearing a sample of each voice they pick, and see the cost as they go.
    - Their answer names `review/approved.json` → run `make_review.py --apply`. It rewrites
      `chunks.json` with every line where they left it, and prints the model and voice to speak with.
    - It says to translate → translate every `text` in `chunks.json` yourself, keep every `at`, and
@@ -97,8 +97,8 @@ longer line up.
    - Declined → speak nothing, and ask what they want instead.
    - The request says to go ahead without checking, or there is no `ask_operator` tool → run
      `python3 /app/skills/voice-over/scripts/estimate_cost.py` (it reads the gateway's current
-     prices and spends nothing) and put its output in your reply. No voice named yet → add the samples
-     link, ask which voice, and end the turn. A voice named → carry on.
+     prices and spends nothing) and put its output in your reply. No voice named yet → ask which voice,
+     saying the page can play each one, and end the turn. A voice named → carry on.
    - A scheduled wake → use HeyGen and `gareth`, and put the estimate in the report.
 6. **Speak** with `call_model`, once per chunk: the model and voice the operator chose (see
    `references/voices.md`), `prompt` the chunk's `text` **verbatim**, `output` `chunks/01.mp3`,
@@ -111,14 +111,16 @@ longer line up.
      cost four times what the paid voice would have.
    - A call refused with a 429: wait 30 seconds, then send only the chunks still missing.
 7. **Place**: `python3 /app/skills/voice-over/scripts/place_chunks.py INPUT.mov` trims and
-   levels each chunk, puts it at its moment, and writes `voiceover_track.wav`. A chunk that runs up to
-   3 seconds into the next pushes it back. Past that it writes nothing and names the chunk: shorten
-   that chunk's `text`, speak only it again, and rerun.
+   levels each chunk, puts it at its moment, and writes `voiceover_track.wav`. Every chunk starts
+   exactly where it was put, and one still speaking when the next starts is cut off there, marked
+   `cut N s short`. If the operator placed the lines on the page, that is theirs to decide: leave it.
+   Otherwise shorten that chunk's `text`, speak only it again, and rerun. A last chunk that runs past
+   the end of the video writes nothing and is named: shorten it the same way.
 8. **Mux**: `python3 /app/skills/voice-over/scripts/vo_mux.py INPUT.mov voiceover_track.wav
    voiceover.mp4 0` — video stream copied, delay 0 because the track is already timed. Confirm with
    ffprobe that it is as long as the input.
-9. **Report** the cleaned script, the model and voice, the estimate, and the output path. Say what
-   was checked: each start time comes from the transcript or the operator's page, and nobody has
+9. **Report** the cleaned script, the model and voice, the estimate, the output path, and every
+   chunk that was cut off. Say what was checked: each start time comes from the transcript or the operator's page, and nobody has
    listened to the result. Offer a different voice, which means speaking the chunks again and rerunning
    steps 7 and 8.
 

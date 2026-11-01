@@ -77,7 +77,21 @@ report("every voice has a price", all(v["price"] > 0 for v in data["voices"]))
 report("the page starts on the cheap voice", data["voice"] == "gareth" and data["model"].startswith("heygen"), (data["model"], data["voice"]))
 report("only languages tried on both voices", [l[0] for l in data["languages"]] == ["de", "en", "es", "fr", "it", "nl", "pt"] or
        len(data["languages"]) == 7, data["languages"])
-report("the page uses the placement script's own limits", data["max_push"] == 3.0 and data["pace"] == 2.3 and data["max_chars"] == 4500, data)
+report("the page uses the placement script's own limits", data["pace"] == 2.3 and data["max_chars"] == 4500, data)
+heard, unheard = [], []
+for group in data["voices"]:
+    for voice in group["voices"]:
+        sample = data["samples"].get(group["model"], {}).get(voice)
+        if not sample:
+            unheard.append(voice)
+            continue
+        open("sample.mp3", "wb").write(base64.b64decode(sample))
+        probe = sh("ffprobe", "-v", "error", "-show_entries", "stream=codec_name:format=duration", "-of", "default=nw=1:nk=1", "sample.mp3").stdout.split()
+        if probe[:1] != ["mp3"] or not 0.8 < float(probe[1]) < 6:
+            unheard.append((voice, probe))
+        heard.append(sample)
+report("every voice has its own sample, playable by a browser", not unheard and len(set(heard)) == 31, unheard)
+report("the samples are text, as everything in a skill must be", open(SK + "/../assets/samples.json", "rb").read().isascii())
 report("ask.answer and ask.save are what it calls", "ask.save(" in html and "ask.answer(" in html)
 
 # a skill holds text only, and one .pyc beside the scripts would stop the whole skill loading
@@ -174,13 +188,15 @@ report("a new language asks for translation, then a last look", r.returncode == 
 sys.path.insert(0, SK)
 ff("-f", "lavfi", "-i", "nullsrc=s=1600x1200:r=5:d=95", "-vf", "noise=alls=100:allf=t+u,format=yuv420p", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "30", "noisy.mp4")
 os.remove("chunks.json")
+# The samples and the page itself are always there: what shrinks is the screenshots.
+limit = os.path.getsize(SK + "/../assets/samples.json") + os.path.getsize(SK + "/../assets/review.html") + 400_000
 r = sh("python3", "-B", "-c", f"""
 import sys; sys.path.insert(0, {SK!r}); sys.argv = ['make_review.py', 'noisy.mp4']
 import make_review
-make_review.MAX_PAGE = 400_000
+make_review.MAX_PAGE = {limit}
 make_review.main()
 """)
-report("a page too large for ask_operator comes out smaller", r.returncode == 0 and os.path.getsize("review/review.html") <= 400_000, (r.stderr, os.path.getsize("review/review.html")))
+report("a page too large for ask_operator comes out smaller", r.returncode == 0 and os.path.getsize("review/review.html") <= limit, (r.stderr, os.path.getsize("review/review.html"), limit))
 _, data = page_data()
 report("it still has every screenshot", len(data["shots"]) == 4, len(data["shots"]))
 

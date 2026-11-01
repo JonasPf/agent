@@ -4,14 +4,16 @@
 Usage: make_review.py INPUT.mov [--voice NAME]   write review/review.html
        make_review.py --apply                    turn review/approved.json into chunks.json
 
-The page shows a screenshot every 30 seconds with the lines that start there. The
-operator changes the words, moves the lines, and picks the language and the voice, and
-Approve saves review/approved.json beside the page. It starts from chunks.json, whose
-times are found as place_chunks.py finds them. With no chunks.json it starts empty, and
-the operator writes the script on the page.
+The page lays the script along the video: a screenshot every 30 seconds, and each line
+at its moment, as tall as it takes to say. The operator changes the words, drags the
+lines, and picks the language and the voice, hearing each one picked, and Approve saves
+review/approved.json beside the page. It starts from chunks.json, whose times are found
+as place_chunks.py finds them. With no chunks.json it starts empty, and the operator
+writes the script on the page.
 
-Show the page with ask_operator. It runs with no network, so the screenshots are inside
-it, and they are made smaller when a page would be too big for ask_operator to load.
+Show the page with ask_operator. It runs with no network, so the screenshots and the
+voice samples are inside it, and the screenshots are made smaller when a page would be
+too big for ask_operator to load.
 Requires ffmpeg and ffprobe on PATH (packages tool, ffmpeg_8-headless).
 """
 import argparse, base64, json, math, os, re, shutil, subprocess, sys
@@ -23,6 +25,7 @@ import estimate_cost, place_chunks
 HERE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE = os.path.join(HERE, "..", "assets", "review.html")
 VOICES = os.path.join(HERE, "..", "references", "voices.md")
+SAMPLES = os.path.join(HERE, "..", "assets", "samples.json")
 MARK = "__REVIEW_DATA__"
 FOLDER = "review"
 PAGE = os.path.join(FOLDER, "review.html")
@@ -114,7 +117,7 @@ def build(video, wanted, chunks):
 
     data = dict(video=os.path.basename(video), duration=length, step=step, voices=options, model=model,
                 voice=voice, languages=LANGUAGES, lines=lines, pace=place_chunks.WORDS_PER_SECOND,
-                max_push=place_chunks.MAX_PUSH, breath=place_chunks.BREATH, max_chars=place_chunks.MAX_CHARS)
+                max_chars=place_chunks.MAX_CHARS, samples=json.load(open(SAMPLES, encoding="utf-8")))
     template = open(TEMPLATE, encoding="utf-8").read()
     # Inside a script block, the one thing that can end it is "<".
     rest = len(json.dumps(data).replace("<", "\\u003c"))

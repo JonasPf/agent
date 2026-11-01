@@ -182,7 +182,7 @@ async function replaceText(selector, text) {
   await send('Input.insertText', { text }, page);
 }
 const key = async name => {
-  const code = { Tab: 9 }[name];
+  const code = { Tab: 9, ArrowUp: 38, ArrowDown: 40 }[name];
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code: name, windowsVirtualKeyCode: code }, page);
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code: name, windowsVirtualKeyCode: code }, page);
   await sleep(30);
@@ -191,7 +191,22 @@ const shot = async name => {
   const { data } = await send('Page.captureScreenshot', { format: 'png' }, page);
   fs.writeFileSync(W + '/' + name + '.png', Buffer.from(data, 'base64'));
 };
-const lines = () => inFrame(`[...document.querySelectorAll('.line')].map(c => ({ slot: Number(c.closest('.slot').dataset.t), time: c.querySelector('.time').value, words: c.querySelector('.words').value, warn: c.querySelector('.warn').textContent }))`);
+const lines = () => inFrame(`[...document.querySelectorAll('.line')].map(c => ({ time: c.querySelector('.time').textContent, words: c.querySelector('.words').value, warn: c.querySelector('.warn').textContent }))`);
+const moving = () => inFrame(`document.querySelector('.line.moving .time')?.textContent`);
+// pairs of lines where one hides part of the other
+const covered = () => inFrame(`(() => { const r = [...document.querySelectorAll('.line')].map(c => c.getBoundingClientRect()); let n = 0; r.forEach((a, i) => r.slice(i + 1).forEach(b => { if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) n++; })); return n; })()`);
+const pick = value => inFrame(`(() => { const s = document.getElementById('voice'); s.value = ${JSON.stringify(value)}; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+async function drag(selector, by, hold = 0) {
+  const from = await point(selector);
+  const bottom = await top(`document.querySelector('iframe').getBoundingClientRect().bottom - 5`);
+  const y = Math.min(from.y + by, bottom);
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y }, page);
+  await mouse('mousePressed', from.x, from.y);
+  await mouse('mouseMoved', from.x, y);
+  await sleep(40 + hold);
+  await mouse('mouseReleased', from.x, y);
+  await sleep(40);
+}
 const status = () => inFrame(`[...document.querySelectorAll('.stat')].map(s => s.textContent)`);
 const clipped = () => inFrame(`[...document.querySelectorAll('.words')].filter(t => t.scrollHeight > t.clientHeight + 2).length`);
 const seconds = s => { const [m, r] = s.split(':'); return Number(m) * 60 + Number(r); };
@@ -219,7 +234,14 @@ try {
   report('every screenshot loads under the policy', await inFrame(`[...document.images].length === 7 && [...document.images].every(i => i.complete && i.naturalWidth >= 700)`),
     await inFrame(`[...document.images].map(i => i.naturalWidth)`));
   let all = await lines();
-  report('each line sits beside its screenshot', all.length === 10 && all.every(l => seconds(l.time) >= l.slot && seconds(l.time) < l.slot + 30), all);
+  const scale = await inFrame(`document.querySelector('.slot[data-t="30"]').getBoundingClientRect().top - document.querySelector('.slot[data-t="0"]').getBoundingClientRect().top`) / 30;
+  const spots = await inFrame(`[...document.querySelectorAll('.line')].map(c => c.getBoundingClientRect().top - document.querySelector('.slot').getBoundingClientRect().top)`);
+  report('each line sits on the timeline at its moment', all.length === 10 && all.every((l, i) => Math.abs(spots[i] - seconds(l.time) * scale) < 1.5), { spots, scale });
+  const tall = await inFrame(`[...document.querySelectorAll('.line')].map(c => c.getBoundingClientRect().height)`);
+  const saying = i => all[i].words.split(/\s+/).length / 2.3 * scale;
+  report('a line is as tall as it takes to say', Math.abs(tall[7] - saying(7)) < 2 && tall[7] > tall[2], { tall, want: saying(7) });
+  report('and stands beside the screenshot of its moment', await inFrame(`(() => { const b = document.querySelector('.slot[data-t="120"]').getBoundingClientRect(), c = document.querySelectorAll('.line')[6].getBoundingClientRect(); return c.top >= b.top && c.top < b.bottom && b.right <= c.left; })()`));
+  report('no line hides another', (await covered()) === 0, await covered());
   const first = await status();
   report('the status line counts lines and cost', first[0].startsWith('10 lines') && first[1].includes('$0.00'), first);
   report('a tag in a line stays words', all[9].words.includes('<img src=x') && (await inFrame(`document.querySelectorAll('.line img').length`)) === 0 &&
@@ -229,30 +251,70 @@ try {
   await viewport(560, 1200);
   await sleep(150);
   report('no line is cut off after the window narrows', (await clipped()) === 0, await clipped());
+  // squeezed cards wrap taller and crowd each other: that must not outlast the squeeze
+  await viewport(200, 1200);
+  await sleep(150);
   await viewport(1280, 1200);
   await sleep(150);
+  const shares = await inFrame(`[...document.querySelectorAll('.line')].map(c => c.getBoundingClientRect().width / document.getElementById('track').getBoundingClientRect().width)`);
+  report('lines spread out again when the window widens', shares.every(w => w > 0.99), shares);
 
-  // drag the second line down to a later screenshot, with a real mouse, letting the page scroll
+  // drag the second line down the timeline, with a real mouse, letting the page scroll
   const from = await point('.line:nth-of-type(2) .grip');
   await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y }, page);
   await mouse('mousePressed', from.x, from.y);
   await sleep(20);
-  report('a drag shows where the line will land', await inFrame(`!!document.querySelector('.ghost')`));
+  await mouse('mouseMoved', from.x, from.y + 40);
+  await sleep(40);
+  report('a line moves with the pointer and says where it is', (await moving()) === '0:15.0', await moving());
   const edge = await top(`(() => { const b = document.querySelector('iframe').getBoundingClientRect(); return b.bottom - 30; })()`);
-  for (let i = 0; i < 40; i++) await mouse('mouseMoved', from.x, Math.min(edge, from.y + i * 30));
+  await mouse('mouseMoved', from.x, edge);
+  await sleep(100);
+  const early = await moving();
+  await sleep(300);
+  report('held at the window edge, the page keeps going', seconds(await moving()) > seconds(early), [early, await moving()]);
+  await mouse('mouseMoved', from.x, edge - 300);
   await sleep(120);
-  const hovering = await inFrame(`document.querySelector('.ghost b').textContent`);
-  await mouse('mouseReleased', from.x, edge);
+  const hovering = await moving();
+  await mouse('mouseReleased', from.x, edge - 300);
   await sleep(50);
   all = await lines();
   const moved = all.find(l => l.words.startsWith('Here is the list'));
-  report('the dragged line lands where the drag said', moved.time === hovering && moved.slot >= 30, { moved, hovering });
-  report('the ghost goes away', !(await inFrame(`!!document.querySelector('.ghost, .slot.over')`)));
+  report('the dragged line lands where the drag said', moved.time === hovering && seconds(moved.time) > 15, { moved, hovering });
+  report('nothing stays marked as moving', !(await inFrame(`!!document.querySelector('.line.moving')`)));
   report('lines stay in time order', all.every((l, i) => !i || seconds(l.time) >= seconds(all[i - 1].time)), all);
   report('every screenshot is still loaded after a move', await inFrame(`[...document.images].every(i => i.naturalWidth > 0)`));
   await click('#undo');
   all = await lines();
   report('Undo puts it back', all.find(l => l.words.startsWith('Here is the list')).time === '0:12.5', all[1]);
+
+  // the ends of the video
+  await drag('.line:nth-of-type(1) .grip', -200);
+  report('a line stops at the start of the video', (await lines())[0].time === '0:00.0', (await lines())[0]);
+  await click('#undo');
+  await drag('.line:nth-of-type(10) .grip', 400, 900);
+  report('a line stops at the end of the video', (await lines())[9].time === '3:24.5', (await lines())[9]);
+  await click('#undo');
+
+  // a line dragged onto another
+  await drag('.line:nth-of-type(2) .grip', -7.5 * scale);
+  all = await lines();
+  report('the line it lands on says it will be cut off', all[0].warn.includes('cuts off'), all[0]);
+  report('the status line counts it', (await status())[2].includes('cut off'), await status());
+  report('both stay in full view, side by side', (await covered()) === 0, await covered());
+  await shot('overlap');
+  await click('#undo');
+  report('and the warning goes when they part', !(await lines())[0].warn, (await lines())[0]);
+
+  // the keyboard
+  const before = (await lines())[0].time;
+  await click('.line:nth-of-type(1) .grip');
+  await key('ArrowDown');
+  report('the down arrow moves a line later', seconds((await lines())[0].time) === seconds(before) + 0.5, [(await lines())[0].time, before]);
+  report('focus stays on the handle', await inFrame(`document.activeElement.classList.contains('grip')`));
+  await key('ArrowUp');
+  report('the up arrow moves it back', (await lines())[0].time === before, (await lines())[0]);
+  await click('#undo'); await click('#undo');
 
   // words
   const costBefore = (await status())[1];
@@ -268,32 +330,7 @@ try {
   await click('#undo');
   report('and the edit before it', (await lines())[0].words.startsWith('This short demo'));
 
-  // time box
-  await replaceText('.line:nth-of-type(1) .time', '2:05');
-  await key('Tab');
-  all = await lines();
-  report('a typed time moves the line to that screenshot', all.find(l => l.words.startsWith('This short demo')).slot === 120, all[0]);
-  await replaceText('.slot[data-t="120"] .line .time', 'abc');
-  await key('Tab');
-  report('a bad time is refused', !(await lines()).some(l => l.time === 'abc') && (await lines()).some(l => l.time === '2:05.0'));
-  await replaceText('.slot[data-t="120"] .line .time', ' ');
-  await key('Tab');
-  report('an empty time does not jump to the start', (await lines()).some(l => l.time === '2:05.0' && l.slot === 120), await lines());
-  await replaceText('.slot[data-t="120"] .line .time', '99:00');
-  await key('Tab');
-  report('a time past the end stops at the end', (await lines()).some(l => l.time === '3:24.5'), await lines());
-  await click('#undo');
-  await replaceText('.slot[data-t="120"] .line .time', '0:02:30');
-  await key('Tab');
-  report('hours can be typed too', (await lines()).some(l => l.time === '2:30.0' && l.slot === 150), await lines());
-  await click('#undo'); await click('#undo');
-
-  // nudge, remove, add
-  const before = (await lines())[0].time;
-  await click('.line:nth-of-type(1) .nudge[data-d="1"]');
-  report('+1s moves one second', seconds((await lines())[0].time) === seconds(before) + 1, [(await lines())[0].time, before]);
-  report('focus stays on the button', await inFrame(`document.activeElement.classList.contains('nudge')`));
-  await click('#undo');
+  // remove, add
   const count = (await lines()).length;
   await click('.line:nth-of-type(1) .del');
   report('Remove takes the line out', (await lines()).length === count - 1);
@@ -303,7 +340,7 @@ try {
   await send('Input.insertText', { text: 'A new line.' }, page);
   all = await lines();
   const added = all.find(l => l.words === 'A new line.');
-  report('a new line lands clear of what is there', added && added.slot >= 60, all);
+  report('a new line lands clear of what is there', added && seconds(added.time) >= 60, all);
   await click('#undo'); await click('#undo');
   report('Undo takes a new line out again', !(await lines()).some(l => l.words === 'A new line.' || l.words === ''), await lines());
   await click('.slot[data-t="60"] .add');
@@ -313,18 +350,29 @@ try {
   report('and is gone again', (await lines()).length === 10, await lines());
 
   // warnings
-  await replaceText('.slot[data-t="0"] .line .words', Array(30).fill('word').join(' '));
-  report('a line that runs into the next says so', (await lines())[0].warn.includes('Pushes the next line') || (await lines())[0].warn.includes('Too long'), (await lines())[0]);
-  await replaceText('.slot[data-t="0"] .line .words', Array(60).fill('word').join(' '));
-  report('past the limit it is called too long', (await lines())[0].warn.startsWith('Too long'), (await lines())[0]);
-  report('the status line says so too', (await status())[2].includes('too long'), await status());
+  await replaceText('.line:nth-of-type(1) .words', Array(30).fill('word').join(' '));
+  report('a line that runs into the next says it will be cut off', (await lines())[0].warn.includes('cuts off'), (await lines())[0]);
+  report('the status line says so too', (await status())[2].includes('cut off'), await status());
   await shot('warning');
-  await click('#undo'); await click('#undo');
-  report('the warning goes with the words', !(await lines())[0].warn.startsWith('Too long'), (await lines())[0]);
+  await click('#undo');
+  report('the warning goes with the words', !(await lines())[0].warn, (await lines())[0]);
+  await replaceText('.line:nth-of-type(10) .words', Array(60).fill('word').join(' '));
+  report('a last line that runs past the end says so', (await lines())[9].warn.includes('past the end'), (await lines())[9]);
+  report('and is called too long', (await status())[2].includes('too long'), await status());
+  await click('#undo');
 
   // voice and language
   const cheap = (await status())[1];
-  await inFrame(`(() => { const s = document.getElementById('voice'); s.value = '1|alice'; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+  report('no sample plays until a voice is picked', await inFrame(`(() => { const a = document.getElementById('sample'); return a.paused && !a.currentSrc; })()`));
+  await pick('1|brian');
+  const playing = () => inFrame(`(() => { const a = document.getElementById('sample'); return !a.error && !a.paused && a.currentTime > 0.05; })()`);
+  await until(playing, 'the sample of the voice picked playing');
+  const heard = v => inFrame(`document.getElementById('sample').currentSrc.endsWith(JSON.parse(document.getElementById('data').textContent).samples['elevenlabs/eleven-flash-v2.5'][${JSON.stringify(v)}])`);
+  report('picking a voice plays its sample', await heard('brian'));
+  report('a sample is a few seconds long', await inFrame(`(() => { const d = document.getElementById('sample').duration; return d > 0.8 && d < 6; })()`), await inFrame(`document.getElementById('sample').duration`));
+  await pick('1|alice');
+  await until(playing, 'the next sample playing');
+  report('picking another plays that one instead', await heard('alice'));
   const dear = (await status())[1];
   report('the cost follows the voice', Number(dear.match(/[\d.]+/)[0]) > 5 * Number(cheap.match(/[\d.]+/)[0]), [cheap, dear]);
   report('all voices of both models are offered', (await inFrame(`document.querySelectorAll('#voice option').length`)) === 31 &&
@@ -398,28 +446,48 @@ try {
   await open('spoken');
   await shot('phone');
   const overflow = await inFrame(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
-  report('nothing runs off the side on a phone', overflow <= 0, overflow);
-  const stacked = await inFrame(`getComputedStyle(document.querySelector('.slot')).gridTemplateColumns.split(' ').length`);
-  report('the screenshot sits above its lines on a phone', stacked === 1, stacked);
+  const sticking = () => inFrame(`[...new Set([...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > document.documentElement.clientWidth + 1).map(e => e.className || e.tagName))]`);
+  report('nothing runs off the side on a phone', overflow <= 0, { overflow, sticking: await sticking() });
+  report('the screenshots stay beside the lines on a phone', await inFrame(`document.querySelector('.slot').getBoundingClientRect().right <= document.querySelector('.line').getBoundingClientRect().left`));
+  report('no line hides another on a phone', (await covered()) === 0, await covered());
   report('no line is cut off on a phone', (await clipped()) === 0, await clipped());
   const bar = await inFrame(`document.querySelector('.status').offsetHeight`);
   report('the top bar stays small on a phone', bar <= 64, bar);
   const firstShot = await inFrame(`document.querySelector('.shot').getBoundingClientRect().top`);
   report('a screenshot shows without scrolling on a phone', firstShot < 300, firstShot);
-  const grip = await point('.slot[data-t="30"] .line .grip');
-  const beforeTouch = (await lines()).find(l => l.slot === 30);
+  const grip = await point('.line:nth-of-type(3) .grip');
+  const beforeTouch = (await lines())[2];
   const touch = (type, x, y) => send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] }, page);
   await touch('touchStart', grip.x, grip.y);
   await sleep(20);
-  const edgePhone = await top(`(() => { const b = document.querySelector('iframe').getBoundingClientRect(); return b.bottom - 20; })()`);
-  for (let i = 1; i < 60; i++) await touch('touchMove', grip.x, Math.min(edgePhone, grip.y + i * 12));
+  for (let i = 1; i < 12; i++) await touch('touchMove', grip.x, grip.y + i * 12);
   await sleep(120);
-  const hoverPhone = await inFrame(`document.querySelector('.ghost')?.querySelector('b').textContent`);
+  const hoverPhone = await moving();
   await touch('touchEnd');
   await sleep(50);
   const afterTouch = (await lines()).find(l => l.words === beforeTouch.words);
   report('a finger can drag a line', afterTouch.time === hoverPhone && afterTouch.time !== beforeTouch.time, { beforeTouch, afterTouch, hoverPhone });
   await shot('phone-moved');
+  // five lines on one moment, on a phone: narrow columns, but none squeezed away
+  const onOne = async () => {
+    for (let i = 1; i < 5; i++) {
+      const gap = (await lines()).map(l => seconds(l.time));
+      const box = await point('.line:nth-of-type(' + (i + 1) + ') .grip');
+      const up = (gap[i] - gap[0]) * scale;
+      await touch('touchStart', box.x, box.y);
+      await sleep(20);
+      await touch('touchMove', box.x, box.y - up);
+      await sleep(60);
+      await touch('touchEnd');
+      await sleep(40);
+    }
+  };
+  await onOne();
+  await point('.line:nth-of-type(1) .grip');
+  await shot('phone-crowded');
+  const narrowest = await inFrame(`Math.min(...[...document.querySelectorAll('.line')].slice(0, 5).map(c => c.querySelector('.words').getBoundingClientRect().width))`);
+  report('lines crowded on a phone keep room for their words', narrowest >= 40, narrowest);
+  report('and nothing runs off the side', (await inFrame(`document.documentElement.scrollWidth - document.documentElement.clientWidth`)) <= 0, await sticking());
 
   // ---- dark
   await viewport(1280, 900);

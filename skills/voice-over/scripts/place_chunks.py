@@ -10,19 +10,20 @@ lines. A recording cut into parts has segments-000.txt, segments-001.txt, ... in
 and each part's times are moved to where that part begins.
 
 A chunk starts where its starts_with words are in the transcript, so no time is chosen
-by hand. Each chunk is trimmed and levelled, and a chunk that runs into the next pushes
-it back by up to MAX_PUSH seconds; past that nothing is written, and the chunk to
-shorten is named. Requires ffmpeg on PATH for the second form.
+by hand. Each chunk is trimmed and levelled, and starts exactly at its time: one still
+speaking when the next starts is cut off there, with a short fade, and is named. Only a
+last chunk that runs past the end of the video stops the track being written. Requires
+ffmpeg on PATH for the second form.
 """
-import argparse, glob, json, os, re, shutil, subprocess, sys, tempfile, wave
+import argparse, array, glob, json, os, re, shutil, subprocess, sys, tempfile, wave
 from difflib import SequenceMatcher
 
 RATE = 44100
 PART_SECONDS = 2400
 MIN_WORDS = 3
 FUZZY = 0.8
-MAX_PUSH = 3.0
-BREATH = 0.2
+# Frames a cut-off chunk fades over, so that it ends without a click: 20 ms.
+FADE = 882
 TARGET_DB = -20.0
 WORDS_PER_SECOND = 2.3
 # HeyGen refuses a call over 5,000 characters, after the agent has already paid to send it.
@@ -144,6 +145,14 @@ def silence(w, frames):
         w.writeframes(empty[:n])
         frames -= n // 2
 
+def faded(pcm):
+    """16-bit samples that fall away to nothing at the end."""
+    samples = array.array("h", pcm)
+    n = min(FADE, len(samples))
+    for i in range(1, n + 1):
+        samples[-i] = samples[-i] * (i - 1) // n
+    return samples.tobytes()
+
 def build(rows, video, folder, out):
     exe = shutil.which("ffmpeg")
     if not exe:
@@ -160,20 +169,17 @@ def build(rows, video, folder, out):
 
     total = duration(video)
     with tempfile.TemporaryDirectory() as scratch:
-        placed, problems, end = [], [], 0.0
+        placed = []
         for r in rows:
             levelled = os.path.join(scratch, f"{r['n']:02d}.wav")
             frames = prepare(exe, sources[r["n"]], levelled, scratch)
-            length = frames / RATE
-            start = max(r["at"], end + BREATH if placed else r["at"])
-            if start - r["at"] > MAX_PUSH:
-                problems.append(f"chunk {placed[-1]['n']:02d} runs {start - r['at']:.1f} s into chunk {r['n']:02d}: shorten it and speak only that chunk again")
-            end = start + length
-            placed.append(dict(r, start=start, length=length, path=levelled))
+            placed.append(dict(r, first=int(r["at"] * RATE), frames=frames, kept=frames, path=levelled))
+        for p, after in zip(placed, placed[1:]):
+            p["kept"] = min(p["frames"], after["first"] - p["first"])
+            p["by"] = after["n"]
+        end = placed[-1]["at"] + placed[-1]["frames"] / RATE
         if end > total:
-            problems.append(f"chunk {placed[-1]['n']:02d} ends at {end:.1f} s, after the video's {total:.1f} s: shorten it and speak only that chunk again")
-        if problems:
-            sys.exit("\n".join(problems))
+            sys.exit(f"chunk {placed[-1]['n']:02d} ends at {end:.1f} s, after the video's {total:.1f} s: shorten it and speak only that chunk again")
 
         # Written as it goes: an hour of track is 300 MB, on a server with less than 2 GB.
         with wave.open(out, "wb") as w:
@@ -182,15 +188,21 @@ def build(rows, video, folder, out):
             w.setframerate(RATE)
             written = 0
             for p in placed:
-                silence(w, int(p["start"] * RATE) - written)
+                silence(w, p["first"] - written)
                 with wave.open(p["path"], "rb") as c:
-                    w.writeframes(c.readframes(c.getnframes()))
-                    written = int(p["start"] * RATE) + c.getnframes()
+                    pcm = c.readframes(p["kept"])
+                w.writeframes(faded(pcm) if p["kept"] < p["frames"] else pcm)
+                written = p["first"] + p["kept"]
             silence(w, int(total * RATE) - written)
+    cut = 0
     for p in placed:
-        late = f"  {p['start'] - p['at']:.1f} s late" if p["start"] > p["at"] else ""
-        print(f"{p['n']:02d} {p['start']:8.2f} {p['length']:6.2f}{late}")
-    print(f"wrote {out}: {total:.1f} s, {sum(p['length'] for p in placed):.1f} s of speech, {len(placed)} chunks")
+        note = ""
+        if p["kept"] < p["frames"]:
+            cut += 1
+            note = f"  cut {(p['frames'] - p['kept']) / RATE:.1f} s short by chunk {p['by']:02d}"
+        print(f"{p['n']:02d} {p['at']:8.2f} {p['frames'] / RATE:6.2f}{note}")
+    spoken = sum(p["kept"] for p in placed) / RATE
+    print(f"wrote {out}: {total:.1f} s, {spoken:.1f} s of speech, {len(placed)} chunks, {cut} cut off")
 
 def main():
     ap = argparse.ArgumentParser(usage=__doc__)

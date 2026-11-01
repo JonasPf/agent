@@ -1,7 +1,7 @@
 <meta charset="utf-8">
 <title>Voice-Over Review</title>
 <style>
-/* An edit desk: the state of the script stays on top, and below it each screenshot sits beside its lines. */
+/* An edit desk: the state of the script stays on top, and below it the video runs down the page. */
 :root {
   --bg: #e9eef2; --panel: #ffffff; --sunk: #f3f6f8; --ink: #16212b; --muted: #55636f; --line: #c8d2da;
   --accent: #0a6c6c; --on-accent: #ffffff; --tint: #d7ecea; --warn: #9a4c12; --warn-tint: #f8e7d6;
@@ -36,30 +36,38 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
 .field { display: grid; gap: 3px; min-width: 0; }
 .field > span { font-size: 13px; color: var(--muted); }
-select, .text { background: var(--panel); border: 1px solid var(--line); padding: 7px 9px; min-width: 0; max-width: 100%; }
+select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9px; min-width: 0; max-width: 100%; }
 
-.slot { display: grid; grid-template-columns: minmax(180px, 34%) minmax(0, 1fr); gap: 14px; padding-block: 12px; border-bottom: 1px solid var(--line); }
-.slot.big { grid-template-columns: minmax(0, 1fr); }
-.shot { position: sticky; top: 56px; align-self: start; margin: 0; display: grid; gap: 4px; min-width: 0; }
-.slot.big .shot { position: static; }
+/* Screenshots on the left, and on the right each line at its moment, as tall as it takes to say. */
+.timeline { display: grid; grid-template-columns: minmax(150px, 30%) minmax(0, 1fr); gap: 10px; }
+.film { min-width: 0; }
+.slot { min-height: 340px; padding-top: 6px; border-top: 1px solid var(--line); }
+.shot { position: sticky; top: 60px; display: grid; gap: 4px; min-width: 0; }
+.shot figure { margin: 0; display: grid; gap: 4px; min-width: 0; }
+.slot.big .shot { position: fixed; inset: 0; z-index: 30; overflow: auto; align-content: start; padding: 12px; background: var(--bg); }
+.slot.big .add { display: none; }
 .zoom { display: block; width: 100%; border: 0; padding: 0; background: none; cursor: zoom-in; }
 .slot.big .zoom { cursor: zoom-out; }
-.zoom img { display: block; width: 100%; height: auto; background: var(--line); }
+.zoom img { display: block; width: 100%; height: auto; max-height: 260px; object-fit: contain; background: var(--line); }
+.slot.big .zoom img { max-height: none; }
 .shot figcaption { font: 500 14px var(--data); color: var(--muted); }
-.lines { display: grid; gap: 10px; align-content: start; min-width: 0; padding: 2px; }
-.slot.over .lines { outline: 2px dashed var(--accent); background: var(--tint); }
-.line { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 4px 8px; background: var(--panel); padding: 9px 10px 9px 4px; }
-.grip { grid-row: span 3; align-self: stretch; display: grid; place-items: center; border: 0; background: none; color: var(--muted); cursor: grab; touch-action: none; padding: 0; font: 500 18px/1 var(--data); }
-.when { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.time { width: 84px; font-family: var(--data); font-size: 14px; padding: 4px 6px; }
-.nudge { border: 1px solid var(--line); background: none; padding: 3px 7px; font: 500 13px var(--data); }
-.del { margin-left: auto; border: 0; background: none; color: var(--muted); padding: 3px 6px; font-size: 14px; }
-.words { width: 100%; resize: none; overflow: hidden; field-sizing: content; border: 1px solid transparent; background: var(--sunk); padding: 6px 8px; display: block; }
-.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 12px; }
-.warn { color: var(--warn); font-weight: 600; }
-.add { justify-self: start; border: 1px dashed var(--line); background: none; color: var(--muted); padding: 5px 10px; font-size: 14px; }
-.ghost { position: fixed; z-index: 20; pointer-events: none; width: min(420px, 80vw); background: var(--panel); border: 2px solid var(--accent); padding: 8px 10px; font-size: 15px; }
-.ghost b { display: block; font: 500 14px var(--data); color: var(--accent); }
+.add { justify-self: start; border: 1px dashed var(--line); background: none; color: var(--muted); padding: 4px 8px; font-size: 13px; }
+.track { position: relative; min-width: 0; background-image: linear-gradient(to bottom, var(--line) 1px, transparent 1px); }
+.line { position: absolute; display: grid; grid-template-columns: 56px minmax(0, 1fr); background: var(--panel); border: 1px solid var(--line); }
+.line.cut { border-color: var(--warn); }
+.line.slim { grid-template-columns: minmax(0, 1fr); }
+.line.slim .grip { display: flex; align-items: center; gap: 6px; padding: 4px 28px 4px 6px; }
+.line.slim .body { padding-right: 3px; }
+.line.moving { z-index: 6; border-color: var(--accent); box-shadow: 0 3px 12px rgb(0 0 0 / 35%); }
+.grip { display: grid; align-content: start; justify-items: center; gap: 3px; border: 0; background: var(--tint); cursor: grab; touch-action: none; user-select: none; padding: 5px 0; }
+.line.moving .grip { cursor: grabbing; }
+.grab { font: 500 16px/1 var(--data); color: var(--muted); }
+.time { font: 500 12px/1.2 var(--data); font-variant-numeric: tabular-nums; }
+.body { display: grid; gap: 2px; align-content: start; min-width: 0; padding: 3px 26px 3px 3px; }
+.words { width: 100%; resize: none; overflow: hidden; field-sizing: content; border: 1px solid transparent; background: var(--sunk); padding: 2px 5px; font-size: 15px; line-height: 1.35; display: block; }
+.warn { margin: 0; color: var(--warn); font-size: 13px; font-weight: 600; line-height: 1.25; }
+.warn:empty { display: none; }
+.del { position: absolute; top: 2px; right: 1px; width: 24px; height: 24px; border: 0; background: none; color: var(--muted); padding: 0; font-size: 17px; line-height: 1; }
 
 .paste { background: var(--panel); padding: 14px; display: grid; gap: 8px; }
 .paste h2 { margin: 0; font-size: 20px; line-height: 1.2; }
@@ -67,8 +75,9 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
 .paste textarea { width: 100%; min-height: 120px; resize: vertical; border: 1px solid var(--line); background: var(--sunk); padding: 6px 8px; }
 
 @media (max-width: 640px) {
-  .slot { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .shot { position: static; }
+  .timeline { grid-template-columns: minmax(92px, 28%) minmax(0, 1fr); gap: 6px; }
+  .line { grid-template-columns: 50px minmax(0, 1fr); }
+  .time { font-size: 11px; }
   .stat { font-size: 12px; }
   .stats { display: grid; }
   .acts { gap: 6px; }
@@ -93,7 +102,7 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
     </div>
     <p class="done" id="done" role="status" hidden></p>
   </div>
-  <p class="lede">Change the words, and move a line with its handle or its time. Nothing is spoken or paid for until you approve. Tap a screenshot to see it larger. Samples of every voice are linked in the agent's message.</p>
+  <p class="lede">Change the words, and drag a line up or down by its handle to move it along the video. A line is as tall as it takes to say, and one that is still speaking when the next starts is cut off there. Pick a voice to hear it. Nothing is spoken or paid for until you approve. Tap a screenshot to see it larger.</p>
   <div class="controls">
     <label class="field"><span>Voice</span><select id="voice"></select></label>
     <label class="field"><span>Language</span><select id="lang"></select></label>
@@ -105,7 +114,11 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
     <textarea id="pasteText" aria-label="Your script"></textarea>
     <div><button class="go" type="button" id="pasteGo">Place on the video</button></div>
   </section>
-  <section id="rows" aria-label="Screenshots and lines"></section>
+  <section class="timeline" aria-label="Screenshots and lines along the video">
+    <div class="film" id="film"></div>
+    <div class="track" id="track"></div>
+  </section>
+  <audio id="sample"></audio>
 </main>
 
 <script id="data" type="application/json">__REVIEW_DATA__</script>
@@ -113,28 +126,21 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
 (function () {
   var DATA = JSON.parse(document.getElementById('data').textContent);
   var DURATION = DATA.duration, STEP = DATA.step, LAST = Math.max(0, DURATION - 0.5);
+  var PX = 16;  // of page, to a second of video
+  var NARROWEST = 110, SLIM = 200;  // pixels: no card is narrower, and one under this stacks its handle
 
   var el = function (id) { return document.getElementById(id); };
   var nextId = 1;
   function make(at, text) { return { id: nextId++, at: Math.min(at, LAST), text: text }; }
   var lines = DATA.lines.map(function (l) { return make(l.at, l.text); });
-  var history = [], approved = false, typing = null;
+  var history = [], approved = false, typing = null, cards = {};
 
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function fmt(t) {
     var tenths = Math.round(t * 10), m = Math.floor(tenths / 600), s = (tenths - m * 600) / 10;
     return m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
   }
-  function parseTime(v) {
-    var parts = v.trim().split(':'), t = 0;
-    if (parts.length > 3) return null;
-    for (var i = 0; i < parts.length; i++) {
-      if (!/^\d+(\.\d+)?$/.test(parts[i])) return null;
-      t = t * 60 + Number(parts[i]);
-    }
-    return Math.min(t, LAST);
-  }
-  function snap(t) { return Math.min(LAST, Math.round(Math.max(0, t) * 2) / 2); }
+  function snap(t) { return Math.min(LAST, Math.round(Math.max(0, t) * 10) / 10); }
   function find(id) { return lines.filter(function (l) { return l.id === id; })[0]; }
   function sort() { lines.sort(function (a, b) { return a.at - b.at; }); }
   function words(l) { return l.text.trim().split(/\s+/).filter(Boolean).length; }
@@ -146,22 +152,14 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
     return { group: DATA.voices[Number(v[0])], voice: v[1] };
   }
 
-  // What place_chunks.py will do with these lines: one running into the next pushes it back,
-  // and past a limit the track is not written. Real lengths are known only once spoken.
+  // What place_chunks.py will do with these lines: each starts where it is put, and one still
+  // speaking when the next starts is cut off there. Real lengths are known only once spoken.
   function timing() {
-    var out = {}, end = null, last = null;
-    filled().forEach(function (l) {
-      var start = end === null ? l.at : Math.max(l.at, end + DATA.breath), push = start - l.at;
-      if (last && push > 0) {
-        out[last.id] = push > DATA.max_push
-          ? { hard: true, text: 'Too long: runs ' + push.toFixed(1) + ' s into the next line. Shorten it or move the next line.' }
-          : { hard: false, text: 'Pushes the next line back ' + push.toFixed(1) + ' s' };
-      }
-      end = start + speech(l);
-      last = l;
-    });
-    if (last && end > DURATION) out[last.id] = { hard: true, text: 'Runs ' + (end - DURATION).toFixed(1) + ' s past the end of the video' };
-    filled().forEach(function (l) {
+    var out = {}, kept = filled();
+    kept.forEach(function (l, i) {
+      var next = kept[i + 1], end = l.at + speech(l);
+      if (next && end > next.at) out[l.id] = { hard: false, text: 'The next line cuts off its last ' + (end - next.at).toFixed(1) + ' s' };
+      if (!next && end > DURATION) out[l.id] = { hard: true, text: 'Runs ' + (end - DURATION).toFixed(1) + ' s past the end of the video' };
       if (l.text.length > DATA.max_chars) out[l.id] = { hard: true, text: 'Over ' + DATA.max_chars.toLocaleString('en') + ' characters: split it' };
     });
     return out;
@@ -188,47 +186,92 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
 
   function lineCard(l) {
     return '<article class="line" data-id="' + l.id + '">' +
-      '<button class="grip" type="button" aria-label="Drag to move this line">⠿</button>' +
-      '<div class="when"><input class="text time" aria-label="Start time" value="' + fmt(l.at) + '">' +
-      '<button class="nudge" type="button" data-d="-1" aria-label="One second earlier">−1s</button><button class="nudge" type="button" data-d="1" aria-label="One second later">+1s</button>' +
-      '<button class="del" type="button">Remove</button></div>' +
-      '<textarea class="words" rows="1" aria-label="Line text">' + esc(l.text) + '</textarea>' +
-      '<div class="meta"><span class="est"></span><span class="warn"></span></div></article>';
+      '<button class="grip" type="button"><span class="grab" aria-hidden="true">⠿</span><span class="time"></span></button>' +
+      '<div class="body"><textarea class="words" rows="1" aria-label="Line text">' + esc(l.text) + '</textarea>' +
+      '<p class="warn"></p></div>' +
+      '<button class="del" type="button" aria-label="Remove this line">×</button></article>';
   }
 
   // The screenshots are drawn once: redrawing them with every change would make the page jump.
   function drawSlots() {
-    el('rows').innerHTML = DATA.shots.map(function (src, i) {
-      var t = i * STEP, label = fmt(t).slice(0, -2);
-      return '<div class="slot" data-t="' + t + '"><figure class="shot">' +
+    el('track').style.backgroundSize = '100% ' + STEP * PX + 'px';
+    el('film').innerHTML = DATA.shots.map(function (src, i) {
+      var t = i * STEP, label = fmt(t).slice(0, -2), height = (Math.min(t + STEP, DURATION) - t) * PX;
+      return '<div class="slot" data-t="' + t + '" style="height:' + height + 'px"><div class="shot"><figure>' +
         '<button class="zoom" type="button" aria-label="Show the screenshot at ' + label + ' larger"><img alt="Screenshot at ' + label + '" src="' + src + '"></button>' +
-        '<figcaption>' + label + '</figcaption></figure><div class="lines"></div></div>';
+        '<figcaption>' + label + '</figcaption></figure>' +
+        '<button class="add" type="button" data-t="' + t + '">Add a line here</button></div></div>';
     }).join('');
   }
 
   function check() {
+    sort();
     var warn = timing(), hard = 0, soft = 0, c = chosen();
-    document.querySelectorAll('.line').forEach(function (card) {
-      var l = find(Number(card.dataset.id)), w = warn[l.id];
-      card.querySelector('.est').textContent = 'about ' + speech(l).toFixed(1) + ' s spoken';
+    lines.forEach(function (l) {
+      var card = cards[l.id], w = warn[l.id];
+      card.querySelector('.time').textContent = fmt(l.at);
+      card.querySelector('.grip').setAttribute('aria-label', 'Starts at ' + fmt(l.at) + '. Drag, or press up or down, to move it.');
       card.querySelector('.warn').textContent = w ? w.text : '';
+      card.classList.toggle('cut', !!w);
     });
     Object.keys(warn).forEach(function (k) { if (warn[k].hard) hard++; else soft++; });
     var kept = filled(), chars = kept.reduce(function (n, l) { return n + l.text.trim().length; }, 0);
     el('sCount').textContent = kept.length + (kept.length === 1 ? ' line, ' : ' lines, ') + chars.toLocaleString('en') + ' chars';
     el('sCost').textContent = 'about ' + money(chars * c.group.price / 1e6) + ' of speech';
-    el('sWarn').textContent = hard ? hard + ' too long' : soft ? soft + ' tight' : '';
+    el('sWarn').textContent = hard ? hard + ' too long' : soft ? soft + ' cut off' : '';
+  }
+
+  // Lines whose cards would cover each other stand side by side, as in a calendar. The cards are
+  // measured, because the words decide how tall a short line has to be.
+  function lay() {
+    var width = el('track').clientWidth, most = Math.max(1, Math.floor(width / NARROWEST));
+    var heights = lines.map(function (l) { return cards[l.id].offsetHeight; });
+    var runs = [], run = null, bottom = 0;
+    lines.forEach(function (l, i) {
+      var top = l.at * PX, lane = 0;
+      if (!run || top >= bottom) { run = []; runs.push(run); bottom = 0; }
+      while (lane < most - 1 && run.some(function (o) { return o.lane === lane && o.end > top; })) lane++;
+      run.push({ card: cards[l.id], lane: lane, end: top + heights[i] });
+      bottom = Math.max(bottom, top + heights[i]);
+    });
+    runs.forEach(function (r) {
+      var across = 1 + Math.max.apply(null, r.map(function (o) { return o.lane; }));
+      r.forEach(function (o) {
+        o.card.style.left = o.lane * 100 / across + '%';
+        o.card.style.width = 100 / across + '%';
+        o.card.classList.toggle('slim', width / across < SLIM);
+      });
+    });
+  }
+  function arrange() {
+    lines.forEach(function (l) {
+      var card = cards[l.id];
+      card.style.top = l.at * PX + 'px';
+      card.style.minHeight = speech(l) * PX + 'px';
+      card.style.left = '0';
+      card.style.width = '100%';
+      card.classList.remove('slim');
+    });
+    // Cards are measured at full width each time: a squeezed card is taller, so it would crowd the
+    // next and squeeze further. Standing side by side still costs height, hence the second look.
+    for (var look = 0; look < 2; look++) {
+      growAll();
+      lay();
+    }
+    growAll();
+  }
+  function update() {
+    check();
+    arrange();
   }
   function render() {
     sort();
-    document.querySelectorAll('.slot').forEach(function (slot) {
-      var t = Number(slot.dataset.t), inside = lines.filter(function (l) { return l.at >= t && l.at < t + STEP; });
-      slot.querySelector('.lines').innerHTML = inside.map(lineCard).join('') + '<button class="add" type="button" data-t="' + t + '">Add a line here</button>';
-    });
-    growAll();
-    requestAnimationFrame(growAll);
+    el('track').innerHTML = lines.map(lineCard).join('');
+    cards = {};
+    document.querySelectorAll('.line').forEach(function (c) { cards[c.dataset.id] = c; });
     el('paste').hidden = lines.length > 0;
-    check();
+    update();
+    requestAnimationFrame(arrange);
   }
   // Where the browser cannot size a box to its words, it is measured, once it has been laid out.
   var sized = window.CSS && CSS.supports('field-sizing', 'content');
@@ -238,7 +281,7 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
     t.style.height = t.scrollHeight + 2 + 'px';
   }
   function growAll() { document.querySelectorAll('.words').forEach(grow); }
-  window.addEventListener('resize', growAll);
+  window.addEventListener('resize', arrange);
   function freeMoment(from) {
     var t = from;
     lines.forEach(function (l) {
@@ -248,40 +291,23 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
     return snap(t);
   }
 
-  // Everything inside a line card: words, time, nudges, removing, and the screenshot beside it.
+  // Everything inside a line card: words, removing, and the screenshot beside it.
   document.addEventListener('input', function (e) {
     if (!e.target.classList.contains('words')) return;
     var l = find(Number(e.target.closest('.line').dataset.id));
     if (typing !== l.id) { remember(); typing = l.id; }
     l.text = e.target.value;
-    grow(e.target);
-    check();
+    update();
   });
   document.addEventListener('focusout', function (e) {
     if (e.target.classList.contains('words')) typing = null;
   });
-  document.addEventListener('change', function (e) {
-    if (!e.target.classList.contains('time')) return;
-    var l = find(Number(e.target.closest('.line').dataset.id)), t = parseTime(e.target.value);
-    if (t === null) { e.target.value = fmt(l.at); return; }
-    remember();
-    l.at = t;
-    render();
-  });
   document.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
-    var card = b.closest('.line');
-    if (b.classList.contains('nudge')) {
-      var l = find(Number(card.dataset.id));
+    if (b.classList.contains('del')) {
       remember();
-      l.at = snap(l.at + Number(b.dataset.d));
-      render();
-      var again = document.querySelector('.line[data-id="' + l.id + '"] .nudge[data-d="' + b.dataset.d + '"]');
-      if (again) again.focus();
-    } else if (b.classList.contains('del')) {
-      remember();
-      var id = Number(card.dataset.id);
+      var id = Number(b.closest('.line').dataset.id);
       lines = lines.filter(function (x) { return x.id !== id; });
       render();
     } else if (b.classList.contains('add')) {
@@ -289,57 +315,62 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
       var added = make(freeMoment(Number(b.dataset.t)), '');
       lines.push(added);
       render();
-      document.querySelector('.line[data-id="' + added.id + '"] .words').focus();
+      cards[added.id].querySelector('.words').focus();
     } else if (b.classList.contains('zoom')) {
       b.closest('.slot').classList.toggle('big');
     }
   });
 
-  // Drag a line by its grip onto any screenshot's row, and the height of the drop picks the moment.
+  // A line follows the pointer by its handle. Near the top or bottom of the window the page scrolls,
+  // and goes on scrolling while the pointer rests there, so it is followed every frame.
   var drag = null;
   document.addEventListener('pointerdown', function (e) {
     var g = e.target.closest('.grip');
     if (!g) return;
     e.preventDefault();
     g.setPointerCapture(e.pointerId);
-    var l = find(Number(g.closest('.line').dataset.id));
-    var ghost = document.createElement('div');
-    ghost.className = 'ghost';
-    ghost.innerHTML = '<b>' + fmt(l.at) + '</b>' + esc(l.text.slice(0, 80));
-    document.body.appendChild(ghost);
-    drag = { line: l, ghost: ghost, target: null, at: l.at };
-    moveGhost(e);
+    g.focus({ preventScroll: true });
+    var card = g.closest('.line'), l = find(Number(card.dataset.id));
+    card.classList.add('moving');
+    drag = { line: l, card: card, from: l.at, y: e.clientY, grab: e.clientY - card.getBoundingClientRect().top };
+    requestAnimationFrame(follow);
   });
-  function moveGhost(e) {
+  function follow() {
     if (!drag) return;
-    drag.ghost.style.left = Math.max(8, Math.min(e.clientX + 12, window.innerWidth - drag.ghost.offsetWidth - 8)) + 'px';
-    drag.ghost.style.top = e.clientY + 12 + 'px';
-    var under = document.elementFromPoint(e.clientX, e.clientY);
-    var slot = under && under.closest('.slot');
-    document.querySelectorAll('.slot.over').forEach(function (s) { s.classList.remove('over'); });
-    if (slot) {
-      slot.classList.add('over');
-      var box = slot.getBoundingClientRect();
-      var part = Math.max(0, Math.min(0.97, (e.clientY - box.top) / box.height));
-      drag.at = snap(Number(slot.dataset.t) + part * STEP);
-      drag.target = slot;
-      drag.ghost.querySelector('b').textContent = fmt(drag.at);
+    if (drag.y < 70) window.scrollBy(0, -14);
+    else if (drag.y > window.innerHeight - 70) window.scrollBy(0, 14);
+    var at = snap((drag.y - drag.grab - el('track').getBoundingClientRect().top) / PX);
+    if (at !== drag.line.at) {
+      drag.line.at = at;
+      update();
     }
-    if (e.clientY < 70) window.scrollBy(0, -14);
-    else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+    requestAnimationFrame(follow);
   }
-  document.addEventListener('pointermove', moveGhost);
+  document.addEventListener('pointermove', function (e) { if (drag) drag.y = e.clientY; });
   function endDrag() {
     if (!drag) return;
-    var d = drag;
+    var d = drag, to = d.line.at;
     drag = null;
-    d.ghost.remove();
-    document.querySelectorAll('.slot.over').forEach(function (s) { s.classList.remove('over'); });
-    if (d.target && d.at !== d.line.at) { remember(); d.line.at = d.at; }
+    d.card.classList.remove('moving');
+    if (to === d.from) return;
+    d.line.at = d.from;
+    remember();
+    d.line.at = to;
     render();
+    cards[d.line.id].querySelector('.grip').focus({ preventScroll: true });
   }
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
+  document.addEventListener('keydown', function (e) {
+    var by = { ArrowUp: -0.5, ArrowDown: 0.5 }[e.key];
+    if (!by || !e.target.classList.contains('grip')) return;
+    e.preventDefault();
+    var l = find(Number(e.target.closest('.line').dataset.id));
+    remember();
+    l.at = snap(l.at + by);
+    render();
+    cards[l.id].querySelector('.grip').focus();
+  });
 
   // The controls.
   DATA.voices.forEach(function (g, i) {
@@ -352,7 +383,13 @@ select, .text { background: var(--panel); border: 1px solid var(--line); padding
     });
     el('voice').appendChild(group);
   });
-  el('voice').addEventListener('change', function () { changed(); check(); });
+  function hear() {
+    var c = chosen(), sound = (DATA.samples[c.group.model] || {})[c.voice];
+    if (!sound) return;
+    el('sample').src = 'data:audio/mpeg;base64,' + sound;
+    el('sample').play().catch(function () {});
+  }
+  el('voice').addEventListener('change', function () { hear(); changed(); check(); });
   el('lang').add(new Option('Keep as written', ''));
   DATA.languages.forEach(function (l) { el('lang').add(new Option(l[1], l[0])); });
   el('lang').addEventListener('change', function () {

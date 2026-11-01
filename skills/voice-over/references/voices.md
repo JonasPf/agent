@@ -1,8 +1,8 @@
 # Voices
 
-Samples of every voice below, all reading the same line, are at
-https://claude.ai/artifact/JBrcUirvUKGtobXj6go64M — give the operator this link, because you cannot
-hear them and the choice is theirs.
+The review page plays a sample of a voice when the operator picks it, every voice saying "Hello World
+1 2 3". You cannot hear them, and the choice is theirs. The samples are in `assets/samples.json`, for
+the page: it is 380 KB of base64, so never read it.
 
 | | HeyGen Turbo | ElevenLabs Flash |
 |---|---|---|
