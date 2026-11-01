@@ -953,7 +953,7 @@ func (a *App) hSkills(w http.ResponseWriter, r *http.Request) {
 	for _, s := range skills {
 		enabled := s.DefaultEnabled
 		if sess != nil {
-			enabled = sess.skillEnabled(s)
+			enabled = a.hasSkill(sess, s)
 		}
 		out = append(out, map[string]any{"name": s.Name, "description": s.Description,
 			"bytes": s.Bytes, "files": 1 + len(s.Files), "default_enabled": s.DefaultEnabled,

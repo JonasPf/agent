@@ -14,7 +14,7 @@ import (
 // the difference, so the tail is kept well under the threshold — close together
 // would compact constantly for very little gain.
 const (
-	defaultCompactAtTokens    = 40000
+	defaultCompactAtTokens    = 80000
 	defaultKeepVerbatimTokens = 10000
 	// How often, in tokens of growth, the running summary is rewritten. A
 	// constant rather than a setting: nothing ever set it, and a number nobody

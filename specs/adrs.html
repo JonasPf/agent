@@ -2433,6 +2433,65 @@ tested on what they will run on. <code>task check</code> takes minutes longer. A
 An installed copy under the same name stops loading, and the Skills screen says why.</p>
 </div>
 
+<div class="adr" id="adr-076">
+<div class="meta">ADR-076 · accepted · amends ADR-049 and ADR-064</div>
+<h3>Only the skills most conversations need ship on</h3>
+<h4>Context</h4>
+<p>Every shipped skill was on (<a href="#adr-064">ADR-064</a>), so a conversation about anything had
+<code>voice-over</code> and <code>video-edit</code> in its index. The operator wants a new conversation to
+start with what most conversations use. What a session had was also not as fixed as the prompt says: its
+index was written once, but <code>skill_read</code> and a tool's access to a skill's folder asked what is on
+by default today. Turning a default off would have left a running conversation with a skill its index lists
+and that it cannot read.</p>
+<h4>Decision</h4>
+<p><code>keeping-records</code>, <code>writing-skills</code>, <code>voice-over</code>, and
+<code>video-edit</code> ship with <code>default: off</code>. <code>researching</code> stays on. A session
+that did not choose its skills has what its prompt indexed when
+it started, so a default that changes reaches new conversations only. A new session still takes its tools
+from the most recently used one, but its skills from the defaults, so a skill ticked for one conversation does
+not carry into the next. The prompt says a conversation without <code>writing-skills</code> can be forked with
+it on, because a session's skills cannot change.</p>
+<h4>Consequences</h4>
+<p>A new conversation's prompt is about 300 tokens smaller. It also does not know these skills exist: asked
+for a voice-over, it works one out or says it cannot. ADR-064 records what that can cost, since the two skills
+that shipped off then were never read because no conversation turned them on. These four are accepted to carry
+that risk, and the remedy is to tick one on the new-conversation screen, or to fork with it ticked. A tick
+lasts for that conversation, so a skill wanted every time is ticked every time. A fork of a conversation that
+chose no skills starts from today's defaults, and its screen shows them.</p>
+</div>
+
+<div class="adr" id="adr-077">
+<div class="meta">ADR-077 · accepted · amends ADR-042</div>
+<h3>A conversation compacts at eighty thousand tokens</h3>
+<h4>Context</h4>
+<p>The default was forty thousand, chosen for what a call costs (<a href="#adr-042">ADR-042</a>). The operator
+wants a conversation to keep twice as much before it folds anything.</p>
+<h4>Decision</h4>
+<p><code>compact_at_tokens</code> defaults to 80,000. <code>keep_verbatim_tokens</code> stays at 10,000.</p>
+<h4>Consequences</h4>
+<p>The most expensive call in a conversation can cost twice as much. Each compaction frees seventy thousand
+tokens rather than thirty, so it comes less than half as often. A threshold is stored when a session starts, so
+existing conversations keep theirs, and any conversation can still set its own.</p>
+</div>
+
+<div class="adr" id="adr-078">
+<div class="meta">ADR-078 · accepted</div>
+<h3>The scheduling skill is removed</h3>
+<h4>Context</h4>
+<p>What the skill taught had moved into the <code>schedule</code> tool's description and the prompt's working
+rules, so the same rules sat in three places. Five of the tool's six eval cases run without
+<code>skill_read</code>, so they already test the tool alone. The one conversation that has scheduled jobs
+created a hundred and read the skill twice.</p>
+<h4>Decision</h4>
+<p>Delete it. What only it said moves into the tool's description: test a check with <code>bash</code> before
+creating the job, a check is killed at sixty seconds and that counts as a failure, nothing expires a job, and
+a running job can delete itself.</p>
+<h4>Consequences</h4>
+<p><code>researching</code> is the only skill left on by default. The skill's table of example check commands
+is gone. A conversation that started with the skill still lists it in its prompt, and reading it reports no
+such skill, which costs that conversation one call.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

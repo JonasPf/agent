@@ -133,26 +133,26 @@ func sessionOver(t *testing.T, a *App, id string) Session {
 	return out.Session
 }
 
-// The threshold is the session's own, defaults to forty thousand, and can be
+// The threshold is the session's own, defaults to eighty thousand, and can be
 // changed at any point in the conversation without touching any other.
 func TestTheCompactionThresholdIsSetPerSession(t *testing.T) {
 	a := newTestApp(t)
 	one, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	two, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-	if got := sessionOver(t, a, one.ID); got.CompactAtTokens != 40000 || got.KeepVerbatimTokens != 10000 {
-		t.Fatalf("a new session compacts at %d keeping %d; want 40000 and 10000",
+	if got := sessionOver(t, a, one.ID); got.CompactAtTokens != 80000 || got.KeepVerbatimTokens != 10000 {
+		t.Fatalf("a new session compacts at %d keeping %d; want 80000 and 10000",
 			got.CompactAtTokens, got.KeepVerbatimTokens)
 	}
 
-	if w := patchSession(t, a, one.ID, `{"compact_at_tokens":80000,"keep_verbatim_tokens":16000}`); w.Code != 200 {
+	if w := patchSession(t, a, one.ID, `{"compact_at_tokens":120000,"keep_verbatim_tokens":16000}`); w.Code != 200 {
 		t.Fatalf("PATCH thresholds = %d: %s", w.Code, w.Body)
 	}
 	got := sessionOver(t, a, one.ID)
-	if got.CompactAtTokens != 80000 || got.KeepVerbatimTokens != 16000 {
-		t.Fatalf("after PATCH: compacts at %d keeping %d; want 80000 and 16000",
+	if got.CompactAtTokens != 120000 || got.KeepVerbatimTokens != 16000 {
+		t.Fatalf("after PATCH: compacts at %d keeping %d; want 120000 and 16000",
 			got.CompactAtTokens, got.KeepVerbatimTokens)
 	}
-	if other := sessionOver(t, a, two.ID); other.CompactAtTokens != 40000 {
+	if other := sessionOver(t, a, two.ID); other.CompactAtTokens != 80000 {
 		t.Fatalf("changing one session's threshold moved another's to %d", other.CompactAtTokens)
 	}
 
@@ -193,7 +193,7 @@ func TestAThresholdThatCannotWorkIsRefused(t *testing.T) {
 			t.Errorf("PATCH %s refused without saying why: %s", body, w.Body)
 		}
 	}
-	if got := sessionOver(t, a, s.ID); got.CompactAtTokens != 40000 || got.KeepVerbatimTokens != 10000 {
+	if got := sessionOver(t, a, s.ID); got.CompactAtTokens != 80000 || got.KeepVerbatimTokens != 10000 {
 		t.Fatalf("a refused PATCH changed the session: %d keeping %d", got.CompactAtTokens, got.KeepVerbatimTokens)
 	}
 }
@@ -234,7 +234,7 @@ func TestThePromptDoesNotStateTheThreshold(t *testing.T) {
 	if !strings.Contains(text, "compacts") {
 		t.Fatal("the prompt no longer tells the model that the session compacts")
 	}
-	for _, n := range []string{strconv.Itoa(s.CompactAtTokens), "40,000"} {
+	for _, n := range []string{strconv.Itoa(s.CompactAtTokens), "80,000"} {
 		if strings.Contains(text, n) {
 			t.Fatalf("the prompt states the threshold %s, which can change after it is written", n)
 		}

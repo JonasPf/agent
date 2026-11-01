@@ -2120,6 +2120,15 @@ test('a skill that ships off starts unticked in a configuration that did not cho
     'an untouched configuration should leave the skills to their defaults');
 });
 
+test('a new conversation starts from the default skills, whatever the last one ticked', async () => {
+  const ctx = newScreen({ '/skills': SKILLS, '/sessions': [session({ enabled_skills: ['changing-yourself', 'scheduling'] })] });
+  const v = node('div');
+  await ctx.viewNew(v);
+  const byName = Object.fromEntries(pills(v).map(p => [p.textContent, isOn(p)]));
+  assert.deepStrictEqual(byName, { 'changing-yourself': false, scheduling: true }, 'a skill ticked for the last conversation carried over');
+  assert.strictEqual((await startConversation(ctx, v)).enabled_skills, null, 'the skills should be left to their defaults');
+});
+
 test('ticking a skill that ships off chooses the skills, and unticking it goes back to the defaults', async () => {
   const ctx = newScreen({ '/skills': SKILLS, '/sessions': [session({ enabled_skills: null })] });
   const v = node('div');

@@ -251,3 +251,18 @@ func TestEverySuppliedParameterIsDescribed(t *testing.T) {
 		}
 	}
 }
+
+// What the scheduling skill alone said is in the tool's description, which a
+// conversation always has (ADR-078).
+func TestTheScheduleToolSaysHowAJobBehaves(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("..", "..", "tools", "schedule", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"with bash before creating the job", "killed at sixty seconds",
+		"counts as a failure", "Nothing expires a job", "a running job can delete itself"} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("the schedule tool does not say %q", want)
+		}
+	}
+}

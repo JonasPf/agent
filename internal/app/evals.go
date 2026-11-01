@@ -38,7 +38,10 @@ type EvalCase struct {
 	// case about a skill that is not there tests whether the model will
 	// invent one.
 	Skills map[string]string `json:"skills,omitempty"`
-	Expect Expect            `json:"expect"`
+	// SkillsOn are skills that ship off, on for this case beside the ones that
+	// ship on: a case about one tests nothing in a session that cannot see it.
+	SkillsOn []string `json:"skills_on,omitempty"`
+	Expect   Expect   `json:"expect"`
 }
 
 // Expect describes the tool use a case requires. Every field is optional; an
@@ -254,6 +257,14 @@ func (a *App) RunEvalCase(ctx context.Context, model string, c EvalCase) (res Ev
 	}
 
 	cfg := SessionConfig{Model: model, EnabledTools: c.Tools}
+	if len(c.SkillsOn) > 0 {
+		cfg.EnabledSkills = append(cfg.EnabledSkills, c.SkillsOn...)
+		for _, sk := range a.skills.All() {
+			if sk.DefaultEnabled {
+				cfg.EnabledSkills = append(cfg.EnabledSkills, sk.Name)
+			}
+		}
+	}
 	s, err := a.NewSession(cfg, "")
 	if err != nil {
 		res.Err = err

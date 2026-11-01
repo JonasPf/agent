@@ -1,6 +1,7 @@
 ---
 name: keeping-records
 description: Use when the operator asks you to remember, note, or keep track of anything — a fact, a preference, a decision, a list, a measurement, a symptom, an appointment — or asks about something kept earlier: how to keep it as files in this session's working directory, dated from `clock`, and read it back with a command.
+default: off
 ---
 
 You have no memory but the files you write. The conversation is the wrong place for anything worth

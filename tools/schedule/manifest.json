@@ -1,6 +1,6 @@
 {
   "name": "schedule",
-  "description": "Create, list, edit, or delete jobs attached to a session. A job wakes on a schedule and runs its prompt; an optional check gates whether a wake acts. Every wake is recorded in the job's own log, and every job reports what it will cost \u2014 wakes a day, tokens a day, and money where the model's price is known. Any cadence is allowed; say what a frequent one costs rather than talking the operator out of it. List to answer any question about what is scheduled or what has already run, rather than answering from the conversation.",
+  "description": "Create, list, edit, or delete jobs attached to a session. A job wakes on a schedule and runs its prompt; an optional check gates whether a wake acts. Every wake is recorded in the job's own log, and every job reports what it will cost \u2014 wakes a day, tokens a day, and money where the model's price is known. Any cadence is allowed; say what a frequent one costs rather than talking the operator out of it. Nothing expires a job: it runs until it acts and stops or is deleted, one that keeps failing keeps its place with the failures in its log, and a running job can delete itself. List to answer any question about what is scheduled or what has already run, rather than answering from the conversation.",
   "parameters": {
     "type": "object",
     "properties": {
@@ -24,7 +24,7 @@
       },
       "check": {
         "type": "string",
-        "description": "Shell command run before the prompt; exit zero means act on this wake, anything else means skip it and wait for the next. Omit to act every time. It is tested repeatedly and must answer at once: never sleep, poll, or wait inside it. A wake with a check costs nothing, so a gated job may wake as often as you like."
+        "description": "Shell command run before the prompt; exit zero means act on this wake, anything else means skip it and wait for the next. Omit to act every time. It is tested repeatedly and must answer at once: never sleep, poll, or wait inside it. It is killed at sixty seconds, and that counts as a failure, not as a condition that is false. Test the command with bash before creating the job. A wake with a check costs nothing, so a gated job may wake as often as you like."
       },
       "prompt": {
         "type": "string",

@@ -27,7 +27,7 @@ func (a *App) skillFolders(sessionID string) []string {
 	}
 	var dirs []string
 	for _, sk := range a.skills.All() {
-		if sk.Main() == skillMain && sess.skillEnabled(sk) {
+		if sk.Main() == skillMain && a.hasSkill(sess, sk) {
 			dirs = append(dirs, absOr(filepath.Dir(sk.Path)))
 		}
 	}

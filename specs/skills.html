@@ -32,14 +32,14 @@ here loads wherever skills are read, and two names never differ only by case or 
 underscore. A tool's name is the other form, words joined by underscores, because it is the name of a
 function the model calls.</p>
 
-<pre><code>skills/scheduling.md
+<pre><code>skills/researching.md
 
 ---
-name: scheduling
-description: Use before creating or changing a job — how to turn a request for later into one.
+name: researching
+description: Use before searching the web to answer a question — plan the searches and rank the sources.
 ---
 
-A request for later is either a time or a condition…</code></pre>
+Plan narrow searches before the first one…</code></pre>
 
 <p>A skill that needs more than one file is a folder: <code>SKILL.md</code>, whose front matter names
 the skill exactly as a single file's does, and the files beside it &mdash; a checklist, a table, a
@@ -58,9 +58,12 @@ skills/trip-planning/ref/checklist.csv</code></pre>
 <p>A skill a conversation should set out to use, rather than find in every prompt, adds
 <code>default: off</code> to its frontmatter. A session that did not choose its skills then leaves it
 out; a session that lists its skills has exactly the ones it lists
-(<a href="adrs.html#adr-050">ADR-050</a>). No shipped skill does: the two that did, for changing code,
-were never read, because no conversation turned them on, and were removed
-(<a href="adrs.html#adr-064">ADR-064</a>). Off remains a choice for a skill the operator writes.</p>
+(<a href="adrs.html#adr-050">ADR-050</a>). Four shipped skills do, because few conversations need them:
+<code>keeping-records</code>, <code>writing-skills</code>, <code>voice-over</code>, and
+<code>video-edit</code> (<a href="adrs.html#adr-076">ADR-076</a>).</p>
+
+<p>However a session got its skills, they are fixed when it starts. Its prompt lists them, and a default
+that changes later reaches the next session and not this one.</p>
 
 <h2>Progressive disclosure</h2>
 
@@ -95,7 +98,8 @@ rather than twenty documents' worth.</p>
 <li>A folder without a <code>SKILL.md</code>, or holding a file that is not text, is skipped, and the failure names it.</li>
 <li>Hidden files in a skill's folder are not part of the skill.</li>
 <li>The skill list says, for each skill, whether it is on by default.</li>
-<li>Every shipped skill is on by default.</li>
+<li><code>researching</code> ships on; <code>keeping-records</code>, <code>writing-skills</code>, <code>voice-over</code>, and <code>video-edit</code> ship off.</li>
+<li>A session that did not choose its skills keeps the ones its prompt indexed when it started, and gets no others, whatever the defaults become.</li>
 </ul>
 </div>
 
@@ -123,8 +127,8 @@ skills answering to one would make the index a lie about what <code>skill_read</
 collision is refused and said out loud.</p>
 
 <p>What survives from before is the reason skills existed: a lesson worth keeping is worth writing down.
-When a task of several steps has worked and could be asked for again, the agent offers to write it down,
-and the <code>writing-skills</code> skill says how: as <code>skills/&lt;name&gt;/</code> in its working
+When a task of several steps has worked and could be asked for again, a conversation that has
+<code>writing-skills</code> offers to write it down, and that skill says how: as <code>skills/&lt;name&gt;/</code> in its working
 directory, with <code>SKILL.md</code>, any scripts and references it needs, and test cases under
 <code>evals/</code> in the layout <code>claude plugin eval</code> reads &mdash; <code>evals/&lt;case&gt;/prompt.md</code>,
 <code>case.yaml</code>, and one statement per file in <code>graders/</code> &mdash; run once by the agent
@@ -163,13 +167,12 @@ operator reads it on the Skills screen before deciding.</p>
 <h2>Required skills</h2>
 
 <table>
-<tr><th>Skill</th><th>Teaches</th></tr>
-<tr><td><code>scheduling</code></td><td>How to turn a condition into a shell command, which is nearly always possible; when it genuinely is not; choosing expiry and interval.</td></tr>
-<tr><td><code>keeping-records</code></td><td>How to keep whatever the operator asks to have remembered &mdash; a series that accumulates (measurements, appointments, incidents), a list with no dates, or a note of a fact, a preference, or a decision &mdash; as files in the session's working directory; that every date written comes from <code>clock</code> in the same turn; and how to read any of it back with a command.</td></tr>
-<tr><td><code>writing-skills</code></td><td>When to offer to turn a task that worked into a skill, and how to draft one in the working directory: a description that says when, a lean <code>SKILL.md</code> that explains why, scripts for work that repeats, test cases in the layout <code>claude plugin eval</code> reads, a run of them before handing it over, and how the operator installs it.</td></tr>
-<tr><td><code>researching</code></td><td>How to answer a question from the web: plan narrow searches, read the page rather than the snippet, rank sources from primary to unverified, keep findings in a file as they accumulate, and give every claim its source.</td></tr>
-<tr><td><code>voice-over</code></td><td>How to put a synthesized voice on a video: transcribe it with times, clean up the narration, let the operator change the words, timing, language, and voice on a page shown through <a href="tool-ask_operator.html"><code>ask_operator</code></a>, then speak each line and place it at its moment. A video with no audio takes its script from that page.</td></tr>
-<tr><td><code>video-edit</code></td><td>How to cut parts out of videos and join them: find the moments from times or from what was said, cut exactly, fit clips that do not match, and carry on a long job that a time limit stopped. It comes before a voice-over, because a cut moves every time after it.</td></tr>
+<tr><th>Skill</th><th>Default</th><th>Teaches</th></tr>
+<tr><td><code>keeping-records</code></td><td>off</td><td>How to keep whatever the operator asks to have remembered &mdash; a series that accumulates (measurements, appointments, incidents), a list with no dates, or a note of a fact, a preference, or a decision &mdash; as files in the session's working directory; that every date written comes from <code>clock</code> in the same turn; and how to read any of it back with a command.</td></tr>
+<tr><td><code>writing-skills</code></td><td>off</td><td>When to offer to turn a task that worked into a skill, and how to draft one in the working directory: a description that says when, a lean <code>SKILL.md</code> that explains why, scripts for work that repeats, test cases in the layout <code>claude plugin eval</code> reads, a run of them before handing it over, and how the operator installs it.</td></tr>
+<tr><td><code>researching</code></td><td>on</td><td>How to answer a question from the web: plan narrow searches, read the page rather than the snippet, rank sources from primary to unverified, keep findings in a file as they accumulate, and give every claim its source.</td></tr>
+<tr><td><code>voice-over</code></td><td>off</td><td>How to put a synthesized voice on a video: transcribe it with times, clean up the narration, let the operator change the words, timing, language, and voice on a page shown through <a href="tool-ask_operator.html"><code>ask_operator</code></a>, then speak each line and place it at its moment. A video with no audio takes its script from that page.</td></tr>
+<tr><td><code>video-edit</code></td><td>off</td><td>How to cut parts out of videos and join them: find the moments from times or from what was said, cut exactly, fit clips that do not match, and carry on a long job that a time limit stopped. It comes before a voice-over, because a cut moves every time after it.</td></tr>
 </table>
 
 <p>These two carry scripts, and <code>task check</code> runs them from <code>testenv/skills</code> on real
@@ -179,7 +182,7 @@ video, with the review page in the real <code>ask_operator</code> panel in a rea
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every required skill ships, loads, and is on by default.</li>
+<li>Every required skill ships and loads.</li>
 <li>The voice-over review page lays the script along the video: a screenshot every 30 seconds, each the frame at its time, and each line beside it at the moment it starts, as tall as it takes to say. It fits what <code>ask_operator</code> will load.</li>
 <li>On that page the operator changes a line's words, moves it along the video by dragging with a mouse or a finger or with the arrow keys, and picks the language and the voice, and the cost follows.</li>
 <li>Picking a voice on that page plays that voice saying the same line as every other voice, from a sample the skill carries. Nothing plays until a voice is picked.</li>

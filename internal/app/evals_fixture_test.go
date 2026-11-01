@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,5 +68,32 @@ func TestEvalSkillsAreLoadedForTheCaseAndGoneAfter(t *testing.T) {
 	}
 	if _, err := a.seedSkills(map[string]string{"../escaped.md": "no"}); err == nil {
 		t.Error("a case wrote a skill outside the skills root")
+	}
+}
+
+// A case about a skill that ships off has it for its turn, beside the ones that
+// ship on.
+func TestACaseCanTurnOnASkillThatShipsOff(t *testing.T) {
+	a := newTestApp(t)
+	writeSkill(t, a, "everyday", "")
+	writeSkill(t, a, "rarely", "default: off\n")
+	writeSkill(t, a, "unasked", "default: off\n")
+	a.skills.Load()
+	srv, seen := recordingModel(t, "Done.")
+	a.or = NewOpenRouter("test-key")
+	a.or.base = srv.URL
+
+	res := a.RunEvalCase(t.Context(), "test/model", EvalCase{Name: "on", Prompt: "Hello.", SkillsOn: []string{"rarely"}})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	sent := strings.Join(*seen, "")
+	for _, name := range []string{"everyday", "rarely"} {
+		if !strings.Contains(sent, "- "+name+": ") {
+			t.Errorf("the case's turn was not sent %s", name)
+		}
+	}
+	if strings.Contains(sent, "- unasked: ") {
+		t.Error("the case's turn was sent a skill it did not ask for")
 	}
 }

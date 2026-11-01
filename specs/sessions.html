@@ -33,9 +33,9 @@ private one of its own, so a session is always something a person started and ca
 <tr><td><code>model</code></td><td>The model this conversation runs on. Fixed for the session's life. A conversation that names none starts on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>).</td></tr>
 <tr><td><code>forked_from</code></td><td>The session this one was copied from, if any.</td></tr>
 <tr><td><code>enabled_tools</code></td><td>Tool names defined in this session's prompt. Absent means all. Fixed for the session's life.</td></tr>
-<tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means every skill that is on by default (<a href="adrs.html#adr-050">ADR-050</a>). Fixed for the session's life.</td></tr>
+<tr><td><code>enabled_skills</code></td><td>Skill names indexed in this session's prompt. Absent means every skill that was on by default when it started (<a href="adrs.html#adr-050">ADR-050</a>). Fixed for the session's life.</td></tr>
 <tr><td><code>env</code></td><td>The names of the environment variables this conversation's tools and checks receive. The values are the operator's, set when the conversation is started or forked and changeable at any time, because no prompt reads them. A value is stored beside the transcript, outside every tool's reach, and no route returns it and no export carries it: what can be read is which names are set (<a href="adrs.html#adr-068">ADR-068</a>).</td></tr>
-<tr><td><code>compact_at_tokens</code></td><td>The projected size at which the conversation compacts. Default forty thousand. Not configuration: no prompt reads it, so it can be changed at any time (<a href="adrs.html#adr-060">ADR-060</a>).</td></tr>
+<tr><td><code>compact_at_tokens</code></td><td>The projected size at which the conversation compacts. Default eighty thousand. Not configuration: no prompt reads it, so it can be changed at any time (<a href="adrs.html#adr-060">ADR-060</a>).</td></tr>
 <tr><td><code>keep_verbatim_tokens</code></td><td>How much of the tail a compaction leaves untouched. Default ten thousand, and at most half of <code>compact_at_tokens</code>. Changeable at any time, like it.</td></tr>
 </table>
 
@@ -178,8 +178,8 @@ configuration it was created under.</p>
 appears in the prompt. Model, tools, skills, and persona never change at all.
 </div>
 
-<p>A new session inherits the configuration of the most recently used one, and a fork inherits its
-origin's, so the common case is a screen you confirm without changing anything. Both are the same
+<p>A new session inherits the tools and persona of the most recently used one and starts with the skills
+that are on by default, and a fork inherits its origin's configuration, so the common case is a screen you confirm without changing anything. Both are the same
 screen, reached the same way, and both are answered before the session exists.</p>
 
 <div class="ac">
@@ -196,7 +196,7 @@ screen, reached the same way, and both are answered before the session exists.</
 <li>Every session has a prompt entry from the moment it exists.</li>
 <li>Forking accepts a configuration; anything not given is inherited from the origin.</li>
 <li>A fork that changes the configuration names what changed, in both sessions' transcripts.</li>
-<li>A new session inherits the configuration of the most recently used session.</li>
+<li>A new session inherits the tools and persona of the most recently used session, and starts with the skills that are on by default, whatever that session chose.</li>
 <li>Nothing that can be changed mid-session appears in the system prompt.</li>
 </ul>
 </div>
@@ -372,14 +372,14 @@ change" supports a conclusion that "checked once" does not.</p>
 what is sent, by a written summary of them. The recent turns are left exactly as they are. The session
 keeps its identifier, its jobs, its files, and its history.</p>
 
-<pre><code>BEFORE — 40,000 tokens              AFTER — 14,000 tokens
+<pre><code>BEFORE — 80,000 tokens              AFTER — 14,000 tokens
 ┌─────────────────────────┐         ┌─────────────────────────┐
 │ system prompt    4,000  │         │ system prompt    4,000  │
 ├─────────────────────────┤         ├─────────────────────────┤
 │ turn 1                  │         │ SUMMARY of turns 1-36   │
 │ turn 2                  │         │ "Designed the session   │
 │ turn 3                  │         │  model. Config fixed;   │   ~600
-│   ...            36,000 │   ──▶   │  fork copies all; use   │
+│   ...            76,000 │   ──▶   │  fork copies all; use   │
 │ turn 35                 │         │  assistant role..."     │
 │ turn 36                 │         ├─────────────────────────┤
 │ turn 37                 │         │ turn 37                 │
@@ -400,14 +400,14 @@ three options the agent just offered, a question waiting to be answered, the fil
 
 <table>
 <tr><th>Setting</th><th>Default</th><th>Controls</th></tr>
-<tr><td><code>compact_at_tokens</code></td><td>40,000</td><td>What a call costs at its most expensive.</td></tr>
+<tr><td><code>compact_at_tokens</code></td><td>80,000</td><td>What a call costs at its most expensive.</td></tr>
 <tr><td><code>keep_verbatim_tokens</code></td><td>10,000</td><td>How much of the conversation is never lossy.</td></tr>
 </table>
 
 <p>They are independent, and together they are the whole trade between cost and retention. Each
-compaction frees the difference between them, so the conversation grows by about thirty thousand tokens
+compaction frees the difference between them, so the conversation grows by about seventy thousand tokens
 between one compaction and the next. Setting the tail close to the threshold would compact constantly
-for very little gain; the default keeps the tail at about a quarter, and a tail of more than half the
+for very little gain; the default keeps the tail at about an eighth, and a tail of more than half the
 threshold is refused.</p>
 
 <p>Both are per-session. Every session starts with the defaults, a fork starts with its origin's, and

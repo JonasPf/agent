@@ -1,7 +1,7 @@
 ---
 name: video-edit
 description: Use when the operator wants to cut a part out of a video, trim its start or end, keep only part of it, or join two or more videos into one — covers finding the right moments from times or from what was said, exact cuts, joining recordings that do not match, and long jobs. Do this before a voiceover, because a cut moves every time after it.
-default: on
+default: off
 ---
 
 Videos land, and some of each has to go, or several have to become one. Done looks like
