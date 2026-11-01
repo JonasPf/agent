@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-01
+
+- **The voice-over page is a timeline.** Each line sits beside the video at
+  the moment it starts, as tall as it takes to say, and you drag it up or
+  down to move it, with no times to type. A line still speaking when the
+  next one starts is now cut off there, with a warning on the page, so every
+  line starts exactly where you put it. Before, the next line was pushed
+  back.
+- **Pick a voice and hear it.** Choosing a voice on that page plays it
+  saying "Hello World 1 2 3". All 31 voices are in the skill, so there is no
+  separate page of samples.
+
 ## 2026-10-31
 
 - **The agent can ask you on a proper screen.** When a chat reply would be

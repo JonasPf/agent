@@ -180,8 +180,10 @@ video, with the review page in the real <code>ask_operator</code> panel in a rea
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every required skill ships, loads, and is on by default.</li>
-<li>The voice-over review page holds a screenshot every 30 seconds, each the frame at its time, beside the lines that start there, and fits what <code>ask_operator</code> will load.</li>
-<li>On that page the operator changes a line's words and time, by dragging with a mouse or a finger or by typing, and picks the language and the voice, and the cost follows.</li>
+<li>The voice-over review page lays the script along the video: a screenshot every 30 seconds, each the frame at its time, and each line beside it at the moment it starts, as tall as it takes to say. It fits what <code>ask_operator</code> will load.</li>
+<li>On that page the operator changes a line's words, moves it along the video by dragging with a mouse or a finger or with the arrow keys, and picks the language and the voice, and the cost follows.</li>
+<li>Picking a voice on that page plays that voice saying the same line as every other voice, from a sample the skill carries. Nothing plays until a voice is picked.</li>
+<li>Every line starts where it was put. One still speaking when the next starts is cut off there, and the page and the placement script both say which.</li>
 <li>Approve saves the script beside the page, and any change after it takes the approval back, so Send cannot carry a script the operator no longer means.</li>
 <li>A video with no draft starts the page empty, and a script pasted there reaches speech the way a draft does.</li>
 <li>An approval that names a new language asks for a translation and a last look before anything is spoken.</li>
