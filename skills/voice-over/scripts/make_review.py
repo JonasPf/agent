@@ -6,8 +6,8 @@ Usage: make_review.py INPUT.mov [--voice NAME]   write review/review.html
 
 The page lays the script along the video: a screenshot every 30 seconds, and each line
 at its moment, as tall as it takes to say. The operator changes the words, drags the
-lines, and picks the language and the voice, hearing each one picked, and Approve saves
-review/approved.json beside the page. It starts from chunks.json, whose times are found
+lines, and picks the language and the voice, hearing each one picked, and Send in the
+panel saves review/approved.json beside the page. It starts from chunks.json, whose times are found
 as place_chunks.py finds them. With no chunks.json it starts empty, and the operator
 writes the script on the page.
 
@@ -135,7 +135,7 @@ def build(video, wanted, chunks):
 def apply_approval(chunks):
     a = json.load(open(APPROVED, encoding="utf-8")) if os.path.exists(APPROVED) else {}
     if not a:
-        sys.exit("not approved yet: ask the operator to press Approve on the page, then Send")
+        sys.exit("not approved yet: ask the operator to press Send")
     if not a.get("chunks"):
         sys.exit("the approved script has no lines")
     option = next((o for o in voices() if o["model"] == a.get("model")), None)

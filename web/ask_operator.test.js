@@ -61,15 +61,17 @@ function fakeEl(tag, cls, text) {
 }
 function all(n, out = []) { out.push(n); for (const c of n.children || []) all(c, out); return out; }
 const button = (root, label) => all(root).find(n => n.tag === 'button' && n.textContent === label);
+const shown = root => all(root).filter(n => !n.hidden).map(n => n.textContent).join(' ');
 
-async function mounted(ask, id) {
+async function mounted(ask, id, refuse) {
   const { default: mount } = await load();
   const posts = [], listeners = {};
   const api = async (url, opts) => {
     if (opts && opts.method === 'POST') {
       const body = JSON.parse(opts.body);
       posts.push({ url, body });
-      return url.startsWith('/tools/') ? { ok: true, content: 'review/' + body.save } : null;
+      if (!url.startsWith('/tools/')) return null;
+      return refuse && refuse.now ? { ok: false, error: 'the disk is full' } : { ok: true, content: 'review/' + body.save };
     }
     if (url.endsWith('.json')) return ask;
     return { session: { title: 'Voice Over' } };
@@ -165,4 +167,69 @@ test('a save too large for the API is refused to the page', async () => {
   await listeners.message({ source: frame.contentWindow, data: { ask: 'save', id: 2, name: 'x', content: 'y'.repeat(1 << 20) } });
   assert.strictEqual(posts.length, 0);
   assert.match(frame.contentWindow.sent[0].error, /too large/);
+});
+
+test('the files a page proposes wait for Send, which saves the latest before it speaks', async () => {
+  const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a9');
+  const frame = boxOf(root);
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'first', files: { 'approved.json': '1' } } });
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'second', files: { 'approved.json': '2' } } });
+  assert.strictEqual(posts.length, 0, 'a proposal saved something by itself');
+  assert.match(shown(root), /And save: approved\.json/, 'the screen says what Send will save');
+  await button(root, 'Send').onclick();
+  assert.deepStrictEqual(posts.map(p => p.url), ['/tools/ask_operator/call?session_id=S1', '/sessions/S1/messages']);
+  assert.deepStrictEqual(posts[0].body, { ask: 'a9', save: 'approved.json', content: '2' });
+  assert.match(posts[1].body.text, /second/);
+  assert.match(posts[1].body.text, /Saved: review\/approved\.json/);
+});
+
+test('a file that will not save stops the answer, and Send can be pressed again', async () => {
+  const refuse = { now: true };
+  const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a10', refuse);
+  const frame = boxOf(root);
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved', files: { 'approved.json': '1' } } });
+  await button(root, 'Send').onclick();
+  assert.deepStrictEqual(posts.map(p => p.url), ['/tools/ask_operator/call?session_id=S1']);
+  assert.match(shown(root), /the disk is full/);
+  assert.strictEqual(button(root, 'Send').disabled, false);
+  refuse.now = false;
+  await button(root, 'Send').onclick();
+  assert.strictEqual(posts[posts.length - 1].url, '/sessions/S1/messages');
+});
+
+test('Decline saves nothing a page proposed', async () => {
+  const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a11');
+  const frame = boxOf(root);
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved', files: { 'approved.json': '1' } } });
+  await button(root, 'Decline').onclick();
+  assert.deepStrictEqual(posts.map(p => p.body.text), ['Declined: Check it.']);
+});
+
+test('a page can hold Send back, saying why, until it proposes again, but never Decline', async () => {
+  const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a12');
+  const frame = boxOf(root);
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved', files: { 'approved.json': '1' } } });
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'hold', text: 'Write at least one line first.' } });
+  assert.match(shown(root), /Write at least one line first/);
+  assert.doesNotMatch(shown(root), /The page will send/, 'it still says what Send cannot do');
+  await button(root, 'Send').onclick();
+  assert.strictEqual(posts.length, 0, 'Send went through a hold');
+
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved', files: {} } });
+  assert.doesNotMatch(shown(root), /Write at least one line first/);
+  await button(root, 'Send').onclick();
+  assert.strictEqual(posts.length, 1);
+
+  const other = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a13');
+  await other.listeners.message({ source: boxOf(other.root).contentWindow, data: { ask: 'hold', text: 'not yet' } });
+  await button(other.root, 'Decline').onclick();
+  assert.deepStrictEqual(other.posts.map(p => p.body.text), ['Declined: Check it.']);
+});
+
+test('Send stands above a page, and beneath a form', async () => {
+  const place = (root, tag) => root.children.findIndex(n => all(n).some(x => x.tag === tag && (tag !== 'button' || x.textContent === 'Send')));
+  const page = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a14');
+  assert.ok(place(page.root, 'button') < place(page.root, 'iframe'), 'the box comes first');
+  const form = await mounted({ message: 'Name?', questions: [{ name: 'name', type: 'text' }] }, 'a15');
+  assert.ok(place(form.root, 'input') < place(form.root, 'button'), 'Send comes before the questions');
 });

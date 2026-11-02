@@ -2,6 +2,11 @@
 
 ## 2026-11-02
 
+- **One press to approve a voice-over.** Approve is gone: Send on the review
+  page is now the approval, and it sits at the top, right above the page. It
+  takes the script exactly as the page shows it, and refuses, saying why, if
+  there are no lines or one is too long to speak. Pages an agent builds for
+  other questions have their Send at the top too.
 - **New conversations start with fewer skills.** Only researching is on by
   default now. Keeping records, writing skills, voice-over, and video editing
   are off unless you tick them when you start a conversation, and a tick

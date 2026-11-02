@@ -92,7 +92,7 @@ for group in data["voices"]:
         heard.append(sample)
 report("every voice has its own sample, playable by a browser", not unheard and len(set(heard)) == 31, unheard)
 report("the samples are text, as everything in a skill must be", open(SK + "/../assets/samples.json", "rb").read().isascii())
-report("ask.answer and ask.save are what it calls", "ask.save(" in html and "ask.answer(" in html)
+report("ask.answer and ask.hold are what it calls", "ask.answer(" in html and "ask.hold(" in html and "ask.save(" not in html)
 
 # a skill holds text only, and one .pyc beside the scripts would stop the whole skill loading
 # Apple's python keeps bytecode in a cache folder; the server's writes it beside the scripts, as this does.
