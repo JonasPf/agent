@@ -1,15 +1,15 @@
 {
   "cases": [
     {
-      "name": "reads the skill before scheduling",
-      "prompt": "Read the scheduling skill and tell me its first rule.",
+      "name": "reads the skill it is told to",
+      "prompt": "Read the researching skill and tell me its first rule.",
       "tools": [
         "skill_read"
       ],
       "expect": {
         "tool": "skill_read",
         "args": {
-          "name": "scheduling"
+          "name": "researching"
         },
         "clean": true
       }
@@ -41,6 +41,7 @@
     {
       "name": "reads keeping-records before logging a measurement",
       "prompt": "My blood pressure this morning was 128 over 82. Keep track of it for me.",
+      "skills_on": ["keeping-records"],
       "tools": [
         "skill_read",
         "bash",
@@ -60,6 +61,7 @@
     {
       "name": "reads keeping-records before remembering a list",
       "prompt": "Remember these for me: I want to read Piranesi, The Dispossessed, and Stoner at some point.",
+      "skills_on": ["keeping-records"],
       "tools": [
         "skill_read",
         "bash",
@@ -88,22 +90,6 @@
         "tool": "skill_read",
         "args": {
           "name": "researching"
-        },
-        "clean": true
-      }
-    },
-    {
-      "name": "reads scheduling before creating a job",
-      "prompt": "Every weekday at 8 in the morning, remind me to take my vitamins.",
-      "tools": [
-        "skill_read",
-        "schedule",
-        "clock"
-      ],
-      "expect": {
-        "tool": "skill_read",
-        "args": {
-          "name": "scheduling"
         },
         "clean": true
       }

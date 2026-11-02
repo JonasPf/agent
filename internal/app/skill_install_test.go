@@ -204,8 +204,8 @@ func TestSkillReadReturnsTheFileAsStoredAndWhereItLives(t *testing.T) {
 		t.Helper()
 		return a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "skill_read", json.RawMessage(args))
 	}
-	if res := call(`{"name":"scheduling"}`); !res.OK || !strings.HasPrefix(res.Content, "---\nname: scheduling\ndescription: ") {
-		t.Errorf("skill_read scheduling = %q, want the file with its front matter", res.Content)
+	if res := call(`{"name":"researching"}`); !res.OK || !strings.HasPrefix(res.Content, "---\nname: researching\ndescription: ") {
+		t.Errorf("skill_read researching = %q, want the file with its front matter", res.Content)
 	}
 	res := call(`{"name":"trip"}`)
 	if !res.OK || !strings.HasPrefix(res.Content, "---\nname: trip\n") || !strings.Contains(res.Content, filepath.Join(userSkills, "trip")) {

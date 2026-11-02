@@ -1,6 +1,7 @@
 ---
 name: writing-skills
 description: Use when a task of several steps has just worked and could be asked for again, or when asked to write, fix, or improve a skill — how to draft one as skills/<name>/ in the working directory, test it, and hand it over to be installed.
+default: off
 ---
 
 A skill is what the next conversation starts from. This one worked the task out; the next one will

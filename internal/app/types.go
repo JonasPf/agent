@@ -104,7 +104,7 @@ type Section struct {
 type SessionConfig struct {
 	Model         string   `json:"model"`
 	EnabledTools  []string `json:"enabled_tools"`  // nil means every tool
-	EnabledSkills []string `json:"enabled_skills"` // nil means every skill that is on by default
+	EnabledSkills []string `json:"enabled_skills"` // nil means every skill on by default when it started
 	// Persona names the opening section of the system prompt. Empty is the
 	// built-in one, which is what every session had before there was a choice.
 	Persona string `json:"persona,omitempty"`
@@ -190,9 +190,10 @@ func (s *Session) toolEnabled(name string) bool {
 	return inSet(s.EnabledTools, name)
 }
 
-// skillEnabled is asked of a skill rather than a name, because a session that
-// did not choose its skills has the ones that are on by default, and only the
-// skill says whether it is.
+// skillEnabled decides what a new prompt indexes. It is asked of a skill rather
+// than a name, because a session that did not choose its skills starts with the
+// ones that are on by default, and only the skill says whether it is. Once the
+// prompt is written, App.hasSkill says what the session has.
 func (s *Session) skillEnabled(sk *Skill) bool {
 	if s.EnabledSkills == nil {
 		return sk.DefaultEnabled

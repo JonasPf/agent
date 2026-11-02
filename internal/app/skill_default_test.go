@@ -138,34 +138,141 @@ func TestTheSkillListSaysWhichSkillsShipOff(t *testing.T) {
 	}
 }
 
-// The criterion as shipped: every shipped skill is on. The two that shipped off,
-// for changing code, were never read in a month of use, because no
-// conversation turned them on; they were removed rather than switched on
-// (ADR-064). Off stays a choice for a skill the operator writes.
-func TestEveryShippedSkillShipsOn(t *testing.T) {
+// Only what most conversations need ships on (ADR-076). The rest is there for a
+// conversation that chooses it.
+func TestOnlyTheSkillsMostConversationsNeedShipOn(t *testing.T) {
 	shipped := NewSkills(filepath.Join("..", "..", "skills"), "")
 	if len(shipped.Failures()) > 0 {
 		t.Fatalf("a shipped skill does not load: %+v", shipped.Failures())
 	}
+	want := map[string]bool{"researching": true,
+		"keeping-records": false, "writing-skills": false, "voice-over": false, "video-edit": false}
 	for _, sk := range shipped.All() {
-		if !sk.DefaultEnabled {
-			t.Errorf("%s ships off; a shipped skill is in every conversation that did not choose its skills", sk.Name)
+		on, known := want[sk.Name]
+		if !known {
+			t.Errorf("%s ships, and nothing says whether it should be on", sk.Name)
+			continue
+		}
+		if sk.DefaultEnabled != on {
+			t.Errorf("%s: on by default is %v, want %v", sk.Name, sk.DefaultEnabled, on)
 		}
 	}
 }
 
-// The skills the spec requires are shipped, load, and are in the index of a
-// conversation that did not choose its skills.
-func TestTheRequiredSkillsShipOn(t *testing.T) {
+// The skills the spec requires are shipped and load.
+func TestTheRequiredSkillsShip(t *testing.T) {
 	shipped := NewSkills(filepath.Join("..", "..", "skills"), "")
-	for _, name := range []string{"scheduling", "keeping-records", "researching", "writing-skills", "voice-over", "video-edit"} {
-		sk := shipped.Get(name)
-		if sk == nil {
+	for _, name := range []string{"keeping-records", "researching", "writing-skills", "voice-over", "video-edit"} {
+		if shipped.Get(name) == nil {
 			t.Errorf("%s is not shipped", name)
-			continue
 		}
-		if !sk.DefaultEnabled {
-			t.Errorf("%s ships off", name)
+	}
+}
+
+// A conversation that chose nothing is indexed and can read only what ships on,
+// and one that chose a skill that ships off has it.
+func TestANewConversationHasOnlyTheSkillsThatShipOn(t *testing.T) {
+	a := newTestApp(t)
+	a.skills = NewSkills(filepath.Join("..", "..", "skills"), "")
+	base := toolAPI(t, a)
+	read := func(s *Session, name string) int {
+		t.Helper()
+		token, done := a.calls.issue(s.ID, "")
+		defer done()
+		code, _ := toolRequest(t, base, token, "GET", "/skills/"+name, "")
+		return code
+	}
+	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
+	index, _ := promptSection(t, a, s, "skills_index")
+	if !strings.Contains(index, "- researching: ") || read(s, "researching") != 200 {
+		t.Error("a new conversation does not have researching")
+	}
+	for _, name := range []string{"keeping-records", "writing-skills", "voice-over", "video-edit"} {
+		if strings.Contains(index, "- "+name+": ") || read(s, name) != 404 {
+			t.Errorf("a new conversation has %s", name)
+		}
+	}
+
+	p, _ := a.promptEntry(s.ID)
+	if !strings.Contains(systemMessage(p.Sections), "can fork this conversation with it on") {
+		t.Error("the prompt sends a conversation without writing-skills to a skill it cannot read, with no way to get it")
+	}
+
+	chose, _ := a.NewSession(SessionConfig{Model: "test/model", EnabledSkills: []string{"voice-over"}}, "")
+	if read(chose, "voice-over") != 200 {
+		t.Error("a conversation that chose a skill that ships off cannot read it")
+	}
+}
+
+// A session's skills are fixed for its life, so a default that changes reaches
+// the next conversation and leaves this one as its prompt says it is.
+func TestADefaultThatChangesReachesOnlyLaterConversations(t *testing.T) {
+	a := newTestApp(t)
+	root := a.skills.UserDir()
+	files := map[string]string{"notes.md": "Notes."}
+	writeSkillFolder(t, root, "habit", "", files)
+	writeSkillFolder(t, root, "rarely", "default: off\n", files)
+	a.skills.Load()
+	base := toolAPI(t, a)
+	read := func(s *Session, name string) int {
+		t.Helper()
+		token, done := a.calls.issue(s.ID, "")
+		defer done()
+		code, _ := toolRequest(t, base, token, "GET", "/skills/"+name, "")
+		return code
+	}
+	reaches := func(s *Session, name string) bool {
+		for _, dir := range a.skillFolders(s.ID) {
+			if filepath.Base(dir) == name {
+				return true
+			}
+		}
+		return false
+	}
+	listed := func(s *Session, name string) bool {
+		t.Helper()
+		var out struct {
+			Skills []struct {
+				Name    string `json:"name"`
+				Enabled bool   `json:"enabled"`
+			} `json:"skills"`
+		}
+		w := callAPI(t, a, "GET", "/skills?session_id="+s.ID, nil)
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		for _, sk := range out.Skills {
+			if sk.Name == name {
+				return sk.Enabled
+			}
+		}
+		t.Fatalf("%s is not in the skill list", name)
+		return false
+	}
+
+	started, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
+	writeSkillFolder(t, root, "habit", "default: off\n", files)
+	writeSkillFolder(t, root, "rarely", "", files)
+	a.skills.Load()
+	later, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
+
+	for _, c := range []struct {
+		who  *Session
+		name string
+		has  bool
+	}{{started, "habit", true}, {started, "rarely", false}, {later, "habit", false}, {later, "rarely", true}} {
+		code := 404
+		if c.has {
+			code = 200
+		}
+		if got := read(c.who, c.name); got != code {
+			t.Errorf("reading %s = %d, want %d", c.name, got, code)
+		}
+		if reaches(c.who, c.name) != c.has {
+			t.Errorf("a tool's access to %s's folder is not %v", c.name, c.has)
+		}
+		if listed(c.who, c.name) != c.has {
+			t.Errorf("the skill list does not say %s is %v", c.name, c.has)
 		}
 	}
 }

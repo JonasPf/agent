@@ -1,7 +1,7 @@
 ---
 name: voice-over
 description: Use when the operator wants a synthesized voiceover on a video, whether it has spoken audio to clean up or no audio at all — covers transcribing with timestamps, rewriting the narration, a page where the operator changes the words, timing, language and voice and sees the cost, speaking it in the operator's choice of voice, and placing each line at its moment.
-default: on
+default: off
 ---
 
 A video lands. The task: transcribe it, clean up what was said, and put a synthesized voiceover back

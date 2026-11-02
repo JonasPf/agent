@@ -1863,11 +1863,13 @@ async function viewNew(v) {
   const gen = drawing;
   setHeader('New conversation', true);
   const recent = state.sessions[0] || (await api('/sessions').catch(() => []) || [])[0] || {};
-  // Tools and skills come from the most recent conversation. The model is the
-  // one last chosen, which the most recent conversation need not be on.
+  // Tools come from the most recent conversation, and skills from their
+  // defaults: a skill ticked for that conversation says nothing about this one.
+  // The model is the one last chosen, which the most recent conversation need
+  // not be on.
   const prefs = await api('/preferences').catch(() => null) || {};
   if (stale(gen)) return;
-  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model }), gen, { defaults: prefs });
+  const read = await configEditor(v, Object.assign({}, recent, { model: prefs.model || recent.model, enabled_skills: null }), gen, { defaults: prefs });
   if (!read || stale(gen)) return;
   const start = el('button', 'btn primary', 'Start conversation');
   oneAtATime(start, 'Not started', 'Starting…', async () => {

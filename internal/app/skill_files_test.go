@@ -286,7 +286,7 @@ func TestSkillReadReadsAFolderSkillAndEachOfItsFiles(t *testing.T) {
 	if res := call(`{"name":"hidden","file":"secret.md"}`); res.OK {
 		t.Errorf("skill_read read a file of a skill this conversation does not have: %+v", res)
 	}
-	if res := call(`{"name":"scheduling"}`); !res.OK || strings.Contains(res.Content, `"file"`) {
+	if res := call(`{"name":"researching"}`); !res.OK || strings.Contains(res.Content, `"file"`) {
 		t.Errorf("skill_read of a skill of one file = %+v, want its body and no list of files", res)
 	}
 }

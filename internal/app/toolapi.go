@@ -202,7 +202,7 @@ func (a *App) tSkillFile(w http.ResponseWriter, r *http.Request) {
 func (a *App) callerSkill(w http.ResponseWriter, r *http.Request) *Skill {
 	sess := a.store.Session(caller(r).SessionID)
 	sk := a.skills.Get(r.PathValue("name"))
-	if sess == nil || sk == nil || !sess.skillEnabled(sk) {
+	if sess == nil || sk == nil || !a.hasSkill(sess, sk) {
 		fail(w, 404, "no such skill in this conversation")
 		return nil
 	}

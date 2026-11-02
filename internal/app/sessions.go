@@ -24,8 +24,9 @@ func (a *App) defaultThresholds() (compactAt, keep int) {
 
 // baseConfig is the configuration a new session starts from when the request
 // does not fully specify one: the seed's; else the most recently used session's
-// tools and skills on the model last chosen. Variables are not configuration,
-// and never come from another session.
+// tools, with the skills that are on by default, on the model last chosen. A
+// skill ticked for one conversation says nothing about the next. Variables are
+// not configuration, and never come from another session.
 func (a *App) baseConfig(seed *Session) SessionConfig {
 	if seed != nil {
 		return seed.SessionConfig
@@ -34,6 +35,7 @@ func (a *App) baseConfig(seed *Session) SessionConfig {
 	if recent := a.store.Sessions(); len(recent) > 0 {
 		cfg = recent[0].SessionConfig
 	}
+	cfg.EnabledSkills = nil
 	cfg.Model = a.startingModel()
 	return cfg
 }

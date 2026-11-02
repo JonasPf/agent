@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-11-02
+
+- **New conversations start with fewer skills.** Only researching is on by
+  default now. Keeping records, writing skills, voice-over, and video editing
+  are off unless you tick them when you start a conversation, and a tick
+  lasts for that conversation only, so a new conversation won't reach for
+  them on its own. Conversations you already have keep exactly the skills
+  they started with.
+- **The scheduling skill is gone.** The schedule tool now says everything the
+  agent needs itself, so the skill only repeated it.
+- **Conversations hold twice as much before summarising.** A new
+  conversation now compacts at 80,000 tokens instead of 40,000, so its oldest
+  turns are folded away less than half as often. Its most expensive call can
+  cost twice as much. Conversations you already have keep their setting, and
+  any conversation can still set its own.
+
 ## 2026-11-01
 
 - **The voice-over page is a timeline.** Each line sits beside the video at

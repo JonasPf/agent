@@ -190,7 +190,7 @@ func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
 	for _, c := range []struct{ tool, args string }{
 		{"schedule", `{"action":"create","schedule":"10m","prompt":"stretch","after_acting":"stop"}`},
 		{"schedule", `{"action":"list"}`},
-		{"skill_read", `{"name":"scheduling"}`},
+		{"skill_read", `{"name":"researching"}`},
 		{"session_search", `{"query":"anything"}`},
 	} {
 		if res := call(c.tool, c.args); !res.OK {

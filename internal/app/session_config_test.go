@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -90,5 +91,30 @@ func TestConfigRequestApplyTo(t *testing.T) {
 				t.Errorf("applyTo = %+v, want %+v", got, c.want)
 			}
 		})
+	}
+}
+
+// Tools carry over from the conversation before, and skills do not: one ticked
+// for that conversation's work says nothing about the next.
+func TestANewSessionTakesItsToolsFromTheLastAndItsSkillsFromTheDefaults(t *testing.T) {
+	a := newTestApp(t)
+	if _, err := a.NewSession(SessionConfig{Model: "test/model", EnabledTools: []string{"bash"},
+		EnabledSkills: []string{"voice-over"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	cfg := a.baseConfig(nil)
+	if !reflect.DeepEqual(cfg.EnabledTools, []string{"bash"}) {
+		t.Errorf("a new session's tools = %v, want the last session's", cfg.EnabledTools)
+	}
+	if cfg.EnabledSkills != nil {
+		t.Errorf("a new session's skills = %v, want the defaults", cfg.EnabledSkills)
+	}
+
+	origin, err := a.NewSession(SessionConfig{Model: "test/model", EnabledSkills: []string{"voice-over"}}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forked := a.baseConfig(origin); !reflect.DeepEqual(forked.EnabledSkills, []string{"voice-over"}) {
+		t.Errorf("a fork's skills = %v, want its origin's", forked.EnabledSkills)
 	}
 }

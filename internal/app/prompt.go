@@ -16,7 +16,8 @@ You cannot modify yourself. Your tools and skills are files the operator writes;
 you cannot create, edit, or delete them, and the operating system refuses the attempt rather than
 trusting you not to make it. Your own working directory is the only place you can write. When a task
 needs a tool you do not have, say which tool and why, and stop — do not try to build one. A skill you
-can draft there for the operator to install, and writing-skills says how.
+can draft there for the operator to install. The writing-skills skill says how; without it, the
+operator can fork this conversation with it on.
 
 Nothing you do is hidden. Every scheduled action is a job row the operator can read and delete before
 it runs. Every check leaves a line in this transcript. Say what you did, not what you are about to do.
@@ -78,6 +79,25 @@ of work, call skill_read with the skill's name before you start it, and follow w
 again whenever its text is no longer in front of you: compaction folds it away like any other turn,
 and working from memory of a skill is how its rules get skipped.
 `
+
+// hasSkill reports whether a conversation has a skill: the ones it chose, or if
+// it chose none, the ones its prompt indexed when it started. What is on by
+// default can change, and a session's skills are fixed for its life.
+func (a *App) hasSkill(sess *Session, sk *Skill) bool {
+	if sess.EnabledSkills != nil {
+		return inSet(sess.EnabledSkills, sk.Name)
+	}
+	p, ok := a.promptEntry(sess.ID)
+	if !ok {
+		return sk.DefaultEnabled
+	}
+	for _, section := range p.Sections {
+		if section.Name == "skills_index" {
+			return strings.Contains("\n"+section.Text, "\n- "+sk.Name+": ")
+		}
+	}
+	return false
+}
 
 // systemSections builds the prompt as sent, split for display. Tool definitions
 // are shown here exactly as the model receives them; they travel in the tools array.
