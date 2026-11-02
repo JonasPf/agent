@@ -43,7 +43,8 @@ Open button on the tool's result. Nothing waits in the call.</li>
 <li>The panel names the conversation, shows the message, and warns where an answer goes. It draws the
 form, or runs the page in a box.</li>
 <li>The operator presses Send or Decline, and the panel posts their answer as an ordinary message,
-which starts the next turn. Leaving the screen sends nothing.</li>
+which starts the next turn. Send stands beneath a form, and above a page, where it stays in sight
+however far the page runs. Leaving the screen sends nothing.</li>
 </ol>
 
 <table>
@@ -56,8 +57,9 @@ which starts the next turn. Leaving the screen sends nothing.</li>
 <h2>What a page can do</h2>
 <table>
 <tr><th>Call</th><th>What it does</th></tr>
-<tr><td><code>ask.answer(text)</code></td><td>Proposes an answer. It is shown on the screen, and goes nowhere until Send.</td></tr>
-<tr><td><code>await ask.save(name, text)</code></td><td>Saves a file of up to 900&nbsp;KB beside the page, and returns its path. The answer names every file saved.</td></tr>
+<tr><td><code>ask.answer(text, files)</code></td><td>Proposes an answer, and optionally files to save with it, as a map of name to text. It is shown on the screen, and nothing is sent or saved until Send, which takes the latest proposal. A page calls it again whenever what it holds changes.</td></tr>
+<tr><td><code>ask.hold(why)</code></td><td>Stops Send, saying why on the screen, until the next <code>ask.answer</code>. Decline still works.</td></tr>
+<tr><td><code>await ask.save(name, text)</code></td><td>Saves a file of up to 900&nbsp;KB beside the page at once, and returns its path. The answer names every file saved.</td></tr>
 </table>
 <p>A page has no origin and no network. It cannot use the operator's login, load anything from
 elsewhere, or reach a file by its address, so it embeds what it shows.</p>
@@ -77,6 +79,9 @@ Decline are in the panel, outside the box.
 <li>An accepted ask is recorded in the working directory and returns a link to this conversation's panel.</li>
 <li>The screen names the conversation asking, shows the message, and warns that what is entered reaches the agent and its model.</li>
 <li>A page runs, and can propose an answer and save a file, but cannot reach the agent or the network.</li>
+<li>Files proposed with an answer are saved by Send, before the answer goes, and only the latest proposal's; Decline saves none of them. A file that will not save stops the answer, and Send can be pressed again.</li>
+<li>A page can hold Send back, saying why on the screen, until it proposes again, and cannot hold Decline.</li>
+<li>Send stands above a page and stays in sight with the screen scrolled to the end, and beneath a form.</li>
 <li>A page saves only in its own folder; a name that climbs out is refused.</li>
 <li>Nothing reaches the conversation until Send or Decline is pressed, and a page cannot press either.</li>
 <li>A required answer holds Send back and says what is missing.</li>

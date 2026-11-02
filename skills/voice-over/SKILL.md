@@ -127,9 +127,9 @@ longer line up.
 ## Traps
 
 - `call_model` without a `model` field is refused ("name a model, or set list…") — always name one.
-- Do not write the review page yourself. `ask_operator` gives a page no network, and Approve saves
+- Do not write the review page yourself. `ask_operator` gives a page no network, and Send saves
   beside the page, so `make_review.py` puts the screenshots inside it and `--apply` looks in `review/`.
-- Edits on the page are kept only by Approve. A page reloaded before that starts again from its draft.
+- Edits on the page are kept only by Send. A page reloaded before that starts again from its draft.
 - With `list`, leave `prompt` out. It keeps only models whose name has those words: "transcribe" hid
   every Whisper model, "voice" hid all of ElevenLabs, and the agent then said there was none.
 - Other transcription models fail step 4: `gpt-4o-mini-transcribe` gives no times, and

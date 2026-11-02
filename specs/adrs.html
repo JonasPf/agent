@@ -2492,6 +2492,30 @@ is gone. A conversation that started with the skill still lists it in its prompt
 such skill, which costs that conversation one call.</p>
 </div>
 
+<div class="adr" id="adr-079">
+<div class="meta">ADR-079 · accepted · amends <a href="#adr-074">ADR-074</a></div>
+<h3>Send is the approval</h3>
+<h4>Context</h4>
+<p>The voice-over page asked for two presses: Approve on the page, then Send in the panel. Pressing only
+Send approved nothing, and the agent asked again. Only Send is needed to keep a page from approving
+itself. Approve existed because a page's edits leave its box only when it saves them.</p>
+<p>A page could have saved on every change instead, but then the file would be there before Send, and
+<code>--apply</code>'s refusal would mean nothing, and a save in flight could lose the last edit to a
+quick Send.</p>
+<h4>Decision</h4>
+<p><code>ask.answer</code> takes the files to save along with the proposal, and a page proposes again on
+every change. That is a message, which costs no request. Send saves the latest proposal's files, then
+posts the answer. <code>ask.hold</code> stops Send and says why, for a page that has nothing fit to
+propose. For a page, Send and Decline stand above the box, not beneath it. They do not go inside it,
+because then the page could press them.</p>
+<p><code>ask.save</code> stays, for a page that must save at once and for pages already built.</p>
+<h4>Consequences</h4>
+<p>The operator presses one button. A page cannot save a proposed file by itself, and Decline leaves
+nothing behind. A page can hold Send for as long as it likes, which costs only that page's answer,
+because Decline always works. Moving Send above a page moves the note with it, so a page starts a little
+further down the screen. Edits still last only until the page is reloaded, as they did before Approve.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

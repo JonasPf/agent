@@ -172,22 +172,36 @@ func TestAPageSavesOnlyBesideItself(t *testing.T) {
 	}
 }
 
+// untilProposed and pressingSend are what heldOpen adds to the panel.
+const (
+	untilProposed = `
+;(function hold(left) {
+  const shown = document.querySelector('.ask-proposal');
+  if (left && (!shown || shown.hidden)) fetch('/held').then(() => hold(left - 1));
+})(200);`
+	pressingSend = `
+;(function hold(left, pressed) {
+  if (!left || location.hash.startsWith('#session/')) return;
+  const shown = document.querySelector('.ask-proposal');
+  if (shown && !shown.hidden && !pressed) {
+    pressed = true;
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Send').click();
+  }
+  fetch('/held').then(() => hold(left - 1, pressed));
+})(200, false);`
+)
+
 // heldOpen is the real interface with one thing added, for a test's browser. A
 // headless browser's clock runs ahead of real time and it reports the page when
 // that clock runs out, which can be before a page in a box has finished, because
 // a frame's scripts do not stop the clock. A request in flight does, so the panel
 // keeps one going until the page's answer is on the screen.
-func heldOpen(t *testing.T, next http.Handler) http.Handler {
+func heldOpen(t *testing.T, next http.Handler, hold string) http.Handler {
 	t.Helper()
 	panel, err := os.ReadFile("../../tools/ask_operator/ui/panel.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	const hold = `
-;(function hold(left) {
-  const shown = document.querySelector('.ask-proposal');
-  if (left && (!shown || shown.hidden)) fetch('/held').then(() => hold(left - 1));
-})(200);`
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/held":
@@ -213,7 +227,7 @@ func TestAPageRunsInABoxAndCannotAnswerForTheOperator(t *testing.T) {
 	a.sched = NewScheduler(a)
 	a.or = NewOpenRouter("")
 	a.or.base = "http://127.0.0.1:1" // the status screen asks; nothing here needs an answer
-	srv := httptest.NewServer(heldOpen(t, a.routes()))
+	srv := httptest.NewServer(heldOpen(t, a.routes(), untilProposed))
 	t.Cleanup(srv.Close)
 	allowServer(t, a, srv.URL)
 
@@ -230,7 +244,7 @@ func TestAPageRunsInABoxAndCannotAnswerForTheOperator(t *testing.T) {
 			.then(function () { return 'reached the agent'; }, function () { return 'blocked'; })
 			.then(function (r) {
 				return ask.save('notes.txt', 'from the page').then(function (where) {
-					ask.answer('fetch was ' + r + ', saved ' + where);
+					ask.answer('fetch was ' + r + ', saved ' + where, {'later.txt': 'from the answer'});
 				});
 			}).catch(function (e) { ask.answer('failed: ' + e.message); });
 	</script></body></html>`
@@ -264,8 +278,60 @@ func TestAPageRunsInABoxAndCannotAnswerForTheOperator(t *testing.T) {
 	if got, err := os.ReadFile(filepath.Join(dir, "mock", "notes.txt")); err != nil || string(got) != "from the page" {
 		t.Errorf("mock/notes.txt = %q, %v", got, err)
 	}
+	if !strings.Contains(shown.Content, "And save: later.txt") {
+		t.Errorf("the panel does not say what Send will save:\n%s", shown.Content)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "mock", "later.txt")); err == nil {
+		t.Error("what a page proposed to save was saved before Send")
+	}
 	if got := len(a.store.Entries(s.ID)); got != before {
 		t.Errorf("the page reached the conversation: %d entries, was %d", got, before)
+	}
+}
+
+// Send is the approval: in a real browser against the real interface, it saves
+// what the page proposed to save, and the answer that reaches the conversation
+// names the file.
+func TestSendSavesWhatAPageProposedAndTheAnswerNamesIt(t *testing.T) {
+	browserOrSkip(t)
+	a := browseApp(t)
+	a.cfg.WebDir = "../../web"
+	a.sched = NewScheduler(a)
+	a.or = NewOpenRouter("")
+	a.or.base = "http://127.0.0.1:1" // the turn the answer starts ends there; the answer is what is tested
+	srv := httptest.NewServer(heldOpen(t, a.routes(), pressingSend))
+	t.Cleanup(srv.Close)
+	allowServer(t, a, srv.URL)
+
+	s := newSession(t, a)
+	dir := a.ensureWorkspace(s.ID)
+	if err := os.MkdirAll(filepath.Join(dir, "mock"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	page := `<!doctype html><html><body><script>ask.answer('looks right', {'notes.txt': 'from the page'});</script></body></html>`
+	if err := os.WriteFile(filepath.Join(dir, "mock", "page.html"), []byte(page), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := callAsk(t, a, s.ID, map[string]any{"message": "Look at this mockup.", "page": "mock/page.html"})
+	if !res.OK {
+		t.Fatalf("ask_operator: %s", res.Error)
+	}
+	args, _ := json.Marshal(map[string]string{"url": srv.URL + "/" + askLink.FindString(res.Content)})
+	if shown := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "web_browse", args); !shown.OK {
+		t.Fatalf("web_browse: %s", shown.Error)
+	}
+
+	if got, err := os.ReadFile(filepath.Join(dir, "mock", "notes.txt")); err != nil || string(got) != "from the page" {
+		t.Errorf("mock/notes.txt = %q, %v", got, err)
+	}
+	var answer string
+	for _, e := range a.store.Entries(s.ID) {
+		if e.Role == "user" && strings.Contains(e.Text, "looks right") {
+			answer = e.Text
+		}
+	}
+	if !strings.Contains(answer, "Answered: Look at this mockup.") || !strings.Contains(answer, "Saved: mock/notes.txt") {
+		t.Errorf("the answer does not say it was answered and name the file: %q", answer)
 	}
 }
 

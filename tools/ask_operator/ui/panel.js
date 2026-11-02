@@ -1,9 +1,10 @@
 // The screen behind ask_operator: it shows what the agent asked, as a form it
 // draws or a page in a box, and it is the only thing that can answer. A page
 // may be anything the agent wrote, so it runs with no origin and no network and
-// reaches this screen through two messages. It can save a file beside itself,
-// and it can propose an answer. Only the operator pressing Send or Decline, out
-// here where the page cannot reach, says anything to the conversation (ADR-074).
+// reaches this screen through messages. It can save a file beside itself, propose
+// an answer with the files Send should save, and hold Send back. Only the operator
+// pressing Send or Decline, out here where the page cannot reach, says anything
+// to the conversation (ADR-074, ADR-079).
 
 // The policy put in front of a page. It matches filePolicy on the file route,
 // and the page cannot loosen it: a policy can only be tightened after this one.
@@ -20,7 +21,8 @@ const BRIDGE = `<script>(function () {
     if (e.data.error) w[1](new Error(e.data.error)); else w[0](e.data.saved);
   });
   window.ask = {
-    answer: function (text) { parent.postMessage({ ask: 'answer', text: String(text) }, '*'); },
+    answer: function (text, files) { parent.postMessage({ ask: 'answer', text: String(text), files: files || {} }, '*'); },
+    hold: function (why) { parent.postMessage({ ask: 'hold', text: String(why) }, '*'); },
     save: function (name, text) {
       return new Promise(function (ok, no) {
         var id = ++next;
@@ -118,12 +120,39 @@ export default async function mount({ root, api, el }) {
   root.append(message);
   root.append(el('p', 'ask-warning', 'What you enter here goes to the agent and its model. Do not enter passwords, keys, or card numbers.'));
 
-  let fields = [], proposed = '', saved = [];
+  let fields = [], proposed = '', saved = [], files = [], held = '';
   const proposal = el('p', 'ask-proposal');
   proposal.hidden = true;
   proposal.style.whiteSpace = 'pre-wrap';
   const savedLine = el('p', 'ask-saved');
   savedLine.hidden = true;
+  const note = el('textarea', 'ask-note');
+  note.setAttribute('aria-label', 'Anything to add');
+  note.placeholder = 'Anything to add?';
+  note.style.width = '100%';
+  const problem = el('p', 'ask-problem');
+  problem.hidden = true;
+  const send = el('button', 'btn primary', 'Send');
+  const decline = el('button', 'btn', 'Decline');
+  send.type = decline.type = 'button';
+  const buttons = el('div', 'ask-buttons');
+  buttons.style.display = 'flex';
+  buttons.style.gap = '8px';
+  buttons.append(send, decline);
+  const answering = [proposal, savedLine, note, problem, buttons];
+
+  const store = async (name, content) => {
+    if (content.length > MAX_SAVE) throw new Error('too large to save');
+    const res = await api('/tools/ask_operator/call?session_id=' + session, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ask: id, save: name, content })
+    });
+    if (!res.ok) throw new Error(res.error);
+    if (!saved.includes(res.content)) saved.push(res.content);
+    savedLine.textContent = 'Saved: ' + saved.join(', ');
+    savedLine.hidden = false;
+    return res.content;
+  };
 
   if (ask.questions) {
     fields = ask.questions.map(q => field(el, q));
@@ -131,7 +160,7 @@ export default async function mount({ root, api, el }) {
     form.style.display = 'grid';
     form.style.gap = '12px';
     form.append(...fields.map(f => f.box));
-    root.append(form);
+    root.append(form, ...answering);
   } else {
     const html = await fetch(file(ask.page)).then(r => r.text());
     const frame = el('iframe', 'ask-frame');
@@ -144,21 +173,21 @@ export default async function mount({ root, api, el }) {
       if (e.source !== frame.contentWindow || !e.data) return;
       if (e.data.ask === 'answer') {
         proposed = String(e.data.text).slice(0, MAX_ANSWER);
-        proposal.textContent = 'The page will send: ' + proposed;
+        files = Object.entries(e.data.files || {}).map(([name, content]) => [String(name), String(content)]);
+        held = '';
+        problem.hidden = true;
+        proposal.textContent = 'The page will send: ' + proposed +
+          (files.length ? '\nAnd save: ' + files.map(([name]) => name).join(', ') : '');
         proposal.hidden = false;
+      } else if (e.data.ask === 'hold') {
+        held = String(e.data.text).slice(0, MAX_ANSWER);
+        proposal.hidden = true;
+        problem.textContent = held;
+        problem.hidden = false;
       } else if (e.data.ask === 'save') {
         const reply = { id: e.data.id };
         try {
-          if (String(e.data.content).length > MAX_SAVE) throw new Error('too large to save');
-          const res = await api('/tools/ask_operator/call?session_id=' + session, {
-            method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ ask: id, save: String(e.data.name), content: String(e.data.content) })
-          });
-          if (!res.ok) throw new Error(res.error);
-          reply.saved = res.content;
-          if (!saved.includes(res.content)) saved.push(res.content);
-          savedLine.textContent = 'Saved: ' + saved.join(', ');
-          savedLine.hidden = false;
+          reply.saved = await store(String(e.data.name), String(e.data.content));
         } catch (err) { reply.error = err.message; }
         frame.contentWindow.postMessage(reply, '*');
       }
@@ -170,22 +199,15 @@ export default async function mount({ root, api, el }) {
     };
     window.addEventListener('hashchange', leave);
     frame.srcdoc = frameDoc(html);
-    root.append(frame);
+    // A page scrolls in its own box, and the box fits the screen, so this keeps Send in sight.
+    note.rows = 1;
+    root.append(...answering, frame);
   }
 
-  const note = el('textarea', 'ask-note');
-  note.setAttribute('aria-label', 'Anything to add');
-  note.placeholder = 'Anything to add?';
-  note.style.width = '100%';
-  const problem = el('p', 'ask-problem');
-  problem.hidden = true;
-  const send = el('button', 'btn', 'Send');
-  const decline = el('button', 'btn', 'Decline');
-  send.type = decline.type = 'button';
-
-  const say = async text => {
+  const say = async compose => {
     send.disabled = decline.disabled = true;
     try {
+      const text = await compose();
       await api('/sessions/' + session + '/messages', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text })
       });
@@ -203,16 +225,15 @@ export default async function mount({ root, api, el }) {
       problem.hidden = false;
       return;
     }
-    await say(answerText(ask, 'accept', {
-      values: fields.map(f => [f.name, f.read()]).filter(([, v]) => v), proposed, saved,
-      note: String(note.value || '').trim()
-    }));
+    if (held) return;
+    // The files go first, so an answer naming one finds it there.
+    await say(async () => {
+      for (const [name, content] of files) await store(name, content);
+      return answerText(ask, 'accept', {
+        values: fields.map(f => [f.name, f.read()]).filter(([, v]) => v), proposed, saved,
+        note: String(note.value || '').trim()
+      });
+    });
   };
-  decline.onclick = () => say(answerText(ask, 'decline', { note: String(note.value || '').trim() }));
-
-  const buttons = el('div', 'ask-buttons');
-  buttons.style.display = 'flex';
-  buttons.style.gap = '8px';
-  buttons.append(send, decline);
-  root.append(proposal, savedLine, note, problem, buttons);
+  decline.onclick = () => say(() => answerText(ask, 'decline', { note: String(note.value || '').trim() }));
 }

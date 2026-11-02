@@ -98,11 +98,10 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     </div>
     <div class="acts">
       <button class="quiet" type="button" id="undo" disabled>Undo</button>
-      <button class="go" type="button" id="approve">Approve</button>
     </div>
     <p class="done" id="done" role="status" hidden></p>
   </div>
-  <p class="lede">Change the words, and drag a line up or down by its handle to move it along the video. A line is as tall as it takes to say, and one that is still speaking when the next starts is cut off there. Pick a voice to hear it. Nothing is spoken or paid for until you approve. Tap a screenshot to see it larger.</p>
+  <p class="lede">Change the words, and drag a line up or down by its handle to move it along the video. A line is as tall as it takes to say, and one that is still speaking when the next starts is cut off there. Pick a voice to hear it. Nothing is spoken or paid for until you press Send. Tap a screenshot to see it larger.</p>
   <div class="controls">
     <label class="field"><span>Voice</span><select id="voice"></select></label>
     <label class="field"><span>Language</span><select id="lang"></select></label>
@@ -133,7 +132,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   var nextId = 1;
   function make(at, text) { return { id: nextId++, at: Math.min(at, LAST), text: text }; }
   var lines = DATA.lines.map(function (l) { return make(l.at, l.text); });
-  var history = [], approved = false, typing = null, cards = {};
+  var history = [], typing = null, cards = {};
 
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function fmt(t) {
@@ -165,23 +164,23 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     return out;
   }
 
-  function say(text) {
-    el('done').textContent = text;
-    el('done').hidden = !text;
-  }
-  // The approval saved is for what was on the page then. Anything after it takes it back.
-  function changed() {
-    if (!approved) return;
-    approved = false;
-    window.ask.save('approved.json', '{}').catch(function () {});
-    window.ask.answer('Not approved: the operator changed the script after approving. Ask them to press Approve, then Send.');
-    say('You changed something after approving. Press Approve again, then Send.');
+  // Send takes what this last said, so it follows every change. Nothing is saved until Send.
+  function propose() {
+    if (!window.ask) return;
+    var kept = filled(), c = chosen(), language = el('lang').value;
+    if (!kept.length) { window.ask.hold('Write at least one line first.'); return; }
+    if (kept.some(function (l) { return l.text.length > DATA.max_chars; })) { window.ask.hold('One line is too long to speak in one go. Split it first.'); return; }
+    var body = { language: language, model: c.group.model, voice: c.voice,
+      chunks: kept.map(function (l) { return { at: l.at, text: l.text.trim() }; }) };
+    var chars = body.chunks.reduce(function (n, x) { return n + x.text.length; }, 0);
+    window.ask.answer('Approved: ' + kept.length + ' lines, about ' + money(chars * c.group.price / 1e6) + ' with ' + c.voice +
+      (language ? ', to be translated into ' + el('lang').options[el('lang').selectedIndex].textContent : '') + '.',
+      { 'approved.json': JSON.stringify(body, null, 1) });
   }
   function remember() {
     history.push(JSON.stringify(lines));
     if (history.length > 50) history.shift();
     el('undo').disabled = false;
-    changed();
   }
 
   function lineCard(l) {
@@ -219,6 +218,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     el('sCount').textContent = kept.length + (kept.length === 1 ? ' line, ' : ' lines, ') + chars.toLocaleString('en') + ' chars';
     el('sCost').textContent = 'about ' + money(chars * c.group.price / 1e6) + ' of speech';
     el('sWarn').textContent = hard ? hard + ' too long' : soft ? soft + ' cut off' : '';
+    propose();
   }
 
   // Lines whose cards would cover each other stand side by side, as in a calendar. The cards are
@@ -389,20 +389,19 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     el('sample').src = 'data:audio/mpeg;base64,' + sound;
     el('sample').play().catch(function () {});
   }
-  el('voice').addEventListener('change', function () { hear(); changed(); check(); });
+  el('voice').addEventListener('change', function () { hear(); check(); });
   el('lang').add(new Option('Keep as written', ''));
   DATA.languages.forEach(function (l) { el('lang').add(new Option(l[1], l[0])); });
   el('lang').addEventListener('change', function () {
     var name = this.options[this.selectedIndex].textContent;
     el('langNote').hidden = !this.value;
-    el('langNote').textContent = 'After you approve, the agent translates every line into ' + name + ' and shows this page again for a last look. A translation can run longer than the original, so check the warnings then.';
-    changed();
+    el('langNote').textContent = 'After you press Send, the agent translates every line into ' + name + ' and shows this page again for a last look. A translation can run longer than the original, so check the warnings then.';
+    check();
   });
   el('undo').addEventListener('click', function () {
     if (!history.length) return;
     lines = JSON.parse(history.pop());
     this.disabled = !history.length;
-    changed();
     render();
   });
   el('pasteGo').addEventListener('click', function () {
@@ -414,25 +413,10 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     el('pasteText').value = '';
     render();
   });
-  el('approve').addEventListener('click', function () {
-    var kept = filled(), c = chosen(), button = this;
-    if (!kept.length) { say('Write at least one line first.'); return; }
-    if (kept.some(function (l) { return l.text.length > DATA.max_chars; })) { say('One line is too long to speak in one go. Split it first.'); return; }
-    if (!window.ask) { say('This page only works from the link in the agent\'s message.'); return; }
-    var language = el('lang').value;
-    var body = { language: language, model: c.group.model, voice: c.voice,
-      chunks: kept.map(function (l) { return { at: l.at, text: l.text.trim() }; }) };
-    var chars = body.chunks.reduce(function (n, x) { return n + x.text.length; }, 0);
-    button.disabled = true;
-    window.ask.save('approved.json', JSON.stringify(body, null, 1)).then(function () {
-      approved = true;
-      window.ask.answer('Approved: ' + kept.length + ' lines, about ' + money(chars * c.group.price / 1e6) + ' with ' + c.voice +
-        (language ? ', to be translated into ' + el('lang').options[el('lang').selectedIndex].textContent : '') + '.');
-      say('Approved. Now press Send below this page.');
-    }, function (err) {
-      say('That did not save: ' + err.message);
-    }).then(function () { button.disabled = false; });
-  });
+  if (!window.ask) {
+    el('done').textContent = 'This page only works from the link in the agent\'s message.';
+    el('done').hidden = false;
+  }
 
   drawSlots();
   render();
