@@ -88,9 +88,16 @@ async function mounted(ask, id, refuse) {
 }
 
 // The box as the panel sees it: a window that posts messages and receives them.
-function boxOf(root) {
+// Given the panel's listeners, it answers Send's request to catch up at once.
+function boxOf(root, listeners) {
   const frame = all(root).find(n => n.tag === 'iframe');
-  frame.contentWindow = { sent: [], postMessage(m) { this.sent.push(m); } };
+  frame.contentWindow = {
+    sent: [],
+    postMessage(m) {
+      this.sent.push(m);
+      if (listeners && m.ask === 'flush') listeners.message({ source: this, data: { ask: 'flushed', id: m.id } });
+    }
+  };
   return frame;
 }
 
@@ -133,7 +140,7 @@ test('a page runs in a box with scripts and no origin', async () => {
 
 test('what a page proposes waits for Send', async () => {
   const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a5');
-  const frame = boxOf(root);
+  const frame = boxOf(root, listeners);
   await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved' } });
   assert.strictEqual(posts.length, 0, 'a page reached the conversation by itself');
   assert.match(all(root).map(n => n.textContent).join(' '), /The page will send: approved/);
@@ -143,7 +150,7 @@ test('what a page proposes waits for Send', async () => {
 
 test('a page saves through the tool, hears back, and the answer names the file', async () => {
   const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a6');
-  const frame = boxOf(root);
+  const frame = boxOf(root, listeners);
   await listeners.message({ source: frame.contentWindow, data: { ask: 'save', id: 7, name: 'chunks.json', content: '[]' } });
   assert.strictEqual(posts[0].url, '/tools/ask_operator/call?session_id=S1');
   assert.deepStrictEqual(posts[0].body, { ask: 'a6', save: 'chunks.json', content: '[]' });
@@ -171,7 +178,7 @@ test('a save too large for the API is refused to the page', async () => {
 
 test('the files a page proposes wait for Send, which saves the latest before it speaks', async () => {
   const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a9');
-  const frame = boxOf(root);
+  const frame = boxOf(root, listeners);
   await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'first', files: { 'approved.json': '1' } } });
   await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'second', files: { 'approved.json': '2' } } });
   assert.strictEqual(posts.length, 0, 'a proposal saved something by itself');
@@ -183,10 +190,34 @@ test('the files a page proposes wait for Send, which saves the latest before it 
   assert.match(posts[1].body.text, /Saved: review\/approved\.json/);
 });
 
+// A page proposes on every change, and its message can still be on its way when Send
+// is pressed: in a real browser, Send saved the change before the last one.
+test('Send first takes in what the page proposed before it was pressed', async () => {
+  const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a16');
+  const frame = boxOf(root);
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'first', files: { 'approved.json': '1' } } });
+  const sending = button(root, 'Send').onclick();
+  const flush = frame.contentWindow.sent.find(m => m.ask === 'flush');
+  assert.ok(flush, 'Send did not ask the page to catch up');
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'last', files: { 'approved.json': '2' } } });
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'flushed', id: flush.id } });
+  await sending;
+  assert.deepStrictEqual(posts[0].body, { ask: 'a16', save: 'approved.json', content: '2' });
+  assert.match(posts[1].body.text, /last/);
+});
+
+test('a page that never catches up still lets Send through, with what it has', async () => {
+  const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a17');
+  const frame = boxOf(root);
+  await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved', files: { 'approved.json': '1' } } });
+  await button(root, 'Send').onclick();
+  assert.deepStrictEqual(posts.map(p => p.url), ['/tools/ask_operator/call?session_id=S1', '/sessions/S1/messages']);
+});
+
 test('a file that will not save stops the answer, and Send can be pressed again', async () => {
   const refuse = { now: true };
   const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a10', refuse);
-  const frame = boxOf(root);
+  const frame = boxOf(root, listeners);
   await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved', files: { 'approved.json': '1' } } });
   await button(root, 'Send').onclick();
   assert.deepStrictEqual(posts.map(p => p.url), ['/tools/ask_operator/call?session_id=S1']);
@@ -207,7 +238,7 @@ test('Decline saves nothing a page proposed', async () => {
 
 test('a page can hold Send back, saying why, until it proposes again, but never Decline', async () => {
   const { root, posts, listeners } = await mounted({ message: 'Check it.', page: 'review/index.html' }, 'a12');
-  const frame = boxOf(root);
+  const frame = boxOf(root, listeners);
   await listeners.message({ source: frame.contentWindow, data: { ask: 'answer', text: 'approved', files: { 'approved.json': '1' } } });
   await listeners.message({ source: frame.contentWindow, data: { ask: 'hold', text: 'Write at least one line first.' } });
   assert.match(shown(root), /Write at least one line first/);

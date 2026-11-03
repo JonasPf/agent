@@ -57,7 +57,7 @@ however far the page runs. Leaving the screen sends nothing.</li>
 <h2>What a page can do</h2>
 <table>
 <tr><th>Call</th><th>What it does</th></tr>
-<tr><td><code>ask.answer(text, files)</code></td><td>Proposes an answer, and optionally files to save with it, as a map of name to text. It is shown on the screen, and nothing is sent or saved until Send, which takes the latest proposal. A page calls it again whenever what it holds changes.</td></tr>
+<tr><td><code>ask.answer(text, files)</code></td><td>Proposes an answer, and optionally files to save with it, as a map of name to text. It is shown on the screen, and nothing is sent or saved until Send, which takes the latest proposal. A page calls it again whenever what it holds changes. Its last call can still be on its way when Send is pressed, so Send first asks the page to catch up, and waits up to half a second for it.</td></tr>
 <tr><td><code>ask.hold(why)</code></td><td>Stops Send, saying why on the screen, until the next <code>ask.answer</code>. Decline still works.</td></tr>
 <tr><td><code>await ask.save(name, text)</code></td><td>Saves a file of up to 900&nbsp;KB beside the page at once, and returns its path. The answer names every file saved.</td></tr>
 </table>
@@ -81,6 +81,7 @@ Decline are in the panel, outside the box.
 <li>A page runs, and can propose an answer and save a file, but cannot reach the agent or the network.</li>
 <li>Files proposed with an answer are saved by Send, before the answer goes, and only the latest proposal's; Decline saves none of them. A file that will not save stops the answer, and Send can be pressed again.</li>
 <li>A page can hold Send back, saying why on the screen, until it proposes again, and cannot hold Decline.</li>
+<li>Send takes in everything the page proposed before it was pressed, however quick the last change; a page that does not answer in half a second is sent with what it last proposed.</li>
 <li>Send stands above a page and stays in sight with the screen scrolled to the end, and beneath a form.</li>
 <li>A page saves only in its own folder; a name that climbs out is refused.</li>
 <li>Nothing reaches the conversation until Send or Decline is pressed, and a page cannot press either.</li>

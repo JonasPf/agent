@@ -248,11 +248,21 @@ type Transcript struct {
 // Transcribe has a model that transcribes write down a recording. Asked for
 // times, it asks for segments; a provider that has none refuses that, and
 // the transcript is fetched again without them rather than not at all.
-func (o *OpenRouter) Transcribe(ctx context.Context, model string, audio []byte, format, language string, timed bool) (*Transcript, error) {
+func (o *OpenRouter) Transcribe(ctx context.Context, model string, audio []byte, format, language, prompt string, timed bool) (*Transcript, error) {
 	body := map[string]any{"model": model,
 		"input_audio": map[string]string{"data": base64.StdEncoding.EncodeToString(audio), "format": format}}
 	if language != "" {
 		body["language"] = language
+	}
+	// Whisper reads a prompt as words said before the recording, which is how
+	// it learns to spell a name. The gateway passes one on only as a provider's
+	// own option. Of Whisper turbo's two providers on 2026-11-03, DeepInfra read
+	// it and Groq did not (Groq read it for large-v3 only), so DeepInfra is
+	// asked first, and Groq still answers, unprompted, when it cannot.
+	if prompt != "" {
+		words := map[string]string{"prompt": prompt}
+		body["provider"] = map[string]any{"order": []string{"deepinfra"},
+			"options": map[string]any{"deepinfra": words, "groq": words}}
 	}
 	if timed {
 		body["response_format"] = "verbose_json"
@@ -264,7 +274,7 @@ func (o *OpenRouter) Transcribe(ctx context.Context, model string, audio []byte,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 400 && timed {
-		t, err := o.Transcribe(ctx, model, audio, format, language, false)
+		t, err := o.Transcribe(ctx, model, audio, format, language, prompt, false)
 		if t != nil {
 			t.Untimed = true
 		}

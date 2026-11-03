@@ -296,12 +296,39 @@ func TestCallModelTranscribesWithTimes(t *testing.T) {
 	b := sent[0].Body
 	in, _ := b["input_audio"].(map[string]any)
 	if in["format"] != "mp3" || in["data"] != base64.StdEncoding.EncodeToString(mp3) ||
-		b["response_format"] != "verbose_json" || b["language"] != "en" {
+		b["response_format"] != "verbose_json" || b["language"] != "en" || b["provider"] != nil {
 		t.Errorf("transcription request = %v", b)
 	}
 	for _, want := range []string{"[0.00–1.20] hello there.", "[1.20–2.75] general kenobi", "$0.0010"} {
 		if !strings.Contains(res.Content, want) {
 			t.Errorf("result lacks %q:\n%s", want, res.Content)
+		}
+	}
+}
+
+// "A model that transcribes is sent prompt as words the recording uses, to
+// spell them as given, by the provider that reads them where it can."
+func TestCallModelGivesATranscriberItsWords(t *testing.T) {
+	a, s, g, call := callModelApp(t)
+	putFile(t, a, s.ID, "talk.mp3", []byte("ID3-speech"))
+	words := "Blockdaemon, x402, Jev"
+	res := call(`{"model":"x/scribe","files":["talk.mp3"],"timestamps":true,"prompt":"` + words + `"}`)
+	if !res.OK {
+		t.Fatalf("call failed: %s (stderr %s)", res.Error, res.stderr)
+	}
+	sent := g.sent("/audio/transcriptions")
+	if len(sent) != 1 {
+		t.Fatalf("transcription requests = %d, want 1", len(sent))
+	}
+	provider, _ := sent[0].Body["provider"].(map[string]any)
+	options, _ := provider["options"].(map[string]any)
+	order, _ := provider["order"].([]any)
+	if len(order) != 1 || order[0] != "deepinfra" || provider["allow_fallbacks"] == false {
+		t.Errorf("provider = %v, want deepinfra first and the others still allowed", provider)
+	}
+	for _, slug := range []string{"deepinfra", "groq"} {
+		if opt, _ := options[slug].(map[string]any); opt["prompt"] != words {
+			t.Errorf("options[%s] = %v, want the prompt %q", slug, options[slug], words)
 		}
 	}
 }

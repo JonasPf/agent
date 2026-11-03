@@ -95,6 +95,8 @@ type Pusher struct {
 	// pending is the sessions with a push waiting. One wait per session: the
 	// messages that arrive during it make one push, carrying the newest.
 	pending map[string]bool
+	// sending counts the pushes planned and not yet answered.
+	sending sync.WaitGroup
 }
 
 // newPusher loads the key and devices, making a key the first time. The key
@@ -241,7 +243,9 @@ func (p *Pusher) Soon(sessionID string) {
 		return
 	}
 	p.pending[sessionID] = true
+	p.sending.Add(1)
 	time.AfterFunc(p.wait, func() {
+		defer p.sending.Done()
 		p.mu.Lock()
 		delete(p.pending, sessionID)
 		p.mu.Unlock()
@@ -249,6 +253,14 @@ func (p *Pusher) Soon(sessionID string) {
 			p.Send(m)
 		}
 	})
+}
+
+// Wait returns once every push already planned has been sent and its answer
+// written down, so the file is never written into a directory being removed.
+func (p *Pusher) Wait() {
+	if p != nil {
+		p.sending.Wait()
+	}
 }
 
 // Send pushes a message to every device, and returns each with the answer. A

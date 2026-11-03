@@ -142,6 +142,28 @@ def frames(path):
     return sh("ffmpeg", "-v", "error", "-i", path, "-map", "0:v", "-frames:v", "600", "-f", "md5", "-").stdout.strip()
 report("a copied join keeps every frame of the original", frames("a.mov") == frames("edited.mp4") != "", (frames("a.mov"), frames("edited.mp4")))
 
+# two screen recordings alike in size, codec, and timescale but not in frame rate: copied, the second
+# lost two of its frames, which at 2 a second left the picture a second short (1.45 s in a real run)
+def rated(name, fps, d):
+    ff("-f", "lavfi", "-i", f"testsrc2=s=320x240:r={fps}:d={d}", "-f", "lavfi", "-i", f"sine=f=440:d={d}",
+       "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000",
+       "-ac", "2", "-video_track_timescale", "600", name)
+
+
+rated("fast.mov", 60, 20)
+rated("slow.mov", 2, 30)
+r = run({"clips": [{"file": "fast.mov"}, {"file": "slow.mov"}]})
+report("clips at different frame rates re-encode", r.returncode == 0 and "Re-encoded" in r.stdout, (r.stdout[-200:], r.stderr[-200:]))
+expect("sound and picture stay together across frame rates", "edited.mp4", 50, {})
+
+# a result out of step is never left where it could be handed over
+if os.path.exists("edited.mp4"):
+    os.remove("edited.mp4")
+r = sh("python3", "-B", "-c", f"import sys; sys.path.insert(0, {os.path.dirname(SK)!r}); sys.argv = ['edit_video.py']; "
+       "import edit_video; edit_video.can_copy = lambda clips: True; edit_video.main()")
+report("a join out of step is removed, not handed over", r.returncode != 0 and "audio runs" in r.stderr and not os.path.exists("edited.mp4"),
+       (r.returncode, r.stderr[-200:], os.path.exists("edited.mp4")))
+
 # a name with a space and an apostrophe, as a screen recording's name has
 r = run({"clips": [{"file": "it's a test.mov", "keep": [[1, 3]]}, {"file": "a.mov", "keep": [[0, 1]]}]})
 expect("awkward file names", "edited.mp4", 3, {1.5: "blue", 2.5: "red"})

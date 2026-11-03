@@ -30,6 +30,17 @@
       }
     },
     {
+      "name": "gives a transcriber the names, not an instruction",
+      "prompt": "Transcribe demo.mp3 with openai/whisper-large-v3-turbo. It is a product demo that mentions Blockdaemon and Stellar a lot.",
+      "tools": ["call_model", "bash", "read"],
+      "files": { "demo.mp3": "ID3" },
+      "expect": {
+        "tool": "call_model",
+        "args": { "model": "openai/whisper-large-v3-turbo", "files": ["demo.mp3"] },
+        "args_match": { "prompt": "Blockdaemon[\\s\\S]*Stellar|Stellar[\\s\\S]*Blockdaemon" }
+      }
+    },
+    {
       "name": "attaches an image for a model that sees",
       "prompt": "Ask google/gemini-3.8-flash what chart.png shows.",
       "tools": ["call_model", "bash", "read"],

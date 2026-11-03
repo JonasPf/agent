@@ -15,6 +15,10 @@ const POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsaf
 const BRIDGE = `<script>(function () {
   var next = 0, waiting = {};
   window.addEventListener('message', function (e) {
+    if (e.source === parent && e.data && e.data.ask === 'flush') {
+      parent.postMessage({ ask: 'flushed', id: e.data.id }, '*');
+      return;
+    }
     if (e.source !== parent || !e.data || !waiting[e.data.id]) return;
     var w = waiting[e.data.id];
     delete waiting[e.data.id];
@@ -36,6 +40,8 @@ const BRIDGE = `<script>(function () {
 // The most a page may save in one file: the API takes a megabyte for a call.
 const MAX_SAVE = 900 << 10;
 const MAX_ANSWER = 64 << 10;
+// How long Send waits for a page to catch up before it goes with what it has.
+const CATCH_UP = 500;
 
 // parseLink reads a screen's link. The router keeps only two parts of it.
 export function parseLink(hash) {
@@ -121,6 +127,10 @@ export default async function mount({ root, api, el }) {
   root.append(el('p', 'ask-warning', 'What you enter here goes to the agent and its model. Do not enter passwords, keys, or card numbers.'));
 
   let fields = [], proposed = '', saved = [], files = [], held = '';
+  // A page proposes on every change, and its last message can still be on its way when
+  // Send is pressed. Messages from the box arrive in the order it sent them, so once it
+  // answers this, everything it proposed before has arrived. A form has nothing to wait for.
+  let caughtUp = async () => {};
   const proposal = el('p', 'ask-proposal');
   proposal.hidden = true;
   proposal.style.whiteSpace = 'pre-wrap';
@@ -169,9 +179,17 @@ export default async function mount({ root, api, el }) {
     frame.style.width = '100%';
     frame.style.height = '70vh';
     frame.style.border = '1px solid var(--line, #888)';
+    let flushes = 0, flushing = null;
+    caughtUp = () => new Promise(done => {
+      flushing = { id: ++flushes, done };
+      frame.contentWindow.postMessage({ ask: 'flush', id: flushing.id }, '*');
+      setTimeout(done, CATCH_UP);
+    });
     const receive = async e => {
       if (e.source !== frame.contentWindow || !e.data) return;
-      if (e.data.ask === 'answer') {
+      if (e.data.ask === 'flushed') {
+        if (flushing && e.data.id === flushing.id) flushing.done();
+      } else if (e.data.ask === 'answer') {
         proposed = String(e.data.text).slice(0, MAX_ANSWER);
         files = Object.entries(e.data.files || {}).map(([name, content]) => [String(name), String(content)]);
         held = '';
@@ -225,6 +243,9 @@ export default async function mount({ root, api, el }) {
       problem.hidden = false;
       return;
     }
+    send.disabled = true;
+    await caughtUp();
+    send.disabled = false;
     if (held) return;
     // The files go first, so an answer naming one finds it there.
     await say(async () => {

@@ -2,7 +2,8 @@
 """Build the page where the operator checks the script before any speech is bought.
 
 Usage: make_review.py INPUT.mov [--voice NAME]   write review/review.html
-       make_review.py --apply                    turn review/approved.json into chunks.json
+       make_review.py --apply                    turn review/approved.json into chunks.json,
+                                                 and list the chunks to speak
 
 The page lays the script along the video: a screenshot every 30 seconds, and each line
 at its moment, as tall as it takes to say. The operator changes the words, drags the
@@ -11,12 +12,16 @@ panel saves review/approved.json beside the page. It starts from chunks.json, wh
 as place_chunks.py finds them. With no chunks.json it starts empty, and the operator
 writes the script on the page.
 
+Approved again after the speech, a chunk whose words are unchanged keeps its speech, wherever
+it moved, and only the rest are listed to speak. chunks/voice.json says which voice the speech
+in chunks/ is in: a new voice or language keeps none of it.
+
 Show the page with ask_operator. It runs with no network, so the screenshots and the
 voice samples are inside it, and the screenshots are made smaller when a page would be
 too big for ask_operator to load.
 Requires ffmpeg and ffprobe on PATH (packages tool, ffmpeg_8-headless).
 """
-import argparse, base64, json, math, os, re, shutil, subprocess, sys
+import argparse, base64, glob, json, math, os, re, shutil, subprocess, sys
 
 # A skill's folder holds text only: one .pyc beside these scripts and the skill will not load.
 sys.dont_write_bytecode = True
@@ -30,6 +35,8 @@ MARK = "__REVIEW_DATA__"
 FOLDER = "review"
 PAGE = os.path.join(FOLDER, "review.html")
 APPROVED = os.path.join(FOLDER, "approved.json")
+SPEECH = "chunks"
+STAGE = "chunks.new"
 STEP = 30
 MAX_SHOTS = 120
 WIDTH = 800
@@ -105,7 +112,7 @@ def build(video, wanted, chunks):
         sys.exit(f"{video} not found")
     options = voices()
     last = json.load(open(APPROVED, encoding="utf-8")) if os.path.exists(APPROVED) else {}
-    voice = wanted or last.get("voice") or options[0]["default"]
+    voice = wanted or last.get("voice") or spoken_voice() or options[0]["default"]
     model = next((o["model"] for o in options if voice in o["voices"]), None)
     if not model:
         sys.exit(f"{voice} is not a voice of either model: see references/voices.md")
@@ -146,26 +153,64 @@ def apply_approval(chunks):
     language = a.get("language", "")
     if language and language not in dict(LANGUAGES):
         sys.exit(f"{language} is not a language this skill has tried")
-    timed = [dict(at=float(c["at"]), text=c["text"]) for c in a["chunks"]]
+    # One line each when listed below, and spoken the same.
+    timed = [dict(at=float(c["at"]), text=" ".join(c["text"].split())) for c in a["chunks"]]
     _, errors = place_chunks.plan(timed, [])
     if errors:
         sys.exit("\n".join(errors))
 
+    kept = {} if language else already_spoken(timed, chunks, option["model"], a["voice"])
+    # A chunk's speech is found by its place in the list, so what is kept takes its new place.
+    shutil.rmtree(STAGE, ignore_errors=True)
+    os.makedirs(STAGE)
+    for n, src in kept.items():
+        shutil.copy2(src, os.path.join(STAGE, f"{n:02d}{os.path.splitext(src)[1]}"))
+    with open(os.path.join(STAGE, "voice.json"), "w", encoding="utf-8") as f:
+        json.dump(dict(model=option["model"], voice=a["voice"]), f)
+    if os.path.isdir(SPEECH):
+        shutil.rmtree("chunks.old", ignore_errors=True)
+        os.rename(SPEECH, "chunks.old")
+    os.rename(STAGE, SPEECH)
     with open(chunks, "w", encoding="utf-8") as f:
         json.dump(timed, f, ensure_ascii=False, indent=1)
-    # A chunk's speech is found by its place in the list, and the list has changed.
-    if os.path.isdir("chunks"):
-        shutil.rmtree("chunks.old", ignore_errors=True)
-        os.rename("chunks", "chunks.old")
-        print("Earlier speech is now in chunks.old/. Speak every chunk again.")
-    chars = sum(len(c["text"]) for c in timed)
+
+    speak = [(n, c["text"]) for n, c in enumerate(timed, 1) if n not in kept]
+    chars = sum(len(t) for _, t in speak)
     cost = estimate_cost.money(chars * option["price"] / 1e6)
-    print(f"Approved: {len(timed)} chunks, {chars:,} characters, about {cost} with {a['voice']} on {option['name']}.")
+    print(f"Approved: {len(timed)} chunks. {len(kept)} keep the speech they have; {len(speak)} to speak, "
+          f"{chars:,} characters, about {cost} with {a['voice']} on {option['name']}.")
     if language:
         print(f"Translate every text in {chunks} into {dict(LANGUAGES)[language]}, keep every at, then run "
               "make_review.py again so the operator sees it before it is spoken.")
+    elif speak:
+        print(f"Speak these with model {option['model']}, voice {a['voice']}: output the path, prompt the words exactly as they stand.")
+        for n, text in speak:
+            print(f"{SPEECH}/{n:02d}.mp3  {text}")
     else:
-        print(f"Speak with model {option['model']}, voice {a['voice']}.")
+        print("Every chunk is already spoken: place them and mux again.")
+
+def already_spoken(timed, chunks, model, voice):
+    """The speech that can stay: its words unchanged, and spoken in this voice."""
+    record = os.path.join(SPEECH, "voice.json")
+    if not (os.path.isfile(record) and os.path.isfile(chunks)):
+        return {}
+    if json.load(open(record, encoding="utf-8")) != dict(model=model, voice=voice):
+        return {}
+    files = {}
+    for n, c in enumerate(json.load(open(chunks, encoding="utf-8")), 1):
+        found = glob.glob(os.path.join(SPEECH, f"{n:02d}.mp3")) + glob.glob(os.path.join(SPEECH, f"{n:02d}.wav"))
+        if found:
+            files.setdefault(" ".join(c.get("text", "").split()), []).append(found[0])
+    kept = {}
+    for n, c in enumerate(timed, 1):
+        if files.get(c["text"]):
+            kept[n] = files[c["text"]].pop(0)
+    return kept
+
+def spoken_voice():
+    """The voice the speech in chunks/ was bought in, if any was."""
+    record = os.path.join(SPEECH, "voice.json")
+    return json.load(open(record, encoding="utf-8")).get("voice") if os.path.isfile(record) else None
 
 def main():
     ap = argparse.ArgumentParser(usage=__doc__)
