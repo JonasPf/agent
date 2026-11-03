@@ -226,6 +226,10 @@ func pushApp(t *testing.T, wait time.Duration, replies ...string) *App {
 	a.or.base = srv.URL
 	a.push.wait = wait
 	a.push.client = testTLSClient()
+	// A test can end the moment the phone has its push, while the agent is
+	// still writing the answer down: then the directory is removed under it
+	// (1 run in 300). Cleanups run last first, so this waits before that.
+	t.Cleanup(a.push.Wait)
 	return a
 }
 

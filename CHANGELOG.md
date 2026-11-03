@@ -17,6 +17,9 @@
 - **Names are spelled right in transcripts.** The agent can tell the
   transcriber the names a recording uses, such as products and people, and
   they come back spelled that way rather than as "block demand".
+- **Send on a page never misses your last change.** A change made just
+  before pressing Send could be left out, and the one before it saved
+  instead. Send now waits for the page to hand over everything first.
 - **Joining screen recordings keeps sound and picture together.** Two
   recordings at different frame rates are now re-encoded instead of copied,
   which had left the sound up to a second and a half out of step. A joined

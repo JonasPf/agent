@@ -165,9 +165,6 @@ const until = async (fn, what) => {
 async function point(selector, at = 0.5) {
   await inFrame(`document.querySelectorAll(${JSON.stringify(selector)})[0].scrollIntoView({block:'center'})`);
   await sleep(40);
-  // A render lays the lines out again on the next frame. Measured before it, a click after Undo
-  // landed where a line had been, and the words typed next went elsewhere (1 run in 4).
-  await inFrame(`new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(r)); setTimeout(r, 500); })`);
   const box = await top(`(() => { const b = document.querySelector('iframe').getBoundingClientRect(); return {x:b.x,y:b.y}; })()`);
   const r = await inFrame(`(() => { const b = document.querySelectorAll(${JSON.stringify(selector)})[0].getBoundingClientRect(); return {x:b.x,y:b.y,w:b.width,h:b.height}; })()`);
   return { x: box.x + r.x + r.w * at, y: box.y + r.y + r.h / 2 };
