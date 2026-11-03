@@ -281,7 +281,7 @@ func (a *App) callScribe(ctx context.Context, m *CatalogModel, c modelCall, file
 	if len(files) != 1 || files[0].Kind != "audio" {
 		return "", 0, fmt.Errorf("%s transcribes one audio file; send a video as its audio, extracted with ffmpeg", m.ID)
 	}
-	t, err := a.or.Transcribe(ctx, m.ID, files[0].Data, files[0].Ext, c.Language, c.Timestamps)
+	t, err := a.or.Transcribe(ctx, m.ID, files[0].Data, files[0].Ext, c.Language, c.Prompt, c.Timestamps)
 	if err != nil {
 		return "", 0, err
 	}

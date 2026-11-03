@@ -10,7 +10,7 @@
       },
       "prompt": {
         "type": "string",
-        "description": "Required, except to transcribe or to list. For a model that writes: the whole request, with everything it needs to know, since it sees nothing else. For one that speaks: the exact words to say. For one that decides: the state to decide about. With list: words that must appear in the model's id or name."
+        "description": "Required, except to transcribe or to list. For a model that writes: the whole request, with everything it needs to know, since it sees nothing else. For one that speaks: the exact words to say. For one that decides: the state to decide about. For one that transcribes, optional: the names and terms the recording uses, comma-separated, so they are spelled as given; it is not an instruction. With list: words that must appear in the model's id or name."
       },
       "files": {
         "type": "array",

@@ -20,7 +20,8 @@ re-encoding a cut can only land on a keyframe, and in a screen recording those c
 be 18 seconds apart. A screen recording also stores a frame only when the screen
 changes, which lets sound and picture drift apart wherever two parts meet; a
 steady rate makes each part exactly as long as it says. Joining whole clips that
-match is copied, losslessly and in moments. Sources are never changed.
+match, frame rate included, is copied, losslessly and in moments. Sources are never
+changed, and a result whose sound and picture come out apart is removed.
 
 The work is done in pieces of under two minutes, kept in edit-parts/ until the
 end. A command is stopped after 15 minutes, so a long job stops by itself first
@@ -86,8 +87,9 @@ def probe(path):
         if abs(int(side.get("rotation", 0))) in (90, 270):
             width, height = height, width
     return dict(length=length, width=width, height=height, audio=audio,
+                # Copied, a clip after one at another frame rate loses two of its frames.
                 match=(video["codec_name"], width, height, video.get("pix_fmt"), video.get("time_base"),
-                       audio and audio["codec_name"], audio and audio.get("sample_rate"), audio and audio.get("channels")))
+                       video.get("r_frame_rate"), audio and audio["codec_name"], audio and audio.get("sample_rate"), audio and audio.get("channels")))
 
 def ranges(clip, length):
     """What stays of a clip: a sorted list of (start, end)."""
@@ -227,17 +229,20 @@ def prepare(work):
             f.write(stamp)
 
 def verify(out, kept, sound):
+    def broken(message):
+        os.remove(out)
+        fail(f"{message}. Removed it: do not hand anything over")
     r = subprocess.run([tool("ffprobe"), "-v", "error", "-show_streams", "-show_format", "-of", "json", out],
                        capture_output=True, text=True)
     info = json.loads(r.stdout)
     got = float(info["format"]["duration"])
     if abs(got - kept) > TOLERANCE + 0.1:
-        fail(f"{out} runs {clock(got)}, not the {clock(kept)} planned: do not hand it over")
+        broken(f"{out} runs {clock(got)}, not the {clock(kept)} planned")
     lengths = {s["codec_type"]: float(s["duration"]) for s in info["streams"] if "duration" in s}
     if sound and "audio" not in lengths:
-        fail(f"{out} has lost its audio")
+        broken(f"{out} has lost its audio")
     if "audio" in lengths and "video" in lengths and abs(lengths["audio"] - lengths["video"]) > TOLERANCE:
-        fail(f"{out}: audio runs {lengths['audio']:.2f} s and video {lengths['video']:.2f} s")
+        broken(f"{out}: audio runs {lengths['audio']:.2f} s and video {lengths['video']:.2f} s")
     return got
 
 def main():

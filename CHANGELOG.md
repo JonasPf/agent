@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-11-03
+
+- **Change a voice-over after it is made.** Once `voiceover.mp4` is ready,
+  the agent links the review page again. Change words, move lines, or pick
+  another voice and press Send: only the lines whose words changed are
+  spoken again, or every line if you picked a new voice, so a small fix
+  costs a small fix.
+- **Your words, not the agent's.** Cleaning up a narration now only takes
+  out the ums, ahs, false starts, and repeats. The agent no longer rephrases
+  or shortens what you said, and changes a word only when it is sure the
+  transcript misheard it, so a name it does not know stays as you said it.
+- **Edits on the review page always reach the voice.** The agent now speaks
+  each line from the approved list it is handed, not from its own earlier
+  draft, so a word you changed on the page cannot be lost.
+- **Names are spelled right in transcripts.** The agent can tell the
+  transcriber the names a recording uses, such as products and people, and
+  they come back spelled that way rather than as "block demand".
+- **Joining screen recordings keeps sound and picture together.** Two
+  recordings at different frame rates are now re-encoded instead of copied,
+  which had left the sound up to a second and a half out of step. A joined
+  video that still comes out wrong is removed rather than left to hand over.
+
 ## 2026-11-02
 
 - **One press to approve a voice-over.** Approve is gone: Send on the review

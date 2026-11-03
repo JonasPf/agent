@@ -29,7 +29,7 @@ and the model named decides what the call is (<a href="adrs.html#adr-070">ADR-07
 <tr><th>The model</th><th>Is sent</th><th>Returns</th></tr>
 <tr><td>writes text</td><td><code>prompt</code> as the request, each of <code>files</code> attached as what it is &mdash; image, audio, video, PDF, or text &mdash; and <code>reasoning</code> when given</td><td>its answer</td></tr>
 <tr><td>speaks</td><td><code>prompt</code> as the words to say, exactly as written, in <code>voice</code></td><td>the path of the audio written into the conversation's directory, at <code>output</code> when given: an mp3, or a WAV from a model that gives only raw samples, as Gemini's do</td></tr>
-<tr><td>transcribes</td><td>the one audio file in <code>files</code>, and <code>language</code> when given</td><td>the transcript, and with <code>timestamps</code> each segment's start and end in seconds</td></tr>
+<tr><td>transcribes</td><td>the one audio file in <code>files</code>, and <code>language</code> and <code>prompt</code> when given</td><td>the transcript, and with <code>timestamps</code> each segment's start and end in seconds</td></tr>
 <tr><td>decides</td><td><code>prompt</code> as the state, and <code>questions</code> as given; no files</td><td>each question's answer, with its confidence where the model gives one</td></tr>
 </table>
 
@@ -53,6 +53,13 @@ instruction to a model that writes, and the very words to say to one that speaks
 so, and an eval case holds each.
 </div>
 
+<p>To a model that transcribes, <code>prompt</code> is neither: it is the names and terms the
+recording uses. Whisper takes it as words already said, and spells them as given. The gateway passes it
+on only as an option for the provider that serves the call, and of Whisper turbo's two providers on
+2026-11-03 DeepInfra read it and Groq did not (Groq reads it for Whisper large-v3 only). So a call with
+a prompt is sent to DeepInfra first, with the prompt as both providers' option, and Groq still answers,
+without it, when DeepInfra cannot.</p>
+
 <p>What the model cannot take is refused before anything is sent: a file of a kind the model does not
 accept, naming the kinds it does; a file outside the conversation's directory; more than 20&nbsp;MB of
 files in one call, which is what the gateway is sent inline. A longer recording goes as its audio,
@@ -61,7 +68,7 @@ extracted with <code>ffmpeg</code> first.</p>
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
 <tr><td><code>model</code></td><td>The model to call, as the gateway names it. Required unless <code>list</code> is given.</td></tr>
-<tr><td><code>prompt</code></td><td>The request; the words to say; the state to decide on; or, with <code>list</code>, words to narrow it by.</td></tr>
+<tr><td><code>prompt</code></td><td>The request; the words to say; the state to decide on; the names and terms a recording uses; or, with <code>list</code>, words to narrow it by.</td></tr>
 <tr><td><code>files</code></td><td>Paths in the working directory to send with the call.</td></tr>
 <tr><td><code>voice</code></td><td>For a model that speaks: one of its voices.</td></tr>
 <tr><td><code>output</code></td><td>For a model that speaks: where to write the audio. Default <code>speech-&lt;time&gt;.mp3</code>; a WAV takes <code>.wav</code> in place of <code>.mp3</code>.</td></tr>
@@ -79,6 +86,7 @@ extracted with <code>ffmpeg</code> first.</p>
 <li>A model that speaks is sent the prompt as the words to say, in the voice given; the audio is written into the conversation's directory and the result names the file.</li>
 <li>A model that gives only raw samples is asked for them when it refuses mp3, and they are written as a WAV of the rate and channels the gateway names.</li>
 <li>A model that transcribes is sent its one audio file; the result is the transcript, with each segment's times when timestamps are asked for.</li>
+<li>A model that transcribes is sent prompt as words the recording uses, to spell them as given, by the provider that reads them where it can.</li>
 <li>A model that decides is sent the prompt as the state and the questions as given; the result is each question's answer.</li>
 <li>Listing a kind calls no model and returns that kind's models with their prices, and for speech their voices.</li>
 <li>A file the model does not accept is refused before anything is sent, and the refusal names what the model accepts.</li>

@@ -1,5 +1,5 @@
 """Drive make_review.py as the agent would, on videos whose every 30 seconds has its own colour."""
-import base64, json, os, re, shutil, subprocess, sys, tempfile
+import base64, glob, json, os, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 SK = ROOT + "/skills/voice-over/scripts"
@@ -168,7 +168,16 @@ for label, over, want in (("no lines", {"chunks": []}, "no lines"),
     r = make("--apply")
     report(f"{label} is refused and chunks.json stays", r.returncode != 0 and want in r.stderr and open("chunks.json").read() == before, r.stderr)
 
-approve()
+def to_speak(out):
+    """The lines --apply says to speak: each output path, then the words exactly."""
+    return re.findall(r"^(chunks/\d+\.mp3)  (.*)$", out, re.M)
+
+
+def spoken(n, what):
+    open(f"chunks/{n:02d}.wav", "w").write(what)
+
+
+approve(chunks=[{"at": 1.5, "text": "First line."}, {"at": 40, "text": "Second\nline."}])
 os.makedirs("chunks")
 open("chunks/01.mp3", "w").write("old speech")
 r = make("--apply")
@@ -176,13 +185,54 @@ chunks = json.load(open("chunks.json"))
 report("an approval replaces chunks.json, every line timed", r.returncode == 0 and chunks == [{"at": 1.5, "text": "First line."}, {"at": 40, "text": "Second line."}], r.stderr)
 report("it names the model and voice to speak with", "heygen/heygen-voice-1-turbo" in r.stdout and "gareth" in r.stdout, r.stdout)
 report("it states the cost", re.search(r"\$\d", r.stdout), r.stdout)
-report("old speech cannot be placed under new lines", not os.path.exists("chunks") and os.path.exists("chunks.old/01.mp3"), os.listdir("."))
+report("it names every line to speak, with its words as approved",
+       to_speak(r.stdout) == [("chunks/01.mp3", "First line."), ("chunks/02.mp3", "Second line.")], r.stdout)
+# chunks/ now also holds a note of the voice, so the folder stays; what matters is the speech in it
+report("old speech cannot be placed under new lines", not os.path.exists("chunks/01.mp3") and os.path.exists("chunks.old/01.mp3"), os.listdir("."))
 c = sh("python3", SK + "/place_chunks.py", "--check")
 report("place_chunks accepts the result", c.returncode == 0 and "First line" in c.stdout, c.stderr)
 
-approve(language="de")
+# approved again after the speech: only what changed is spoken again
+spoken(1, "first")
+spoken(2, "second")
+approve(chunks=[{"at": 3, "text": "First line."}, {"at": 40, "text": "Second line, changed."}])
+r = make("--apply")
+report("a line only moved keeps its speech", r.returncode == 0 and open("chunks/01.wav").read() == "first", (r.stderr, os.listdir("chunks")))
+report("a line whose words changed is spoken again, and only it",
+       not os.path.exists("chunks/02.wav") and to_speak(r.stdout) == [("chunks/02.mp3", "Second line, changed.")], r.stdout)
+
+spoken(2, "second, changed")
+approve(chunks=[{"at": 0.5, "text": "A new opening."}, {"at": 3, "text": "First line."}, {"at": 40, "text": "Second line, changed."}])
+r = make("--apply")
+report("a line added moves the others' speech along with them",
+       open("chunks/02.wav").read() == "first" and open("chunks/03.wav").read() == "second, changed" and not os.path.exists("chunks/01.wav"),
+       sorted(os.listdir("chunks")))
+report("only the new line is to be spoken", to_speak(r.stdout) == [("chunks/01.mp3", "A new opening.")], r.stdout)
+
+spoken(1, "opening")
+approve(chunks=[{"at": 0.5, "text": "A new opening."}, {"at": 3, "text": "First line."}, {"at": 40, "text": "Second line, changed."}])
+r = make("--apply")
+report("an approval that changes nothing speaks nothing", r.returncode == 0 and to_speak(r.stdout) == [] and "already spoken" in r.stdout and
+       len(glob.glob("chunks/0*.wav")) == 3, r.stdout)
+
+approve(voice="meredith", chunks=[{"at": 0.5, "text": "A new opening."}, {"at": 3, "text": "First line."}, {"at": 40, "text": "Second line, changed."}])
+r = make("--apply")
+report("a new voice speaks every line again", not glob.glob("chunks/0*.wav") and [p for p, _ in to_speak(r.stdout)] == ["chunks/01.mp3", "chunks/02.mp3", "chunks/03.mp3"] and
+       "meredith" in r.stdout, (r.stdout, os.listdir("chunks")))
+
+for n in (1, 2, 3):
+    spoken(n, "meredith")
+os.remove("review/approved.json")
+r = make("video.mp4")
+_, data = page_data()
+report("the page shown again after the speech starts from what was spoken, in its voice",
+       r.returncode == 0 and data["voice"] == "meredith" and [l["text"] for l in data["lines"]] == ["A new opening.", "First line.", "Second line, changed."],
+       (r.stderr, data["voice"], data["lines"]))
+
+approve(language="de", voice="meredith", chunks=[{"at": 0.5, "text": "A new opening."}, {"at": 3, "text": "First line."}, {"at": 40, "text": "Second line, changed."}])
 r = make("--apply")
 report("a new language asks for translation, then a last look", r.returncode == 0 and "German" in r.stdout and "make_review" in r.stdout and "Speak" not in r.stdout.split("\n", 1)[1], r.stdout)
+report("a new language keeps none of the old speech", not glob.glob("chunks/0*.wav"), os.listdir("chunks"))
 
 # a page never goes over what ask_operator will load
 sys.path.insert(0, SK)

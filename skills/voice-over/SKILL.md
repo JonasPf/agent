@@ -1,6 +1,6 @@
 ---
 name: voice-over
-description: Use when the operator wants a synthesized voiceover on a video, whether it has spoken audio to clean up or no audio at all — covers transcribing with timestamps, rewriting the narration, a page where the operator changes the words, timing, language and voice and sees the cost, speaking it in the operator's choice of voice, and placing each line at its moment.
+description: Use when the operator wants a synthesized voiceover on a video, whether it has spoken audio to clean up or no audio at all — covers transcribing with timestamps, taking the ums out of the narration, a page where the operator changes the words, timing, language and voice and sees the cost, speaking it in the operator's choice of voice, and placing each line at its moment.
 default: off
 ---
 
@@ -8,7 +8,7 @@ A video lands. The task: transcribe it, clean up what was said, and put a synthe
 onto the video, each line at the moment the narrator said it. A video with no audio gets its script
 from the operator instead. Done looks like `voiceover.mp4` in the working directory — the original
 video, full length, its picture untouched — and an operator who checked the script and saw what the
-speech would cost before any of it was bought.
+speech would cost before any of it was bought, with a link to change it again afterwards.
 
 The scripts below are in `/app/skills/voice-over/scripts`. They do what is the same every
 time; do not redo their work by hand.
@@ -48,6 +48,10 @@ longer line up.
 3. **Transcribe** with `call_model`: model `openai/whisper-large-v3-turbo`, `files: ["audio.mp3"]`,
    `language` if known, `timestamps: true`. It takes seconds and costs well under a cent for
    ten minutes.
+   - `prompt`: the names and terms the recording is likely to use, comma-separated — products,
+     companies, people, tools — from the request, the file names, and the screen. Whisper takes it
+     as words already said and spells them that way; it is not an instruction, so "Transcribe
+     this…" does nothing. Without one, "Blockdaemon" came back as "block demand".
    - Save the result word for word to `segments.txt` with `write`: every `[start–end] words` line,
      nothing cleaned up. The scripts cannot read this conversation. A recording in parts gets
      `segments-000.txt`, `segments-001.txt`, … in the same order; `place_chunks.py` moves each
@@ -64,10 +68,14 @@ longer line up.
      {"starts_with": "and the results are", "text": "The results are attached to the statement."}
    ]
    ```
-   - `text` is the cleaned narration: remove filler ("okay", "um", "so"), false starts, and repeats,
-     fix what the transcript misheard, and keep the operator's meaning. This is a rewrite of their
-     narration, not new content. Check the visuals only if needed to confirm meaning:
-     `ffmpeg -ss T -i INPUT -vframes 1 -vf scale=1728:-1 frame.png`, then `tesseract frame.png -`.
+   - `text` is what the narrator said with the noise taken out: "um", "uh", "ah", "erm", a false
+     start, a word said twice, and an "okay" or "so" that only opens a sentence. Keep their words,
+     their order, and their names. Do not rephrase, shorten, or tidy the grammar: the operator
+     changes words on the page if they want to.
+   - Change a word only when the transcript plainly misheard it and the right one is certain: it is
+     in the request, in step 3's `prompt`, or on screen (`ffmpeg -ss T -i INPUT -vframes 1 -vf
+     scale=1728:-1 frame.png`, then `tesseract frame.png -`). A name you do not know stays as heard:
+     a run that "fixed" the narrator's "Jev" to "GPT" put a wrong word in their mouth.
    - One chunk per sentence or two, under about 300 characters, and a new chunk wherever the
      screen moves on.
    - `starts_with` is the first 3 to 6 words the narrator said for that chunk, copied exactly from
@@ -79,7 +87,9 @@ longer line up.
    - Then run `python3 /app/skills/voice-over/scripts/place_chunks.py --check`. It prints each
      chunk's start and what the narrator says there. Read that column: it must be the same thought as
      the chunk. `~` marks a near match, so look at it twice. `TIGHT` means the next chunk will probably
-     cut this one off, so shorten it now, while that is free. Fix `chunks.json` until it runs clean.
+     cut this one off: take out any noise still in it, and if it stays `TIGHT`, leave the words and
+     name the chunk in step 5's message. Shortening what the narrator said is the operator's call.
+     Fix `chunks.json` until every start is right.
 5. **Let the operator check it, and stop.** Speech is the step that costs money and is hardest to
    redo. Build the page with `python3 /app/skills/voice-over/scripts/make_review.py INPUT.mov`,
    adding `--voice NAME` if the request named one, with `timeout_seconds: 900`. It holds a screenshot
@@ -88,7 +98,8 @@ longer line up.
    reply, and end the turn. On the page they change the words, drag lines along the video, pick the
    language and voice, hearing a sample of each voice they pick, and see the cost as they go.
    - Their answer names `review/approved.json` → run `make_review.py --apply`. It rewrites
-     `chunks.json` with every line where they left it, and prints the model and voice to speak with.
+     `chunks.json` with every line where they left it, keeps the speech of every line already
+     spoken with the same words in the same voice, and lists the rest to speak, each with its words.
    - It says to translate → translate every `text` in `chunks.json` yourself, keep every `at`, and
      build the page and ask again. A translation can run longer, and they should see it before it
      is spoken.
@@ -100,10 +111,12 @@ longer line up.
      prices and spends nothing) and put its output in your reply. No voice named yet → ask which voice,
      saying the page can play each one, and end the turn. A voice named → carry on.
    - A scheduled wake → use HeyGen and `gareth`, and put the estimate in the report.
-6. **Speak** with `call_model`, once per chunk: the model and voice the operator chose (see
-   `references/voices.md`), `prompt` the chunk's `text` **verbatim**, `output` `chunks/01.mp3`,
-   `chunks/02.mp3`, … matching the chunk's place in the list. The output is the words spoken aloud,
-   not a request to the model.
+6. **Speak** with `call_model`, once per chunk `--apply` listed: the model and voice it names,
+   `output` the path it gives, and `prompt` the words after that path **verbatim**. Take them from
+   that list, never from what you wrote before: the operator may have changed any of them. Nothing
+   listed → go to step 7. The output is the words spoken aloud, not a request to the model.
+   - With no review (step 5), speak every chunk the same way: `output` `chunks/01.mp3`,
+     `chunks/02.mp3`, … matching its place in `chunks.json`, and `prompt` its `text` verbatim.
    - Send up to ten of these calls in one response rather than one at a time. Each response is a
      round, a turn has a hundred, and every round costs what the whole conversation costs to resend.
    - One voice for the whole video.
@@ -120,9 +133,14 @@ longer line up.
    voiceover.mp4 0` — video stream copied, delay 0 because the track is already timed. Confirm with
    ffprobe that it is as long as the input.
 9. **Report** the cleaned script, the model and voice, the estimate, the output path, and every
-   chunk that was cut off. Say what was checked: each start time comes from the transcript or the operator's page, and nobody has
-   listened to the result. Offer a different voice, which means speaking the chunks again and rerunning
-   steps 7 and 8.
+   chunk that was cut off. Say what was checked: each start time comes from the transcript or the operator's page, and
+   nobody has listened to the result.
+   - Then let them change it: build the page again with `make_review.py INPUT.mov` (it starts from
+     `chunks.json` and the voice spoken), call `ask_operator` with it and a `message` saying
+     `voiceover.mp4` is made and that Send there makes it again, speaking only the lines whose words
+     changed, or every line for a new voice. Put its link in the report and end the turn.
+   - Their answer → step 5's `--apply`, then steps 6 to 9 again.
+   - A scheduled wake, or no `ask_operator` → offer a different voice instead.
 
 ## Traps
 

@@ -57,7 +57,10 @@ whole job. Do not build ffmpeg commands by hand.
 - Any cut re-encodes, at about 2.7 times real time at 1832x1522: ten minutes of video takes under
   four minutes. It runs at a steady 30 frames a second, and a screen recording usually gets much
   smaller, which is the steady rate and not lost detail.
-- Joining whole clips of the same size and format is a copy: a second or two, and no loss of quality.
+- Joining whole clips of the same size, format, and frame rate is a copy: a second or two, and no
+  loss of quality. Two screen recordings rarely share a frame rate, so they usually re-encode.
+- A result whose length or sound comes out wrong is removed, and the script says why. Do not add a
+  cut to steer it onto another path: a run that did lost a tenth of a second from each clip.
 - Clips of different sizes are fitted inside the first clip's size with black bars, so put the
   size the operator wants first. A clip with no audio plays silently.
 - Over two hours it stops before doing anything. Tell the operator what it printed, end the turn,
