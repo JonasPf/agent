@@ -11,6 +11,11 @@
 - **Split and join lines.** On the review page, put the cursor in a line and
   press Split to make two lines there, or Join to make one of it and the line
   after it.
+- **The review page says when lengths are guesses.** Change a line's words,
+  pick another voice, or pick a language, and a note at the foot of the page
+  says how many lines are now guesses, what Send costs to speak them, and
+  that the page comes back with their real lengths. It stays in sight while
+  you scroll and goes away once nothing is left to guess.
 
 ## 2026-11-03
 

@@ -32,7 +32,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .go:disabled { opacity: .6; cursor: default; }
 .lede { margin: 0; color: var(--muted); max-width: 70ch; }
 .done { flex: 1 0 100%; margin: 0; padding: 6px 10px; background: var(--tint); font-weight: 600; }
-.note { margin: 0; padding: 8px 12px; background: var(--warn-tint); max-width: 75ch; font-size: 15px; }
+.note { position: sticky; bottom: 0; z-index: 8; margin: 0 -12px; padding: 8px 12px; background: var(--warn-tint);
+  border-top: 2px solid var(--warn); font-size: 15px; }
 .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
 .field { display: grid; gap: 3px; min-width: 0; }
 .field > span { font-size: 13px; color: var(--muted); }
@@ -89,6 +90,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   .go { padding: 8px 12px; }
   .quiet { padding: 6px 7px; font-size: 14px; }
   .lede { font-size: 13px; line-height: 1.35; }
+  .note { padding: 6px 12px; font-size: 13px; line-height: 1.35; }
   .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   select { width: 100%; padding: 5px 7px; }
 }
@@ -113,7 +115,6 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     <label class="field"><span>Voice</span><select id="voice"></select></label>
     <label class="field"><span>Language</span><select id="lang"></select></label>
   </div>
-  <p class="note" id="langNote" hidden></p>
   <section class="paste" id="paste" hidden>
     <h2>Paste your script</h2>
     <p>There are no lines yet. Paste what the voice should say, and each sentence becomes a line you can move. You can also add lines under any screenshot.</p>
@@ -124,6 +125,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     <div class="film" id="film"></div>
     <div class="track" id="track"></div>
   </section>
+  <p class="note" id="guessNote" hidden><strong id="guessWarn"></strong> <span id="guessNext"></span></p>
   <audio id="sample"></audio>
 </main>
 
@@ -251,8 +253,30 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     el('sCount').textContent = kept.length + (kept.length === 1 ? ' line, ' : ' lines, ') + chars(kept).toLocaleString('en') + ' chars';
     el('sCost').textContent = !kept.length ? 'nothing to speak' : todo.length ? todo.length + ' to speak, ' + cost : 'all spoken';
     el('sWarn').textContent = hard ? hard + ' too long' : soft ? soft + ' cut off' : '';
+    guessed(todo, cost, c);
     propose();
     tools();
+  }
+
+  // The lines whose length is a guess, and what Send does about them, at the foot of the page,
+  // where it stays in sight and its coming moves nothing.
+  function guessed(todo, cost, c) {
+    var lang = el('lang'), name = lang.options[lang.selectedIndex].textContent, warn, next;
+    el('guessNote').hidden = !todo.length;
+    if (!todo.length) return;
+    if (lang.value) {
+      warn = 'Every length here is a guess until ' + name + ' is spoken.';
+      next = 'Each line is sized from its words as written, and ' + name + ' can run longer or shorter. ' +
+        'Press Send to translate and speak every line, about ' + cost + ' with ' + c.voice + ', and this page comes back with their real lengths.';
+    } else if (DATA.spoken && (c.group.model !== DATA.spoken.model || c.voice !== DATA.spoken.voice)) {
+      warn = 'Every length here is a guess until ' + c.voice + ' speaks it.';
+      next = 'Press Send to speak every line in ' + c.voice + ', about ' + cost + ', and this page comes back with their real lengths.';
+    } else {
+      warn = todo.length === 1 ? '1 line is a guess.' : todo.length + ' lines are guesses.';
+      next = 'Press Send to speak ' + (todo.length === 1 ? 'it' : 'them') + ', about ' + cost + ' with ' + c.voice + ', and this page comes back with their real lengths.';
+    }
+    el('guessWarn').textContent = warn;
+    el('guessNext').textContent = next;
   }
 
   // Lines whose cards would cover each other stand side by side, as in a calendar. The cards are
@@ -513,12 +537,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   el('voice').addEventListener('change', function () { hear(); update(); });
   el('lang').add(new Option('Keep as written', ''));
   DATA.languages.forEach(function (l) { el('lang').add(new Option(l[1], l[0])); });
-  el('lang').addEventListener('change', function () {
-    var name = this.options[this.selectedIndex].textContent;
-    el('langNote').hidden = !this.value;
-    el('langNote').textContent = 'After you press Send, the agent translates every line into ' + name + ', speaks it, and shows this page again with how long each line really is.';
-    update();
-  });
+  el('lang').addEventListener('change', update);
   el('undo').addEventListener('click', function () {
     if (!history.length) return;
     lines = JSON.parse(history.pop());

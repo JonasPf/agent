@@ -222,6 +222,8 @@ const seconds = s => { const [m, r] = s.split(':'); return Number(m) * 60 + Numb
 const pressing = label => top(`[...document.querySelectorAll('button')].find(b => b.textContent === ${JSON.stringify(label)}).click()`);
 const proposal = () => top(`document.querySelector('.ask-proposal').textContent`);
 const guesses = () => inFrame(`document.querySelectorAll('.line.guess').length`);
+// the note that says which lengths are guesses and what Send does about them
+const note = () => inFrame(`(() => { const n = document.getElementById('guessNote'), r = n.getBoundingClientRect(); return { shown: !n.hidden, warn: n.querySelector('strong').textContent, next: n.querySelector('span').textContent, inSight: r.height > 0 && r.top >= 0 && r.bottom <= innerHeight + 1 }; })()`);
 const off = id => inFrame(`document.getElementById(${JSON.stringify(id)}).disabled`);
 const sounding = () => inFrame(`(() => { const a = document.getElementById('sample'); return !a.error && !a.paused && a.currentTime > 0.05; })()`);
 const toSpeak = out => [...out.matchAll(/^(chunks\/\d+\.mp3)  (.*)$/gm)].map(m => [m[1], m[2]]);
@@ -395,10 +397,20 @@ try {
   report('the cost follows the voice', Number(dear.match(/\$([\d.]+)/)[1]) > 5 * Number(cheap.match(/\$([\d.]+)/)[1]), [cheap, dear]);
   report('all voices of both models are offered', (await inFrame(`document.querySelectorAll('#voice option').length`)) === 31 &&
     (await inFrame(`document.querySelectorAll('#voice optgroup').length`)) === 2);
+  let said = await note();
+  report('a page not spoken yet says every line is a guess, and that Send speaks them', said.shown && said.warn === '10 lines are guesses.' &&
+    said.next.startsWith('Press Send to speak them, about $') && said.next.includes('with alice') && said.next.includes('real lengths'), said);
+  await inFrame(`document.scrollingElement.scrollTop = 1500`);
+  await sleep(40);
+  report('and says it in sight however far the page is scrolled', (await note()).inSight && (await inFrame(`document.scrollingElement.scrollTop`)) > 1000, await note());
   await inFrame(`(() => { const s = document.getElementById('lang'); s.value = 'de'; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
-  report('a new language says what happens next', (await inFrame(`document.getElementById('langNote').textContent`)).includes('German'));
+  said = await note();
+  report('a new language warns first, in bold, that every length is a guess until it is spoken', said.warn === 'Every length here is a guess until German is spoken.', said);
+  report('then why, and what Send does', said.next.includes('German can run longer or shorter') && said.next.includes('Press Send to translate and speak every line'), said);
+  await shot('language');
   await inFrame(`(() => { const s = document.getElementById('lang'); s.value = ''; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
-  report('and stops saying it', await inFrame(`document.getElementById('langNote').hidden`));
+  report('and stops saying it', (await note()).warn === '10 lines are guesses.', await note());
+  await inFrame(`document.scrollingElement.scrollTop = 0`);
 
   // the zoom
   await click('.slot[data-t="30"] .zoom');
@@ -471,6 +483,7 @@ try {
   report('a spoken line is as tall as its speech, not as its words', heights.length === 10 && heights.every((h, i) => Math.abs(h - LENGTHS[i] * scale) < 2),
     { heights, want: LENGTHS.map(s => s * scale) });
   report('no spoken line is a guess, and nothing is left to speak', (await guesses()) === 0 && (await status())[1] === 'all spoken', await status());
+  report('so no note says one is', !(await note()).shown, await note());
   await shot('heard');
   report('a spoken line shows ▶ on its handle', (await inFrame(`[...document.querySelectorAll('.cue')].filter(c => getComputedStyle(c).display !== 'none').length`)) === 10);
   await click('.line:nth-of-type(2) .grip');
@@ -490,7 +503,15 @@ try {
   await click('#undo');
 
   const shorter = 'Here is the list of open reports, each with who sent it.';
+  const trackAt = () => inFrame(`document.getElementById('track').getBoundingClientRect().top`);
+  // a click scrolls the line to the middle first, as replaceText's own does
+  await inFrame(`document.querySelectorAll('.line')[1].querySelector('.words').scrollIntoView({ block: 'center' })`);
+  await sleep(40);
+  const trackBefore = await trackAt();
   await replaceText('.line:nth-of-type(2) .words', shorter);
+  said = await note();
+  report('a changed line brings the note: one guess, and Send to speak it', said.shown && said.warn === '1 line is a guess.' && said.next.startsWith('Press Send to speak it, about $') && said.next.includes('with gareth'), said);
+  report('which moves nothing on the page', (await trackAt()) === trackBefore, { before: trackBefore, after: await trackAt() });
   const changed = await inFrame(`(() => { const c = document.querySelectorAll('.line')[1]; return { guess: c.classList.contains('guess'), cue: getComputedStyle(c.querySelector('.cue')).display, h: c.getBoundingClientRect().height }; })()`);
   report('a line whose words changed is a guess until it is spoken, with nothing to play', changed.guess && changed.cue === 'none', changed);
   report('as long as its words take at the pace of the lines spoken', Math.abs(changed.h - shorter.length / pace * scale) < 2, { changed, want: shorter.length / pace * scale });
@@ -498,12 +519,15 @@ try {
   await until(async () => (await proposal()).includes('1 to speak'), 'the proposal names what is to speak');
   await click('#undo');
   report('Undo makes it spoken again', (await guesses()) === 0 && (await status())[1] === 'all spoken', await status());
+  report('and takes the note away', !(await note()).shown, await note());
   await pick('0|meredith');
   report('another voice makes every line a guess', (await guesses()) === 10 && (await status())[1].startsWith('10 to speak'), await status());
+  said = await note();
+  report('and the note says so, and that Send speaks them all in it', said.warn === 'Every length here is a guess until meredith speaks it.' && said.next.startsWith('Press Send to speak every line in meredith, about $'), said);
   const tallNow = await inFrame(`document.querySelector('.line').getBoundingClientRect().height`);
   report('as long as its words take at the usual pace', Math.abs(tallNow - SAMPLE[0][1].split(/\s+/).length / 2.3 * scale) < 2, tallNow);
   await pick('0|gareth');
-  report('the voice spoken makes them spoken again', (await guesses()) === 0);
+  report('the voice spoken makes them spoken again', (await guesses()) === 0 && !(await note()).shown);
   await inFrame(`(() => { const s = document.getElementById('lang'); s.value = 'de'; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
   report('so does a language, the other way', (await guesses()) === 10);
   await inFrame(`(() => { const s = document.getElementById('lang'); s.value = ''; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
@@ -579,6 +603,12 @@ try {
   await sleep(40);
   const held = await sendPlace();
   report('Send stays in sight on a phone with the screen scrolled to the end', held.scrolled > 0 && held.top >= held.main - 1, held);
+  // where a phone arranges lines: the screen scrolled to Send, and the box below it
+  const foot = await inFrame(`(() => { const r = document.getElementById('guessNote').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, tall: r.height }; })()`);
+  const onScreen = await top(`({ frame: document.querySelector('iframe').getBoundingClientRect().top, screen: innerHeight })`);
+  report('the note stands on the screen of a phone, at the foot of the box, taking little of it',
+    foot.tall > 0 && foot.tall <= 110 && onScreen.frame + foot.top >= 0 && onScreen.frame + foot.bottom <= onScreen.screen + 1, { foot, onScreen });
+  await shot('phone-note');
   await top(`document.querySelector('main').scrollTop = 0`);
   const overflow = await inFrame(`document.documentElement.scrollWidth - document.documentElement.clientWidth`);
   const sticking = () => inFrame(`[...new Set([...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > document.documentElement.clientWidth + 1).map(e => e.className || e.tagName))]`);
