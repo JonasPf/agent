@@ -55,6 +55,8 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
 .track { position: relative; min-width: 0; background-image: linear-gradient(to bottom, var(--line) 1px, transparent 1px); }
 .line { position: absolute; display: grid; grid-template-columns: 56px minmax(0, 1fr); background: var(--panel); border: 1px solid var(--line); }
 .line.cut { border-color: var(--warn); }
+.line.guess { border-style: dashed; }
+.line.editing { border-color: var(--accent); }
 .line.slim { grid-template-columns: minmax(0, 1fr); }
 .line.slim .grip { display: flex; align-items: center; gap: 6px; padding: 4px 28px 4px 6px; }
 .line.slim .body { padding-right: 3px; }
@@ -62,6 +64,8 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
 .grip { display: grid; align-content: start; justify-items: center; gap: 3px; border: 0; background: var(--tint); cursor: grab; touch-action: none; user-select: none; padding: 5px 0; }
 .line.moving .grip { cursor: grabbing; }
 .grab { font: 500 16px/1 var(--data); color: var(--muted); }
+.cue { display: none; margin-left: 5px; color: var(--accent); font-size: 13px; }
+.line:not(.guess) .cue { display: inline; }
 .time { font: 500 12px/1.2 var(--data); font-variant-numeric: tabular-nums; }
 .body { display: grid; gap: 2px; align-content: start; min-width: 0; padding: 3px 26px 3px 3px; }
 .words { width: 100%; resize: none; overflow: hidden; field-sizing: content; border: 1px solid transparent; background: var(--sunk); padding: 2px 5px; font-size: 15px; line-height: 1.35; display: block; }
@@ -78,11 +82,12 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   .timeline { grid-template-columns: minmax(92px, 28%) minmax(0, 1fr); gap: 6px; }
   .line { grid-template-columns: 50px minmax(0, 1fr); }
   .time { font-size: 11px; }
-  .stat { font-size: 12px; }
+  .status { column-gap: 10px; }
+  .stat { font-size: 11px; }
   .stats { display: grid; }
-  .acts { gap: 6px; }
+  .acts { gap: 5px; }
   .go { padding: 8px 12px; }
-  .quiet { padding: 6px 9px; }
+  .quiet { padding: 6px 7px; font-size: 14px; }
   .lede { font-size: 13px; line-height: 1.35; }
   .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   select { width: 100%; padding: 5px 7px; }
@@ -97,11 +102,13 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
       <span class="stat bad" id="sWarn"></span>
     </div>
     <div class="acts">
+      <button class="quiet" type="button" id="split" disabled title="Split the line you are writing in, where the cursor is">Split</button>
+      <button class="quiet" type="button" id="join" disabled title="Join the line you are writing in and the one after it">Join</button>
       <button class="quiet" type="button" id="undo" disabled>Undo</button>
     </div>
     <p class="done" id="done" role="status" hidden></p>
   </div>
-  <p class="lede">Change the words, and drag a line up or down by its handle to move it along the video. A line is as tall as it takes to say, and one that is still speaking when the next starts is cut off there. Pick a voice to hear it. Nothing is spoken or paid for until you press Send. Tap a screenshot to see it larger.</p>
+  <p class="lede">Drag a line by its handle to move it, or tap the handle to hear it. Each line is as tall as its speech; a dashed one is not spoken yet, so its length is a guess. One still speaking when the next starts is cut off there. Split and Join work where the cursor is. Pick a voice to hear it. Tap a screenshot to enlarge it.</p>
   <div class="controls">
     <label class="field"><span>Voice</span><select id="voice"></select></label>
     <label class="field"><span>Language</span><select id="lang"></select></label>
@@ -130,9 +137,10 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
 
   var el = function (id) { return document.getElementById(id); };
   var nextId = 1;
-  function make(at, text) { return { id: nextId++, at: Math.min(at, LAST), text: text }; }
-  var lines = DATA.lines.map(function (l) { return make(l.at, l.text); });
-  var history = [], typing = null, cards = {};
+  // src is the line of DATA whose speech a line has, if it has any.
+  function make(at, text, src) { return { id: nextId++, at: Math.min(at, LAST), text: text, src: src }; }
+  var lines = DATA.lines.map(function (l, i) { return make(l.at, l.text, l.audio ? i : null); });
+  var history = [], typing = null, cards = {}, editing = null, playing = null;
 
   function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function fmt(t) {
@@ -143,8 +151,30 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   function find(id) { return lines.filter(function (l) { return l.id === id; })[0]; }
   function sort() { lines.sort(function (a, b) { return a.at - b.at; }); }
   function words(l) { return l.text.trim().split(/\s+/).filter(Boolean).length; }
-  function speech(l) { return words(l) / DATA.pace; }
+  function said(text) { return text.trim().split(/\s+/).join(' '); }
   function filled() { return lines.filter(function (l) { return l.text.trim(); }); }
+  function chars(some) { return some.reduce(function (n, l) { return n + l.text.trim().length; }, 0); }
+  function inSpoken() {
+    var c = chosen();
+    return !!DATA.spoken && !el('lang').value && c.group.model === DATA.spoken.model && c.voice === DATA.spoken.voice;
+  }
+  // A line's speech, while it still says what was spoken, in the voice and language picked.
+  function heard(l) {
+    var s = l.src == null ? null : DATA.lines[l.src];
+    return s && inSpoken() && said(l.text) === said(s.text) ? s : null;
+  }
+  // Characters a second of the speech there is. A line not spoken yet would take as long at that
+  // pace in the same voice; in any other, its words at the pace place_chunks.py guesses with.
+  var PACE = (function () {
+    var n = 0, secs = 0;
+    DATA.lines.forEach(function (l) { if (l.audio) { n += said(l.text).length; secs += l.length; } });
+    return secs ? n / secs : 0;
+  })();
+  function speech(l) {
+    var h = heard(l);
+    if (h) return h.length;
+    return PACE && inSpoken() ? said(l.text).length / PACE : words(l) / DATA.pace;
+  }
   function money(x) { return '$' + (x < 0.01 ? x.toFixed(3) : x.toFixed(2)); }
   function chosen() {
     var v = el('voice').value.split('|');
@@ -152,7 +182,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   }
 
   // What place_chunks.py will do with these lines: each starts where it is put, and one still
-  // speaking when the next starts is cut off there. Real lengths are known only once spoken.
+  // speaking when the next starts is cut off there.
   function timing() {
     var out = {}, kept = filled();
     kept.forEach(function (l, i) {
@@ -172,8 +202,9 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     if (kept.some(function (l) { return l.text.length > DATA.max_chars; })) { window.ask.hold('One line is too long to speak in one go. Split it first.'); return; }
     var body = { language: language, model: c.group.model, voice: c.voice,
       chunks: kept.map(function (l) { return { at: l.at, text: l.text.trim() }; }) };
-    var chars = body.chunks.reduce(function (n, x) { return n + x.text.length; }, 0);
-    window.ask.answer('Approved: ' + kept.length + ' lines, about ' + money(chars * c.group.price / 1e6) + ' with ' + c.voice +
+    var todo = kept.filter(function (l) { return !heard(l); }), cost = money(chars(todo) * c.group.price / 1e6);
+    window.ask.answer('Approved: ' + kept.length + ' lines, ' +
+      (todo.length === kept.length ? 'about ' + cost + ' with ' + c.voice : todo.length ? todo.length + ' to speak, about ' + cost + ' with ' + c.voice : 'all spoken already in ' + c.voice) +
       (language ? ', to be translated into ' + el('lang').options[el('lang').selectedIndex].textContent : '') + '.',
       { 'approved.json': JSON.stringify(body, null, 1) });
   }
@@ -185,7 +216,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
 
   function lineCard(l) {
     return '<article class="line" data-id="' + l.id + '">' +
-      '<button class="grip" type="button"><span class="grab" aria-hidden="true">⠿</span><span class="time"></span></button>' +
+      '<button class="grip" type="button"><span class="grab" aria-hidden="true">⠿<span class="cue">▶</span></span><span class="time"></span></button>' +
       '<div class="body"><textarea class="words" rows="1" aria-label="Line text">' + esc(l.text) + '</textarea>' +
       '<p class="warn"></p></div>' +
       '<button class="del" type="button" aria-label="Remove this line">×</button></article>';
@@ -209,16 +240,19 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     lines.forEach(function (l) {
       var card = cards[l.id], w = warn[l.id];
       card.querySelector('.time').textContent = fmt(l.at);
-      card.querySelector('.grip').setAttribute('aria-label', 'Starts at ' + fmt(l.at) + '. Drag, or press up or down, to move it.');
+      card.querySelector('.grip').setAttribute('aria-label', gripLabel(l));
       card.querySelector('.warn').textContent = w ? w.text : '';
       card.classList.toggle('cut', !!w);
+      card.classList.toggle('guess', !heard(l));
     });
     Object.keys(warn).forEach(function (k) { if (warn[k].hard) hard++; else soft++; });
-    var kept = filled(), chars = kept.reduce(function (n, l) { return n + l.text.trim().length; }, 0);
-    el('sCount').textContent = kept.length + (kept.length === 1 ? ' line, ' : ' lines, ') + chars.toLocaleString('en') + ' chars';
-    el('sCost').textContent = 'about ' + money(chars * c.group.price / 1e6) + ' of speech';
+    // What Send would buy: the lines not spoken yet.
+    var kept = filled(), todo = kept.filter(function (l) { return !heard(l); }), cost = money(chars(todo) * c.group.price / 1e6);
+    el('sCount').textContent = kept.length + (kept.length === 1 ? ' line, ' : ' lines, ') + chars(kept).toLocaleString('en') + ' chars';
+    el('sCost').textContent = !kept.length ? 'nothing to speak' : todo.length ? todo.length + ' to speak, ' + cost : 'all spoken';
     el('sWarn').textContent = hard ? hard + ' too long' : soft ? soft + ' cut off' : '';
     propose();
+    tools();
   }
 
   // Lines whose cards would cover each other stand side by side, as in a calendar. The cards are
@@ -270,7 +304,11 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     cards = {};
     document.querySelectorAll('.line').forEach(function (c) { cards[c.dataset.id] = c; });
     el('paste').hidden = lines.length > 0;
+    // The cursor went with the cards it was in, and the next words typed are a new edit.
+    editing = null;
+    typing = null;
     update();
+    playState();
     requestAnimationFrame(arrange);
   }
   // Where the browser cannot size a box to its words, it is measured, once it has been laid out.
@@ -321,6 +359,75 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     }
   });
 
+  // A tap on a spoken line's handle plays its speech, and a second one stops it.
+  function sounding(l) { return playing === l.id && !el('sample').paused; }
+  function hearLine(l) {
+    var h = heard(l), a = el('sample');
+    if (!h) return;
+    if (sounding(l)) { a.pause(); return; }
+    playing = l.id;
+    a.src = 'data:audio/mpeg;base64,' + h.audio;
+    a.play().catch(function () {});
+  }
+  function gripLabel(l) {
+    return 'Starts at ' + fmt(l.at) + '. Drag, or press up or down, to move it.' +
+      (heard(l) ? sounding(l) ? ' Press to stop it.' : ' Press to hear it.' : '');
+  }
+  function playState() {
+    lines.forEach(function (l) {
+      var card = cards[l.id];
+      card.querySelector('.cue').textContent = sounding(l) ? '■' : '▶';
+      card.querySelector('.grip').setAttribute('aria-label', gripLabel(l));
+    });
+  }
+  ['play', 'pause', 'ended'].forEach(function (e) { el('sample').addEventListener(e, playState); });
+
+  // Split and Join act on the line the cursor is in, and pressing them leaves it, and a phone's
+  // keyboard, where they were.
+  function tools() {
+    var l = editing != null && find(editing), t = l && cards[l.id].querySelector('.words'), k = t ? t.selectionStart : 0;
+    el('split').disabled = !t || t.selectionEnd !== k || !t.value.slice(0, k).trim() || !t.value.slice(k).trim();
+    el('join').disabled = !l || lines.indexOf(l) === lines.length - 1;
+    lines.forEach(function (x) { cards[x.id].classList.toggle('editing', x === l); });
+  }
+  document.addEventListener('focusin', function (e) {
+    if (!el('track').contains(e.target)) return;
+    editing = e.target.classList.contains('words') ? Number(e.target.closest('.line').dataset.id) : null;
+    tools();
+  });
+  document.addEventListener('selectionchange', tools);
+  ['split', 'join'].forEach(function (id) {
+    el(id).addEventListener('pointerdown', function (e) { e.preventDefault(); });
+  });
+  function cursor(l, at) {
+    var t = cards[l.id].querySelector('.words');
+    t.focus();
+    t.setSelectionRange(at, at);
+  }
+  // The second half starts where the first would end, and not a moment before: it would cut it off.
+  el('split').addEventListener('click', function () {
+    var l = editing != null && find(editing), t = l && cards[l.id].querySelector('.words');
+    if (!t) return;
+    var k = t.selectionStart, first = t.value.slice(0, k).trim(), rest = t.value.slice(k).trim();
+    if (!first || !rest) return;
+    remember();
+    l.text = first;
+    var next = make(Math.min(LAST, Math.ceil((l.at + speech(l)) * 10) / 10), rest, null);
+    lines.push(next);
+    render();
+    cursor(next, 0);
+  });
+  el('join').addEventListener('click', function () {
+    var l = editing != null && find(editing), next = l && lines[lines.indexOf(l) + 1];
+    if (!next) return;
+    remember();
+    var seam = l.text.trim().length;
+    l.text = [l.text.trim(), next.text.trim()].filter(Boolean).join(' ');
+    lines = lines.filter(function (x) { return x !== next; });
+    render();
+    cursor(l, seam);
+  });
+
   // A line follows the pointer by its handle. Near the top or bottom of the window the page scrolls,
   // and goes on scrolling while the pointer rests there, so it is followed every frame.
   var drag = null;
@@ -332,13 +439,13 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     g.focus({ preventScroll: true });
     var card = g.closest('.line'), l = find(Number(card.dataset.id));
     card.classList.add('moving');
-    drag = { line: l, card: card, from: l.at, y: e.clientY, grab: e.clientY - card.getBoundingClientRect().top };
+    drag = { line: l, card: card, from: l.at, y: e.clientY, y0: e.clientY, far: false, grab: e.clientY - card.getBoundingClientRect().top };
     requestAnimationFrame(follow);
   });
   function follow() {
     if (!drag) return;
-    if (drag.y < 70) window.scrollBy(0, -14);
-    else if (drag.y > window.innerHeight - 70) window.scrollBy(0, 14);
+    if (drag.far && drag.y < 70) window.scrollBy(0, -14);
+    else if (drag.far && drag.y > window.innerHeight - 70) window.scrollBy(0, 14);
     var at = snap((drag.y - drag.grab - el('track').getBoundingClientRect().top) / PX);
     if (at !== drag.line.at) {
       drag.line.at = at;
@@ -346,13 +453,20 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     }
     requestAnimationFrame(follow);
   }
-  document.addEventListener('pointermove', function (e) { if (drag) drag.y = e.clientY; });
-  function endDrag() {
+  document.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    drag.y = e.clientY;
+    if (Math.abs(drag.y - drag.y0) > 6) drag.far = true;
+  });
+  function endDrag(e) {
     if (!drag) return;
     var d = drag, to = d.line.at;
     drag = null;
     d.card.classList.remove('moving');
-    if (to === d.from) return;
+    if (to === d.from) {
+      if (!d.far && e.type === 'pointerup') hearLine(d.line);
+      return;
+    }
     d.line.at = d.from;
     remember();
     d.line.at = to;
@@ -362,10 +476,15 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   document.addEventListener('pointerup', endDrag);
   document.addEventListener('pointercancel', endDrag);
   document.addEventListener('keydown', function (e) {
-    var by = { ArrowUp: -0.5, ArrowDown: 0.5 }[e.key];
-    if (!by || !e.target.classList.contains('grip')) return;
+    if (!e.target.classList.contains('grip')) return;
+    var by = { ArrowUp: -0.5, ArrowDown: 0.5 }[e.key], l = find(Number(e.target.closest('.line').dataset.id));
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      hearLine(l);
+      return;
+    }
+    if (!by) return;
     e.preventDefault();
-    var l = find(Number(e.target.closest('.line').dataset.id));
     remember();
     l.at = snap(l.at + by);
     render();
@@ -386,17 +505,19 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   function hear() {
     var c = chosen(), sound = (DATA.samples[c.group.model] || {})[c.voice];
     if (!sound) return;
+    playing = null;
     el('sample').src = 'data:audio/mpeg;base64,' + sound;
     el('sample').play().catch(function () {});
   }
-  el('voice').addEventListener('change', function () { hear(); check(); });
+  // A voice or language other than the one spoken leaves every line to speak again, and its length a guess.
+  el('voice').addEventListener('change', function () { hear(); update(); });
   el('lang').add(new Option('Keep as written', ''));
   DATA.languages.forEach(function (l) { el('lang').add(new Option(l[1], l[0])); });
   el('lang').addEventListener('change', function () {
     var name = this.options[this.selectedIndex].textContent;
     el('langNote').hidden = !this.value;
-    el('langNote').textContent = 'After you press Send, the agent translates every line into ' + name + ' and shows this page again for a last look. A translation can run longer than the original, so check the warnings then.';
-    check();
+    el('langNote').textContent = 'After you press Send, the agent translates every line into ' + name + ', speaks it, and shows this page again with how long each line really is.';
+    update();
   });
   el('undo').addEventListener('click', function () {
     if (!history.length) return;

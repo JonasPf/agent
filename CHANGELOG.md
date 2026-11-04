@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-04
+
+- **Arrange a voice-over by how long it really runs.** The agent now speaks
+  the draft and makes the video before showing you the review page, so every
+  line there is as tall as its speech really takes; tap its handle to hear
+  it. A line you change is dashed, its length a guess, until Send speaks it,
+  and Send speaks only those. Ask to check the script first, and the page
+  still comes before any speech.
+- **Split and join lines.** On the review page, put the cursor in a line and
+  press Split to make two lines there, or Join to make one of it and the line
+  after it.
+
 ## 2026-11-03
 
 - **Change a voice-over after it is made.** Once `voiceover.mp4` is ready,

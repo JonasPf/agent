@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
-"""Build the page where the operator checks the script before any speech is bought.
+"""Build the page where the operator hears the voice-over's lines and arranges them.
 
-Usage: make_review.py INPUT.mov [--voice NAME]   write review/review.html
-       make_review.py --apply                    turn review/approved.json into chunks.json,
-                                                 and list the chunks to speak
+Usage: make_review.py INPUT.mov [--voice NAME]     write review/review.html
+       make_review.py --speak-all [--voice NAME]   list every chunk in chunks.json to speak
+       make_review.py --apply                      turn review/approved.json into chunks.json,
+                                                   and list the chunks to speak
 
 The page lays the script along the video: a screenshot every 30 seconds, and each line
-at its moment, as tall as it takes to say. The operator changes the words, drags the
-lines, and picks the language and the voice, hearing each one picked, and Send in the
-panel saves review/approved.json beside the page. It starts from chunks.json, whose times are found
+at its moment, as tall as it takes to say. A line already spoken is as long as its speech
+once place_chunks.py trims it, and plays it; one not spoken yet is as long as it would
+take. The operator changes the words, joins and splits lines, drags them, and picks the
+language and the voice, hearing each one picked, and Send in the panel saves
+review/approved.json beside the page. It starts from chunks.json, whose times are found
 as place_chunks.py finds them. With no chunks.json it starts empty, and the operator
 writes the script on the page.
 
-Approved again after the speech, a chunk whose words are unchanged keeps its speech, wherever
-it moved, and only the rest are listed to speak. chunks/voice.json says which voice the speech
-in chunks/ is in: a new voice or language keeps none of it.
+--speak-all lists every chunk to speak: a draft spoken whole before the page, or a
+translation. Approved after the speech, a chunk whose words are unchanged keeps its speech,
+wherever it moved, and only the rest are listed to speak. chunks/voice.json says which voice
+the speech in chunks/ is in: a new voice or language keeps none of it.
 
-Show the page with ask_operator. It runs with no network, so the screenshots and the
-voice samples are inside it, and the screenshots are made smaller when a page would be
-too big for ask_operator to load.
+Show the page with ask_operator. It runs with no network, so the screenshots, the speech
+and the voice samples are inside it, and the screenshots are made smaller when a page would
+be too big for ask_operator to load.
 Requires ffmpeg and ffprobe on PATH (packages tool, ffmpeg_8-headless).
 """
-import argparse, base64, glob, json, math, os, re, shutil, subprocess, sys
+import argparse, base64, glob, json, math, os, re, shutil, subprocess, sys, tempfile
 
 # A skill's folder holds text only: one .pyc beside these scripts and the skill will not load.
 sys.dont_write_bytecode = True
@@ -44,6 +48,9 @@ QUALITY = "6"
 # ask_operator loads up to 16 MiB. This leaves room for what the agent adds later.
 MAX_PAGE = 15 << 20
 SMALLER_TRIES = 6
+# The speech the page plays, best first. An hour of it at the best would leave no room for the
+# screenshots, so it takes the best that fits in half a page.
+BITRATES = ((48, 24000), (32, 24000), (24, 24000), (16, 16000), (8, 8000))
 # Each was spoken on both models and read back word for word by Whisper, on 2026-10-31.
 LANGUAGES = [("en", "English"), ("de", "German"), ("es", "Spanish"), ("fr", "French"),
              ("it", "Italian"), ("nl", "Dutch"), ("pt", "Portuguese")]
@@ -59,20 +66,60 @@ def voices():
                             voices=re.findall(r"`([a-z]+)`", section)))
     return options
 
-def draft(path, length):
-    """The lines the page starts with, each at its time."""
-    if not os.path.exists(path):
-        return []
+def script(path):
+    """chunks.json in spoken order, each chunk with its place in the list and its start."""
     chunks = json.load(open(path, encoding="utf-8"))
     needs_words = any("at" not in c for c in chunks)
     if needs_words and not place_chunks.segment_files():
         sys.exit("segments.txt not found: save the transcript's lines there first")
-    rows, errors = place_chunks.plan(chunks, place_chunks.load_words() if needs_words else [])
+    return place_chunks.plan(chunks, place_chunks.load_words() if needs_words else [])
+
+def draft(path, length):
+    """The lines the page starts with, each at its time."""
+    if not os.path.exists(path):
+        return []
+    rows, errors = script(path)
     errors += [f"chunk {r['n']:02d} starts at {r['at']:.1f} s, after the video's {length:.1f} s"
                for r in rows if r["at"] >= length]
     if errors:
         sys.exit("\n".join(errors))
-    return [dict(at=round(r["at"], 2), text=r["text"]) for r in rows]
+    return [dict(n=r["n"], at=round(r["at"], 2), text=r["text"]) for r in rows]
+
+def bitrate(seconds):
+    """The best of BITRATES at which this much speech, as base64, fits in half a page."""
+    for kbps, rate in BITRATES:
+        if seconds * kbps * 1000 / 8 * 4 / 3 <= MAX_PAGE // 2:
+            return kbps, rate
+    return BITRATES[-1]
+
+def hear(exe, lines):
+    """Give each line already spoken its speech and its length, trimmed and levelled as
+    place_chunks.py will place it. Speech in no recorded voice is not in the one picked."""
+    spoken = recorded()
+    if not spoken:
+        return None
+    found = [(l, spoken_file(l["n"])) for l in lines]
+    with tempfile.TemporaryDirectory() as scratch:
+        levelled = []
+        for l, src in found:
+            if not src:
+                continue
+            dst = os.path.join(scratch, f"{l['n']:02d}.wav")
+            try:
+                frames = place_chunks.prepare(exe, src, dst, scratch)
+            except SystemExit as e:
+                sys.exit(f"{src} cannot be read ({e}): speak it again")
+            levelled.append((l, dst, frames / place_chunks.RATE))
+        kbps, rate = bitrate(sum(seconds for _, _, seconds in levelled))
+        for l, dst, seconds in levelled:
+            r = subprocess.run([exe, "-hide_banner", "-loglevel", "error", "-i", dst, "-ac", "1", "-ar", str(rate),
+                                "-c:a", "libmp3lame", "-b:a", f"{kbps}k", "-id3v2_version", "0", "-f", "mp3", "-"],
+                               capture_output=True)
+            if r.returncode or not r.stdout:
+                sys.exit(f"could not make chunk {l['n']:02d} playable: {r.stderr.decode(errors='replace').strip()[-200:]}")
+            l["length"] = round(seconds, 2)
+            l["audio"] = base64.b64encode(r.stdout).decode()
+    return spoken
 
 def grab(exe, video, at):
     """The frame at this exact time. A keyframe can be 18 seconds away."""
@@ -119,11 +166,13 @@ def build(video, wanted, chunks):
 
     length = place_chunks.duration(video)
     lines = draft(chunks, length)
+    spoken = hear(exe, lines)
+    lines = [{k: v for k, v in l.items() if k != "n"} for l in lines]
     step = STEP * max(1, math.ceil(length / (STEP * MAX_SHOTS)))
     shots = [grab(exe, video, max(0, min(t, length - 1))) for t in range(0, math.ceil(length), step)]
 
     data = dict(video=os.path.basename(video), duration=length, step=step, voices=options, model=model,
-                voice=voice, languages=LANGUAGES, lines=lines, pace=place_chunks.WORDS_PER_SECOND,
+                voice=voice, spoken=spoken, languages=LANGUAGES, lines=lines, pace=place_chunks.WORDS_PER_SECOND,
                 max_chars=place_chunks.MAX_CHARS, samples=json.load(open(SAMPLES, encoding="utf-8")))
     template = open(TEMPLATE, encoding="utf-8").read()
     # Inside a script block, the one thing that can end it is "<".
@@ -160,17 +209,7 @@ def apply_approval(chunks):
         sys.exit("\n".join(errors))
 
     kept = {} if language else already_spoken(timed, chunks, option["model"], a["voice"])
-    # A chunk's speech is found by its place in the list, so what is kept takes its new place.
-    shutil.rmtree(STAGE, ignore_errors=True)
-    os.makedirs(STAGE)
-    for n, src in kept.items():
-        shutil.copy2(src, os.path.join(STAGE, f"{n:02d}{os.path.splitext(src)[1]}"))
-    with open(os.path.join(STAGE, "voice.json"), "w", encoding="utf-8") as f:
-        json.dump(dict(model=option["model"], voice=a["voice"]), f)
-    if os.path.isdir(SPEECH):
-        shutil.rmtree("chunks.old", ignore_errors=True)
-        os.rename(SPEECH, "chunks.old")
-    os.rename(STAGE, SPEECH)
+    restock(kept, option["model"], a["voice"])
     with open(chunks, "w", encoding="utf-8") as f:
         json.dump(timed, f, ensure_ascii=False, indent=1)
 
@@ -181,13 +220,50 @@ def apply_approval(chunks):
           f"{chars:,} characters, about {cost} with {a['voice']} on {option['name']}.")
     if language:
         print(f"Translate every text in {chunks} into {dict(LANGUAGES)[language]}, keep every at, then run "
-              "make_review.py again so the operator sees it before it is spoken.")
+              "make_review.py --speak-all and speak every chunk it lists.")
     elif speak:
-        print(f"Speak these with model {option['model']}, voice {a['voice']}: output the path, prompt the words exactly as they stand.")
-        for n, text in speak:
-            print(f"{SPEECH}/{n:02d}.mp3  {text}")
+        listing(option, a["voice"], speak)
     else:
         print("Every chunk is already spoken: place them and mux again.")
+
+def speak_all(chunks, wanted):
+    """Every chunk to speak: a draft spoken whole before the page, or a translation."""
+    if not os.path.exists(chunks):
+        sys.exit(f"{chunks} not found: write the script first")
+    options = voices()
+    last = json.load(open(APPROVED, encoding="utf-8")) if os.path.exists(APPROVED) else {}
+    voice = wanted or spoken_voice() or last.get("voice") or options[0]["default"]
+    option = next((o for o in options if voice in o["voices"]), None)
+    if not option:
+        sys.exit(f"{voice} is not a voice of either model: see references/voices.md")
+    rows, errors = script(chunks)
+    if errors:
+        sys.exit("\n".join(errors))
+    restock({}, option["model"], voice)
+    speak = [(r["n"], " ".join(r["text"].split())) for r in rows]
+    chars = sum(len(t) for _, t in speak)
+    print(f"{len(speak)} chunks to speak, {chars:,} characters, about "
+          f"{estimate_cost.money(chars * option['price'] / 1e6)} with {voice} on {option['name']}.")
+    listing(option, voice, speak)
+
+def listing(option, voice, speak):
+    print(f"Speak these with model {option['model']}, voice {voice}: output the path, prompt the words exactly as they stand.")
+    for n, text in speak:
+        print(f"{SPEECH}/{n:02d}.mp3  {text}")
+
+def restock(kept, model, voice):
+    """chunks/ holds only the speech kept and a note of its voice; what was there goes to chunks.old/.
+    A chunk's speech is found by its place in the list, so what is kept takes its new place."""
+    shutil.rmtree(STAGE, ignore_errors=True)
+    os.makedirs(STAGE)
+    for n, src in kept.items():
+        shutil.copy2(src, os.path.join(STAGE, f"{n:02d}{os.path.splitext(src)[1]}"))
+    with open(os.path.join(STAGE, "voice.json"), "w", encoding="utf-8") as f:
+        json.dump(dict(model=model, voice=voice), f)
+    if os.path.isdir(SPEECH):
+        shutil.rmtree("chunks.old", ignore_errors=True)
+        os.rename(SPEECH, "chunks.old")
+    os.rename(STAGE, SPEECH)
 
 def already_spoken(timed, chunks, model, voice):
     """The speech that can stay: its words unchanged, and spoken in this voice."""
@@ -198,33 +274,43 @@ def already_spoken(timed, chunks, model, voice):
         return {}
     files = {}
     for n, c in enumerate(json.load(open(chunks, encoding="utf-8")), 1):
-        found = glob.glob(os.path.join(SPEECH, f"{n:02d}.mp3")) + glob.glob(os.path.join(SPEECH, f"{n:02d}.wav"))
+        found = spoken_file(n)
         if found:
-            files.setdefault(" ".join(c.get("text", "").split()), []).append(found[0])
+            files.setdefault(" ".join(c.get("text", "").split()), []).append(found)
     kept = {}
     for n, c in enumerate(timed, 1):
         if files.get(c["text"]):
             kept[n] = files[c["text"]].pop(0)
     return kept
 
-def spoken_voice():
-    """The voice the speech in chunks/ was bought in, if any was."""
+def spoken_file(n):
+    found = glob.glob(os.path.join(SPEECH, f"{n:02d}.mp3")) + glob.glob(os.path.join(SPEECH, f"{n:02d}.wav"))
+    return found[0] if found else None
+
+def recorded():
+    """The model and voice the speech in chunks/ was bought in, if any was."""
     record = os.path.join(SPEECH, "voice.json")
-    return json.load(open(record, encoding="utf-8")).get("voice") if os.path.isfile(record) else None
+    return json.load(open(record, encoding="utf-8")) if os.path.isfile(record) else None
+
+def spoken_voice():
+    return (recorded() or {}).get("voice")
 
 def main():
     ap = argparse.ArgumentParser(usage=__doc__)
     ap.add_argument("video", nargs="?")
-    ap.add_argument("--voice", help="start the page on this voice")
+    ap.add_argument("--voice", help="start the page on this voice, or speak in it")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--speak-all", action="store_true")
     ap.add_argument("--chunks", default="chunks.json")
     a = ap.parse_args()
     if a.apply:
         apply_approval(a.chunks)
+    elif a.speak_all:
+        speak_all(a.chunks, a.voice)
     elif a.video:
         build(a.video, a.voice, a.chunks)
     else:
-        sys.exit("name the video, or pass --apply")
+        sys.exit("name the video, or pass --speak-all or --apply")
 
 if __name__ == "__main__":
     main()
