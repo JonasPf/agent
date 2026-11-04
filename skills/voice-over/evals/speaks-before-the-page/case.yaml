@@ -1,0 +1,6 @@
+schema_version: "1.1"
+name: speaks-before-the-page
+expected_outcome: |
+  The agent transcribes clip.mov, writes a draft, speaks all of it in gareth, places it and makes
+  voiceover.mp4, then builds the review page with make_review.py, shows it with ask_operator, and
+  stops, so the operator arranges the lines by how long their speech really runs.

@@ -1,14 +1,14 @@
 ---
 name: voice-over
-description: Use when the operator wants a synthesized voiceover on a video, whether it has spoken audio to clean up or no audio at all — covers transcribing with timestamps, taking the ums out of the narration, a page where the operator changes the words, timing, language and voice and sees the cost, speaking it in the operator's choice of voice, and placing each line at its moment.
+description: Use when the operator wants a synthesized voiceover on a video, whether it has spoken audio to clean up or no audio at all — covers transcribing with timestamps, taking the ums out of the narration, speaking it and placing each line at its moment, and a page where the operator hears every line at its real length and changes the words, timing, language and voice, joining and splitting lines, with only what changed spoken again.
 default: off
 ---
 
 A video lands. The task: transcribe it, clean up what was said, and put a synthesized voiceover back
 onto the video, each line at the moment the narrator said it. A video with no audio gets its script
 from the operator instead. Done looks like `voiceover.mp4` in the working directory — the original
-video, full length, its picture untouched — and an operator who checked the script and saw what the
-speech would cost before any of it was bought, with a link to change it again afterwards.
+video, full length, its picture untouched — and a link to a page where the operator hears each line,
+sees how long it really runs, and changes it. Send there makes it again, speaking only what changed.
 
 The scripts below are in `/app/skills/voice-over/scripts`. They do what is the same every
 time; do not redo their work by hand.
@@ -87,36 +87,23 @@ longer line up.
    - Then run `python3 /app/skills/voice-over/scripts/place_chunks.py --check`. It prints each
      chunk's start and what the narrator says there. Read that column: it must be the same thought as
      the chunk. `~` marks a near match, so look at it twice. `TIGHT` means the next chunk will probably
-     cut this one off: take out any noise still in it, and if it stays `TIGHT`, leave the words and
-     name the chunk in step 5's message. Shortening what the narrator said is the operator's call.
+     cut this one off: take out any noise still in it, and if it stays `TIGHT`, leave the words. The
+     page shows the operator how long it really runs, and shortening what the narrator said is theirs.
      Fix `chunks.json` until every start is right.
-5. **Let the operator check it, and stop.** Speech is the step that costs money and is hardest to
-   redo. Build the page with `python3 /app/skills/voice-over/scripts/make_review.py INPUT.mov`,
-   adding `--voice NAME` if the request named one, with `timeout_seconds: 900`. It holds a screenshot
-   every 30 seconds beside the lines that start there. Call `ask_operator` with `page`
-   `review/review.html` and a `message` saying the script is ready to check. Put its link in your
-   reply, and end the turn. On the page they change the words, drag lines along the video, pick the
-   language and voice, hearing a sample of each voice they pick, and see the cost as they go.
-   - Their answer names `review/approved.json` → run `make_review.py --apply`. It rewrites
-     `chunks.json` with every line where they left it, keeps the speech of every line already
-     spoken with the same words in the same voice, and lists the rest to speak, each with its words.
-   - It says to translate → translate every `text` in `chunks.json` yourself, keep every `at`, and
-     build the page and ask again. A translation can run longer, and they should see it before it
-     is spoken.
-   - Their answer does not name that file, or `--apply` says it is not approved → nothing is
-     approved. Do what their note says, rebuild the page if the script changed, and ask again.
-   - Declined → speak nothing, and ask what they want instead.
-   - The request says to go ahead without checking, or there is no `ask_operator` tool → run
-     `python3 /app/skills/voice-over/scripts/estimate_cost.py` (it reads the gateway's current
-     prices and spends nothing) and put its output in your reply. No voice named yet → ask which voice,
-     saying the page can play each one, and end the turn. A voice named → carry on.
-   - A scheduled wake → use HeyGen and `gareth`, and put the estimate in the report.
-6. **Speak** with `call_model`, once per chunk `--apply` listed: the model and voice it names,
-   `output` the path it gives, and `prompt` the words after that path **verbatim**. Take them from
-   that list, never from what you wrote before: the operator may have changed any of them. Nothing
-   listed → go to step 7. The output is the words spoken aloud, not a request to the model.
-   - With no review (step 5), speak every chunk the same way: `output` `chunks/01.mp3`,
-     `chunks/02.mp3`, … matching its place in `chunks.json`, and `prompt` its `text` verbatim.
+5. **Speak the draft**, all of it, before the operator sees anything. The page then shows every
+   line as long as its speech really runs, which is what they arrange by, and the default voice
+   costs about 2 cents for a ten-minute video.
+   - Run `python3 /app/skills/voice-over/scripts/make_review.py --speak-all`, adding `--voice NAME`
+     if the request named one; otherwise it takes `gareth` on HeyGen. It notes the voice, prints what
+     the speech costs, and lists every chunk to speak with its words. Put the cost line in your next
+     message.
+   - The request asks to check the script before anything is spoken, or there is no draft because
+     the operator writes the script → speak nothing yet: go to step 9 and build the page now. Its
+     lines are dashed, their lengths a guess, until their Send has them spoken.
+6. **Speak** with `call_model`, once per chunk `--speak-all` or `--apply` listed: the model and voice
+   it names, `output` the path it gives, and `prompt` the words after that path **verbatim**. Take
+   them from that list, never from what you wrote before: the operator may have changed any of them.
+   Nothing listed → go to step 7. The output is the words spoken aloud, not a request to the model.
    - Send up to ten of these calls in one response rather than one at a time. Each response is a
      round, a turn has a hundred, and every round costs what the whole conversation costs to resend.
    - One voice for the whole video.
@@ -126,21 +113,33 @@ longer line up.
 7. **Place**: `python3 /app/skills/voice-over/scripts/place_chunks.py INPUT.mov` trims and
    levels each chunk, puts it at its moment, and writes `voiceover_track.wav`. Every chunk starts
    exactly where it was put, and one still speaking when the next starts is cut off there, marked
-   `cut N s short`. If the operator placed the lines on the page, that is theirs to decide: leave it.
-   Otherwise shorten that chunk's `text`, speak only it again, and rerun. A last chunk that runs past
-   the end of the video writes nothing and is named: shorten it the same way.
+   `cut N s short`. Leave it: the page shows the operator where, and moving or shortening a line is
+   theirs to decide. A last chunk that runs past the end of the video writes nothing and is named:
+   shorten its `text`, speak only it again, and rerun.
 8. **Mux**: `python3 /app/skills/voice-over/scripts/vo_mux.py INPUT.mov voiceover_track.wav
    voiceover.mp4 0` — video stream copied, delay 0 because the track is already timed. Confirm with
    ffprobe that it is as long as the input.
-9. **Report** the cleaned script, the model and voice, the estimate, the output path, and every
-   chunk that was cut off. Say what was checked: each start time comes from the transcript or the operator's page, and
-   nobody has listened to the result.
-   - Then let them change it: build the page again with `make_review.py INPUT.mov` (it starts from
-     `chunks.json` and the voice spoken), call `ask_operator` with it and a `message` saying
-     `voiceover.mp4` is made and that Send there makes it again, speaking only the lines whose words
-     changed, or every line for a new voice. Put its link in the report and end the turn.
-   - Their answer → step 5's `--apply`, then steps 6 to 9 again.
-   - A scheduled wake, or no `ask_operator` → offer a different voice instead.
+9. **Report, with the page, and stop.** Build the page with `python3
+   /app/skills/voice-over/scripts/make_review.py INPUT.mov`, with `timeout_seconds: 900`. It starts
+   from `chunks.json` and the speech in `chunks/`, and holds a screenshot every 30 seconds beside the
+   lines that start there. Call `ask_operator` with `page` `review/review.html` and a `message`
+   saying what is ready: `voiceover.mp4` to watch and change here, or the script to check before it
+   is spoken. Your reply has the link and what was made: the model and voice, the cost, the output
+   path, and every chunk cut off. Say what was checked: each start comes from the transcript or the
+   page, and nobody has listened to the result. End the turn. On the page they play each line, drag it, change its
+   words, split or join lines, and pick the language and voice, hearing a sample of each, and see
+   what Send will speak and what it costs.
+   - Their answer names `review/approved.json` → run `make_review.py --apply`. It rewrites
+     `chunks.json` with every line where they left it, keeps the speech of every line already
+     spoken with the same words in the same voice, and lists the rest to speak, each with its words.
+     Then steps 6 to 9 again, so they see the new lines' real lengths.
+   - It says to translate → translate every `text` in `chunks.json` yourself, keep every `at`, run
+     `make_review.py --speak-all`, and then steps 6 to 9 again.
+   - Their answer does not name that file, or `--apply` says it is not approved → nothing is
+     approved. Do what their note says, rebuild the page if the script changed, and ask again.
+   - Declined → change nothing, and ask what they want instead.
+   - A scheduled wake, a request to go ahead without checking, or no `ask_operator` → report without
+     the page, and offer a different voice instead.
 
 ## Traps
 

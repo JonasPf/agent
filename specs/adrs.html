@@ -2516,6 +2516,33 @@ because Decline always works. Moving Send above a page moves the note with it, s
 further down the screen. Edits still last only until the page is reloaded, as they did before Approve.</p>
 </div>
 
+<div class="adr" id="adr-080">
+<div class="meta">ADR-080 · accepted</div>
+<h3>A voice-over is spoken before it is checked</h3>
+<h4>Context</h4>
+<p>The operator arranges a voice-over by each line's length: where it ends, and whether the next cuts it
+off. The review page guessed every length at 2.3 words a second, in every voice, and only speech says
+how long a line takes. The 31 voices say the same sample in 1.1 to 2.0 seconds, so a guess could be off
+by half. A pace measured for each voice would still be a guess for each line.</p>
+<p>Speech had been held back until the operator approved the script, because it costs money. The default
+voice costs about 2 cents for a ten-minute video, and since a second approval keeps the speech of every
+line that did not change, buying it first costs once.</p>
+<h4>Decision</h4>
+<p>The draft is spoken whole, placed, and made into <code>voiceover.mp4</code> before the page, in the voice
+the request names or <code>gareth</code>. The page carries each line's speech, trimmed and levelled as it
+will be placed: a line is as tall as that speech, and a tap on its handle plays it. A line whose words change, a line added,
+and every line in another voice or language becomes a guess, drawn dashed, at the pace of the speech
+there is. Send speaks only those, and the page comes back with their real lengths. The page splits a
+line at the cursor and joins a line to the next, since where one line ends and the next begins is what
+the operator is arranging.</p>
+<h4>Consequences</h4>
+<p>Speech is bought before anyone checks it: cents in <code>gareth</code>, ten times that in an ElevenLabs
+voice. A request to check the script first still gets the page before any speech, its lines all
+guesses. Every Send makes the video again, so the operator can watch what they changed. The speech takes
+up to half of what <code>ask_operator</code> loads, so an hour of it plays at 8 kbps, and the screenshots
+shrink to fit the rest.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

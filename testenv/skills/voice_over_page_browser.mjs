@@ -40,9 +40,17 @@ const SAMPLE = [
 fs.writeFileSync(W + '/spoken/chunks.json', JSON.stringify(SAMPLE.map(([at, text]) => ({ at, text }))));
 execFileSync('python3', [SK + '/make_review.py', '../demo.mov'], { cwd: W + '/spoken', stdio: 'pipe' });
 execFileSync('python3', [SK + '/make_review.py', '../demo.mov'], { cwd: W + '/silent', stdio: 'pipe' });
+// the same lines once spoken: a tone as long as each, with the silence a voice leaves at its ends
+const LENGTHS = [4.0, 7.0, 4.5, 6.0, 5.0, 6.5, 5.5, 9.0, 4.0, 5.0];
+fs.mkdirSync(W + '/heard/chunks', { recursive: true });
+fs.writeFileSync(W + '/heard/chunks.json', JSON.stringify(SAMPLE.map(([at, text]) => ({ at, text }))));
+fs.writeFileSync(W + '/heard/chunks/voice.json', JSON.stringify({ model: 'heygen/heygen-voice-1-turbo', voice: 'gareth' }));
+LENGTHS.forEach((s, i) => ff('-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono:d=0.4', '-f', 'lavfi', '-i', `sine=f=220:r=24000:d=${s}`,
+  '-f', 'lavfi', '-i', 'anullsrc=r=24000:cl=mono:d=0.6', '-filter_complex', 'concat=n=3:v=0:a=1', `${W}/heard/chunks/${String(i + 1).padStart(2, '0')}.wav`));
+execFileSync('python3', [SK + '/make_review.py', '../demo.mov'], { cwd: W + '/heard', stdio: 'pipe' });
 
 // a browser that cannot size a box to its words, such as Safari before version 26
-if (process.env.NO_FIELD_SIZING) for (const f of ['spoken', 'silent']) {
+if (process.env.NO_FIELD_SIZING) for (const f of ['spoken', 'silent', 'heard']) {
   const page = W + '/' + f + '/review/review.html';
   const html = fs.readFileSync(page, 'utf8');
   fs.writeFileSync(page, html.replace(' field-sizing: content;', '').replace("CSS.supports('field-sizing', 'content')", 'false'));
@@ -183,7 +191,7 @@ async function replaceText(selector, text) {
   await send('Input.insertText', { text }, page);
 }
 const key = async name => {
-  const code = { Tab: 9, ArrowUp: 38, ArrowDown: 40 }[name];
+  const code = { Tab: 9, Enter: 13, ArrowUp: 38, ArrowDown: 40 }[name];
   await send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code: name, windowsVirtualKeyCode: code }, page);
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code: name, windowsVirtualKeyCode: code }, page);
   await sleep(30);
@@ -213,6 +221,10 @@ const clipped = () => inFrame(`[...document.querySelectorAll('.words')].filter(t
 const seconds = s => { const [m, r] = s.split(':'); return Number(m) * 60 + Number(r); };
 const pressing = label => top(`[...document.querySelectorAll('button')].find(b => b.textContent === ${JSON.stringify(label)}).click()`);
 const proposal = () => top(`document.querySelector('.ask-proposal').textContent`);
+const guesses = () => inFrame(`document.querySelectorAll('.line.guess').length`);
+const off = id => inFrame(`document.getElementById(${JSON.stringify(id)}).disabled`);
+const sounding = () => inFrame(`(() => { const a = document.getElementById('sample'); return !a.error && !a.paused && a.currentTime > 0.05; })()`);
+const toSpeak = out => [...out.matchAll(/^(chunks\/\d+\.mp3)  (.*)$/gm)].map(m => [m[1], m[2]]);
 const refused = cwd => { try { execFileSync('python3', [SK + '/make_review.py', '--apply'], { cwd, stdio: 'pipe' }); return ''; } catch (e) { return String(e.stderr); } };
 // where Send stands against the top of the box and the top of what scrolls
 const sendPlace = () => top(`(() => { const s = [...document.querySelectorAll('button')].find(b => b.textContent === 'Send').getBoundingClientRect(), f = document.querySelector('iframe').getBoundingClientRect(), m = document.querySelector('main'); return { bottom: s.bottom, top: s.top, box: f.top, main: m.getBoundingClientRect().top, scrolled: m.scrollTop, room: m.scrollHeight - m.clientHeight }; })()`);
@@ -380,7 +392,7 @@ try {
   await until(playing, 'the next sample playing');
   report('picking another plays that one instead', await heard('alice'));
   const dear = (await status())[1];
-  report('the cost follows the voice', Number(dear.match(/[\d.]+/)[0]) > 5 * Number(cheap.match(/[\d.]+/)[0]), [cheap, dear]);
+  report('the cost follows the voice', Number(dear.match(/\$([\d.]+)/)[1]) > 5 * Number(cheap.match(/\$([\d.]+)/)[1]), [cheap, dear]);
   report('all voices of both models are offered', (await inFrame(`document.querySelectorAll('#voice option').length`)) === 31 &&
     (await inFrame(`document.querySelectorAll('#voice optgroup').length`)) === 2);
   await inFrame(`(() => { const s = document.getElementById('lang'); s.value = 'de'; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
@@ -450,6 +462,92 @@ try {
   report('Send will not take a line too long to speak', saves.length === 0 && messages.length === 0, messages);
   await click('#undo');
   await until(() => top(`document.querySelector('.ask-problem').hidden`), 'the hold lifted');
+
+  // ---- the same lines, spoken: each as long as its speech, and heard
+  saves.length = 0; messages.length = 0;
+  await open('heard');
+  const pace = await inFrame(`(() => { let c = 0, s = 0; JSON.parse(document.getElementById('data').textContent).lines.forEach(l => { c += l.text.trim().split(/\\s+/).join(' ').length; s += l.length; }); return c / s; })()`);
+  const heights = await inFrame(`[...document.querySelectorAll('.line')].map(c => c.getBoundingClientRect().height)`);
+  report('a spoken line is as tall as its speech, not as its words', heights.length === 10 && heights.every((h, i) => Math.abs(h - LENGTHS[i] * scale) < 2),
+    { heights, want: LENGTHS.map(s => s * scale) });
+  report('no spoken line is a guess, and nothing is left to speak', (await guesses()) === 0 && (await status())[1] === 'all spoken', await status());
+  await shot('heard');
+  report('a spoken line shows ▶ on its handle', (await inFrame(`[...document.querySelectorAll('.cue')].filter(c => getComputedStyle(c).display !== 'none').length`)) === 10);
+  await click('.line:nth-of-type(2) .grip');
+  await until(sounding, "a line's speech playing");
+  report("a tap on the handle plays that line's own speech", await inFrame(`document.getElementById('sample').currentSrc.endsWith(JSON.parse(document.getElementById('data').textContent).lines[1].audio)`));
+  report('and offers to stop it', (await inFrame(`document.querySelector('.line:nth-of-type(2) .grip').getAttribute('aria-label')`)).includes('stop it') &&
+    (await inFrame(`document.querySelector('.line:nth-of-type(2) .cue').textContent`)) === '■');
+  await click('.line:nth-of-type(2) .grip');
+  report('tapped again, it stops', await inFrame(`document.getElementById('sample').paused`));
+  await key('Enter');
+  await sleep(200);
+  report('Enter on the handle plays it too', await sounding());
+  await key('Enter');
+  const before2 = (await lines())[1].time;
+  await drag('.line:nth-of-type(2) .grip', 3 * scale);
+  report('a drag moves the line and plays nothing', (await lines())[1].time !== before2 && (await inFrame(`document.getElementById('sample').paused`)), (await lines())[1]);
+  await click('#undo');
+
+  const shorter = 'Here is the list of open reports, each with who sent it.';
+  await replaceText('.line:nth-of-type(2) .words', shorter);
+  const changed = await inFrame(`(() => { const c = document.querySelectorAll('.line')[1]; return { guess: c.classList.contains('guess'), cue: getComputedStyle(c.querySelector('.cue')).display, h: c.getBoundingClientRect().height }; })()`);
+  report('a line whose words changed is a guess until it is spoken, with nothing to play', changed.guess && changed.cue === 'none', changed);
+  report('as long as its words take at the pace of the lines spoken', Math.abs(changed.h - shorter.length / pace * scale) < 2, { changed, want: shorter.length / pace * scale });
+  report('the status line counts it to speak', (await status())[1].startsWith('1 to speak'), await status());
+  await until(async () => (await proposal()).includes('1 to speak'), 'the proposal names what is to speak');
+  await click('#undo');
+  report('Undo makes it spoken again', (await guesses()) === 0 && (await status())[1] === 'all spoken', await status());
+  await pick('0|meredith');
+  report('another voice makes every line a guess', (await guesses()) === 10 && (await status())[1].startsWith('10 to speak'), await status());
+  const tallNow = await inFrame(`document.querySelector('.line').getBoundingClientRect().height`);
+  report('as long as its words take at the usual pace', Math.abs(tallNow - SAMPLE[0][1].split(/\s+/).length / 2.3 * scale) < 2, tallNow);
+  await pick('0|gareth');
+  report('the voice spoken makes them spoken again', (await guesses()) === 0);
+  await inFrame(`(() => { const s = document.getElementById('lang'); s.value = 'de'; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+  report('so does a language, the other way', (await guesses()) === 10);
+  await inFrame(`(() => { const s = document.getElementById('lang'); s.value = ''; s.dispatchEvent(new Event('change', {bubbles:true})); })()`);
+
+  // join a line and the next
+  report('Split and Join wait for a line to write in', (await off('split')) && (await off('join')));
+  const opening = (await lines())[2].words;
+  await click('.line:nth-of-type(3) .words');
+  await until(async () => !(await off('join')), 'Join ready');
+  await click('#join');
+  all = await lines();
+  report('Join makes one line of a line and the next', all.length === 9 && all[2].words === opening + ' ' + SAMPLE[3][1] && all[2].time === '0:34.0', all[2]);
+  report('which is to be spoken', (await guesses()) === 1 && (await inFrame(`document.querySelectorAll('.line')[2].classList.contains('guess')`)));
+  report('the cursor stands where they met', await inFrame(`document.activeElement === document.querySelectorAll('.line')[2].querySelector('.words') && document.activeElement.selectionStart === ${opening.length}`));
+  await click('#undo');
+  report('Undo parts them again, both spoken', (await lines()).length === 10 && (await guesses()) === 0);
+  await click('.line:nth-of-type(10) .words');
+  await inFrame(`(() => { const t = document.activeElement; t.setSelectionRange(t.value.length, t.value.length); })()`);
+  await sleep(60);
+  report('Split is off with the cursor at an end of the words, and Join on the last line', (await off('split')) && (await off('join')));
+  await click('.line:nth-of-type(1) .grip');
+  report('both are off once no line is being written in', (await off('split')) && (await off('join')));
+
+  // split a line in two where the cursor is
+  const whole = (await lines())[7].words, cut = whole.indexOf(' and that');
+  await click('.line:nth-of-type(8) .words');
+  await inFrame(`document.activeElement.setSelectionRange(${cut}, ${cut})`);
+  await until(async () => !(await off('split')), 'Split ready');
+  await click('#split');
+  all = await lines();
+  report('Split makes two lines of one, where the cursor was', all.length === 11 && all[7].words === whole.slice(0, cut) && all[8].words === whole.slice(cut + 1), all.slice(7, 9));
+  const ends = 135 + whole.slice(0, cut).length / pace;
+  report('the first keeps its start, and the second starts as the first ends, not cutting it off',
+    all[7].time === '2:15.0' && seconds(all[8].time) >= ends && seconds(all[8].time) - ends < 0.1 && !all[7].warn, [all[7], all[8].time, ends]);
+  report('both are to be spoken', (await guesses()) === 2 && (await status())[1].startsWith('2 to speak'), await status());
+  report('the cursor carries on at the start of the second', await inFrame(`document.activeElement === document.querySelectorAll('.line')[8].querySelector('.words') && document.activeElement.selectionStart === 0`));
+  await shot('split');
+  await until(async () => (await proposal()).includes('11 lines'), 'proposal');
+  report('the panel says how many lines are to be spoken', (await proposal()).includes('2 to speak'), await proposal());
+  await pressing('Send');
+  await until(() => messages.length === 1, 'send');
+  const respoken = execFileSync('python3', [SK + '/make_review.py', '--apply'], { cwd: W + '/heard', encoding: 'utf8' });
+  report('only the two halves are spoken again; every other line keeps its speech',
+    JSON.stringify(toSpeak(respoken)) === JSON.stringify([['chunks/08.mp3', whole.slice(0, cut)], ['chunks/09.mp3', whole.slice(cut + 1)]]) && respoken.includes('9 keep'), respoken);
 
   // ---- a video with no words at all
   saves.length = 0; messages.length = 0;
@@ -525,6 +623,26 @@ try {
   const narrowest = await inFrame(`Math.min(...[...document.querySelectorAll('.line')].slice(0, 5).map(c => c.querySelector('.words').getBoundingClientRect().width))`);
   report('lines crowded on a phone keep room for their words', narrowest >= 40, narrowest);
   report('and nothing runs off the side', (await inFrame(`document.documentElement.scrollWidth - document.documentElement.clientWidth`)) <= 0, await sticking());
+
+  // a spoken page on a phone, and a line split with a finger
+  await open('heard');
+  report('a spoken page fits a phone: nothing runs off the side, hides or is cut off',
+    (await inFrame(`document.documentElement.scrollWidth - document.documentElement.clientWidth`)) <= 0 && (await covered()) === 0 && (await clipped()) === 0,
+    { sticking: await sticking(), covered: await covered(), clipped: await clipped() });
+  const tap = async selector => {
+    const p = await point(selector);
+    await touch('touchStart', p.x, p.y);
+    await sleep(20);
+    await touch('touchEnd');
+    await sleep(60);
+  };
+  await tap('.line:nth-of-type(2) .words');
+  await inFrame(`document.querySelectorAll('.line')[1].querySelector('.words').setSelectionRange(33, 33)`);
+  await until(async () => !(await off('split')), 'Split ready on a phone');
+  await tap('#split');
+  report('a finger can split a line', (await lines()).length === 11 && (await lines())[1].words === SAMPLE[1][1].slice(0, 33), (await lines()).slice(1, 3));
+  report('the top bar stays small with Split and Join in it', (await inFrame(`document.querySelector('.status').offsetHeight`)) <= 64);
+  await shot('phone-heard');
 
   // ---- dark
   await viewport(1280, 900);

@@ -220,19 +220,93 @@ r = make("--apply")
 report("a new voice speaks every line again", not glob.glob("chunks/0*.wav") and [p for p, _ in to_speak(r.stdout)] == ["chunks/01.mp3", "chunks/02.mp3", "chunks/03.mp3"] and
        "meredith" in r.stdout, (r.stdout, os.listdir("chunks")))
 
-for n in (1, 2, 3):
-    spoken(n, "meredith")
+def voice(path, seconds):
+    """Speech as a voice hands it back: a tone, with a little silence before and after."""
+    ff("-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono:d=0.4", "-f", "lavfi", "-i", f"sine=f=220:r=24000:d={seconds}",
+       "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono:d=0.6", "-filter_complex", "concat=n=3:v=0:a=1", path)
+
+
+def heard(b64):
+    open("heard.mp3", "wb").write(base64.b64decode(b64))
+    probe = sh("ffprobe", "-v", "error", "-show_entries", "stream=codec_name:format=duration", "-of", "default=nw=1:nk=1", "heard.mp3").stdout.split()
+    return probe[0], float(probe[1])
+
+
+LENGTHS = (2.0, 3.5, 5.0)
+for n, s in enumerate(LENGTHS, 1):
+    voice(f"chunks/{n:02d}.wav", s)
 os.remove("review/approved.json")
 r = make("video.mp4")
 _, data = page_data()
 report("the page shown again after the speech starts from what was spoken, in its voice",
        r.returncode == 0 and data["voice"] == "meredith" and [l["text"] for l in data["lines"]] == ["A new opening.", "First line.", "Second line, changed."],
        (r.stderr, data["voice"], data["lines"]))
+report("it knows the voice the speech is in", data.get("spoken") == {"model": "heygen/heygen-voice-1-turbo", "voice": "meredith"}, data.get("spoken"))
+report("each spoken line is as long as it will be placed, without the silence at its ends",
+       all(abs(l.get("length", 0) - s) < 0.05 for l, s in zip(data["lines"], LENGTHS)), [l.get("length") for l in data["lines"]])
+sounds = [heard(l["audio"]) for l in data["lines"] if l.get("audio")]
+report("and carries that speech, for the page to play", len(sounds) == 3 and all(c == "mp3" and abs(d - s) < 0.15 for (c, d), s in zip(sounds, LENGTHS)), sounds)
+
+os.rename("chunks/03.wav", "three.wav")
+make("video.mp4")
+_, data = page_data()
+report("a line not spoken yet has no length of its own", "length" not in data["lines"][2] and "audio" not in data["lines"][2] and "length" in data["lines"][1],
+       [sorted(l) for l in data["lines"]])
+os.rename("three.wav", "chunks/03.wav")
+open("chunks/02.wav", "w").write("not sound")
+r = make("video.mp4")
+report("speech that cannot be read stops the page, naming it", r.returncode != 0 and "02" in r.stderr, r.stderr)
+voice("chunks/02.wav", 3.5)
+os.rename("chunks/voice.json", "voice.keep")
+r = make("video.mp4")
+_, data = page_data()
+report("speech in no known voice is not offered as spoken", r.returncode == 0 and data.get("spoken") is None and not any("audio" in l for l in data["lines"]),
+       (r.stderr, data.get("spoken")))
+os.rename("voice.keep", "chunks/voice.json")
 
 approve(language="de", voice="meredith", chunks=[{"at": 0.5, "text": "A new opening."}, {"at": 3, "text": "First line."}, {"at": 40, "text": "Second line, changed."}])
 r = make("--apply")
-report("a new language asks for translation, then a last look", r.returncode == 0 and "German" in r.stdout and "make_review" in r.stdout and "Speak" not in r.stdout.split("\n", 1)[1], r.stdout)
+report("a new language asks for a translation, and then speech of every line", r.returncode == 0 and "German" in r.stdout and "--speak-all" in r.stdout and
+       to_speak(r.stdout) == [], r.stdout)
 report("a new language keeps none of the old speech", not glob.glob("chunks/0*.wav"), os.listdir("chunks"))
+
+# the draft is spoken whole, before the page: --speak-all lists every chunk and notes the voice
+json.dump([{"starts_with": "okay so this is", "text": "This is the opening."},
+           {"starts_with": "and here is the", "text": "Here is the  middle."},
+           {"text": "A line placed by hand.", "at": 80.25}], open("chunks.json", "w"))
+r = make("--speak-all")
+report("--speak-all lists every chunk with its words",
+       r.returncode == 0 and to_speak(r.stdout) == [("chunks/01.mp3", "This is the opening."), ("chunks/02.mp3", "Here is the middle."),
+                                                    ("chunks/03.mp3", "A line placed by hand.")], (r.stdout, r.stderr))
+report("in the voice spoken last, and says what it costs", "meredith" in r.stdout and re.search(r"\$\d", r.stdout), r.stdout)
+voice("chunks/01.wav", 1.0)
+r = make("--speak-all", "--voice", "brian")
+report("--voice names the voice, and so its model", r.returncode == 0 and "brian" in r.stdout and
+       json.load(open("chunks/voice.json")) == {"model": "elevenlabs/eleven-flash-v2.5", "voice": "brian"}, (r.stdout, r.stderr))
+report("speech from before is moved aside, so none of it lands under the draft", not glob.glob("chunks/0*") and os.path.exists("chunks.old/01.wav"),
+       os.listdir("chunks"))
+r = make("--speak-all", "--voice", "nobody")
+report("an unknown voice is refused there too", r.returncode != 0 and "nobody" in r.stderr, r.stderr)
+shutil.rmtree("chunks")
+os.remove("review/approved.json")
+r = make("--speak-all")
+report("with no voice named or spoken, the draft is spoken in gareth", r.returncode == 0 and "gareth" in r.stdout and
+       json.load(open("chunks/voice.json"))["voice"] == "gareth", (r.stdout, r.stderr))
+os.rename("chunks.json", "draft.keep")
+r = make("--speak-all")
+report("--speak-all with no script says so", r.returncode != 0 and "chunks.json" in r.stderr, r.stderr)
+os.rename("draft.keep", "chunks.json")
+
+for n, s in enumerate((2.0, 2.5, 3.0), 1):
+    voice(f"chunks/{n:02d}.wav", s)
+r = make("video.mp4")
+_, data = page_data()
+report("the draft's page has every line spoken, each at its narrator's moment",
+       r.returncode == 0 and [round(l["at"]) for l in data["lines"]] == [2, 33, 80] and all("audio" in l for l in data["lines"]), (r.stderr, data["lines"]))
+approve(chunks=[{"at": l["at"] + 1, "text": l["text"]} for l in data["lines"]])
+r = make("--apply")
+report("that draft approved with its lines only moved needs no more speech", r.returncode == 0 and to_speak(r.stdout) == [] and "already spoken" in r.stdout,
+       (r.stdout, r.stderr))
 
 # a page never goes over what ask_operator will load
 sys.path.insert(0, SK)
@@ -255,6 +329,19 @@ ff("-f", "lavfi", "-i", "color=c=gray:s=64x48:r=1:d=7500", "-c:v", "libx264", "-
 r = make("long.mp4")
 _, data = page_data()
 report("a two-hour video has at most 120 screenshots", r.returncode == 0 and len(data["shots"]) <= 125 and data["step"] % 30 == 0 and data["step"] > 30, (r.stderr, len(data["shots"]), data["step"]))
+
+# an hour of speech still makes a page, by speaking it in a smaller file
+json.dump([{"at": i * 120.0, "text": f"Line {i}."} for i in range(60)], open("chunks.json", "w"))
+shutil.rmtree("chunks", ignore_errors=True)
+os.makedirs("chunks")
+json.dump({"model": "heygen/heygen-voice-1-turbo", "voice": "gareth"}, open("chunks/voice.json", "w"))
+for n in range(1, 61):
+    voice(f"chunks/{n:02d}.wav", 60)
+r = make("long.mp4")
+_, data = page_data()
+size = os.path.getsize("review/review.html")
+report("an hour of speech fits in what ask_operator will load, every line playable",
+       r.returncode == 0 and size <= 15 << 20 and all("audio" in l for l in data["lines"]) and len(data["lines"]) == 60, (r.stderr, size))
 
 print(len(bad), "problems", bad)
 os.chdir(ROOT)
