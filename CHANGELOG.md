@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-05
+
+- **Reading a skill's script takes one try.** When the agent tries to open
+  a file of a skill, such as the voice-over's scripts, with the tool that
+  reads its own working directory, it is now told the exact skill_read call
+  that reads it, instead of only that the file is out of reach.
+
 ## 2026-11-04
 
 - **Arrange a voice-over by how long it really runs.** The agent now speaks

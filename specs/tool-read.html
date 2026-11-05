@@ -40,6 +40,14 @@ that reads like a broken path.</p>
 <p>A missing file <em>is</em> an error, and the two cases must not be confused: nothing to read at line
 four hundred is not the same as nothing to read at all.</p>
 
+<h2>A skill's file is read with skill_read</h2>
+<p>A skill's scripts run from its folder, outside the working directory, so the agent sees that path
+and reaches for <code>read</code>. Told only that the path was outside the workspace, it found
+<code>skill_read</code> on its next call, in five voice-over conversations out of five. So a refused
+path in the folder of a skill the conversation has names the call that reads it:
+<code>skill_read {"name": "voice-over", "file": "scripts/place_chunks.py"}</code>. A path anywhere
+else, a skill the conversation does not have included, is only refused.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -49,6 +57,7 @@ four hundred is not the same as nothing to read at all.</p>
 <li>A limit larger than what remains returns what remains.</li>
 <li>A missing file fails and names the path.</li>
 <li>A path that would resolve outside the session's working directory is refused.</li>
+<li>A path in the folder of a skill the conversation has is refused with the <code>skill_read</code> call that reads it.</li>
 <li>An empty file is returned as empty and does not fail.</li>
 </ul>
 </div>

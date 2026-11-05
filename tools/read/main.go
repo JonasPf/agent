@@ -2,7 +2,10 @@
 package main
 
 import (
+	"fmt"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"agent/internal/tool"
@@ -30,10 +33,55 @@ func Window(lines []string, offset, limit int) []string {
 	return lines
 }
 
+// skillFile names the skill_read call for a path in the folder of a skill this
+// conversation has, or returns "". A skill's scripts run from its folder, so the
+// agent sees that path and reaches for read; told only that the path was
+// outside the workspace, it found skill_read on its next call, in conversation
+// after conversation. The skill is found by asking about each name in the path.
+func skillFile(path string) string {
+	full := filepath.Clean(path)
+	if !filepath.IsAbs(full) {
+		full = filepath.Join(tool.Workspace, full)
+	}
+	if real, err := filepath.EvalSymlinks(full); err == nil {
+		full = real
+	}
+	parts := strings.Split(full, string(filepath.Separator))
+	for _, name := range parts[:len(parts)-1] {
+		if name == "" {
+			continue
+		}
+		var sk struct {
+			Dir string `json:"dir"`
+		}
+		if tool.TryAPI("GET", "/skills/"+url.PathEscape(name), nil, nil, &sk) != nil || sk.Dir == "" {
+			continue
+		}
+		dir := sk.Dir
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			dir = real
+		}
+		if rel, err := filepath.Rel(dir, full); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+			return fmt.Sprintf("it is a file of the skill %s: read it with skill_read {\"name\": %q, \"file\": %q}",
+				name, name, filepath.ToSlash(rel))
+		}
+	}
+	return ""
+}
+
 func main() {
 	var a args
 	tool.Args(&a)
-	path := tool.InsideWorkspace(a.Path)
+	path, err := tool.ResolveInside(tool.Workspace, a.Path)
+	if err != nil {
+		if strings.TrimSpace(a.Path) == "" {
+			tool.Failf("%s", err)
+		}
+		if hint := skillFile(a.Path); hint != "" {
+			tool.Failf("%s; %s", err, hint)
+		}
+		tool.Failf("%s", err)
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		tool.Failf("%s", err)

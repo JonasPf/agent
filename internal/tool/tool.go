@@ -106,10 +106,18 @@ func SetAPITimeout(d time.Duration) { client.Timeout = d }
 // Any failure ends the call, because a tool that cannot reach the system has
 // nothing further to say.
 func API(method, path string, body any, query url.Values, out any) {
+	if err := TryAPI(method, path, body, query, out); err != nil {
+		Failf("%s", err)
+	}
+}
+
+// TryAPI is API for a question whose answer may be no: it returns the failure
+// rather than ending the call.
+func TryAPI(method, path string, body any, query url.Values, out any) error {
 	// There is no default to fall back on: the tool API listens on a port the
 	// agent picks when it starts, and answers only a call it is running.
 	if BaseURL == "" {
-		Failf("AGENT_URL is not set: a tool reaches the agent only when the agent runs it")
+		return fmt.Errorf("AGENT_URL is not set: a tool reaches the agent only when the agent runs it")
 	}
 	u := BaseURL + path
 	if len(query) > 0 {
@@ -119,34 +127,35 @@ func API(method, path string, body any, query url.Values, out any) {
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			Failf("could not encode the request: %v", err)
+			return fmt.Errorf("could not encode the request: %v", err)
 		}
 		rdr = bytes.NewReader(b)
 	}
 	req, err := http.NewRequest(method, u, rdr)
 	if err != nil {
-		Failf("could not build the request: %v", err)
+		return fmt.Errorf("could not build the request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+Token)
 	resp, err := client.Do(req)
 	if err != nil {
-		Failf("cannot reach the agent API at %s: %v", BaseURL, err)
+		return fmt.Errorf("cannot reach the agent API at %s: %v", BaseURL, err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		Failf("cannot read the reply from %s: %v", BaseURL, err)
+		return fmt.Errorf("cannot read the reply from %s: %v", BaseURL, err)
 	}
 	if resp.StatusCode >= 400 {
-		Failf("%s", APIError(raw, resp.Status))
+		return fmt.Errorf("%s", APIError(raw, resp.Status))
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
-		return
+		return nil
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
-		Failf("could not parse the reply from %s: %v", BaseURL, err)
+		return fmt.Errorf("could not parse the reply from %s: %v", BaseURL, err)
 	}
+	return nil
 }
 
 // APIError reads the message out of an error reply, falling back to the status
