@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-05
+
+- **Fewer notifications.** Your phone and browser now buzz only when the
+  agent does something you didn't just ask for, like a scheduled job
+  firing. A reply to a message you typed no longer sends a notification. It
+  still shows as unread in the conversation list.
+
 ## 2026-11-04
 
 - **Arrange a voice-over by how long it really runs.** The agent now speaks

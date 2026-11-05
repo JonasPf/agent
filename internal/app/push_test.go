@@ -328,13 +328,35 @@ func verifyVAPID(t *testing.T, a *App, d delivery, audience string) {
 	}
 }
 
-func TestAnUnreadMessageIsPushedToARegisteredDevice(t *testing.T) {
-	a := pushApp(t, 300*time.Millisecond, "The deploy finished.\nAll twelve services are up.")
+// wake fires a job into a session now, as the scheduler does when one comes
+// due, and waits for the turn to end. It is the one way the agent writes
+// without being asked, so it is the one way a push starts.
+func wake(t *testing.T, a *App, sessionID, prompt string) {
+	t.Helper()
+	if a.sched == nil {
+		a.sched = NewScheduler(a)
+	}
+	j, err := a.CreateJob(JobSpec{SessionID: sessionID, Schedule: "20m", Prompt: prompt,
+		AfterActing: afterContinue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.NextRunAt = time.Now().Add(-time.Second)
+	if err := a.store.PutJob(j); err != nil {
+		t.Fatal(err)
+	}
+	a.sched.tick(context.Background())
+	settle(t, a, sessionID)
+}
+
+func TestAnUnreadWakeIsPushedToARegisteredDevice(t *testing.T) {
+	a := pushApp(t, 300*time.Millisecond, "Will do.", "The deploy finished.\nAll twelve services are up.")
 	phone := newPushService(t, 201, "")
 	register(t, a, phone)
 	s := newSession(t, a)
 
-	sendMessage(t, a, s.ID, "Deploy it.")
+	sendMessage(t, a, s.ID, "Tell me when the deploy is done.")
+	wake(t, a, s.ID, "Check the deploy.")
 
 	d := phone.next(t, 5*time.Second)
 	n := phone.payload(t, d)
@@ -365,6 +387,39 @@ func TestAnUnreadMessageIsPushedToARegisteredDevice(t *testing.T) {
 	}
 }
 
+// The operator who typed is waiting for the answer, and a buzz about it tells
+// them nothing they did not know. It still counts as unread.
+func TestAReplyToATypedMessageIsNotPushed(t *testing.T) {
+	a := pushApp(t, 100*time.Millisecond, "Here it is.")
+	phone := newPushService(t, 201, "")
+	register(t, a, phone)
+	s := newSession(t, a)
+
+	sendMessage(t, a, s.ID, "Show me.")
+
+	phone.none(t, time.Second)
+	if got := a.store.Session(s.ID); unreadAfter(a.store.Entries(s.ID), got.ReadThrough) != 1 {
+		t.Error("the reply should still count as unread")
+	}
+}
+
+// A wake and a typed exchange both left unread inside one wait make one push,
+// and it is about what the agent did on its own, not the newer reply.
+func TestAPushCarriesWhatTheWakeSaid(t *testing.T) {
+	a := pushApp(t, time.Second, "Reminder: feed the cat.", "You're welcome.")
+	phone := newPushService(t, 201, "")
+	register(t, a, phone)
+	s := newSession(t, a)
+
+	wake(t, a, s.ID, "Remind me to feed the cat.")
+	sendMessage(t, a, s.ID, "Thanks.")
+
+	if n := phone.payload(t, phone.next(t, 5*time.Second)); n.Body != "Reminder: feed the cat." {
+		t.Errorf("body = %q, want the wake's message", n.Body)
+	}
+	phone.none(t, time.Second)
+}
+
 // The device being read on must not buzz about the line on its screen. A read
 // within the wait cancels the push; the second message, left unread, shows the
 // wait was running all along.
@@ -374,11 +429,11 @@ func TestAMessageReadInTimeIsNotPushed(t *testing.T) {
 	register(t, a, phone)
 	s := newSession(t, a)
 
-	sendMessage(t, a, s.ID, "One.")
+	wake(t, a, s.ID, "One.")
 	markRead(t, a, s.ID, "")
 	phone.none(t, 1500*time.Millisecond)
 
-	sendMessage(t, a, s.ID, "Two.")
+	wake(t, a, s.ID, "Two.")
 	if n := phone.payload(t, phone.next(t, 5*time.Second)); n.Body != "Second answer." {
 		t.Errorf("body = %q, want the unread second answer", n.Body)
 	}
@@ -392,7 +447,7 @@ func TestALongMessageIsClippedByCharacter(t *testing.T) {
 	register(t, a, phone)
 	s := newSession(t, a)
 
-	sendMessage(t, a, s.ID, "Long.")
+	wake(t, a, s.ID, "Long.")
 
 	n := phone.payload(t, phone.next(t, 5*time.Second))
 	if want := strings.Repeat("ü", 139) + "…"; n.Body != want {
@@ -426,7 +481,7 @@ func TestOnlyTheNewestAgentMessageIsPushed(t *testing.T) {
 	register(t, a, phone)
 	s := newSession(t, a)
 
-	sendMessage(t, a, s.ID, "What time is it?")
+	wake(t, a, s.ID, "What time is it?")
 
 	if n := phone.payload(t, phone.next(t, 5*time.Second)); n.Body != "It is noon." {
 		t.Errorf("body = %q, want the newest agent message", n.Body)
@@ -439,7 +494,7 @@ func TestAForkedCopyIsNotPushed(t *testing.T) {
 	phone := newPushService(t, 201, "")
 	register(t, a, phone)
 	s := newSession(t, a)
-	sendMessage(t, a, s.ID, "Show me.")
+	wake(t, a, s.ID, "Show me.")
 	phone.next(t, 5*time.Second)
 
 	if w := call(t, a, "POST", "/sessions/"+s.ID+"/fork", "{}"); w.Code >= 300 {
