@@ -11,6 +11,11 @@
   searches for the same words ahead of what was actually said. The search
   screen is the same. The index is rebuilt once, the first time the agent
   starts after this update.
+- **A last voice-over line can run past the end.** A line still speaking
+  when the video ends is now cut off there, like one cut off by the next
+  line, and the review page says so. Before, the video was not made, and
+  the agent shortened your words and paid to speak them again to make
+  them fit. Moving or shortening the line stays yours to decide.
 
 ## 2026-11-04
 

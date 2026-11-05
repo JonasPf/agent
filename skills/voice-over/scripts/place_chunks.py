@@ -11,9 +11,9 @@ and each part's times are moved to where that part begins.
 
 A chunk starts where its starts_with words are in the transcript, so no time is chosen
 by hand. Each chunk is trimmed and levelled, and starts exactly at its time: one still
-speaking when the next starts is cut off there, with a short fade, and is named. Only a
-last chunk that runs past the end of the video stops the track being written. Requires
-ffmpeg on PATH for the second form.
+speaking when the next starts, or when the video ends, is cut off there, with a short
+fade, and is named. Only a chunk that starts after the video ends stops the track being
+written. Requires ffmpeg on PATH for the second form.
 """
 import argparse, array, glob, json, os, re, shutil, subprocess, sys, tempfile, wave
 from difflib import SequenceMatcher
@@ -168,6 +168,10 @@ def build(rows, video, folder, out):
         sys.exit(f"not spoken yet: {', '.join(missing)}")
 
     total = duration(video)
+    late = [f"chunk {r['n']:02d} starts at {r['at']:.1f} s, after the video's {total:.1f} s: nothing of it would be heard"
+            for r in rows if r["at"] >= total]
+    if late:
+        sys.exit("\n".join(late))
     with tempfile.TemporaryDirectory() as scratch:
         placed = []
         for r in rows:
@@ -176,10 +180,12 @@ def build(rows, video, folder, out):
             placed.append(dict(r, first=int(r["at"] * RATE), frames=frames, kept=frames, path=levelled))
         for p, after in zip(placed, placed[1:]):
             p["kept"] = min(p["frames"], after["first"] - p["first"])
-            p["by"] = after["n"]
-        end = placed[-1]["at"] + placed[-1]["frames"] / RATE
-        if end > total:
-            sys.exit(f"chunk {placed[-1]['n']:02d} ends at {end:.1f} s, after the video's {total:.1f} s: shorten it and speak only that chunk again")
+            p["by"] = f"chunk {after['n']:02d}"
+        # The video's end cuts the last chunk as a next chunk would: where the operator put
+        # it is theirs to change, and so are its words.
+        last = placed[-1]
+        last["kept"] = min(last["frames"], int(total * RATE) - last["first"])
+        last["by"] = "the end of the video"
 
         # Written as it goes: an hour of track is 300 MB, on a server with less than 2 GB.
         with wave.open(out, "wb") as w:
@@ -199,7 +205,7 @@ def build(rows, video, folder, out):
         note = ""
         if p["kept"] < p["frames"]:
             cut += 1
-            note = f"  cut {(p['frames'] - p['kept']) / RATE:.1f} s short by chunk {p['by']:02d}"
+            note = f"  cut {(p['frames'] - p['kept']) / RATE:.1f} s short by {p['by']}"
         print(f"{p['n']:02d} {p['at']:8.2f} {p['frames'] / RATE:6.2f}{note}")
     spoken = sum(p["kept"] for p in placed) / RATE
     print(f"wrote {out}: {total:.1f} s, {spoken:.1f} s of speech, {len(placed)} chunks, {cut} cut off")

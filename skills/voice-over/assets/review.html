@@ -110,7 +110,7 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
     </div>
     <p class="done" id="done" role="status" hidden></p>
   </div>
-  <p class="lede">Drag a line by its handle to move it, or tap the handle to hear it. Each line is as tall as its speech; a dashed one is not spoken yet, so its length is a guess. One still speaking when the next starts is cut off there. Split and Join work where the cursor is. Pick a voice to hear it. Tap a screenshot to enlarge it.</p>
+  <p class="lede">Drag a line by its handle to move it, or tap the handle to hear it. Each line is as tall as its speech; a dashed one is not spoken yet, so its length is a guess. One still speaking when the next starts, or when the video ends, is cut off there. Split and Join work where the cursor is. Pick a voice to hear it. Tap a screenshot to enlarge it.</p>
   <div class="controls">
     <label class="field"><span>Voice</span><select id="voice"></select></label>
     <label class="field"><span>Language</span><select id="lang"></select></label>
@@ -184,13 +184,13 @@ select { background: var(--panel); border: 1px solid var(--line); padding: 7px 9
   }
 
   // What place_chunks.py will do with these lines: each starts where it is put, and one still
-  // speaking when the next starts is cut off there.
+  // speaking when the next starts, or when the video ends, is cut off there.
   function timing() {
     var out = {}, kept = filled();
     kept.forEach(function (l, i) {
       var next = kept[i + 1], end = l.at + speech(l);
       if (next && end > next.at) out[l.id] = { hard: false, text: 'The next line cuts off its last ' + (end - next.at).toFixed(1) + ' s' };
-      if (!next && end > DURATION) out[l.id] = { hard: true, text: 'Runs ' + (end - DURATION).toFixed(1) + ' s past the end of the video' };
+      if (!next && end > DURATION) out[l.id] = { hard: false, text: 'The video ends ' + (end - DURATION).toFixed(1) + ' s before it does, and cuts it off' };
       if (l.text.length > DATA.max_chars) out[l.id] = { hard: true, text: 'Over ' + DATA.max_chars.toLocaleString('en') + ' characters: split it' };
     });
     return out;
