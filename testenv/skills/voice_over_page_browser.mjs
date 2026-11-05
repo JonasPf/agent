@@ -377,8 +377,8 @@ try {
   await click('#undo');
   report('the warning goes with the words', !(await lines())[0].warn, (await lines())[0]);
   await replaceText('.line:nth-of-type(10) .words', Array(60).fill('word').join(' '));
-  report('a last line that runs past the end says so', (await lines())[9].warn.includes('past the end'), (await lines())[9]);
-  report('and is called too long', (await status())[2].includes('too long'), await status());
+  report('a last line that runs past the end says the video ends first', (await lines())[9].warn.includes('video ends'), (await lines())[9]);
+  report('and is counted as cut off, as place_chunks.py will cut it', (await status())[2].includes('cut off'), await status());
   await click('#undo');
 
   // voice and language

@@ -112,10 +112,11 @@ longer line up.
    - A call refused with a 429: wait 30 seconds, then send only the chunks still missing.
 7. **Place**: `python3 /app/skills/voice-over/scripts/place_chunks.py INPUT.mov` trims and
    levels each chunk, puts it at its moment, and writes `voiceover_track.wav`. Every chunk starts
-   exactly where it was put, and one still speaking when the next starts is cut off there, marked
-   `cut N s short`. Leave it: the page shows the operator where, and moving or shortening a line is
-   theirs to decide. A last chunk that runs past the end of the video writes nothing and is named:
-   shorten its `text`, speak only it again, and rerun.
+   exactly where it was put, and one still speaking when the next starts, or when the video ends,
+   is cut off there, marked `cut N s short`. Leave it: the page shows the operator where, and
+   moving or shortening a line is theirs to decide. Never change its words or its place to make it
+   fit. Only a chunk that starts after the video ends writes nothing; it is named: ask the operator
+   where it goes.
 8. **Mux**: `python3 /app/skills/voice-over/scripts/vo_mux.py INPUT.mov voiceover_track.wav
    voiceover.mp4 0` — video stream copied, delay 0 because the track is already timed. Confirm with
    ffprobe that it is as long as the input.
