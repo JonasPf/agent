@@ -382,11 +382,13 @@ for the session list, which is the costliest thing the agent serves.</p>
 that marks it, rather than at its end with what was missed above the fold. The line stays where it
 is while the conversation is open.</p>
 
-<p>The second is a system notification, on the terms of <a href="adrs.html#adr-066">ADR-066</a>: an
-agent message nobody has read is pushed to every device that asked for it, including one whose
-browser is closed. A message waits ten seconds first, and one that any page reads in that time is
+<p>The second is a system notification, on the terms of <a href="adrs.html#adr-066">ADR-066</a> and
+<a href="adrs.html#adr-081">ADR-081</a>: a message the agent wrote unasked &mdash; in a job's wake &mdash;
+that nobody has read is pushed to every device that asked for it, including one whose browser is
+closed. A reply to something the operator typed is awaited, so it counts as unread and goes no further.
+A message waits ten seconds first, and one that any page reads in that time is
 not pushed, so the device being read on stays quiet about the line on its screen. Several messages
-in that time make one push, carrying the newest.</p>
+in that time make one push, carrying the newest from a wake.</p>
 
 <p>The conversation is the title and its newest line is the body, clipped: a notification is a
 pointer to the transcript, not a copy of it. One per conversation, replaced as the exchange
@@ -406,16 +408,17 @@ succeeds. A page opened on a subscribed device registers again, so an agent whos
 learns of it, and a subscription made under an earlier key is replaced.</p>
 
 <p>A page that cannot be pushed to keeps the browser's own notification while it is open, as
-<a href="adrs.html#adr-027">ADR-027</a> describes: a new agent message in a conversation it is not
-showing raises a banner. A page that is pushed to raises none of its own, so a message arrives once.
+<a href="adrs.html#adr-027">ADR-027</a> describes: a new message from a wake in a conversation it is
+not showing raises a banner. A page that is pushed to raises none of its own, so a message arrives once.
 Where permission is absent the count is the whole of the signal; the interface never opens a popup of
 its own instead.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>An assistant message still unread ten seconds after it was written is pushed to every registered device, whether or not a browser is open there.</li>
-<li>A message read within those ten seconds, on any device, is pushed to none; several unread in that time make one push, carrying the newest.</li>
+<li>An assistant message from a job's wake still unread ten seconds after it was written is pushed to every registered device, whether or not a browser is open there.</li>
+<li>A reply to a typed message is pushed to none and raises no banner, though it counts as unread.</li>
+<li>A message read within those ten seconds, on any device, is pushed to none; several unread in that time make one push, carrying the newest from a wake, never a newer reply to a typed message.</li>
 <li>A user message, a tool result, an event, and a turn that only called tools are not pushed.</li>
 <li>The push names the conversation as its title and its newest line as its body; it is encrypted to the device (RFC 8291) and signed with the agent's VAPID key (RFC 8292).</li>
 <li>Pushes about one session share a tag and a push-service topic, so a later one replaces an earlier one rather than stacking.</li>
@@ -425,7 +428,7 @@ its own instead.</p>
 <li>A device whose push service answers that it is gone is forgotten; any other refusal is kept beside the device and shown on the settings screen.</li>
 <li>A page opened on a subscribed device registers it again, and replaces a subscription made under a key the agent no longer holds.</li>
 <li>On an iPhone or iPad outside the home-screen app, the settings screen says push needs it and offers no push button.</li>
-<li>A page that cannot be pushed to shows a system notification while open for a new assistant message in a session it is not showing, whether hidden or on another screen; a message in the conversation on screen shows none.</li>
+<li>A page that cannot be pushed to shows a system notification while open for a new assistant message from a wake in a session it is not showing, whether hidden or on another screen; a message in the conversation on screen shows none.</li>
 <li>A page on a subscribed device raises no notification of its own.</li>
 <li>The messages a fork copies are not pushed and reach no page one by one: the copy is written at once, and pages hear only that the list moved.</li>
 <li>Without permission nothing is shown at all &mdash; no notification and no in-app popup &mdash; and the settings screen says so.</li>

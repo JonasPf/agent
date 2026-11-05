@@ -2,6 +2,15 @@
 
 ## 2026-11-05
 
+- **Fewer notifications.** Your phone and browser now buzz only when the
+  agent does something you didn't just ask for, like a scheduled job
+  firing. A reply to a message you typed no longer sends a notification. It
+  still shows as unread in the conversation list.
+- **A search finds the conversation, not earlier searches.** When the agent
+  looks back through a conversation, it no longer finds its own earlier
+  searches for the same words ahead of what was actually said. The search
+  screen is the same. The index is rebuilt once, the first time the agent
+  starts after this update.
 - **A last voice-over line can run past the end.** A line still speaking
   when the video ends is now cut off there, like one cut off by the next
   line, and the review page says so. Before, the video was not made, and

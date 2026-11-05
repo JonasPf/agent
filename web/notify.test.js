@@ -5,8 +5,9 @@ const assert = require('node:assert');
 const { shouldNotify, messageNotification, canShowSystemNotification,
   pushSupport, keyBytes, sameKey, deviceLine } = require('./notify.js');
 
+// What notifies is what the agent said on its own: a reply in a job's wake.
 const msg = (over = {}) => Object.assign(
-  { type: 'message', role: 'assistant', text: 'The deploy finished.' }, over);
+  { type: 'message', role: 'assistant', text: 'The deploy finished.', job_id: 'J1' }, over);
 
 // The point is to learn about output you are not looking at. A message arriving
 // in the conversation already on screen needs no announcement — you can see it.
@@ -51,6 +52,13 @@ test('an event entry never notifies', () => {
 // once per tool round for a single answer.
 test('an assistant entry with no text never notifies', () => {
   assert.strictEqual(shouldNotify(msg({ text: '', tool_calls: [{ name: 'bash' }] }), 'S2',
+    { view: 'sessions', visible: true }), false);
+});
+
+// The operator who typed is waiting for the answer; a banner about it tells
+// them nothing. Only what the agent did without being asked is announced.
+test('a reply to a typed message never notifies', () => {
+  assert.strictEqual(shouldNotify(msg({ job_id: undefined }), 'S2',
     { view: 'sessions', visible: true }), false);
 });
 

@@ -29,10 +29,11 @@ import (
 )
 
 // Web push for unread messages (ADR-066). The agent cannot cause a push: one
-// is sent only for an assistant message nobody has read, and its words are the
-// transcript's. What lives here is the delivery — the keys, the devices, and
-// the two RFCs a push service expects: the payload encrypted to the device
-// (RFC 8291) and the request signed with the agent's key (RFC 8292).
+// is sent only for an assistant message from a job's wake that nobody has read
+// (ADR-081), and its words are the transcript's. What lives here is the
+// delivery — the keys, the devices, and the two RFCs a push service expects:
+// the payload encrypted to the device (RFC 8291) and the request signed with
+// the agent's key (RFC 8292).
 
 // pushWait is how long a message stays unread before it is pushed. A page
 // showing the conversation reads each message as it arrives, so the device
@@ -441,8 +442,9 @@ func encryptPush(plain, uaPublic, auth []byte, asPriv *ecdh.PrivateKey, salt []b
 }
 
 // unreadMessage is the push for a session: its title, and the first line of
-// the newest message after its read point. Nothing when there is none — it was
-// read in the meantime, taken back, or the session is gone.
+// the newest unprompted message after its read point. Nothing when there is
+// none — it was read in the meantime, taken back, or the session is gone. A
+// reply to something typed is never what a push says, even when it is newer.
 func (a *App) unreadMessage(sessionID string) (pushMessage, bool) {
 	s := a.store.Session(sessionID)
 	if s == nil {
@@ -454,7 +456,7 @@ func (a *App) unreadMessage(sessionID string) (pushMessage, bool) {
 		if e.Seq <= s.ReadThrough {
 			break
 		}
-		if !countsAsUnread(e) {
+		if !unprompted(e) {
 			continue
 		}
 		title := s.Title
