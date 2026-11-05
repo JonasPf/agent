@@ -202,10 +202,13 @@ func (a *App) append(sessionID string, e Entry) Entry {
 	a.hub.Broadcast(wsEvent{Kind: "entry", SessionID: sessionID, Entry: &out})
 	// The session list carries the unread count, so a message that adds to it
 	// moves the list too, whoever wrote it: a reply, a reminder, a forked copy.
-	// Left unread, it is pushed to the devices that asked (ADR-066).
+	// One the agent wrote unasked, left unread, is also pushed to the devices
+	// that asked (ADR-066, ADR-081).
 	if countsAsUnread(out) {
 		a.hub.Broadcast(wsEvent{Kind: "sessions"})
-		a.push.Soon(sessionID)
+		if unprompted(out) {
+			a.push.Soon(sessionID)
+		}
 	}
 	return out
 }
@@ -224,6 +227,13 @@ func (a *App) entriesSince(sessionID string, before int) []Entry {
 // turn that only called tools said nothing, and neither did a tool or an event.
 func countsAsUnread(e Entry) bool {
 	return e.Type == "message" && e.Role == "assistant" && strings.TrimSpace(e.Text) != ""
+}
+
+// unprompted is a message the agent wrote without the operator asking for it:
+// what it said in a job's wake. Only that interrupts. A reply to something
+// typed is awaited, so it is counted as unread and nothing more (ADR-081).
+func unprompted(e Entry) bool {
+	return countsAsUnread(e) && e.JobID != ""
 }
 
 // unreadAfter counts the assistant messages after a read point. One a revert

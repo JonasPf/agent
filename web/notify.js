@@ -7,11 +7,13 @@
 // gets a banner from the page while a tab is open (ADR-027).
 
 // shouldNotify decides whether an arriving transcript entry is worth a banner.
-// Only what the agent said counts, and only when the operator is not already
-// looking at the conversation it landed in.
+// Only what the agent said unasked counts — a reply in a job's wake, not one to
+// something typed, which the operator is already waiting for (ADR-081) — and
+// only when the operator is not already looking at the conversation it landed in.
 function shouldNotify(entry, sessionID, ctx) {
   if (!entry || entry.type !== 'message' || entry.role !== 'assistant') return false;
   if (!entry.text) return false; // a turn that only called tools has said nothing yet
+  if (!entry.job_id) return false;
   const c = ctx || {};
   const watching = c.view === 'session' && c.arg === sessionID && c.visible;
   return !watching;

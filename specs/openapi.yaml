@@ -1004,8 +1004,9 @@ paths:
       summary: The agent's public push key, and every device registered for pushes.
       description: >-
         The key is what a browser subscribes with (`applicationServerKey`). An
-        unread assistant message is pushed to every device here once it has
-        gone unread for ten seconds.
+        assistant message from a job's wake is pushed to every device here once
+        it has gone unread for ten seconds. A reply to a typed message is not
+        pushed.
       responses:
         "200":
           description: The key and the devices.
