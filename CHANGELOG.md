@@ -2,6 +2,20 @@
 
 ## 2026-11-05
 
+- **Fewer notifications.** Your phone and browser now buzz only when the
+  agent does something you didn't just ask for, like a scheduled job
+  firing. A reply to a message you typed no longer sends a notification. It
+  still shows as unread in the conversation list.
+- **A search finds the conversation, not earlier searches.** When the agent
+  looks back through a conversation, it no longer finds its own earlier
+  searches for the same words ahead of what was actually said. The search
+  screen is the same. The index is rebuilt once, the first time the agent
+  starts after this update.
+- **A last voice-over line can run past the end.** A line still speaking
+  when the video ends is now cut off there, like one cut off by the next
+  line, and the review page says so. Before, the video was not made, and
+  the agent shortened your words and paid to speak them again to make
+  them fit. Moving or shortening the line stays yours to decide.
 - **Reading a skill's script takes one try.** When the agent tries to open
   a file of a skill, such as the voice-over's scripts, with the tool that
   reads its own working directory, it is now told the exact skill_read call

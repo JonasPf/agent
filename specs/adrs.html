@@ -630,7 +630,7 @@ restored, and neither is push.</p>
 </div>
 
 <div class="adr" id="adr-027">
-<div class="meta">ADR-027 · accepted · amends <a href="#adr-026">ADR-026</a> · amended by <a href="#adr-066">ADR-066</a></div>
+<div class="meta">ADR-027 · accepted · amends <a href="#adr-026">ADR-026</a> · amended by <a href="#adr-066">ADR-066</a> and <a href="#adr-081">ADR-081</a></div>
 <h3>The interface notifies about unread messages; the agent still cannot</h3>
 <h4>Context</h4>
 <p><a href="#adr-026">ADR-026</a> removed every notification because the stack that carried them did
@@ -2074,7 +2074,7 @@ every entry in memory, which is fine for one operator's conversations and would 
 </div>
 
 <div class="adr" id="adr-066">
-<div class="meta">ADR-066 · accepted · amends <a href="#adr-026">ADR-026</a> and <a href="#adr-027">ADR-027</a></div>
+<div class="meta">ADR-066 · accepted · amends <a href="#adr-026">ADR-026</a> and <a href="#adr-027">ADR-027</a> · amended by <a href="#adr-081">ADR-081</a></div>
 <h3>Unread messages are pushed to a closed browser; the agent still cannot interrupt</h3>
 <h4>Context</h4>
 <p><a href="#adr-027">ADR-027</a> notifies only while a tab is open, and a phone does not keep one open:
@@ -2541,6 +2541,29 @@ voice. A request to check the script first still gets the page before any speech
 guesses. Every Send makes the video again, so the operator can watch what they changed. The speech takes
 up to half of what <code>ask_operator</code> loads, so an hour of it plays at 8 kbps, and the screenshots
 shrink to fit the rest.</p>
+</div>
+
+<div class="adr" id="adr-081">
+<div class="meta">ADR-081 · accepted · amends <a href="#adr-066">ADR-066</a> and <a href="#adr-027">ADR-027</a></div>
+<h3>Only what the agent does unasked is pushed</h3>
+<h4>Context</h4>
+<p><a href="#adr-066">ADR-066</a> pushes every assistant message left unread for ten seconds. Most of
+those are replies to something the operator just typed. They asked, put the phone down while the turn
+ran, and every answer then buzzed. The operator called it overwhelming. A reply they are waiting for
+is not news, and the notifications that were news got lost among them.</p>
+<h4>Decision</h4>
+<p>A message is pushed, or raises a banner in an open page, only when the agent wrote it without
+being asked: in a job's wake. A reply to a typed message still counts as unread. It shows in the
+session list and moves the read line, but it reaches no device. When a push is due and both kinds are
+unread, the push carries the newest message from a wake, never a newer reply.</p>
+<p>The rule reads one field. Every entry a wake writes carries its job's id, and nothing else
+does.</p>
+<h4>Consequences</h4>
+<p>A long turn the operator starts and walks away from finishes silently. They find it by the unread
+count, not on the lock screen. If a long turn should call them back, a job is the way to say so: a
+wake that reports when the work is done.</p>
+<p>A job that fails writes an event, not a message, so it was never pushed, and still is not. The
+banner across the top of every screen is where a tripped breaker shows, as before.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
