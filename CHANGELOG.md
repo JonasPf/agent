@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-05
+
+- **A search finds the conversation, not earlier searches.** When the agent
+  looks back through a conversation, it no longer finds its own earlier
+  searches for the same words ahead of what was actually said. The search
+  screen is the same. The index is rebuilt once, the first time the agent
+  starts after this update.
+
 ## 2026-11-04
 
 - **Arrange a voice-over by how long it really runs.** The agent now speaks
