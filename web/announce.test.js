@@ -63,7 +63,7 @@ function load({ permission = 'granted', hidden = false } = {}) {
 
 const entryEvent = (sessionID, over = {}) => ({
   kind: 'entry', session_id: sessionID,
-  entry: Object.assign({ type: 'message', role: 'assistant', text: 'The deploy finished.' }, over)
+  entry: Object.assign({ type: 'message', role: 'assistant', text: 'The deploy finished.', job_id: 'J1' }, over)
 });
 
 function inSession(ctx, id) {
@@ -104,6 +104,13 @@ test('a tool-only turn and a user message raise nothing', () => {
   inSession(ctx, 'S1');
   ctx.handle(entryEvent('S2', { text: '', tool_calls: [{ name: 'bash' }] }));
   ctx.handle(entryEvent('S2', { role: 'user', text: 'hello' }));
+  assert.strictEqual(shown.length, 0);
+});
+
+test('a reply to a typed message raises none', () => {
+  const { ctx, shown } = load({ hidden: true });
+  inSession(ctx, 'S1');
+  ctx.handle(entryEvent('S2', { job_id: undefined }));
   assert.strictEqual(shown.length, 0);
 });
 
