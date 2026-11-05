@@ -22,8 +22,9 @@
 <p class="lede">Full-text search across transcripts.</p>
 
 <h2>What it does</h2>
-<p>Queries a full-text index over every transcript entry ever written, and returns the session, the
-position, and a snippet for each match. Given a hit's number instead, it reads that one entry whole.</p>
+<p>Queries a full-text index over every transcript entry ever written, except the searches themselves,
+and returns the session, the position, and a snippet for each match. Given a hit's number instead, it
+reads that one entry whole.</p>
 
 <table>
 <tr><th>Parameter</th><th>Meaning</th></tr>
@@ -57,6 +58,16 @@ names no one conversation, so it is refused.</p>
 <strong>The default scope is this session.</strong> Searching one's own history is ordinary. Reading another conversation is a thing the operator should be able to watch being decided, so it is a scope the agent has to ask for, and asking appears in the transcript as the tool call it is. Since <a href="adrs.html#adr-055">ADR-055</a> nothing crosses a session boundary unasked at all, which makes this the whole of the route between conversations.
 </div>
 
+<h2>A search does not find the searches before it</h2>
+<p>A search's call holds the words it looked for, and its result the words it found, so an index of
+every entry finds the earlier searches for something before the conversation that said it. In one
+conversation of 723 searches, at least 154 answered with an earlier search, and one found itself. So
+the call and its result are left out of the index. The entries stay in the transcript, and a hit's
+number still reads them; only searching for their words does not find them.</p>
+<p>The index records which rules wrote it. An index written under other rules is emptied when the
+agent starts and rebuilt from the transcripts, as an empty one always was, so a change to what is
+indexed reaches the rows already written rather than only the ones written after it.</p>
+
 <h2>Results</h2>
 <p>Each hit names its session and its position within it, so the operator can open the conversation at
 the line that matched. A query matching nothing says so rather than returning an empty body, which
@@ -75,6 +86,8 @@ would read like a call that failed to run.</p>
 <li>An empty query is refused, unless a number is given to read.</li>
 <li>A hit's number reads that entry whole, in the calling session or in the one named; a number that names no entry fails and quotes it.</li>
 <li>Event entries are searchable.</li>
+<li>A search's own call and what it returned are not in the index, so a later search finds what the conversation said, not the searches for it.</li>
+<li>An index holding what the agent no longer indexes is rebuilt from the transcripts at startup.</li>
 <li>Eval cases cover an unscoped search, a deliberate widening, and reading a hit whole.</li>
 </ul>
 </div>

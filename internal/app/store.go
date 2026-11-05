@@ -76,6 +76,9 @@ drop table if exists dead_letters;
 -- more, so the store that did is dropped rather than left behind unread.
 drop table if exists memory;
 create virtual table if not exists entry_fts using fts5(session_id, seq unindexed, body);
+-- Which rules wrote the index: an index written under other rules is emptied,
+-- and so rebuilt from the transcripts, when the agent starts.
+create table if not exists search_index (version integer not null);
 `
 
 // migrate adds what "create table if not exists" cannot. A table that already
@@ -83,6 +86,9 @@ create virtual table if not exists entry_fts using fts5(session_id, seq unindexe
 // reaches a database anyone is actually using — which is every database except
 // the first one ever opened.
 func migrate(db *sql.DB) error {
+	if err := settleSearchIndex(db); err != nil {
+		return err
+	}
 	cols, err := columns(db, "jobs")
 	if err != nil {
 		return err
@@ -94,6 +100,33 @@ func migrate(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// searchIndexVersion names the rules indexBody follows. Changing what goes into
+// the index changes it: the rows already written stay as the old rules wrote
+// them, and the index is otherwise rebuilt only when it is empty.
+//
+//  1. every entry's text, calls, and results
+//  2. as 1, without the searches themselves
+const searchIndexVersion = 2
+
+// settleSearchIndex empties an index written under other rules, which load
+// then rebuilds from the transcripts.
+func settleSearchIndex(db *sql.DB) error {
+	var v int
+	if err := db.QueryRow(`select version from search_index`).Scan(&v); err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if v == searchIndexVersion {
+		return nil
+	}
+	for _, q := range []string{`delete from entry_fts`, `delete from search_index`} {
+		if _, err := db.Exec(q); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(`insert into search_index(version) values(?)`, searchIndexVersion)
+	return err
 }
 
 func columns(db *sql.DB, table string) (map[string]bool, error) {
@@ -334,12 +367,19 @@ func readTranscript(path string) ([]Entry, error) {
 
 // indexBody is what the search index holds for an entry, or "" for one with
 // nothing to find.
+//
+// A search is left out: its call holds the words looked for and its result the
+// words found, so every later search for them found the earlier searches before
+// the conversation. In one conversation of 723 searches, at least 154 answered
+// with an earlier search, and one found itself.
 func indexBody(e Entry) string {
 	body := e.Text
 	for _, tc := range e.ToolCalls {
-		body += "\n" + tc.Name + " " + tc.Arguments
+		if tc.Name != searchToolName {
+			body += "\n" + tc.Name + " " + tc.Arguments
+		}
 	}
-	if len(e.ToolResult) > 0 {
+	if len(e.ToolResult) > 0 && e.ToolName != searchToolName {
 		body += "\n" + string(e.ToolResult)
 	}
 	if strings.TrimSpace(body) == "" {
@@ -347,6 +387,9 @@ func indexBody(e Entry) string {
 	}
 	return body
 }
+
+// searchToolName is the tool that reads the index, and is left out of it.
+const searchToolName = "session_search"
 
 func (s *Store) index(sessionID string, e Entry) {
 	s.mu.RLock()
