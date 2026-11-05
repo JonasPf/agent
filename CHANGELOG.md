@@ -16,6 +16,10 @@
   line, and the review page says so. Before, the video was not made, and
   the agent shortened your words and paid to speak them again to make
   them fit. Moving or shortening the line stays yours to decide.
+- **Reading a skill's script takes one try.** When the agent tries to open
+  a file of a skill, such as the voice-over's scripts, with the tool that
+  reads its own working directory, it is now told the exact skill_read call
+  that reads it, instead of only that the file is out of reach.
 
 ## 2026-11-04
 
