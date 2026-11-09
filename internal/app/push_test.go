@@ -382,6 +382,9 @@ func TestAnUnreadWakeIsPushedToARegisteredDevice(t *testing.T) {
 		t.Errorf("Topic = %q, want the session, so an undelivered push about it is replaced", got)
 	}
 	verifyVAPID(t, a, d, phone.srv.URL)
+	// The push arrived before its answer did: wait for the pusher to write the
+	// answer down before reading it back.
+	a.push.Wait()
 	if dev := pushState(t, a).Devices[0]; dev.LastStatus != 201 || dev.LastSentAt.IsZero() {
 		t.Errorf("device after a push = %+v, want status 201 and a time", dev)
 	}
