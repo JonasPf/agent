@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
-	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // Before every turn, a session's working directory is snapshotted: a
@@ -253,21 +253,8 @@ func (a *App) replaceWorkspace(id, from, keep string) error {
 
 // exchange swaps two paths in one step (renameat2 with RENAME_EXCHANGE).
 func exchange(a, b string) error {
-	pa, err := syscall.BytePtrFromString(a)
-	if err != nil {
-		return err
-	}
-	pb, err := syscall.BytePtrFromString(b)
-	if err != nil {
-		return err
-	}
-	atFDCWD := -100 // a variable: a negative constant has no uintptr
-	const renameExchange = 1 << 1
-	_, _, errno := syscall.Syscall6(syscall.SYS_RENAMEAT2,
-		uintptr(atFDCWD), uintptr(unsafe.Pointer(pa)),
-		uintptr(atFDCWD), uintptr(unsafe.Pointer(pb)), renameExchange, 0)
-	if errno != 0 {
-		return &os.LinkError{Op: "exchange", Old: a, New: b, Err: errno}
+	if err := unix.Renameat2(unix.AT_FDCWD, a, unix.AT_FDCWD, b, unix.RENAME_EXCHANGE); err != nil {
+		return &os.LinkError{Op: "exchange", Old: a, New: b, Err: err}
 	}
 	return nil
 }

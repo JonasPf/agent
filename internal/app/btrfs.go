@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // A session's working directory is a btrfs subvolume, and the agent snapshots
@@ -16,7 +18,9 @@ import (
 // until one side writes. That is what makes a snapshot per turn affordable, a
 // revert able to put files back, and a fork free.
 //
-// These are the five ioctls it takes, called directly, as Landlock is. None
+// These are the five ioctls it takes, called directly, as Landlock is; the two
+// syscalls that have a different number on each architecture, syncfs and
+// renameat2, come from x/sys/unix instead. None
 // of them needs privilege on a filesystem mounted user_subvol_rm_allowed: a
 // user may create subvolumes, snapshot the ones it owns, and delete the ones
 // it may write.
@@ -206,8 +210,8 @@ func subvolumeGeneration(path string) (uint64, error) {
 		return 0, err
 	}
 	defer f.Close()
-	if _, _, errno := syscall.Syscall(syscall.SYS_SYNCFS, f.Fd(), 0, 0); errno != 0 {
-		return 0, &os.PathError{Op: "syncfs", Path: path, Err: errno}
+	if err := unix.Syncfs(int(f.Fd())); err != nil {
+		return 0, &os.PathError{Op: "syncfs", Path: path, Err: err}
 	}
 	var info btrfsSubvolInfo
 	if err := btrfsIoctl(f, btrfsIocGetSubvolInfo, unsafe.Pointer(&info)); err != nil {
