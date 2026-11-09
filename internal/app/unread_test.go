@@ -145,7 +145,7 @@ func TestAForkStartsRead(t *testing.T) {
 	a, _ := modelBackedApp(t, "First.")
 	s := newSession(t, a)
 	sendMessage(t, a, s.ID, "one")
-	fork, err := a.Fork(s, s.SessionConfig)
+	fork, err := a.Fork(s, s.SessionConfig, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

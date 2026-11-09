@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -30,11 +31,70 @@ func (a *App) sessionWorkspace(id string) string {
 	return filepath.Join(a.cfg.Workspace, id)
 }
 
-// ensureWorkspace returns the session's working directory, creating it.
+// ensureWorkspace returns the session's working directory, creating it. A
+// session's directory is a btrfs subvolume, so that it can be snapshotted
+// before every turn in one operation whatever it holds (ADR-082). The
+// workspace root, which a tool called outside any session runs in, is a plain
+// directory.
 func (a *App) ensureWorkspace(id string) string {
 	dir := a.sessionWorkspace(id)
-	_ = os.MkdirAll(dir, 0o755)
+	if !validSessionID(id) {
+		_ = os.MkdirAll(dir, 0o755)
+		return dir
+	}
+	if _, err := os.Lstat(dir); err == nil {
+		return dir
+	}
+	_ = os.MkdirAll(filepath.Dir(dir), 0o755)
+	if err := createSubvolume(dir); err != nil && !errors.Is(err, fs.ErrExist) {
+		// The agent checked at start that it can make one here, so this is
+		// not expected. A plain directory still lets the turn run; the
+		// snapshot before it fails, and says so in the conversation.
+		log.Printf("workspace: %v", err)
+		_ = os.MkdirAll(dir, 0o755)
+	}
 	return dir
+}
+
+// convertWorkspaces makes every session's directory that is still a plain
+// one — written before ADR-082, or copied across from another filesystem — a
+// subvolume. Its contents are copied in rather than moved, because nothing
+// moves across a subvolume's edge; on btrfs the copy shares the blocks. A link
+// keeps pointing where it pointed: the directory ends up at the same path.
+func (a *App) convertWorkspaces() error {
+	ents, err := os.ReadDir(a.cfg.Workspace)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, e := range ents {
+		dir := filepath.Join(a.cfg.Workspace, e.Name())
+		if !e.IsDir() || !validSessionID(e.Name()) || isSubvolume(dir) {
+			continue
+		}
+		next := dir + ".subvolume"
+		if err := deleteSubvolume(next); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := createSubvolume(next); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := copyTreeLinkingTo(dir, next, dir); err != nil {
+			_ = deleteSubvolume(next)
+			errs = append(errs, err)
+			continue
+		}
+		if err := exchange(next, dir); err != nil {
+			_ = deleteSubvolume(next)
+			errs = append(errs, err)
+			continue
+		}
+		errs = append(errs, os.RemoveAll(next))
+		log.Printf("workspace: %s is now a subvolume", dir)
+	}
+	return errors.Join(errs...)
 }
 
 // validSessionID reports whether an id is safe to use as a directory name. Ids
@@ -263,6 +323,13 @@ func (a *App) fillWorkspaceFile(id string, root *os.Root, rel string, f *os.File
 // rather than followed. A missing source is not an error: a session that never
 // wrote a file has nothing to carry.
 func copyTree(src, dst string) error {
+	return copyTreeLinkingTo(src, dst, dst)
+}
+
+// copyTreeLinkingTo is copyTree, with a link that pointed inside src pointing
+// inside linkBase instead: dst for a copy that stays where it is written, src
+// for one that is about to take src's place.
+func copyTreeLinkingTo(src, dst, linkBase string) error {
 	if _, err := os.Stat(src); os.IsNotExist(err) {
 		return nil
 	}
@@ -279,7 +346,7 @@ func copyTree(src, dst string) error {
 		case d.IsDir():
 			return os.MkdirAll(target, 0o755)
 		case d.Type()&fs.ModeSymlink != 0:
-			return copyLink(p, target, src, dst)
+			return copyLink(p, target, src, linkBase)
 		case d.Type().IsRegular():
 			info, err := d.Info()
 			if err != nil {
@@ -309,6 +376,31 @@ func copyLink(p, target, src, dst string) error {
 		return err
 	}
 	return os.Symlink(to, target)
+}
+
+// rebaseLinks points every link in dir that names a place inside from at the
+// same place inside to. A snapshot copies links as they are, so a fork made
+// from one would otherwise reach back into its origin's directory, which its
+// tools cannot read and which may since have been deleted. It reads names, not
+// contents.
+func rebaseLinks(dir, from, to string) error {
+	return filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.Type()&fs.ModeSymlink == 0 {
+			return err
+		}
+		target, err := os.Readlink(p)
+		if err != nil || !filepath.IsAbs(target) {
+			return err
+		}
+		rel, err := filepath.Rel(from, target)
+		if err != nil || !filepath.IsLocal(rel) {
+			return nil
+		}
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+		return os.Symlink(filepath.Join(to, rel), p)
+	})
 }
 
 // copyFile copies a regular file with the permissions it had, set after the
@@ -353,5 +445,5 @@ func (a *App) DeleteSession(id string) error {
 	if a.pkgs != nil {
 		a.pkgs.forget(id)
 	}
-	return os.RemoveAll(a.sessionWorkspace(id))
+	return errors.Join(deleteSubvolume(a.sessionWorkspace(id)), a.deleteSnapshots(id))
 }

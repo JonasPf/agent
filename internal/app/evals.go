@@ -423,10 +423,11 @@ func RunEvals(model string, only []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(dir)
+	defer removeAllSubvolumes(dir)
 
 	cfg.DataDir = dir
 	cfg.Workspace = filepath.Join(dir, "workspace")
+	cfg.Snapshots = filepath.Join(dir, "snapshots")
 	// The skills are the ones that ship, and whatever a case brings: not the
 	// operator's, which would make a case pass on one machine and not another.
 	cfg.UserSkillsDir = filepath.Join(dir, "skills")

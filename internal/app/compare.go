@@ -38,7 +38,7 @@ func (a *App) Compare(origin *Session, text string, models []string) (string, []
 	for _, m := range models {
 		cfg := origin.SessionConfig
 		cfg.Model = m
-		c, err := a.Fork(origin, cfg)
+		c, err := a.Fork(origin, cfg, 0)
 		if err != nil {
 			return "", nil, err
 		}

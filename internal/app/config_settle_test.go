@@ -41,6 +41,7 @@ func newTestAppAt(t *testing.T, dir string) *App {
 		t.Fatal(err)
 	}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	return a
 }
 
@@ -140,7 +141,7 @@ func TestForkCreatesTheNewSessionUnderTheGivenConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	succ, err := a.Fork(pred, SessionConfig{Model: "new/model", EnabledTools: []string{"bash"}})
+	succ, err := a.Fork(pred, SessionConfig{Model: "new/model", EnabledTools: []string{"bash"}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

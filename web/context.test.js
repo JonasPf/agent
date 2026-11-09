@@ -538,6 +538,81 @@ test('a revert arriving is drawn: what it took back goes, and the line recording
   assert.match(textOf(last), /REVERT/, 'the conversation does not end with the revert');
 });
 
+// ---- forking from an earlier point (ADR-082) ----
+
+const forkOf = row => find(row, 'forkfrom');
+
+test('a message whose files are kept offers to fork from before it, and one whose files are gone does not', async () => {
+  const ctx = conversation(session({ snapshots: [1, 8] }), plain);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const row = text => t.children.find(k => textOf(k).includes(text) && findAll(k, 'revert').length);
+  for (const [text, kept] of [['first question', true], ['second question', false], ['a wake', true]]) {
+    const b = forkOf(row(text));
+    assert.ok(b, text + ' has no fork control');
+    assert.strictEqual(!b.hidden, kept, text + (kept ? ' does not offer' : ' offers') + ' to fork');
+  }
+  assert.strictEqual(forkOf(row('first question')).title, 'Fork from before this message');
+  const offering = t.children.filter(k => findAll(k, 'forkfrom').length).length;
+  assert.strictEqual(offering, 3, 'fork controls on ' + offering + ' entries, want the three that started turns');
+});
+
+test('a snapshot kept or let go since shows or hides the fork, without drawing the conversation again', async () => {
+  const ctx = conversation(session({ snapshots: [1] }), plain);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const first = forkOf(t.children.find(k => textOf(k).includes('first question') && findAll(k, 'forkfrom').length));
+  const second = forkOf(t.children.find(k => textOf(k).includes('second question') && findAll(k, 'forkfrom').length));
+  ctx.showSession(session({ snapshots: [6] }));
+  assert.ok(first.hidden, 'a snapshot let go still offers to fork');
+  assert.ok(!second.hidden, 'a snapshot taken does not offer to fork');
+});
+
+test('the line recording a revert offers to fork from before it, which undoes it', async () => {
+  const withRevert = plain.slice(0, 5).concat([
+    { seq: 10, type: 'event', event_kind: 'revert', reverts_from: 6, text: 'reverted to before your message', created_at: at },
+  ]);
+  const ctx = conversation(session({ snapshots: [10] }), withRevert);
+  await ctx.viewSession(node('div'));
+  const line = ctx._id('transcript').children.find(k => /REVERT/i.test(textOf(k)) && findAll(k, 'forkfrom').length);
+  assert.ok(line, 'the revert line offers no fork');
+  const b = forkOf(line);
+  assert.ok(!b.hidden, 'the revert line hides its fork though its files are kept');
+  assert.strictEqual(b.title, 'Fork from before this revert');
+  b.onclick();
+  assert.strictEqual(ctx.location.hash, '#fork/S1/10');
+});
+
+test('reverting says the files go back when they are kept, and stay when they are not', async () => {
+  const kept = conversation(session({ snapshots: [6] }), plain);
+  await kept.viewSession(node('div'));
+  assert.match(textOf(await revertDialog(kept, 6)), /files go back to how they were before this message/i);
+  const gone = conversation(session({ snapshots: [] }), plain);
+  await gone.viewSession(node('div'));
+  assert.match(textOf(await revertDialog(gone, 6)), /files stay as they are.*no longer kept/i);
+});
+
+test('a fork from before a message copies only what came before it, and the message waits in the fork', async () => {
+  const ctx = conversation(session({ snapshots: [6] }), plain, {
+    '/preferences': { model: 'x/y' }, '/models': [], '/tools': { tools: [{ name: 'bash' }] },
+    '/skills': { skills: [] }, '/personas': { personas: [] },
+    'POST /sessions/S1/fork': { id: 'S2' },
+    '/sessions/S2': { session: session({ id: 'S2' }) }, '/sessions/S2/transcript': plain.slice(0, 6),
+  });
+  await ctx.viewSession(node('div'));
+  vm.runInContext("state.view = 'fork'; state.arg = 'S1'; state.arg2 = '6';", ctx);
+  await ctx.render();
+  assert.match(textOf(ctx._id('view')), /before your message/, 'the fork screen does not say where it forks from');
+  await findAll(ctx._id('view'), 'btn').find(b => b.textContent === 'Create fork').onclick();
+  const sent = ctx._calls.filter(c => c.method === 'POST' && c.path === '/sessions/S1/fork');
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(JSON.parse(sent[0].body).before, 6, 'the fork does not name the point it forks from');
+  assert.strictEqual(ctx.location.hash, '#session/S2');
+  vm.runInContext("state.view = 'session'; state.arg = 'S2';", ctx);
+  await ctx.render();
+  assert.strictEqual(composer(ctx).value, 'second question', 'the message forked from is not in the fork\'s composer');
+});
+
 test('the history dims what a revert took back, and a search hit on it says the agent no longer sees it', async () => {
   const ctx = load({ '/sessions/S1': { session: session() }, '/sessions/S1/transcript': reverted });
   vm.runInContext("state.view = 'history'; state.arg = 'S1';", ctx);

@@ -141,6 +141,11 @@ func (a *App) derive(s *Session, jobs int, fresh bool) *Session {
 	out.Unread = unreadAfter(entries, s.ReadThrough)
 	out.ContextUsed = a.contextUsed(s.ID, entries)
 	out.DiskBytes = a.sessionDiskBytes(s.ID, fresh)
+	if fresh {
+		// Only for the one session a page opens: the list would read every
+		// session's snapshot directory on every count that moved.
+		out.Snapshots = a.snapshotSeqs(s.ID)
+	}
 	if jobs >= 0 {
 		out.JobCount = jobs
 	}
@@ -492,6 +497,8 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		configRequest
 		startRequest
+		// Before is the point to fork from; left out, the whole conversation.
+		Before *int `json:"before"`
 	}
 	if err := readStart(r, &in); err != nil {
 		fail(w, 400, "%v", err)
@@ -501,7 +508,19 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "%v", err)
 		return
 	}
-	fork, err := a.Fork(s, in.applyTo(s.SessionConfig))
+	before := 0
+	if in.Before != nil {
+		if *in.Before <= 0 {
+			fail(w, 400, "before must name an entry: a message that started a turn, or a revert")
+			return
+		}
+		before = *in.Before
+	}
+	fork, err := a.Fork(s, in.applyTo(s.SessionConfig), before)
+	if errors.Is(err, errCannotFork) {
+		fail(w, 400, "%v", err)
+		return
+	}
 	if err != nil {
 		fail(w, 500, "%v", err)
 		return

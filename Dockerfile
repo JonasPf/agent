@@ -155,7 +155,9 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 # transcripts and the database on one side, session working directories on the
 # other — and is not a boundary: Landlock is, and it holds whether or not the
 # two share a mount. Both are created here so a fresh named volume inherits an
-# owner before anything runs.
+# owner before anything runs. The volume must be btrfs (ADR-082): session
+# working directories are subvolumes, and snapshots/ holds what each was before
+# each turn. A named volume on an ext4 host is not; the agent says so and stops.
 #
 # Only the state is the agent's. What the image ships stays root's: the agent
 # never writes it, and a recursive chown over /app copied every binary into a
@@ -165,7 +167,7 @@ COPY CHANGELOG.md /app/CHANGELOG.md
 # for, and no tool can write it. It belongs on a volume of its own, because a
 # store path must be /nix/store and cannot live under /app/state; without one,
 # every conversation's packages are fetched again after each deployment.
-RUN mkdir -p /app/state/data /app/state/workspace /app/state/skills /app/state/personas \
+RUN mkdir -p /app/state/data /app/state/workspace /app/state/snapshots /app/state/skills /app/state/personas \
       /nix/store /nix/var/nix \
     && chown -R agent:agent /app/state /nix
 

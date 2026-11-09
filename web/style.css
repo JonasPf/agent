@@ -714,14 +714,21 @@ label.f { font-size: 11px; color: var(--muted); text-transform: uppercase; lette
    the undo emoji in colour now, on a button with an edge of its own, so it
    reads as something to press without reading as part of what was said. A
    thumb gets a target its own size. */
-.msg .who .revert {
+.msg .who .revert, .msg .who .forkfrom, .ev .forkfrom {
   margin-left: 8px; padding: 3px 5px; border: 1px solid var(--line-2); border-radius: 6px;
   background: var(--card); font-size: 14px; line-height: 1; vertical-align: middle;
   position: relative; top: -1px;
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", var(--sans);
 }
-.msg .who .revert:hover, .msg .who .revert:focus-visible { border-color: var(--accent); background: var(--soft); }
-@media (pointer: coarse) { .msg .who .revert { padding: 6px 10px; margin-left: 6px; font-size: 16px; } }
+.msg .who .revert:hover, .msg .who .revert:focus-visible,
+.msg .who .forkfrom:hover, .msg .who .forkfrom:focus-visible,
+.ev .forkfrom:hover, .ev .forkfrom:focus-visible { border-color: var(--accent); background: var(--soft); }
+/* The fork beside the revert is offered only while the files from there are
+   kept (ADR-082). */
+.forkfrom[hidden] { display: none; }
+@media (pointer: coarse) {
+  .msg .who .revert, .msg .who .forkfrom, .ev .forkfrom { padding: 6px 10px; margin-left: 6px; font-size: 16px; }
+}
 .msg.carried { opacity: .78; border-left: 2px dashed var(--line-2); padding-left: 11px; }
 
 /* Events are a log, not a conversation: a clock in the gutter, the kind as a

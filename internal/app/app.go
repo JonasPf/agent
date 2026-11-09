@@ -19,6 +19,10 @@ type Config struct {
 	Addr      string
 	DataDir   string
 	Workspace string
+	// Snapshots holds what each session's working directory was before each
+	// of its turns (ADR-082). It must be on the same btrfs filesystem as the
+	// workspace, and outside it, where no tool can reach.
+	Snapshots string
 	ToolsDir  string
 	SkillsDir string
 	// UserSkillsDir and PersonasDir hold what the operator writes through the
@@ -147,6 +151,7 @@ func LoadConfig() Config {
 		ToolPorts:     os.Getenv("AGENT_TOOL_PORTS"),
 		DataDir:       filepath.Join(state, "data"),
 		Workspace:     filepath.Join(state, "workspace"),
+		Snapshots:     filepath.Join(state, "snapshots"),
 		ToolsDir:      filepath.Join(home, "tools"),
 		SkillsDir:     filepath.Join(home, "skills"),
 		UserSkillsDir: filepath.Join(state, "skills"),
@@ -260,11 +265,17 @@ func Run() error {
 	if cfg.APIKey == "" {
 		log.Println("warning: OPENROUTER_API_KEY is not set; model calls will fail")
 	}
-	for _, d := range []string{cfg.DataDir, cfg.Workspace, cfg.ToolsDir, cfg.SkillsDir,
+	for _, d := range []string{cfg.DataDir, cfg.Workspace, cfg.Snapshots, cfg.ToolsDir, cfg.SkillsDir,
 		cfg.UserSkillsDir, cfg.PersonasDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
 		}
+	}
+	// Before anything else touches a conversation's files: they live in btrfs
+	// subvolumes, snapshotted before every turn, and there is no second way to
+	// keep them (ADR-082).
+	if err := checkBtrfs(cfg.Workspace, cfg.Snapshots); err != nil {
+		return err
 	}
 	st, err := OpenStore(cfg.DataDir)
 	if err != nil {
@@ -294,6 +305,12 @@ func Run() error {
 	}
 	if a.push, err = newPusher(cfg.DataDir, a.unreadMessage); err != nil {
 		return err
+	}
+	// A directory from before ADR-082, or one copied in from another
+	// filesystem, becomes a subvolume before its session's next turn would
+	// try to snapshot it.
+	if err := a.convertWorkspaces(); err != nil {
+		log.Printf("warning: %v", err)
 	}
 	// Before any tool can run, and before the sandbox is described: the tool
 	// API's port is part of the policy.

@@ -37,9 +37,13 @@ jobs:
     # the runner keeps the container alive with, which never collects an exited
     # process. The runtime image's PID 1 is tini too, and a test of what a
     # background process leaves behind is only true here if this one is.
+    #
+    # --privileged lets testenv/btrfs.sh mount a btrfs image over /tmp: the
+    # agent snapshots conversations' files on btrfs and refuses any other
+    # filesystem (ADR-082), and its tests build their agents under /tmp.
     container:
       image: golang:1.25-bookworm
-      options: --init
+      options: --init --privileged
     steps:
       - uses: actions/checkout@v4
 
@@ -82,7 +86,7 @@ jobs:
             chromium curl wget python3 perl \
             poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
             python3-pip python3-venv python3-numpy python3-pil \
-            unzip jq xz-utils
+            unzip jq xz-utils btrfs-progs
 
       - name: Report the browser
         run: /usr/bin/chromium --version

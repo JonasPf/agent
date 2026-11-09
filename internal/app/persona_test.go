@@ -176,7 +176,7 @@ func TestThePersonaIsFixedForASessionAndChangesByForking(t *testing.T) {
 
 	cfg := s.SessionConfig
 	cfg.Persona = "terse"
-	fork, err := a.Fork(s, cfg)
+	fork, err := a.Fork(s, cfg, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

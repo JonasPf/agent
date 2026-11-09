@@ -71,6 +71,7 @@ func metricsApp(t *testing.T, dir string, srv *httptest.Server) *App {
 		skills: NewSkills(cfg.SkillsDir, ""), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	writeSkillIn(t, cfg.SkillsDir, "watering", "")
 	writeSkillIn(t, cfg.SkillsDir, "pruning", "")
 	a.skills.Load()

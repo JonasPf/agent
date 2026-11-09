@@ -169,7 +169,7 @@ func TestAForkTakesThePersonaAsItThenStands(t *testing.T) {
 		t.Fatalf("PUT /personas/gardener: status %d (%s)", w.Code, w.Body.String())
 	}
 
-	fork, err := a.Fork(s, s.SessionConfig)
+	fork, err := a.Fork(s, s.SessionConfig, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

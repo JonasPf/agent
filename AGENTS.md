@@ -31,12 +31,12 @@ not a faster version of the check, it is a compile error. Use the tasks.
 | Task | Command | Notes |
 |------|---------|-------|
 | **Build** | `task build` | Compiles all packages and every tool. Agent entry point is `./cmd/agent`; each `tools/<name>` builds to its own `run`. |
-| **Run** | `task dev` | Builds the runtime image and serves http://localhost:7770, tools confined. The only way to run the agent. See the README table for `AGENT_*` env vars. |
+| **Run** | `task dev` | Builds the runtime image and serves http://localhost:7770, tools confined. The only way to run the agent. Its state is one btrfs image, `.dev/state.img`, made on first run and mounted by a privileged container (ADR-082). See the README table for `AGENT_*` env vars. |
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
 | **Test** | `task test` | Go tests across the agent and every tool, under the race detector; the browser's pure helpers (`web/*.test.js`) under node's built-in runner; and the scripts shipped skills carry (`testenv/skills`), on real video and in a real browser. The Go side builds the tools first, because the registry will not load one whose `run` is missing. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
 | **Check** | `task check` | Lint, build, and test together. The pre-commit gate; see below. |
 | **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
-| **Reset** | `task db:clear` | Moves sessions, jobs, and per-session files to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
+| **Reset** | `task db:clear` | Moves the dev state image (sessions, jobs, files, snapshots) to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
 | **Inspect** | `task db:status` | What the running agent currently holds. |
 | **Specs** | `task spec` | Serves `specs/` at http://localhost:8000, where the API page loads `openapi.yaml`. Not part of `check`. |
 | **Reload tools** | `task tools:reload` | Asks the running agent to reload tools from disk. |
@@ -50,7 +50,13 @@ task check
 ```
 
 That runs lint, build, and every test suite — in `testenv/Dockerfile` (Debian,
-chromium, Landlock, `AGENT_TEST_FULL=1`) unless the host is already Linux. It is
+chromium, Landlock, `AGENT_TEST_FULL=1`) unless the host is already Linux. The
+temporary directory is a btrfs image mounted over `/tmp` (`testenv/btrfs.sh`),
+because the agent keeps conversations' files only on btrfs (ADR-082); the test
+container and CI's job container run privileged to mount it. On a Linux host
+outside a container, point `TMPDIR` at a btrfs filesystem mounted
+`noatime,user_subvol_rm_allowed`, or `internal/app`'s tests fail at the start
+saying so. The test container is
 the environment CI uses, so a green run here is a green run there, and a test
 that cannot run fails rather than saying NOT RUN. The first run of the day
 builds the image; after that the image and the Go caches are reused.

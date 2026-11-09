@@ -32,5 +32,25 @@ func TestMain(m *testing.M) {
 		fmt.Println("connected")
 		os.Exit(0)
 	}
+	// And for btrfs: a copy run as a user who is not root snapshots and
+	// deletes, as the deployed agent has to.
+	if len(os.Args) == 3 && os.Args[1] == "-btrfs-as-user" {
+		if err := btrfsAsUser(os.Args[2]); err != nil {
+			fmt.Println("failed:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	// Every agent these tests build lives under the temporary directory, and
+	// the agent keeps conversations' files only on btrfs (ADR-082). Anywhere
+	// else every test would fail on its own, a hundred times over, without
+	// saying why; this says it once.
+	if ok, err := onBtrfs(os.TempDir()); !ok {
+		fmt.Fprintf(os.Stderr, "the temporary directory %s is not btrfs (%v): the agent snapshots "+
+			"conversations' files on btrfs and refuses anything else (ADR-082). Run the tests "+
+			"with `task test`, which mounts one, or point TMPDIR at a btrfs filesystem mounted "+
+			"with user_subvol_rm_allowed.\n", os.TempDir(), err)
+		os.Exit(1)
+	}
 	os.Exit(m.Run())
 }

@@ -2,6 +2,9 @@ data/
 workspace/
 .env
 
+# The dev agent's state: one btrfs image (`task dev`, ADR-082)
+.dev/
+
 # Snapshots taken by `task db:clear`
 .backups/
 tools/*/run

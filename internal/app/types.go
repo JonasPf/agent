@@ -176,8 +176,11 @@ type Session struct {
 
 	// Derived, not persisted.
 
-	EntryCount   int     `json:"entry_count"`
-	DiskBytes    int64   `json:"disk_bytes"` // transcript plus working directory
+	EntryCount int   `json:"entry_count"`
+	DiskBytes  int64 `json:"disk_bytes"` // transcript plus working directory
+	// Snapshots are the entries whose files are kept (ADR-082): a revert to
+	// before one puts them back, and a fork can start before one.
+	Snapshots    []int   `json:"snapshots,omitempty"`
 	ContextUsed  int     `json:"context_used"`
 	JobCount     int     `json:"job_count"`
 	CacheHitRate float64 `json:"cache_hit_rate"`

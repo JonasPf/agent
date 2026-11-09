@@ -303,7 +303,9 @@ platform, because a deployment the agent is shaped around is a deployment it can
 nor a toolchain. Everything that outlives the container &mdash; transcripts, the database, and session
 working directories &mdash; is under one mounted volume, so a redeploy replaces the process and keeps
 every conversation, job, and file. The two directories inside it are not a boundary; the sandbox is
-(<a href="adrs.html#adr-039">ADR-039</a>). The Nix store holding the programs conversations installed
+(<a href="adrs.html#adr-039">ADR-039</a>). The volume is btrfs, so a conversation's files can be
+snapshotted before every turn and a fork shares its origin's blocks rather than copying them
+(<a href="adrs.html#adr-082">ADR-082</a>); the agent will not start on anything else. The Nix store holding the programs conversations installed
 is a second volume, at <code>/nix</code>, because a store path cannot be anywhere else
 (<a href="adrs.html#adr-072">ADR-072</a>).</p>
 

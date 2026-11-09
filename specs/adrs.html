@@ -2566,6 +2566,65 @@ wake that reports when the work is done.</p>
 banner across the top of every screen is where a tripped breaker shows, as before.</p>
 </div>
 
+<div class="adr" id="adr-082">
+<div class="meta">ADR-082 · proposed · amends <a href="#adr-061">ADR-061</a>, builds on <a href="#adr-056">ADR-056</a></div>
+<h3>A conversation's files are snapshotted before every turn</h3>
+<h4>Context</h4>
+<p>A revert took back the conversation and nothing else (<a href="#adr-061">ADR-061</a>). The working
+directory stayed as the reverted turns left it, so the agent could meet files it had no memory of
+writing. A fork copied the whole directory byte by byte: the largest is 685 MB, the disk is ext4, which
+shares nothing, and comparisons fork once per model (<a href="#adr-057">ADR-057</a>). And a fork could
+only copy a conversation as it stands now, never as it stood at an earlier message.</p>
+<p>A copy-on-write filesystem answers all three. On btrfs a directory can be a subvolume, and a snapshot
+of a subvolume is one operation whatever it holds: the copy shares every block with the original until
+one side writes. Reflinks, on XFS or btrfs, share a file's blocks too, but copying a directory with them
+still creates every file again, so a snapshot costs per file, and a working directory holding a Python
+environment can hold tens of thousands. Overlayfs and FUSE need mount privileges, which
+<a href="#adr-039">ADR-039</a> avoided by choosing Landlock.</p>
+<h4>Decision</h4>
+<p>The state volume is btrfs, mounted with <code>noatime,user_subvol_rm_allowed</code>, and every
+session's working directory is a subvolume. The agent refuses to start on anything else, and says why. There is
+one environment (<a href="#adr-056">ADR-056</a>): a second, where a revert leaves the files and a fork
+copies them, would be one that no test runs.</p>
+<p>Before every turn begins, the agent takes a read-only snapshot of the session's directory, named after
+the message that starts the turn. A turn is the unit because a revert only ever cuts where one begins.
+The snapshot is taken at the start rather than the end so that what changes the files between turns
+&mdash; an upload for the next message, a job's check &mdash; is in it, and so that a turn needs no
+snapshot on any of the ways it can end. A turn that begins with nothing changed since the last snapshot
+takes none and shares that one: the subvolume's generation, the transaction that last changed it, is
+the same as when the last snapshot was taken. Without <code>noatime</code> reading a file changes it, and
+a turn that only read would take a snapshot it did not need. A session keeps its newest twenty, deletes older ones, and loses all of
+them when it is deleted. They live outside every working directory, where no tool can reach them.</p>
+<p>A revert puts back the snapshot taken before the message it reverts to, having first snapshotted the
+files it replaces, under the revert event. When that snapshot is no longer kept, the revert still takes
+back the turns, leaves the files as they are, and says so.</p>
+<p>A fork's directory is a writable snapshot of its origin's. A fork may also start before any message
+that started a turn, or before a revert event: it copies the entries before that point and starts from
+the files of the snapshot taken there. Forking before a revert event is how a revert is undone, files
+included. A fork carries its origin's snapshots of the points it copied, renumbered as its entries are,
+so it can revert into the history it copied.</p>
+<p>Only the session's working directory is snapshotted. The database, the transcripts, and the jobs are
+not: rolling them back would undo other conversations, delete what a revert keeps on purpose, and
+unschedule jobs that the spec says stay.</p>
+<h4>Consequences</h4>
+<p>A fork takes milliseconds, and no space for its files until one side changes them. A revert undoes
+what the turns did to the files. Jobs and cost still stay as the reverted turns left them.</p>
+<p>Twenty is how far back files can go. A revert or a fork before an older message, or in a conversation
+imported or started before this change, gets the conversation without its files and says so.</p>
+<p>A snapshot holds on to what later turns deleted: a video downloaded and removed again stays on disk
+until the last snapshot that saw it is deleted. The size a session reports is still its working
+directory's, so what its snapshots hold is not in it, and a fork and its origin each count the blocks
+they share in full.</p>
+<p>A snapshot copies links as they are. A fork still rewrites the absolute links that pointed into its
+origin's directory, as the copy did, which means walking the fork once; that reads names, not contents.
+Scripts that carry their directory's path inside them, as a Python environment's do, are no more broken
+than they were under copying.</p>
+<p>Development and the test suite need btrfs as well, so the tasks provide a btrfs volume, and the
+container they run in must be allowed to mount it. The database shares the volume, and copy-on-write
+fragments a file that is rewritten in place, so the database's directory is marked not to copy on
+write.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

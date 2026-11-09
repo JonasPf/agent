@@ -23,7 +23,7 @@ func TestAForkCopiesTheConversationInOneGo(t *testing.T) {
 	events := a.hub.add()
 	defer a.hub.remove(events)
 
-	fork, err := a.Fork(s, s.SessionConfig)
+	fork, err := a.Fork(s, s.SessionConfig, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
