@@ -266,9 +266,11 @@ func TestARevertWhileWorkingIsRefused(t *testing.T) {
 	}
 }
 
-// A revert is of the conversation and nothing else. What the turns did to the
-// working directory and the schedule stays done.
-func TestARevertLeavesTheFilesAndJobsAsTheyWere(t *testing.T) {
+// A revert puts files back only from a snapshot taken before the turn
+// (ADR-082). A message written straight into the transcript started no turn,
+// so none was taken: the files stay as they are, and the revert says why. The
+// schedule is never the conversation's to take back, snapshot or not.
+func TestARevertWithNoSnapshotLeavesTheFilesAndAlwaysTheJobs(t *testing.T) {
 	a := newTestApp(t)
 	s := newSession(t, a)
 	a.append(s.ID, Entry{Type: "message", Role: "user", Text: "Write the notes and remind me."})
@@ -286,7 +288,10 @@ func TestARevertLeavesTheFilesAndJobsAsTheyWere(t *testing.T) {
 		t.Fatalf("revert: status %d (%s)", w.Code, w.Body.String())
 	}
 	if b, err := os.ReadFile(file); err != nil || string(b) != "kept" {
-		t.Errorf("a revert touched the working directory: %q, %v", b, err)
+		t.Errorf("a revert with no snapshot touched the working directory: %q, %v", b, err)
+	}
+	if ev := lastEvent(t, a, s.ID); !strings.Contains(ev.Text, "no longer kept") {
+		t.Errorf("the revert does not say why the files stayed: %q", ev.Text)
 	}
 	if got, err := a.store.Job(j.ID); err != nil || got == nil || got.Status != j.Status {
 		t.Errorf("a revert touched the conversation's job: %+v, %v", got, err)

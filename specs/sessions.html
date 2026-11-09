@@ -580,10 +580,17 @@ always named.</p>
 
 <p>Taking back what came after a message takes back everything it did to the conversation: a
 compaction, or an edited summary, written since is undone with the rest, and the turns it had folded
-are sent again. What it did outside the conversation stays done. Files the agent wrote in its working
-directory are where it left them, jobs it created are still scheduled, and what it cost is spent. The
-warning before a revert says so, because a turn the agent no longer remembers can have left a file it
-will find and not recognise.</p>
+are sent again. Its files go back too. The working directory is put back as it was when that message's
+turn began, from the snapshot taken then (<a href="#snapshots">Snapshots</a>), so the agent does not
+meet a file it has no memory of writing. What the operator uploaded for that message was there before
+the turn began, so it stays. What the turns did outside the conversation stays done: jobs they created
+are still scheduled, and what they cost is spent. The warning before a revert says so.</p>
+
+<p>The files a revert replaces are not lost. They are snapshotted first, under the revert event, and a
+fork from before that event is the conversation as it stood before the revert, files and all
+(<a href="#forking">Forking</a>). A revert to a message whose snapshot is no longer kept still takes
+the conversation back, but leaves the files as they are. The warning before it says so, and so does
+the event after it.</p>
 
 <p>A conversation that is working refuses a revert. The turn under way would go on writing after the
 revert, answering a message that is no longer there. Stop it, or let it end, and revert then.</p>
@@ -601,7 +608,9 @@ longer ends where the cached prefix did, and the next answer says what it actual
 <li>An entry a revert took back is still found by search, which says the agent no longer sees it.</li>
 <li>A revert to an entry that is not a user message, to one already taken back, or to one that does not exist, is refused and changes nothing.</li>
 <li>A revert while the conversation is working is refused and changes nothing.</li>
-<li>A revert leaves the working directory and the conversation's jobs as they were.</li>
+<li>A revert puts the working directory back as it was when the reverted-to message's turn began, what was uploaded for that message included, and leaves the conversation's jobs as they were.</li>
+<li>The files a revert replaces are kept: a fork from before its revert event starts from them.</li>
+<li>A revert to a message whose snapshot is no longer kept takes back the same entries, leaves the working directory as it was, and its event says the files were not put back.</li>
 <li>A revert clears the live cache the session reports.</li>
 <li>A fork of a reverted conversation sends the model what its origin sends.</li>
 </ul>
@@ -675,12 +684,30 @@ countdown would print the same number beside every message and tell the reader n
 </ul>
 </div>
 
-<h2>Forking</h2>
+<h2 id="forking">Forking</h2>
 
 <p>A fork copies a conversation into a new session. Everything comes across: the whole transcript,
 compactions and all, and a copy of the working directory. The one entry it does not copy is the
 origin's prompt: a session has exactly one prompt entry, and the fork writes its own, from its own
 configuration, ahead of the copy. The original is untouched, stays active, and keeps its jobs.</p>
+
+<h3>From an earlier point</h3>
+
+<p>A fork can also start before any message that started a turn, the operator's or a wake's, or before
+a revert event. It copies the entries before that point and none after, and starts from the files as
+they were there: the snapshot taken before that turn began, or before that revert replaced them
+(<a href="#snapshots">Snapshots</a>). It is a revert that leaves the original alone: the fork goes back,
+and the conversation it came from goes on as it was. Forking before a revert event is how a revert is
+undone, files included. A point a revert has since taken back can be forked from too, and the copy is
+the conversation as it stood then. When the point is a message the operator typed, that message is put
+in the fork's composer, as a revert puts it back in the original's.</p>
+
+<p>A point whose snapshot is no longer kept cannot be forked from, and the request is refused saying
+so. A fork of the whole conversation needs no stored snapshot and is always possible.</p>
+
+<p>A fork carries its origin's snapshots of the points it copied, renumbered as its entries are, so a
+revert in the fork to before a message it copied puts back the files from before that message, as it
+would have in the origin.</p>
 
 <p>It is the only way to change a configuration, and it is also how a conversation is branched — two
 directions explored from the same point, both readable, neither disturbing the other.</p>
@@ -703,6 +730,10 @@ still running. A fork that should carry the schedule creates it again, deliberat
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A fork copies every transcript entry of its origin, in order, compactions included, except the origin's prompt entry; it has one prompt entry, its own, written from its configuration.</li>
+<li>A fork can start before a message that started a turn or before a revert event, whether or not a revert has since taken that point back: it copies the entries before the point and none after, and starts from the files as they were there.</li>
+<li>A fork from a message the operator typed has that message in its composer.</li>
+<li>A fork from a point whose snapshot is no longer kept is refused, says why, and creates nothing.</li>
+<li>A revert in a fork to before a message it copied puts back the files from before that message, when the origin still kept them at the time of the fork.</li>
 <li>A fork of a compacted conversation sends the model what its origin sends: each compaction it copies covers the copies of the entries it covered, wherever the copy puts them.</li>
 <li>A fork starts from a copy of its origin's working directory; writes after that are independent.</li>
 <li>A fork has its origin's installed packages on its <code>PATH</code>, without copying them.</li>
@@ -784,7 +815,8 @@ neither can change it.</p>
 
 <p>A fork carries files as well as words: it starts from a copy of the origin's directory, so the copy
 continues with the files the conversation was working on, and neither session's later writes reach the
-other. It is a copy a program still runs from: a file keeps its permissions, so what was executable
+other. The copy is a snapshot, so it shares the origin's blocks until either side writes, and takes no
+space for the files it carries until then. It is a copy a program still runs from: a file keeps its permissions, so what was executable
 stays executable, and a link is copied as a link. A link to a place inside the origin's directory
 points to the same place inside the fork's, so nothing in the fork reaches back into a directory its
 tools cannot read, and that may since have been deleted. A compaction touches the directory not at all — the session is the same session, and its files
@@ -800,18 +832,40 @@ anything is removed, so a model call already under way is not paid for to produc
 read, and whatever was still on its way to the transcript, the job table, or the directory when the
 delete landed is refused rather than written into the place the delete just emptied.</p>
 
+<h3 id="snapshots">Snapshots</h3>
+
+<p>Before every turn begins, the session's directory is snapshotted: a read-only copy, named after the
+message that starts the turn, which shares every block with the directory until one of them changes.
+What the operator uploaded for that message, and what a job's check wrote before its wake, are in it,
+because both happen before the turn runs. A turn that begins with nothing changed since the last
+snapshot takes none, and shares that one. A revert snapshots the files it is about to replace, under
+its own event.</p>
+
+<p>A session keeps its newest twenty snapshots and deletes older ones. They live outside every working
+directory, so no tool can read or change one, and they go when the session goes. They are what a revert
+puts back and what a fork from an earlier point starts from; nothing else reads them
+(<a href="adrs.html#adr-082">ADR-082</a>). Only the working directory is snapshotted: the transcript
+reverts by its own rule, and jobs, cost, and every other conversation are left alone.</p>
+
+<p>The state volume is btrfs, where a directory is snapshotted in one operation whatever it holds. The
+agent checks this when it starts, and refuses to start on anything else, saying why.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A session's tools run in that session's directory, and no other session's tools can read it.</li>
 <li>A file uploaded to a session is written there, and its tools see it immediately. It never replaces a file already there: a taken name gets a number, and the answer names the path it landed at.</li>
 <li>A fork starts from a copy of its origin's directory; writes after that are independent.</li>
+<li>A fork takes no space for the file contents it copies until either side changes them.</li>
+<li>Before every turn the session's directory is snapshotted, with what was uploaded for the turn's message and what a job's check wrote before it; a turn that begins with nothing changed since the last snapshot takes none.</li>
+<li>A session keeps its newest twenty snapshots, and no tool can read or change one.</li>
+<li>The agent refuses to start when its state volume is not btrfs, and says why.</li>
 <li>What a tool installed in a session's directory runs in its fork, after the origin is deleted too: a file keeps its permissions, a link stays a link, and a link into the origin's directory points into the fork's.</li>
 <li>A compaction leaves the working directory unchanged.</li>
 <li>The files a session holds are listed, downloaded, and deleted through the API. The listing names its directories too, empty ones included, marked as directories.</li>
 <li>Asked about particular paths, the listing answers for those alone, without walking the directory: the ones that are files there. A path that names nothing, a directory, or a place a link leads out to is left out.</li>
 <li>A path that would leave the session's directory is refused, whether it climbs out or passes through a link that points out. A link that stays inside reads as the file it names; deleting a link removes the link and never what it names; an upload never writes through one.</li>
-<li>Deleting a session deletes its directory, and removes from the store the packages no remaining session installed.</li>
+<li>Deleting a session deletes its directory and its snapshots, and removes from the store the packages no remaining session installed.</li>
 <li>Deleting a session that is working stops its turn first, a job's wake included. Nothing that turn would have written afterwards brings back the session, its transcript, its jobs, or its directory.</li>
 <li>A session reports what it occupies on disk: its transcript and its working directory.</li>
 <li>A session changed from several sides at once &mdash; a turn counting its cost, the operator renaming it or moving where it compacts, a page reading it through &mdash; keeps every change, in memory and on disk. A title the model writes for it never lands over one the operator chose meanwhile.</li>
@@ -822,7 +876,9 @@ delete landed is refused rather than written into the place the delete just empt
 
 <p>A session travels as one zip: <code>meta.json</code>, <code>transcript.jsonl</code>,
 <code>jobs.json</code>, <code>job_runs.json</code>, and the working directory under
-<code>files/</code>. The archive mirrors what is on disk, so it can be read without this program.</p>
+<code>files/</code>. The archive mirrors what is on disk, so it can be read without this program. It
+carries the working directory as it is, not its snapshots, so an imported conversation can put files
+back, in a revert or a fork from an earlier point, only for turns that ran after the import.</p>
 
 <p>An import restores the session under the identifier it already carries: a restored conversation is
 the one it was rather than a copy of it, and its links, its jobs, and its files all still name it. An
@@ -839,7 +895,7 @@ them by their exact store paths, and the import fetches those same paths from th
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>An export carries the session's metadata, transcript, jobs, their run logs, and working directory.</li>
+<li>An export carries the session's metadata, transcript, jobs, their run logs, and working directory, and none of its snapshots.</li>
 <li>An import restores all of them, in whichever agent reads the archive.</li>
 <li>An imported transcript is searchable and its jobs run.</li>
 <li>An import installs the exact packages its archive names, and the answer says which it could not fetch.</li>

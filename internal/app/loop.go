@@ -48,6 +48,17 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 	emit := func(e Entry) Entry { return a.append(s.ID, e) }
 	stored := emit(user)
 
+	// The files as they are now, before anything this turn does to them: what
+	// a revert to before this message puts back, and what a fork from before
+	// it starts from (ADR-082). Taken here, at the start, so that what changed
+	// them since the last turn — an upload for this message, a job's check —
+	// is in it, and so that no way a turn can end has to remember to take one.
+	if err := a.snapshotBeforeTurn(s.ID, stored.Seq); err != nil {
+		a.appendEvent(s.ID, Entry{EventKind: "snapshot_failed", Text: fmt.Sprintf(
+			"the files could not be snapshotted before this turn: %v. A revert to before it, "+
+				"or a fork from there, will not have them", err)})
+	}
+
 	// The gate asks whether a further call is expected while a cache would
 	// live, so it is asked once this turn's own message is stored: an operator
 	// who has just written is talking now. Asked before, the first message of

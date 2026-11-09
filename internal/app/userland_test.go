@@ -27,6 +27,7 @@ func userlandSession(t *testing.T) (*App, *Session) {
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
 	}

@@ -72,20 +72,37 @@ tasks:
       # supporting — one that confined nothing, answered `-confine` with an
       # error, and skipped the tests that would have said so.
       #
-      # The image keeps both under /app/state, which is the single volume a
-      # deployment mounts. Here they are bound separately so a conversation
-      # started in the container outlives it, at the repository root where the
-      # db: tasks back it up and restore it.
+      # Its state is btrfs, as a deployment's must be (ADR-082): conversations'
+      # files are subvolumes, snapshotted before every turn. Here that is one
+      # image file, .dev/state.img, mounted as the whole of /app/state, so a
+      # conversation started in the container outlives it, and db:clear and
+      # db:restore move one file. Mounting it takes a privileged container that
+      # starts as root; the agent itself then runs as the image's own user, as
+      # it does when deployed.
       - '{{.CONTAINER}} build -t agent:dev --build-arg VERSION="{{.VERSION}}" --build-arg BUILT_AT="{{.BUILT_AT}}" .'
-      # Docker creates a missing bind-mount source; Podman refuses to.
-      - mkdir -p data workspace
       - |
-        {{.CONTAINER}} run --rm -it \
+        if [ ! -e .dev/state.img ]; then
+          mkdir -p .dev
+          echo "making .dev/state.img, a btrfs filesystem for the agent's state (once)"
+          {{.CONTAINER}} run --rm -v "$PWD/.dev:/dev-state" docker.io/library/debian:bookworm-slim sh -c \
+            'apt-get update -qq >/dev/null && apt-get install -y -qq btrfs-progs >/dev/null &&
+             truncate -s 20G /dev-state/state.img && mkfs.btrfs -q /dev-state/state.img'
+        fi
+      - |
+        {{.CONTAINER}} run --rm -it --privileged --user root \
           -p {{trimPrefix ":" .ADDR}}:7770 \
-          -v "$PWD/data:/app/state/data" \
-          -v "$PWD/workspace:/app/state/workspace" \
+          -v "$PWD/.dev:/dev-state" \
+          -e HOME=/home/agent \
           --env-file .env \
-          agent:dev
+          --entrypoint /usr/bin/tini \
+          agent:dev -- sh -c '
+            set -e
+            for i in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+              [ -e /dev/loop$i ] || mknod /dev/loop$i b 7 $i
+            done
+            mount -o loop,noatime,user_subvol_rm_allowed /dev-state/state.img /app/state
+            chown agent:agent /app/state
+            exec setpriv --reuid=agent --regid=agent --init-groups /app/agent'
 
   spec:
     desc: Serve the specs at http://localhost:8000, where the API page can load openapi.yaml
@@ -185,22 +202,28 @@ tasks:
       # writes to tools/*/run never land in the tree. The Go caches outlive the
       # container, so a second run does not recompile everything. .env stays out
       # of the copy and out of the image; the evals are handed it at run time.
+      #
+      # Either way the temporary directory is made btrfs first, where it can be
+      # (testenv/btrfs.sh): the agent snapshots on btrfs and on nothing else
+      # (ADR-082), and its tests build their agents under the temporary
+      # directory. Mounting the image needs a privileged container.
       - |
         if [ "$(uname -s)" = "Linux" ]; then
+          . ./testenv/btrfs.sh
           exec sh -c '{{.CMD}}'
         fi
         set -e
         {{.CONTAINER}} build -q -t agent:test testenv
-        {{.CONTAINER}} run --rm {{.ENV_FILE}} \
+        {{.CONTAINER}} run --rm --privileged {{.ENV_FILE}} \
           -v "$PWD:/repo:ro" \
           -v agent-test-gomod:/go/pkg/mod \
           -v agent-test-gocache:/root/.cache/go-build \
           agent:test sh -c 'tar -C /repo -cf - \
-            --exclude=./.git --exclude=./.backups --exclude=./data --exclude=./workspace \
-            --exclude=./.env --exclude="./tools/*/run" . | tar -C /src -xf - && {{.CMD}}'
+            --exclude=./.git --exclude=./.backups --exclude=./.dev --exclude=./data --exclude=./workspace \
+            --exclude=./.env --exclude="./tools/*/run" . | tar -C /src -xf - && . ./testenv/btrfs.sh && {{.CMD}}'
 
   db:clear:
-    desc: Move sessions, jobs, and session files to a timestamped backup and start fresh
+    desc: Move the dev agent's state — sessions, jobs, files — to a timestamped backup and start fresh
     silent: true
     cmds:
       - |
@@ -209,22 +232,15 @@ tasks:
           echo "The agent is running on {{.ADDR}}. Stop it first, then rerun." >&2
           exit 1
         fi
+        if [ ! -e .dev/state.img ]; then echo "nothing to clear: .dev/state.img does not exist" >&2; exit 1; fi
         stamp=$(date +%Y%m%d-%H%M%S)
         dest="{{.BACKUPS}}/$stamp"
         mkdir -p "$dest"
-        # data/db moves whole, because the database and its journals have to
-        # travel together: a write-ahead log parted from its database is worse
-        # than no log at all. The bare data/agent.db is where the database lived
-        # before it was given a directory of its own, and is moved too so a tree
-        # the agent has not yet started against is also cleared.
-        for f in data/sessions data/db data/agent.db data/agent.db-wal data/agent.db-shm; do
-          [ -e "$f" ] && mv "$f" "$dest"/ || true
-        done
-        # Session working directories are session state too, and an orphaned one
-        # outlives every record of what put it there.
-        [ -d workspace ] && mv workspace "$dest"/workspace || true
-        mkdir -p data/sessions workspace
-        echo "backed up to $dest"
+        # The whole state is one btrfs image (see dev), the database, its
+        # journals, and every conversation's files and snapshots together, so
+        # it moves as one file and nothing can be parted from the rest.
+        mv .dev/state.img "$dest"/state.img
+        echo "backed up to $dest; the next task dev starts fresh"
 
   db:restore:
     desc: Restore the most recent db:clear backup
@@ -232,14 +248,22 @@ tasks:
     cmds:
       - |
         set -e
+        if lsof -ti tcp{{.ADDR}} >/dev/null 2>&1; then
+          echo "The agent is running on {{.ADDR}}. Stop it first, then rerun." >&2
+          exit 1
+        fi
         latest=$(ls -1d {{.BACKUPS}}/*/ 2>/dev/null | tail -1)
         if [ -z "$latest" ]; then echo "no backups in {{.BACKUPS}}" >&2; exit 1; fi
-        rm -rf data/sessions data/db data/agent.db data/agent.db-wal data/agent.db-shm workspace
-        cp -R "$latest"/. data/
-        if [ -d "data/workspace" ]; then mv data/workspace workspace; fi
-        # A backup taken before the database had a directory of its own restores
-        # as data/agent.db, and is left there: the agent moves it into place on
-        # the next start, journals and all, rather than this doing it twice.
+        if [ ! -e "$latest/state.img" ]; then
+          echo "$latest holds no state.img: it was taken before the state was a btrfs image (ADR-082)" >&2
+          exit 1
+        fi
+        mkdir -p .dev
+        rm -f .dev/state.img
+        # A clone, not a copy: the image is a 20 GB sparse file, and the backup
+        # stays where it is.
+        if [ "$(uname -s)" = Darwin ]; then cp -c "$latest/state.img" .dev/state.img
+        else cp --reflink=auto --sparse=always "$latest/state.img" .dev/state.img; fi
         echo "restored from $latest"
 
   db:status:

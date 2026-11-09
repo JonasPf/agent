@@ -649,8 +649,13 @@ async function viewSession(v) {
   const status = el('div', 'status'); status.id = 'statusline';
   const form = el('form', 'composer');
   const ta = el('textarea'); ta.rows = 1; ta.placeholder = 'Message the agent';
-  // A revert puts the message it took back here.
+  // A revert puts the message it took back here, and a fork from before a
+  // message puts that message in the fork's.
   state.composer = ta;
+  if (state.composeIn && state.composeIn.session === state.session.id) {
+    ta.value = state.composeIn.text;
+    state.composeIn = null;
+  }
   ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
   // A keyboard sends on Enter, because that is what a keyboard expects. A touch
   // screen has no comfortable shift, so there Enter is a newline and the button
@@ -915,6 +920,7 @@ function showSession(fresh) {
   state.session = Object.assign({}, state.session, fresh);
   if (state.view === 'session' && state.arg === state.session.id) $('title').textContent = state.session.title || 'Conversation';
   renderStatus();
+  syncForkControls();
 }
 
 function scrollDown() {
@@ -1244,6 +1250,9 @@ function renderEntry(e, opts) {
     n.append(el('span', 'at', eventTime(e.created_at)),
              el('span', 'kind', eventLabel(e)),
              detail);
+    // The files a revert replaced are kept, and forking from before it is how
+    // it is undone.
+    if (o.revert && e.event_kind === 'revert') n.append(forkFromControl(e));
     n.title = new Date(e.created_at).toLocaleString();
     return n;
   }
@@ -1304,8 +1313,8 @@ function renderEntry(e, opts) {
     back.title = 'Revert to before this message';
     back.setAttribute('aria-label', 'Revert to before this message');
     // A wake's speaker opens its job; the way back is not a way to the job.
-    back.onclick = ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); confirmRevert(e); };
-    who.append(back);
+    back.onclick = ev => { if (ev && ev.stopPropagation) ev.stopPropagation(); return confirmRevert(e); };
+    who.append(back, forkFromControl(e));
   }
   w.append(who);
   if (e.text) w.append(bubble(e, o.files));
@@ -1374,12 +1383,47 @@ async function compactNow(id) {
   if (state.session && state.session.id === id) await loadStatus();
 }
 
+// forkFromControl forks the conversation from before a message that started a
+// turn, or before a revert: the conversation and its files as they were there,
+// leaving this one as it is (ADR-082). It is offered only while the files from
+// there are kept, which syncForkControls keeps true as turns add snapshots and
+// the oldest go.
+function forkFromControl(e) {
+  const b = el('button', 'forkfrom', '🔀');
+  b.type = 'button';
+  const what = e.type === 'event' ? 'this revert' : 'this message';
+  b.title = 'Fork from before ' + what;
+  b.setAttribute('aria-label', 'Fork from before ' + what);
+  b.forkSeq = e.seq;
+  b.hidden = !filesKept(e.seq);
+  b.onclick = ev => {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    if (state.session) location.hash = '#fork/' + state.session.id + '/' + e.seq;
+  };
+  return b;
+}
+
+function filesKept(seq) {
+  return !!(state.session && (state.session.snapshots || []).includes(seq));
+}
+
+function syncForkControls() {
+  (function walk(n) {
+    for (const c of (n && n.children) || []) {
+      if (c.forkSeq != null) c.hidden = !filesKept(c.forkSeq);
+      walk(c);
+    }
+  })($('transcript'));
+}
+
 // Reverting takes the conversation back to before a message that started a
 // turn. It asks first, in a dialog, because what it takes back leaves the
-// screen and the agent's reading of the conversation; it says what it does not
-// undo, because a file the reverted turns wrote is still there for the agent
-// to find. Nothing is erased: the history and search still reach it.
-function confirmRevert(e) {
+// screen and the agent's reading of the conversation. It says what happens to
+// the files: they go back to how they were before the message when that
+// snapshot is kept (ADR-082), and stay as they are when it is not. Nothing is
+// erased: the history and search still reach what is taken back, and the files
+// it replaces are kept.
+async function confirmRevert(e) {
   const s = state.session;
   if (!s) return;
   const id = s.id;
@@ -1389,6 +1433,10 @@ function confirmRevert(e) {
     d.body.append(el('p', null, 'The agent is working on this conversation. Stop the turn, or let it finish, then revert.'));
     return;
   }
+  // Read now rather than trusted from the last reading: a turn since may
+  // have let the oldest snapshot go.
+  try { await loadStatus(); } catch (_) {}
+  if (!state.session || state.session.id !== id || dialog !== d) return;
   const after = liveEntries(state.entries).filter(x => x.seq > e.seq);
   const n = after.length;
   const what = (typed ? 'Your message' : 'This wake') + ' from ' + messageTime(e.created_at);
@@ -1398,7 +1446,10 @@ function confirmRevert(e) {
   if (after.some(x => x.type === 'compaction')) {
     d.body.append(el('p', null, 'A compaction written since is undone with them, and the turns it folded are sent in full again.'));
   }
-  d.body.append(el('p', null, 'Not undone: files the agent wrote or changed stay as they are, and jobs it created stay scheduled.'));
+  d.body.append(el('p', null, filesKept(e.seq)
+    ? 'Files go back to how they were before this message. What they are now is kept: fork from the revert line to get it back.'
+    : 'Files stay as they are: the ones from before this message are no longer kept.'));
+  d.body.append(el('p', null, 'Not undone: jobs it created stay scheduled.'));
   if (typed) d.body.append(el('p', null, 'Your message goes back into the composer, to change and send again.'));
   d.body.append(el('p', 'note', 'Nothing is erased: the history and search still reach what is taken back.'));
   const cancel = el('button', 'btn', 'Cancel');
@@ -2048,26 +2099,39 @@ function fileTree(entries) {
 
 // Forking is the same act as starting a conversation: choose the configuration,
 // then create the session. The origin's settings are the starting point.
+//
+// A fork from a point — #fork/<id>/<seq> — copies only what came before it,
+// and starts from the files as they were there (ADR-082).
 async function viewFork(v) {
   const gen = drawing;
   const id = state.arg;
+  const before = state.arg2 ? Number(state.arg2) : 0;
   const res = await api('/sessions/' + id);
   if (stale(gen)) return;
   setHeader('Fork', true);
-  // The copy is the working directory as well as the transcript, and it is
-  // made before the fork exists: for a conversation that installed a speech
-  // model that is gigabytes, and a minute. Said before the tap, and on the
-  // button during it.
-  const size = fmtBytes(res.session.disk_bytes || 0);
-  v.append(el('p', 'note',
-    'A fork copies this whole conversation into a new session — ' + size + ' of files and transcript, ' +
-    'which takes a while when it is large. This one stays where it is, stays active, and keeps its jobs. ' +
-    'The fork\'s configuration is chosen here and fixed once it exists.'));
+  // The files are a snapshot, shared with this conversation until either
+  // writes, so the copy is quick whatever it holds.
+  const at = before ? (state.entries || []).find(x => x.seq === before && state.session && state.session.id === id) : null;
+  const point = !before ? '' : at
+    ? (at.type === 'event' ? 'the revert from ' : (at.job_id ? 'the wake from ' : 'your message from ')) + messageTime(at.created_at)
+    : 'entry ' + before;
+  v.append(el('p', 'note', before
+    ? 'A fork from before ' + point + ' copies everything before it into a new session, with the files as they were then. ' +
+      'This one stays as it is, stays active, and keeps its jobs. ' +
+      'The fork\'s configuration is chosen here and fixed once it exists.'
+    : 'A fork copies this whole conversation, and its files, into a new session. ' +
+      'This one stays where it is, stays active, and keeps its jobs. ' +
+      'The fork\'s configuration is chosen here and fixed once it exists.'));
   const read = await configEditor(v, res.session, gen, { fork: true });
   if (!read || stale(gen)) return;
   const go = el('button', 'btn primary', 'Create fork');
-  oneAtATime(go, 'Not forked', 'Copying ' + size + '…', async () => {
-    const succ = await post('/sessions/' + id + '/fork', read());
+  oneAtATime(go, 'Not forked', 'Forking…', async () => {
+    const body = read();
+    if (before) body.before = before;
+    const succ = await post('/sessions/' + id + '/fork', body);
+    // A message the operator typed goes into the fork's composer, as a revert
+    // puts it back into this one's.
+    if (at && at.type === 'message' && !at.job_id && at.text) state.composeIn = { session: succ.id, text: at.text };
     location.hash = '#session/' + succ.id;
   });
   const done = el('div', 'finish'); done.append(go);

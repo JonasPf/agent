@@ -3,7 +3,12 @@ package app
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // errCannotRevert is a revert to somewhere that is not the start of a turn still
@@ -17,8 +22,9 @@ var errRevertWhileWorking = errors.New("the conversation is working: stop the tu
 // Revert takes a conversation back to before one of its user messages. The
 // transcript is append-only, so nothing is removed: one event is appended,
 // naming the message, and the projection stops sending everything from it up
-// to the event. The working directory and the jobs are the session's, not the
-// conversation's, and stay as the reverted turns left them.
+// to the event. The working directory goes back to the snapshot taken before
+// that message's turn began, if one is kept, and what it held is kept in turn;
+// the jobs stay as the reverted turns left them.
 //
 // The cut is only ever where a turn starts. Anywhere else could leave a tool
 // call without its result, which a provider refuses.
@@ -62,9 +68,29 @@ func (a *App) Revert(sessionID string, seq int) (Entry, error) {
 		case n > 1:
 			what = fmt.Sprintf("it and the %d entries after it", n)
 		}
+		// Its files go back too, from the snapshot taken before that turn
+		// began. What they are now is kept, under the revert's own event, so
+		// a fork from before the event brings them back (ADR-082).
+		files := "Files are as those turns left them: the snapshot from before it is no longer kept."
+		keep := ""
+		if from, ok := a.snapshotPath(sessionID, seq); ok {
+			keep = filepath.Join(a.snapshotsOf(sessionID), fmt.Sprintf(".revert-%d", time.Now().UnixNano()))
+			if ferr := a.replaceWorkspace(sessionID, from, keep); ferr != nil {
+				keep = ""
+				files = fmt.Sprintf("Files are as those turns left them: putting them back failed (%v).", ferr)
+			} else {
+				files = "Its files are back as they were before it."
+			}
+		}
 		out = a.appendEvent(sessionID, Entry{EventKind: "revert", RevertsFrom: seq, Text: fmt.Sprintf(
-			"reverted to before %s “%s” — %s taken back. Files and jobs are as those turns left them.",
-			who, truncate(said, 60), what)})
+			"reverted to before %s “%s” — %s taken back. %s Jobs are as those turns left them.",
+			who, truncate(said, 60), what, files)})
+		if keep != "" {
+			if rerr := os.Rename(keep, filepath.Join(a.snapshotsOf(sessionID), strconv.Itoa(out.Seq))); rerr != nil {
+				log.Printf("revert: keeping the replaced files of %s: %v", sessionID, rerr)
+			}
+			a.pruneSnapshots(sessionID)
+		}
 	})
 	if !ran {
 		return Entry{}, errRevertWhileWorking

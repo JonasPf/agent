@@ -2945,11 +2945,13 @@ test('starting a conversation or a fork is one action, however often it is press
   }
 });
 
-// A fork copies the conversation's whole working directory before it answers,
-// which for one holding a speech model is gigabytes and a minute. The button
-// sat there looking pressed-and-ignored, so it now says what it is doing, and
-// the screen says before the press how much there is to copy.
-test('a fork says how much it is copying, before and while it does', async () => {
+// A fork used to copy the conversation's whole working directory before it
+// answered, gigabytes and a minute for one holding a speech model, and the
+// button sat there looking pressed-and-ignored. The files are a snapshot now
+// (ADR-082) and the copy is quick, but the button still says what it is doing
+// while it does, and the screen says before the press how much of the
+// conversation a fork takes.
+test('a fork says how much of the conversation it takes, and that it is under way', async () => {
   const there = session({ id: 'S1', title: 'Voiceover', disk_bytes: 2600000000 });
   const ctx = load({
     '/sessions': [there], '/sessions/S1': { session: there }, '/preferences': { model: 'x/y' }, '/models': [],
@@ -2962,12 +2964,12 @@ test('a fork says how much it is copying, before and while it does', async () =>
     : fetch(p, o);
   vm.runInContext("state.view = 'fork'; state.arg = 'S1';", ctx);
   await ctx.render();
-  assert.match(textOf(ctx._id('view')), /2\.42 GB/, 'the screen does not say how much a fork copies');
+  assert.match(textOf(ctx._id('view')), /whole conversation/, 'the screen does not say how much a fork copies');
   const button = findAll(ctx._id('view'), 'btn').find(b => b.textContent === 'Create fork');
   const pressed = button.onclick();
   await new Promise(r => setImmediate(r));
   assert.ok(button.disabled, 'the button still offers while the fork is under way');
-  assert.match(button.textContent, /Copying 2\.42 GB/, 'the button does not say it is working: ' + button.textContent);
+  assert.match(button.textContent, /Forking/, 'the button does not say it is working: ' + button.textContent);
   answer();
   await pressed;
   assert.strictEqual(ctx.location.hash, '#session/S2');

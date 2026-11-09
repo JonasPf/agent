@@ -176,7 +176,7 @@ func TestForkCopiesTheWholeConversationAndLeavesTheOriginActive(t *testing.T) {
 	a.append(origin.ID, Entry{Type: "message", Role: "user", Text: "the first thing said"})
 	a.append(origin.ID, Entry{Type: "message", Role: "assistant", Text: "the first answer"})
 
-	fork, err := a.Fork(origin, SessionConfig{Model: "other/model"})
+	fork, err := a.Fork(origin, SessionConfig{Model: "other/model"}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -2,7 +2,12 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -70,6 +75,9 @@ func (a *App) NewSession(cfg SessionConfig, forkedFrom string) (*Session, error)
 	return s, nil
 }
 
+// errCannotFork is a fork from a point that has no files to start from.
+var errCannotFork = errors.New("cannot fork from there")
+
 // Fork copies a conversation into a new session. Everything comes across: the
 // whole transcript, compactions and all, and a copy of the working directory.
 // The origin is untouched, stays active, and keeps its jobs.
@@ -77,7 +85,33 @@ func (a *App) NewSession(cfg SessionConfig, forkedFrom string) (*Session, error)
 // It is the only way to change a configuration, and it is also how a
 // conversation is branched. Both intentions are the same act, so there is one
 // operation rather than three that differ only in name.
-func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
+//
+// before, when it is not zero, forks from an earlier point: a message that
+// started a turn, or a revert event. Only the entries before it are copied,
+// and the files are the snapshot taken there (ADR-082). A point whose snapshot
+// is gone is refused before anything is created.
+func (a *App) Fork(origin *Session, cfg SessionConfig, before int) (*Session, error) {
+	originDir := a.ensureWorkspace(origin.ID)
+	from := originDir
+	entries := a.store.Entries(origin.ID)
+	if before != 0 {
+		i := entryAt(entries, before)
+		if i < 0 {
+			return nil, fmt.Errorf("%w: there is no entry %d to fork from before", errCannotFork, before)
+		}
+		at := entries[i]
+		if !(at.Type == "message" && at.Role == "user") && !isRevert(at) {
+			return nil, fmt.Errorf("%w: entry %d is neither a message that started a turn nor a revert, "+
+				"so no files were kept from before it", errCannotFork, before)
+		}
+		p, ok := a.snapshotPath(origin.ID, before)
+		if !ok {
+			return nil, fmt.Errorf("%w: the files from before entry %d are no longer kept", errCannotFork, before)
+		}
+		from = p
+		entries = entries[:i]
+	}
+
 	fork, err := a.NewSession(cfg, origin.ID)
 	if err != nil {
 		return nil, err
@@ -86,10 +120,22 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	if changed := describeConfigChange(origin.SessionConfig, fork.SessionConfig); changed != "" {
 		why += ", " + changed
 	}
-	// A fork carries files as well as words: it starts from a copy of the
-	// origin's directory, and neither session's writes reach the other
-	// afterwards.
-	if err := copyTree(a.sessionWorkspace(origin.ID), a.ensureWorkspace(fork.ID)); err != nil {
+	if before != 0 {
+		why += fmt.Sprintf(", from before entry %d", before)
+	}
+	// A fork carries files as well as words: it starts from a snapshot of the
+	// origin's directory, which shares its blocks until either side writes,
+	// and neither session's writes reach the other afterwards. A link that
+	// named a place in the origin's directory names the same place in the
+	// fork's.
+	dir := a.sessionWorkspace(fork.ID)
+	if err := deleteSubvolume(dir); err != nil {
+		return nil, err
+	}
+	if err := snapshotSubvolume(from, dir, false); err != nil {
+		return nil, err
+	}
+	if err := rebaseLinks(dir, originDir, dir); err != nil {
 		return nil, err
 	}
 	// Its packages are not in that directory: the fork roots the same store
@@ -108,7 +154,6 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 		return nil, err
 	}
 
-	entries := a.store.Entries(origin.ID)
 	a.append(fork.ID, Entry{Type: "event", EventKind: "forked_from", CarriedFrom: origin.ID,
 		Text: fmt.Sprintf("copied from %s (%s): %d entries", origin.ID, why, len(entries))})
 	copied := make([]Entry, 0, len(entries))
@@ -123,13 +168,22 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 		e.Usage = nil
 		copied = append(copied, e)
 	}
-	renumberCovers(copied, len(a.store.Entries(fork.ID)))
+	base := len(a.store.Entries(fork.ID))
+	renumberCovers(copied, base)
+	renumber := make(map[int]int, len(copied))
+	for j, e := range copied {
+		renumber[e.Seq] = base + j
+	}
 	// In one write, and without an event per entry: the fork is on no page
 	// yet, and what it copies is not news — announced one by one, a copied
 	// reply read as a new one. Pages hear the list moved, below.
 	if _, err := a.store.AppendAll(fork.ID, copied); err != nil {
 		return nil, err
 	}
+	// The snapshots of what it copied come too, under the numbers the copy
+	// gave their entries, so a revert in the fork puts back what it would have
+	// in the origin, and still does once the origin is gone.
+	a.carrySnapshots(origin.ID, fork.ID, renumber)
 
 	// Jobs do not move. A job belongs to the conversation it was created in,
 	// which still exists and is still running.
@@ -154,6 +208,46 @@ func (a *App) Fork(origin *Session, cfg SessionConfig) (*Session, error) {
 	}
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return fork, nil
+}
+
+// carrySnapshots gives the fork its own snapshot of each one the origin keeps
+// before an entry the fork copied. Each is made writable just long enough to
+// point its links at the fork's directory, as the fork's own files were.
+func (a *App) carrySnapshots(originID, forkID string, renumber map[int]int) {
+	originDir, forkDir := a.sessionWorkspace(originID), a.sessionWorkspace(forkID)
+	dst := a.snapshotsOf(forkID)
+	made := map[string]int{}
+	for _, seq := range a.snapshotSeqs(originID) {
+		n, copied := renumber[seq]
+		p, kept := a.snapshotPath(originID, seq)
+		if !copied || !kept {
+			continue
+		}
+		if err := os.MkdirAll(dst, 0o755); err != nil {
+			log.Printf("fork: carrying snapshots into %s: %v", forkID, err)
+			return
+		}
+		name := filepath.Join(dst, strconv.Itoa(n))
+		if first, done := made[p]; done {
+			if err := os.Symlink(strconv.Itoa(first), name); err != nil {
+				log.Printf("fork: %v", err)
+			}
+			continue
+		}
+		err := snapshotSubvolume(p, name, false)
+		if err == nil {
+			err = rebaseLinks(name, originDir, forkDir)
+		}
+		if err == nil {
+			err = setSubvolumeReadOnly(name, true)
+		}
+		if err != nil {
+			log.Printf("fork: carrying the snapshot before %d into %s: %v", seq, forkID, err)
+			_ = deleteSubvolume(name)
+			continue
+		}
+		made[p] = n
+	}
 }
 
 // renumberCovers moves what each copied compaction covers to where the copy

@@ -15,7 +15,13 @@ RUN apt-get update \
       poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-deu \
       python3-pip python3-venv python3-numpy python3-pil \
       unzip jq file tini xz-utils \
+      btrfs-progs \
  && rm -rf /var/lib/apt/lists/*
+
+# btrfs-progs is not something a tool runs: it is how testenv/btrfs.sh makes the
+# btrfs filesystem the suite's temporary directory lives on. The agent snapshots
+# a conversation's files with btrfs ioctls and refuses to start anywhere else
+# (ADR-082), so a test on any other filesystem would test nothing it ships.
 
 # PID 1 is tini, as it is in the runtime image, so a process a test leaves in the
 # background is collected when it exits the way it is in production.

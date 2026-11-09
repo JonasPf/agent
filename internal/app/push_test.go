@@ -651,6 +651,7 @@ func TestAToolCannotReachThePushKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
 	}

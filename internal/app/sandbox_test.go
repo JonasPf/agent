@@ -150,6 +150,7 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
 	}
@@ -437,6 +438,7 @@ func confinedApp(t *testing.T, toolsDir, skillsDir, readPaths string) (*App, str
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
 	}
@@ -518,6 +520,7 @@ print(json.dumps({"ok": True, "content": "\n".join(r[0] for r in db.execute("sel
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
 	}
@@ -684,6 +687,7 @@ func TestOneVolumeIsStillTwoTrustLevels(t *testing.T) {
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
+	dropSnapshots(t, a)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
 	}

@@ -13,6 +13,10 @@ task dev
 
 Open http://localhost:7770. Add it to the home screen for a full-screen app with its own icon.
 
+Its state lives in `.dev/state.img`, a btrfs image `task dev` makes on first run: conversations'
+files are btrfs subvolumes, snapshotted before every turn ([ADR-082](specs/adrs.html#adr-082)), and
+the container mounts the image, which is why it runs privileged.
+
 The agent is a Linux program and has one environment: the container it ships in, where a tool is
 confined by Landlock exactly as it is in production. `task dev` is the only way to run it, and
 `task check` runs the whole suite in `testenv/Dockerfile` — the same Debian, chromium, and kernel CI
@@ -34,7 +38,7 @@ nothing here is required.
 | `task check` | Lint, build, and every test suite — run this before committing |
 | `task test` | The test suites only |
 | `task eval -- schedule` | Put one tool's `eval.json` cases to a real model; omit the name for all |
-| `task db:clear` | Move sessions, jobs, and session files to `.backups/<stamp>` and start fresh |
+| `task db:clear` | Move the dev state (`.dev/state.img`: sessions, jobs, files) to `.backups/<stamp>` and start fresh |
 | `task db:restore` | Put the newest backup back |
 | `task db:status` | What the running agent holds |
 | `task spec` | Serve the specs at http://localhost:8000 |
@@ -111,7 +115,8 @@ tools/<name>/      one Go package per capability, each with manifest.json,
 data/sessions/<id>/{meta.json,transcript.jsonl}
 data/db/agent.db   the database and its journals, alone in a directory of their
                    own because Landlock grants a tree or it does not
-workspace/<id>/    one working directory per session
+workspace/<id>/    one working directory per session, a btrfs subvolume
+snapshots/<id>/    what each working directory was before each turn, read-only
 ```
 
 Deleting `data/db/agent.db` and restarting rebuilds session metadata and the search index from the
@@ -142,6 +147,23 @@ container's health check, so it depends on nothing but the agent.
 
 Everything that outlives the container is under `/app/state`. Mount one volume
 there and a redeploy keeps every conversation, job, and file.
+
+That volume must be **btrfs**, mounted with `noatime,user_subvol_rm_allowed`, and owned by the
+image's user (uid 10001): each conversation's files are snapshotted before every turn, so a revert
+puts them back and a fork shares them instead of copying ([ADR-082](specs/adrs.html#adr-082)). The
+agent refuses to start on anything else, and says why. A btrfs image file on an ext4 host works:
+
+```
+truncate -s 20G /var/lib/agent-state.img && mkfs.btrfs /var/lib/agent-state.img
+echo '/var/lib/agent-state.img /mnt/agent-state btrfs loop,noatime,user_subvol_rm_allowed 0 0' >> /etc/fstab
+mkdir -p /mnt/agent-state && mount /mnt/agent-state
+cp -a <the old volume's directory>/. /mnt/agent-state/              # agent stopped
+chown 10001:10001 /mnt/agent-state                                     # then bind-mount it at /app/state
+```
+
+The working directories copied across are plain directories; the agent makes each a subvolume
+when it starts. `noatime` matters: without it, reading a file counts as a change, and a turn that
+only read takes a snapshot it did not need.
 
 ```
 /app/state/data       transcripts, the database and its journals, the search index

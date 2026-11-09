@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-09
+
+- **Reverting puts your files back.** Taking a conversation back to before
+  a message now also puts its files back the way they were before that
+  message: what the later turns wrote, changed, or deleted is undone. The
+  files it replaces aren't lost: the line that records the revert offers a
+  fork from before it, which brings the conversation and its files back as
+  they were. A conversation keeps its files for its last 20 turns; reverting
+  further back says the files stay as they are.
+- **Fork from any message.** Beside the revert button on each of your
+  messages there is now 🔀, which starts a new conversation from before that
+  message, with the files as they were then, and leaves this one as it is.
+  Your message waits in the new conversation's message box.
+- **Forks are instant.** A fork no longer copies the conversation's files;
+  it shares them until either side changes one, so a fork of a conversation
+  holding gigabytes takes a moment and no extra space.
+- **Needs btrfs.** The agent now refuses to start unless its state volume
+  is a btrfs filesystem mounted with `noatime,user_subvol_rm_allowed`, and
+  says so. Move the volume before updating (see the README's Deploy
+  section).
+
 ## 2026-11-05
 
 - **Fewer notifications.** Your phone and browser now buzz only when the

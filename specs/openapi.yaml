@@ -216,7 +216,8 @@ paths:
       description: >-
         Every entry but the origin's prompt is copied, with the working
         directory and the variables. A field left out keeps the origin's. The
-        origin keeps its jobs.
+        origin keeps its jobs. With before, only the entries before that point
+        are copied, and the working directory is the snapshot taken there.
       requestBody:
         content:
           application/json:
@@ -224,13 +225,22 @@ paths:
               allOf:
                 - $ref: "#/components/schemas/Config"
                 - $ref: "#/components/schemas/Start"
+                - type: object
+                  properties:
+                    before: {type: integer, description: "The point to fork from: a message that started a turn, or a revert event, taken back or not. Its snapshot must still be kept; the origin's snapshots lists them. Left out, the whole conversation is copied."}
       responses:
         "201":
           description: The fork.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Session"}
-        "400": {$ref: "#/components/responses/Error"}
+        "400":
+          description: >-
+            A configuration field is invalid, or before names neither a message that started a turn
+            nor a revert event, or names one whose snapshot is no longer kept.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
         "404": {$ref: "#/components/responses/Error"}
 
   /sessions/{id}/compare:
@@ -352,7 +362,10 @@ paths:
       description: >-
         Appends one revert event naming the entry; from then on the projection drops that entry and
         everything after it up to the event. Nothing on disk is removed: what was taken back stays in
-        the transcript and the search index. The working directory and jobs are left as they are.
+        the transcript and the search index. The working directory is put back as it was when that
+        message's turn began, if its snapshot is still kept, and the files it replaces are snapshotted
+        under the revert event; otherwise it is left as it is, and the event says so. Jobs are left as
+        they are.
       requestBody:
         required: true
         content:
@@ -1230,7 +1243,8 @@ components:
             created_at: {type: string, format: date-time}
             last_active_at: {type: string, format: date-time}
             entry_count: {type: integer}
-            disk_bytes: {type: integer, description: Transcript and working directory.}
+            disk_bytes: {type: integer, description: "Transcript and working directory. Not what its snapshots hold, and blocks shared with a fork are counted in each."}
+            snapshots: {type: array, items: {type: integer}, description: "The entries whose snapshot is kept, oldest first: messages that started a turn, and revert events. A revert to before one puts its files back, and a fork can start before one."}
             packages:
               type: array
               description: What the session installed with the packages tool. They live in the shared Nix store, so disk_bytes does not count them.
