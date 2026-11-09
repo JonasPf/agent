@@ -124,7 +124,7 @@ transcripts.
 
 ## Deploy
 
-One image, one container, two volumes. Nothing in this repository names a hosting
+One image, one container, two mounts. Nothing in this repository names a hosting
 platform: the image is a plain OCI image, and anything that runs one runs it.
 
 ```
@@ -145,21 +145,35 @@ container's health check, so it depends on nothing but the agent.
 
 ### The volumes
 
-Everything that outlives the container is under `/app/state`. Mount one volume
+Everything that outlives the container is under `/app/state`. Mount one filesystem
 there and a redeploy keeps every conversation, job, and file.
 
-That volume must be **btrfs**, mounted with `noatime,user_subvol_rm_allowed`, and owned by the
+That filesystem must be **btrfs**, mounted with `noatime,user_subvol_rm_allowed`, and owned by the
 image's user (uid 10001): each conversation's files are snapshotted before every turn, so a revert
 puts them back and a fork shares them instead of copying ([ADR-082](specs/adrs.html#adr-082)). The
-agent refuses to start on anything else, and says why. A btrfs image file on an ext4 host works:
+agent refuses to start on anything else, and says why. A Docker named volume is a directory on the
+host's own disk, so it is not one: mount btrfs on the host and bind-mount that path at `/app/state`.
+A btrfs image file on an ext4 host works:
 
 ```
 truncate -s 20G /var/lib/agent-state.img && mkfs.btrfs /var/lib/agent-state.img
-echo '/var/lib/agent-state.img /mnt/agent-state btrfs loop,noatime,user_subvol_rm_allowed 0 0' >> /etc/fstab
+echo '/var/lib/agent-state.img /mnt/agent-state btrfs loop,noatime,user_subvol_rm_allowed,nofail,x-systemd.before=docker.service 0 0' >> /etc/fstab
 mkdir -p /mnt/agent-state && mount /mnt/agent-state
-cp -a <the old volume's directory>/. /mnt/agent-state/              # agent stopped
-chown 10001:10001 /mnt/agent-state                                     # then bind-mount it at /app/state
+mkdir /mnt/agent-state/data && chattr +C /mnt/agent-state/data   # before anything is in it
+cp -a <the old volume's directory>/. /mnt/agent-state/            # agent stopped
+chown 10001:10001 /mnt/agent-state
 ```
+
+The image file takes disk only as it fills, so size it below the host's free space: a btrfs that
+believes it has room the host does not have fails its writes. It grows later without unmounting:
+`truncate -s` the file larger, `losetup -c` its loop device, `btrfs filesystem resize max` the
+mount. `nofail` keeps a mount that fails at boot from stopping the machine; the agent then finds the
+plain directory beneath, refuses to start, and says why. `x-systemd.before` mounts it before Docker
+starts the container.
+
+`chattr +C` marks `data/` not to copy on write. The database is rewritten in place, which
+copy-on-write fragments, and nothing there is snapshotted. The mark reaches only files made after
+it, so it goes on before anything is copied in.
 
 The working directories copied across are plain directories; the agent makes each a subvolume
 when it starts. `noatime` matters: without it, reading a file counts as a change, and a turn that
@@ -191,7 +205,7 @@ are missing.
 
 ```sh
 docker run -d --name agent \
-  -v agent-state:/app/state \
+  -v /mnt/agent-state:/app/state \
   -v agent-nix:/nix \
   -e OPENROUTER_API_KEY=sk-... \
   -p 127.0.0.1:7770:7770 \
@@ -235,8 +249,9 @@ runs, and nothing in the repository is shaped around it.
    `ghcr.io/<owner>/agent:latest`.
 2. **Environment**: `OPENROUTER_API_KEY`. A credential for one piece of work,
    such as `GH_TOKEN`, is set on the conversation doing it instead.
-3. **Advanced → Volumes**: two volume mounts, `agent-state` → `/app/state` and
-   `agent-nix` → `/nix`.
+3. **Advanced → Volumes**: a bind mount, host path `/mnt/agent-state` → `/app/state`
+   (the btrfs filesystem above, which a volume mount cannot be), and a volume
+   mount `agent-nix` → `/nix`.
 4. **Advanced → Resources**: a memory limit. A single-user agent on a shared host
    without one takes the machine down with it; 512 MB is enough. An install
    adds up to about 160 MB while it runs, one at a time.
