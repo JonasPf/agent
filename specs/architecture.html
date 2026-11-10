@@ -309,6 +309,12 @@ snapshotted before every turn and a fork shares its origin's blocks rather than 
 is a second volume, at <code>/nix</code>, because a store path cannot be anywhere else
 (<a href="adrs.html#adr-072">ADR-072</a>).</p>
 
+<p>A browser that has been given the proxy's credential sends it with every request to the agent's
+address, whichever page made the request. So the agent looks at where a request came from, in the
+headers a browser sets and a page cannot: one that would change anything, or that opens the socket,
+is refused when it comes from a page on another site (<a href="adrs.html#adr-084">ADR-084</a>). A
+request from a program that is not a browser carries neither header and is served as before.</p>
+
 <p>One thing reaches the phone without the phone asking: a push about an unread message, sent to the
 push service of a device the operator registered (<a href="adrs.html#adr-066">ADR-066</a>). The push
 service is the browser vendor's &mdash; Google's, Apple's, or Mozilla's &mdash; and relays a payload
@@ -320,6 +326,7 @@ interface.</p>
 <ul>
 <li>The container exposes no port of its own; everything reaching it arrives through the proxy in front of it.</li>
 <li>Nothing reaches the interface without either being on the tailnet or presenting the credential the proxy requires.</li>
+<li>A request from a page on another site that would change anything, or open the socket, is refused; the interface's own requests and a program that is not a browser are served.</li>
 <li>The web UI is served over HTTPS with a certificate the browser trusts without exception.</li>
 <li>A redeploy replaces the process and keeps every session, job, and uploaded file.</li>
 <li>Everything that outlives the container is under a single mounted directory, and a tool confined to one session still reaches nothing else under it.</li>

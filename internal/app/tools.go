@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Tool is either a builtin or a directory containing a manifest and an executable.
@@ -450,9 +451,16 @@ func declaredEnv(names []string) []string {
 	return out
 }
 
+// truncate cuts s to at most n bytes and says that it did. The cut falls
+// between characters: one that fell inside a character left half of it, which
+// is not text, and reached the screen as a replacement mark at the end of a
+// title.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
 	}
 	return s[:n] + "…"
 }

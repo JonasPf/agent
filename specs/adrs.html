@@ -2652,6 +2652,33 @@ keeps its record of it: the comparison's identifier there is text, since nothing
 and each candidate it names still links to that conversation.</p>
 </div>
 
+<div class="adr" id="adr-084">
+<div class="meta">ADR-084 · accepted · builds on <a href="#adr-038">ADR-038</a></div>
+<h3>A request from a page on another site is refused</h3>
+<h4>Context</h4>
+<p>The agent has no login. A proxy in front of it asks for a password
+(<a href="#adr-038">ADR-038</a>), and a browser that holds the password sends it with every request
+to the agent's address, including one made by a page on some other site the operator has open. The
+browser stops that page reading the answer and nothing more. It could start a conversation and send
+it a message &mdash; a form may post a body that reads as JSON &mdash; and a message runs a shell. The
+socket had no check at all: any page could open it and be sent every entry of every conversation as
+it was written.</p>
+<h4>Decision</h4>
+<p>Every request that is not a plain read, and the request that opens the socket, is checked for
+where it came from. <code>Sec-Fetch-Site</code> is the browser's own answer, and anything but
+<code>same-origin</code> or <code>none</code> is refused with 403. A browser that does not send it
+sends <code>Origin</code>, which must name the host the request was sent to: the <code>Host</code>
+header, or <code>X-Forwarded-Host</code> where a proxy puts its own name for the agent in the first.
+A request with neither header is not from a browser and is served.</p>
+<h4>Consequences</h4>
+<p>This is not a login and adds no account: reachability and the proxy's password are still the whole
+of the access control (R3). A page the agent wrote and the operator opened from a working directory
+was already kept from the agent by its sandbox (<a href="#adr-073">ADR-073</a>); its origin is no
+origin, and it is refused here too. A script that sets an <code>Origin</code> of its own choosing must
+set the agent's. A proxy that rewrites the host and says nothing of the original would have an old
+browser refused; none in use does.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

@@ -733,6 +733,7 @@ still running. A fork that should carry the schedule creates it again, deliberat
 <ul>
 <li>A fork copies every transcript entry of its origin, in order, compactions included, except the origin's prompt entry; it has one prompt entry, its own, written from its configuration.</li>
 <li>A fork can start before a message that started a turn or before a revert event, whether or not a revert has since taken that point back: it copies the entries before the point and none after, and starts from the files as they were there.</li>
+<li>A fork that fails leaves nothing behind: no conversation, no directory, and no record of it in the origin.</li>
 <li>A fork from a message the operator typed has that message in its composer.</li>
 <li>A fork from a point whose snapshot is no longer kept is refused, says why, and creates nothing.</li>
 <li>A revert in a fork to before a message it copied puts back the files from before that message, when the origin still kept them at the time of the fork.</li>

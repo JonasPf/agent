@@ -53,6 +53,9 @@ func (h *Hub) remove(ch chan wsEvent) {
 }
 
 func (a *App) handleWS(w http.ResponseWriter, r *http.Request) {
+	// Where the page is from was checked on the way in (ownSite), against the
+	// host the proxy names as well as the one it sends; the library's own check
+	// knows only the second.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		return

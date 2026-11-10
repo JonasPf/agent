@@ -147,6 +147,7 @@ Ending it is the operator's call, and it takes one tap.
 <li>Creating a job answers with what it will cost: wakes a day, tokens a turn, tokens a day, and money where the price is known.</li>
 <li>A gated job estimates no daily cost, and says what a wake that fires costs.</li>
 <li>A job that wakes once is priced once rather than per day.</li>
+<li>Editing a job answers with what it costs as edited.</li>
 <li>A cron schedule is priced by its firings over a week, and the figure is the same whether or not the moment it is asked is itself a firing minute.</li>
 <li>An unreachable model catalogue costs the money figures and nothing else.</li>
 <li>The estimate is never stored on the job.</li>
@@ -207,7 +208,13 @@ job.</p>
 
 <p>There is no signal by which the model can mark a wake as significant. It ends a job the way anything
 else ends one: by deleting it with the schedule tool, an ordinary visible call. A job set to
-<code>after_acting: stop</code> deletes itself after the first wake that acts.</p>
+<code>after_acting: stop</code> is marked done after the first wake that acts, and kept.</p>
+
+<p>A wake lasts as long as its turn, and the job can change under it: the agent edits or deletes its
+own job from inside the wake, or the operator does from the jobs screen. What the wake writes when it
+ends is only what a wake decides &mdash; the counts, the outcome, the next wake &mdash; so a job deleted
+meanwhile stays deleted, and one edited meanwhile keeps the edit and wakes next on the schedule the
+edit set.</p>
 
 <p>A wake reaches the model marked as one, naming the job, saying how late it ran, and saying the
 operator is not present.
@@ -220,6 +227,8 @@ the operator will read it.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A wake reaches the model marked as a wake, naming its job and saying the operator is not present.</li>
+<li>A job deleted while its own wake runs stays deleted, and no line is added to a log it no longer has.</li>
+<li>A job edited while its own wake runs keeps the edit, and its next wake follows the schedule the edit set.</li>
 <li>A message the operator typed carries no such marker.</li>
 </ul>
 </div>

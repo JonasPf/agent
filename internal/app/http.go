@@ -91,7 +91,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/ws", a.handleWS)
 
 	mux.Handle("/", revalidated(http.FileServer(http.Dir(a.cfg.WebDir))))
-	return compressed(mux)
+	return compressed(ownSite(mux))
 }
 
 // revalidated makes the browser ask before reusing an interface asset. The
@@ -822,7 +822,7 @@ func (a *App) hPatchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
-	writeJSON(w, 200, j)
+	writeJSON(w, 200, a.priceJobs(r.Context(), []*Job{j})[0])
 }
 
 func (a *App) hDeleteJob(w http.ResponseWriter, r *http.Request) {
@@ -1086,6 +1086,9 @@ func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "files larger than 250 MB are refused")
 		return
 	}
+	// A body sent in chunks states no length, and a form is read whole, to
+	// disk, before the file in it is looked at.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+uploadEnvelope)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		fail(w, 400, "%v", err)
 		return
@@ -1239,6 +1242,7 @@ func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "archives larger than 500 MB are refused")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxArchive+uploadEnvelope)
 	var body io.Reader = io.LimitReader(r.Body, maxArchive+1)
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {

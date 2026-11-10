@@ -7,6 +7,16 @@
   in the box. It works for any message, not only the next one, and each
   answer is an ordinary conversation. Comparisons left undecided are now
   ordinary conversations, still titled with their model.
+- **A job the agent deletes during its own wake stays deleted.** It used to come
+  back, scheduled as before, when the wake ended. A schedule or prompt changed
+  during a wake — by the agent or by you — is likewise kept now.
+- **Other websites can no longer act as you.** A page on another site open in
+  the same browser could send the agent a message, or listen to every
+  conversation, using the password your browser already holds. Those requests
+  are now refused.
+- A fork that fails no longer leaves an empty "New session" in the list.
+- A title or a quoted message cut short no longer ends in a � when the cut
+  falls inside an umlaut or an emoji.
 
 ## 2026-11-09
 
