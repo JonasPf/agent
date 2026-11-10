@@ -59,9 +59,12 @@ function sessionLinks(text) {
   const frag = document.createDocumentFragment();
   for (const p of splitSessionIds(text)) {
     if (!p.id) { frag.append(document.createTextNode(p.text)); continue; }
+    // A comparison's identifier, in what an older version recorded of one,
+    // names no conversation and, since comparing went (ADR-083), no screen.
+    if (p.kind === 'comparison') { frag.append(document.createTextNode(p.text)); continue; }
     const a = el('a', 'sid', p.text);
-    a.href = (p.kind === 'comparison' ? '#compared/' : '#session/') + p.id;
-    a.title = p.kind === 'comparison' ? 'open comparison ' + p.id : 'open session ' + p.id;
+    a.href = '#session/' + p.id;
+    a.title = 'open session ' + p.id;
     frag.append(a);
   }
   return frag;
@@ -241,26 +244,13 @@ function handle(e) {
       if (e.kind === 'entry') appendEntry(e.entry);
       else refreshTail();
     }
-    const col = comparing(e.session_id);
-    if (col) {
-      if (e.kind === 'entry') col.entries.push(e.entry);
-      col.streaming = '';
-      renderCompare();
-    }
   } else if (e.kind === 'delta') {
     if (state.view === 'session' && e.session_id === state.arg) {
       state.streaming += e.text;
       onNextFrame('stream', renderStreaming);
     }
-    const col = comparing(e.session_id);
-    if (col) {
-      col.streaming += e.text;
-      onNextFrame(col, () => renderCandidateStream(col));
-    }
   } else if (e.kind === 'turn_start') {
     state.streaming = '';
-    const col = comparing(e.session_id);
-    if (col) col.streaming = '';
   } else if (e.kind === 'working' || e.kind === 'idle') {
     // A wait already counting — started when the message was sent — keeps its
     // start; the server's word only confirms it.
@@ -273,11 +263,6 @@ function handle(e) {
       // A turn's cost is counted as it ends, after the answer that moved
       // the list, so the conversation is read once more then.
       if (e.kind === 'idle') { scrollDown(); loadStatus().catch(() => {}); }
-    }
-    const col = comparing(e.session_id);
-    if (col) {
-      if (e.kind === 'idle') col.toEnd = true;
-      renderCompare();
     }
   } else if (e.kind === 'skills' || e.kind === 'personas') {
     // Written from another window, or by a second browser. The screen that
@@ -454,7 +439,7 @@ function renderSideFoot() {
 // A transcript is read in a column; a list of jobs or files is read across the
 // room a laptop actually has. The Tools screen is read in a column too: it is
 // mostly explanation, one tool under another.
-const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel', 'compared'];
+const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel'];
 
 // A screen is drawn from requests that answer in their own time, so two screens
 // asked for in quick succession can answer in the wrong order. Each draw keeps
@@ -503,8 +488,6 @@ function draw(v) {
     case 'history': return viewHistory(v);
     case 'settings': return viewSettings(v);
     case 'fork': return viewFork(v);
-    case 'compare': return viewCompare(v);
-    case 'compared': return viewCompared(v);
     case 'files': return viewFiles(v);
     case 'new': return viewNew(v);
     case 'toolpanel': return viewToolPanel(v);
@@ -571,14 +554,7 @@ function sessionRow(s) {
   cfg.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.compact_at_tokens.toLocaleString()} tok`;
   m.append(sub, cfg);
   if (s.job_count) { const t = el('span', 'tag on', s.job_count + ' job' + (s.job_count > 1 ? 's' : '')); m.append(t); }
-  if (s.comparison) {
-    // The mark is also the way back: a comparison screen left behind is found
-    // again through the candidates it left in the list.
-    const t = el('span', 'tag on', 'comparing');
-    t.onclick = e => { e.stopPropagation(); location.hash = '#compared/' + s.comparison; };
-    m.append(t);
-  }
-  else if (s.forked_from) m.append(el('span', 'tag', 'fork'));
+  if (s.forked_from) m.append(el('span', 'tag', 'fork'));
   row.append(m);
   if (s.unread) row.append(el('span', 'badge', String(s.unread)));
   // Deleting is why the size is shown, so it is offered on the same row rather
@@ -624,18 +600,12 @@ async function viewSession(v) {
   // What you do to a conversation belongs in its header, not on top of its
   // first message: the transcript starts at the top of the screen.
   setHeader(state.session.title || 'Conversation', true, [
-    // First, and only while the comparison is undecided: it is the screen this
-    // conversation was opened from, and the one it is judged on.
-    ...(state.session.comparison
-      ? [{ label: 'Comparison', fn: () => location.hash = '#compared/' + state.session.comparison }]
-      : []),
     { label: 'Jobs', fn: () => location.hash = '#jobs/' + id },
     { label: 'Files', fn: () => location.hash = '#files/' + id },
     { label: 'Copy', fn: () => copyConversation() },
     { label: 'Search', fn: () => location.hash = '#search/' + id },
     { label: 'Compact', fn: () => compactNow(id) },
     { label: 'Fork', fn: () => location.hash = '#fork/' + id },
-    { label: 'Compare', fn: () => location.hash = '#compare/' + id },
     { label: 'Details', fn: () => location.hash = '#settings/' + id },
   ]);
   const last = entries[entries.length - 1];
@@ -1236,7 +1206,7 @@ function compactionEntry(e, opts) {
 
 // renderEntry draws one entry. In the conversation itself, opts.revert, a
 // message that started a turn carries the way back to before it; nothing else
-// that draws entries — the history, a comparison's columns — offers one.
+// that draws entries — the history — offers one.
 function renderEntry(e, opts) {
   const o = opts || {};
   if (e.type === 'compaction') return compactionEntry(e, { files: o.files });
@@ -2136,231 +2106,6 @@ async function viewFork(v) {
   });
   const done = el('div', 'finish'); done.append(go);
   v.append(done);
-}
-
-// ---------- comparing models ----------
-
-// A comparison is several conversations at once, so what arrives over the socket
-// is routed by the session it names rather than by the one screen being read.
-function comparing(sessionID) {
-  if (state.view !== 'compared' || !state.compare) return null;
-  return state.compare.by[sessionID] || null;
-}
-
-// modelLabel is what a model is called where there is no room for its
-// identifier: its catalogue name if the catalogue is loaded, else the part of
-// the identifier that differs between the models being compared.
-function modelLabel(id) {
-  const m = (state.models || []).find(x => x.id === id);
-  return m && m.name ? modelName(m) : String(id || '').split('/').pop();
-}
-
-// compareSetup holds the screen a comparison is composed on: the models chosen
-// so far, and the nodes that say what that costs. The textarea outlives every
-// redraw, so what has been typed is never lost to a change of models.
-let compareSetup = null;
-
-// Comparing is forking several times over. The screen says so, because the
-// consequences are a fork's: the conversation it is started from does not move,
-// keeps its jobs, and is never sent the message.
-async function viewCompare(v) {
-  const gen = drawing;
-  const res = await api('/sessions/' + state.arg);
-  if (stale(gen)) return;
-  await loadModels();
-  if (stale(gen)) return;
-  const s = res.session;
-  setHeader('Compare', true);
-  v.append(el('p', 'note',
-    'One message, put to several models at once. Each model answers in a fork of this conversation: ' +
-    'it carries the whole transcript and a copy of the files, and runs a turn of its own. This ' +
-    'conversation is not sent the message, stays where it is, and keeps its jobs. Keeping the answer ' +
-    'you like best deletes the other candidates.'));
-
-  v.append(el('h2', null, 'models'));
-  const chosen = el('div', 'picked');
-  const add = el('button', 'btn', 'Add a model');
-  add.onclick = () => chooseModel(null, id => {
-    if (!compareSetup.models.includes(id)) compareSetup.models.push(id);
-    renderCompareSetup();
-  });
-  v.append(chosen, add);
-
-  v.append(el('h2', null, 'message'));
-  const ta = el('textarea', 'text');
-  ta.rows = 4;
-  ta.placeholder = 'What to ask all of them';
-  ta.oninput = () => renderCompareSetup();
-  v.append(ta);
-
-  const price = el('p', 'note', '');
-  const go = el('button', 'btn primary', 'Ask');
-  const done = el('div', 'finish');
-  done.append(go);
-  v.append(price, done);
-
-  compareSetup = { session: s, models: [s.model], chosen, ta, price, go };
-  go.onclick = async () => {
-    // Every press forks the conversation once per model and re-sends the whole
-    // transcript, so a second press is not a retry: it is a second comparison,
-    // paid for twice, answering a question already asked.
-    if (go.disabled) return;
-    go.disabled = true;
-    go.textContent = 'Asking…';
-    let out;
-    try {
-      out = await post('/sessions/' + s.id + '/compare',
-        { text: compareSetup.ta.value.trim(), models: compareSetup.models.slice() });
-    } catch (e) {
-      toast({ title: 'Not asked', body: String(e.message) });
-      renderCompareSetup();
-      return;
-    }
-    location.hash = '#compared/' + out.comparison;
-  };
-  renderCompareSetup();
-}
-
-// The price is the one fact this screen has that the operator does not. A
-// candidate is a fork onto another model, so it reads none of this
-// conversation's cached prefix: every one of them re-sends the whole thing.
-function renderCompareSetup() {
-  if (!compareSetup) return;
-  const { session: s, models, chosen, ta, price, go } = compareSetup;
-  chosen.innerHTML = '';
-  for (const m of models) {
-    const p = el('button', 'pill on', modelLabel(m) + ' ×');
-    p.title = m;
-    p.onclick = () => {
-      compareSetup.models = compareSetup.models.filter(x => x !== m);
-      renderCompareSetup();
-    };
-    chosen.append(p);
-  }
-  price.textContent = models.length < 2
-    ? 'Choose at least two models. A comparison of one is a fork.'
-    : `${models.length} models, each sent this conversation in full: about ` +
-      `${((s.context_used || 0) * models.length).toLocaleString()} tokens in all, ` +
-      'none of it read from cache.';
-  go.textContent = 'Ask ' + models.length + ' model' + (models.length === 1 ? '' : 's');
-  go.disabled = models.length < 2 || !ta.value.trim();
-}
-
-// The candidates side by side, each filling in as its model answers. A column
-// starts at the message they were all sent: everything above it is the history
-// all of them share.
-async function viewCompared(v) {
-  const gen = drawing;
-  const group = state.arg;
-  const all = await api('/sessions').catch(() => []) || [];
-  if (stale(gen)) return;
-  const cands = (all || []).filter(s => s.comparison === group);
-  setHeader('Comparison', true);
-  if (!cands.length) {
-    state.compare = null;
-    v.append(el('div', 'empty', 'This comparison has been decided. The conversation you kept is in ' +
-      'the list; the other candidates were deleted.'));
-    return;
-  }
-  v.append(el('p', 'note', 'One message, ' + cands.length + ' models, each in a conversation of its ' +
-    'own. Keeping one carries on in it and deletes the rest.'));
-  const grid = el('div', 'candidates');
-  v.append(grid);
-
-  const cols = [], by = {};
-  for (const c of cands) {
-    if (c.working_seconds != null) state.working[c.id] = Date.now() - c.working_seconds * 1000;
-    const col = { session: c, entries: [], streaming: '', stream: null };
-    cols.push(col);
-    by[c.id] = col;
-  }
-  state.compare = { id: group, cols, by, grid };
-  renderCompare();
-  for (const col of cols) {
-    const entries = await api('/sessions/' + col.session.id + '/transcript').catch(() => []) || [];
-    if (stale(gen)) return;
-    col.entries = entries;
-    renderCompare();
-  }
-}
-
-function renderCompare() {
-  const c = state.compare;
-  if (!c || !c.grid) return;
-  // Each column scrolls on its own and is rebuilt on every redraw, so where it
-  // was is carried across: a column the reader left at its end stays at its
-  // end, one scrolled back up stays put, and one that has just finished goes to
-  // its answer.
-  for (const col of c.cols) {
-    const b = col.body;
-    if (!b) continue;
-    col.scroll = b.scrollTop;
-    col.atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 40;
-  }
-  c.grid.innerHTML = '';
-  for (const col of c.cols) c.grid.append(candidateColumn(col));
-  for (const col of c.cols) {
-    const b = col.body;
-    b.scrollTop = col.toEnd || col.atEnd ? b.scrollHeight : (col.scroll || 0);
-    col.toEnd = false;
-  }
-}
-
-// A column is patched rather than redrawn while its model is writing, so the
-// other columns are not rebuilt on every token.
-function renderCandidateStream(col) {
-  if (!col.stream) return renderCompare();
-  const b = col.body;
-  const atEnd = b.scrollHeight - b.scrollTop - b.clientHeight < 40;
-  paintStream(col.stream._stream, col.streaming);
-  if (atEnd) b.scrollTop = b.scrollHeight;
-}
-
-function candidateColumn(col) {
-  const s = col.session;
-  const box = el('div', 'candidate');
-  const head = el('div', 'candidate-head');
-  head.append(el('div', 'n', modelLabel(s.model)), el('div', 's ident', s.model),
-    el('div', 's', state.working[s.id] ? 'working…' : 'answered'));
-  const body = el('div', 'candidate-body');
-  for (const e of sinceQuestion(col.entries)) body.append(renderEntry(e));
-  col.stream = null;
-  if (col.streaming) {
-    col.stream = streamMessage(col.streaming);
-    body.append(col.stream);
-  } else if (state.working[s.id]) body.append(thinkingNode());
-  col.body = body;
-  const acts = el('div', 'candidate-acts');
-  const open = el('button', 'btn', 'Open');
-  open.onclick = () => location.hash = '#session/' + s.id;
-  const keep = el('button', 'btn primary', 'Keep this one');
-  keep.onclick = () => keepCandidate(s);
-  acts.append(open, keep);
-  box.append(head, body, acts);
-  return box;
-}
-
-// Every candidate holds the same history and differs only in what it did with
-// the last message, so that is where the column starts.
-function sinceQuestion(entries) {
-  let at = 0;
-  for (let i = (entries || []).length - 1; i >= 0; i--) {
-    const e = entries[i];
-    if (e.type === 'message' && e.role === 'user' && !e.job_id) { at = i; break; }
-  }
-  return (entries || []).slice(at);
-}
-
-// Keeping is the destructive half of comparing, so it says what goes before it
-// goes. What is kept needs no explanation: it is the conversation from here on.
-async function keepCandidate(s) {
-  const others = state.compare ? state.compare.cols.length - 1 : 0;
-  if (!confirm('Keep the answer from ' + modelLabel(s.model) + ' and carry on in it?\n\n' +
-    'This deletes the other ' + others + ' conversation' + (others === 1 ? '' : 's') +
-    ' in this comparison, with their transcripts and files.')) return;
-  await post('/sessions/' + s.id + '/keep', {});
-  state.compare = null;
-  location.hash = '#session/' + s.id;
 }
 
 async function viewSettings(v) {

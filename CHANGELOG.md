@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-10
+
+- **Compare is gone.** To try a message on another model, press 🔀 beside
+  it, choose the model on the fork screen, and send: the message is already
+  in the box. It works for any message, not only the next one, and each
+  answer is an ordinary conversation. Comparisons left undecided are now
+  ordinary conversations, still titled with their model.
+
 ## 2026-11-09
 
 - **Reverting puts your files back.** Taking a conversation back to before
