@@ -108,7 +108,8 @@ loader checks. See [`specs/tools.html`](specs/tools.html) and
 
 A tool's `description` and `parameters` are the surface the model programmes
 against, and no deterministic test can tell whether they read correctly. So
-every directory under `tools/` carries an `eval.json` — requests put to a real
+every directory under `tools/` carries an `eval.json`, and so does every built-in
+under `internal/app/builtin/` — requests put to a real
 model, and what its tool use must look like. `go test ./...` fails if a tool
 directory has none.
 

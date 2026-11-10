@@ -2,6 +2,11 @@
 
 ## 2026-11-10
 
+- **Scheduling, search, skills, other models and packages run inside the
+  agent.** These five tools were small programs that passed each request back
+  to the agent; they are now part of it. They do what they did. A program in
+  the sandbox can no longer ask the agent to schedule, search, call a model or
+  install anything.
 - **Tools can come from MCP bundles.** A bundle unpacked into `plugins/` in
   the state directory is loaded with the other tools: its server says what
   tools it has, and each call runs it confined to the conversation's

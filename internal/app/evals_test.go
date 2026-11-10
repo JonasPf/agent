@@ -25,6 +25,8 @@ func TestEveryToolShipsEvalCases(t *testing.T) {
 			want = append(want, d.Name())
 		}
 	}
+	// And every builtin that carries a manifest carries cases beside it.
+	want = append(want, builtinNames()...)
 	if len(suites) != len(want) {
 		t.Fatalf("%d suites for %d tools", len(suites), len(want))
 	}

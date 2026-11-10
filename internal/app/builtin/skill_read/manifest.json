@@ -16,9 +16,5 @@
     "required": [
       "name"
     ]
-  },
-  "agent": {
-    "db_prefix": "skill_read_",
-    "timeout_seconds": 30
   }
 }

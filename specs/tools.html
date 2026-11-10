@@ -36,6 +36,14 @@ reload.</p>
   schema.sql        optional — tables, applied on load
   ui/panel.js       optional — an interface panel for this tool's data</code></pre>
 
+<p>A tool that is the agent's handle on itself has no program. <code>schedule</code>,
+<code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, and
+<code>packages</code> reach what only the agent holds &mdash; its jobs, its transcripts, its skills, the
+model key, the package store &mdash; and run inside it, as <code>reload_tools</code> does
+(<a href="adrs.html#adr-086">ADR-086</a>). Each still has a manifest and eval cases, compiled in from
+<code>internal/app/builtin/&lt;name&gt;/</code>: what the model is sent is a manifest's standard part
+either way.</p>
+
 <h2>The tools that ship</h2>
 
 <p>Each has a page of its own: what it does, what it refuses, how it fails, and the criteria that hold
@@ -175,7 +183,7 @@ defined is absent.</p>
 <tr><th>Variable</th><th>Holds</th></tr>
 <tr><td><code>AGENT_DB</code></td><td>Path to the SQLite database.</td></tr>
 <tr><td><code>AGENT_DB_PREFIX</code></td><td>The tool's table prefix.</td></tr>
-<tr><td><code>AGENT_URL</code></td><td>Base URL of the tool API: the calling conversation's jobs, the skills it has, search, and one entry read whole. Not the operator's API (<a href="adrs.html#adr-051">ADR-051</a>).</td></tr>
+<tr><td><code>AGENT_URL</code></td><td>Base URL of the tool API: where a skill the calling conversation has keeps its files, and nothing else (<a href="adrs.html#adr-086">ADR-086</a>). Not the operator's API (<a href="adrs.html#adr-051">ADR-051</a>).</td></tr>
 <tr><td><code>AGENT_TOKEN</code></td><td>Names this call to the tool API. Issued when the call starts and revoked when it ends; the call decides which conversation a request acts in.</td></tr>
 <tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
 <tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>

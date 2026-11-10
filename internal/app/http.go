@@ -786,21 +786,43 @@ func (a *App) hPatchJob(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "no such job")
 		return
 	}
-	var in struct {
-		Schedule    *string `json:"schedule"`
-		Check       *string `json:"check"`
-		Prompt      *string `json:"prompt"`
-		AfterActing *string `json:"after_acting"`
-	}
+	var in jobEdit
 	if err := readJSON(r, &in); err != nil {
 		fail(w, 400, "%v", err)
 		return
 	}
+	if err := a.editJob(j, in); err != nil {
+		code := 400
+		if errors.Is(err, errJobNotStored) {
+			code = 500
+		}
+		fail(w, code, "%v", err)
+		return
+	}
+	writeJSON(w, 200, a.priceJobs(r.Context(), []*Job{j})[0])
+}
+
+// jobEdit is what about a job can be changed; a field left out stays.
+type jobEdit struct {
+	Schedule    *string `json:"schedule"`
+	Check       *string `json:"check"`
+	Prompt      *string `json:"prompt"`
+	AfterActing *string `json:"after_acting"`
+}
+
+// errJobNotStored is an edit that was acceptable and could not be written.
+var errJobNotStored = errors.New("the job could not be stored")
+
+// editJob applies an edit to a job and stores it. An edit that is refused
+// changes nothing.
+func (a *App) editJob(j *Job, in jobEdit) error {
+	if in.AfterActing != nil && *in.AfterActing != afterStop && *in.AfterActing != afterContinue {
+		return fmt.Errorf("after_acting must be %q or %q", afterStop, afterContinue)
+	}
 	if in.Schedule != nil {
 		next, err := nextRun(*in.Schedule, time.Now())
 		if err != nil {
-			fail(w, 400, "%v", err)
-			return
+			return err
 		}
 		j.Schedule, j.NextRunAt = *in.Schedule, next
 	}
@@ -811,18 +833,13 @@ func (a *App) hPatchJob(w http.ResponseWriter, r *http.Request) {
 		j.Prompt = *in.Prompt
 	}
 	if in.AfterActing != nil {
-		if *in.AfterActing != afterStop && *in.AfterActing != afterContinue {
-			fail(w, 400, "after_acting must be %q or %q", afterStop, afterContinue)
-			return
-		}
 		j.AfterActing = *in.AfterActing
 	}
 	if err := a.store.PutJob(j); err != nil {
-		fail(w, 500, "%v", err)
-		return
+		return fmt.Errorf("%w: %v", errJobNotStored, err)
 	}
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
-	writeJSON(w, 200, a.priceJobs(r.Context(), []*Job{j})[0])
+	return nil
 }
 
 func (a *App) hDeleteJob(w http.ResponseWriter, r *http.Request) {
