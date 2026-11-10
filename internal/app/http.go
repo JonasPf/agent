@@ -872,6 +872,9 @@ func (a *App) hTools(w http.ResponseWriter, r *http.Request) {
 		if !t.Builtin {
 			entry["agent"] = t.Agent
 		}
+		if t.bundle != nil {
+			entry["bundle"] = t.bundle.label()
+		}
 		out = append(out, entry)
 	}
 	// The sandbox is the same for every tool program, so it is said once; each

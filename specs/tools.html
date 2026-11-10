@@ -247,6 +247,41 @@ parseable output.</p>
 </ul>
 </div>
 
+<h2>Bundles</h2>
+
+<p>A tool can also come from an MCP server packaged as an MCP Bundle
+(<a href="adrs.html#adr-085">ADR-085</a>): a folder holding <code>manifest.json</code> in the MCPB
+format and the server it names. Bundles are read from two directories &mdash;
+<code>plugins/</code> beside the agent, for what the image ships, and <code>plugins/</code> in the
+state directory, for what the operator installed &mdash; when tools are loaded and when they are
+reloaded. The tools of the older kind, with a <code>run</code> of their own, load beside them until
+they have moved.</p>
+
+<p>The agent asks a bundle's server what it offers once, on loading it, with <code>tools/list</code>:
+each tool's name, description, and input schema are the server's, and are what the model is sent.
+A call starts the server again, through the sandbox, in the calling conversation's directory, sends
+one <code>tools/call</code>, and ends the server. So a bundle's tool is confined as any tool is, and
+no server outlives its call. What the server answers as text is the result; an answer it marks as an
+error is an error result.</p>
+
+<p>Only what can run here is loaded. The server is one executable inside the bundle
+(<code>server.type</code> <code>binary</code>), for Linux. <code>${__dirname}</code> in its command,
+arguments, and variables is the bundle's folder; anything else in <code>${&hellip;}</code> is not
+filled in, and a bundle that needs it is refused. Under <code>_meta</code>, the key
+<code>io.github.jonaspf.agent</code> may give <code>reads</code> and <code>timeout_seconds</code>,
+which mean what they mean in a tool's own manifest; a call is otherwise bounded at thirty seconds. A
+bundle that requires a value from the operator is refused until there is a screen to give it on.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A bundle's tools are the ones its server lists, described as the server describes them, and each names the bundle and version it came from.</li>
+<li>A bundle's tool called in a turn runs in the conversation's directory, and reaches nothing outside it: not another conversation's files, not the agent's settings, not the directory bundles are installed in.</li>
+<li>A tool that reports an error, or outlives its bundle's timeout, is an error result the model reads, never a failed turn; the next call works.</li>
+<li>A bundle that cannot run here &mdash; no manifest, a server that is not a binary, another platform, a command outside the bundle, a value it requires, a tool name already taken &mdash; is not loaded, and the Tools screen says why.</li>
+</ul>
+</div>
+
 <h2>Evals</h2>
 
 <p>A tool's <code>description</code> and <code>parameters</code> are the surface a model programmes
