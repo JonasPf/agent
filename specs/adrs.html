@@ -2679,6 +2679,66 @@ set the agent's. A proxy that rewrites the host and says nothing of the original
 browser refused; none in use does.</p>
 </div>
 
+<div class="adr" id="adr-085">
+<div class="meta">ADR-085 · proposed · would supersede <a href="#adr-035">ADR-035</a> and <a href="#adr-067">ADR-067</a></div>
+<h3>A tool is an MCP server in a bundle, installed by the operator</h3>
+<h4>Context</h4>
+<p>Every tool is a Go program in this module (<a href="#adr-035">ADR-035</a>), spoken to over a
+contract of the agent's own: JSON on standard input, a manifest with an <code>agent</code> block
+(<a href="#adr-067">ADR-067</a>). A new tool, or a change to one, is a pull request to the agent
+and a new image. The core carries fourteen tools, five skills, their evals and their test rigs, and
+none of them can be used by anything else or come from anywhere else.</p>
+<p>The Model Context Protocol is the contract other hosts speak, and MCP Bundles (MCPB) are how a
+local server is packaged: a zip holding a <code>manifest.json</code> and the server, which may be
+one static executable (<code>server.type: "binary"</code>).</p>
+<h4>Decision</h4>
+<p>A tool that is not the agent's own handle on itself (<a href="#adr-086">ADR-086</a>) is served by
+an MCP server in an MCPB bundle. The agent reads what the server offers with
+<code>tools/list</code>, once, when the bundle is installed or reloaded, and calls it with
+<code>tools/call</code>. The contract of the agent's own goes: the <code>agent</code> block, the
+database prefix and the database handed to a tool, the panel script.</p>
+<p>A server is started for one call and ended with it, through the sandbox, in the calling
+conversation's directory &mdash; exactly as a tool's <code>run</code> is today. Measured: 5.1 ms a
+call against 4.2 ms, over twenty calls each, and Landlock holds the server to the directory as it
+holds a tool. Nothing long-lived is added for the agent to supervise.</p>
+<p>What a bundle needs that MCPB has a field for uses that field: a credential is a
+<code>user_config</code> entry marked sensitive. What it has none for &mdash; paths to read beyond
+the runtime, a timeout &mdash; goes under <code>_meta</code>, and is shown with the bundle's tools
+before it is installed.</p>
+<p>Only the operator installs a bundle, through the interface, into a directory beside the data that
+no tool can write, as with skills (<a href="#adr-053">ADR-053</a>). The image carries a default set
+named in a file in this repository by version and digest, fetched when the image is built. Skills
+that leave the repository are installed as folders in the format they already have; a server that
+serves skills is not required for one.</p>
+<h4>Consequences</h4>
+<p>The agent they talk to tomorrow is still the one they merged today: the default set is pinned in
+a merged file, and anything else was installed by hand. The bundled tools and the shipped skills move
+to a repository of their own, with their tests and evals. A bundle written for another host runs
+here if it runs on Linux inside the sandbox; one that expects to reach the whole machine does not,
+and says so by failing. The agent gains one dependency, the protocol's Go SDK.</p>
+</div>
+
+<div class="adr" id="adr-086">
+<div class="meta">ADR-086 · proposed · builds on <a href="#adr-085">ADR-085</a></div>
+<h3>The agent's handles on itself are built in, and the tool API goes</h3>
+<h4>Context</h4>
+<p>Six tools do nothing of their own. <code>schedule</code>, <code>session_search</code>,
+<code>skill_read</code>, <code>call_model</code>, <code>packages</code>, and
+<code>ask_operator</code> each pass a request to the agent, over an API that exists only for them:
+a second listener, a token for every call, a port in the sandbox's policy, a client in every tool.
+What they reach &mdash; the jobs, the transcripts, the model key, the package store, the operator
+&mdash; is the agent's and cannot be handed to a bundle.</p>
+<h4>Decision</h4>
+<p>Those six run inside the agent, as <code>reload_tools</code> already does. The tool API, its
+tokens, and its place in the sandbox's policy are removed. A bundle's server reaches nothing of the
+agent's.</p>
+<h4>Consequences</h4>
+<p>A tool running in the sandbox has one fewer thing it can connect to, and the core one fewer
+listener. A built-in is part of the agent and changes only with it. A bundle cannot schedule, search
+conversations, or call a model; if one ever must, the protocol's own means for a server to ask its
+host is the place to add it, not a side door.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>
