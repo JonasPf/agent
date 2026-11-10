@@ -123,6 +123,7 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 	// One path. A check, if there is one, decides whether this wake acts.
 	if j.Check != "" {
 		met, out, err := s.runCheck(ctx, j, sess)
+		s.refresh(j)
 		if err != nil {
 			if ctx.Err() != nil {
 				s.stoppedWake(j, sess, due, nil)
@@ -141,7 +142,9 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 
 	// The wake it was due at, not the moment it got to run.
 	before := len(a.store.Entries(sess.ID))
-	if err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, DueAt: due}); err != nil {
+	err := a.runTurn(ctx, sess, turnOpts{UserText: j.Prompt, JobID: j.ID, DueAt: due})
+	s.refresh(j)
+	if err != nil {
 		if ctx.Err() != nil {
 			s.stoppedWake(j, sess, due, a.entriesSince(sess.ID, before))
 			return
@@ -155,6 +158,21 @@ func (s *Scheduler) runJob(ctx context.Context, j *Job, sess *Session) {
 	s.logRun(j, sess.ID, due, jobFired, saidBy(a.entriesSince(sess.ID, before)))
 	s.succeeded(j)
 	s.reschedule(j, true)
+}
+
+// refresh brings the job a wake holds up to date with what is stored. A wake
+// lasts as long as its turn, and the job can change under it: the agent edits
+// its own schedule from inside the wake, or the operator does from the jobs
+// screen. What the job is — its schedule, check, prompt, and what follows
+// acting — is read back, so the next wake is worked out from the schedule in
+// force. A job deleted meanwhile is left as it was held: nothing written for
+// it afterwards reaches the store (PutJobProgress, LogJobRun).
+func (s *Scheduler) refresh(j *Job) {
+	cur, err := s.app.store.Job(j.ID)
+	if err != nil || cur == nil {
+		return
+	}
+	j.Schedule, j.Check, j.Prompt, j.AfterActing = cur.Schedule, cur.Check, cur.Prompt, cur.AfterActing
 }
 
 // stoppedWake records a wake the operator stopped. It did not fail: recorded as
@@ -245,7 +263,7 @@ func (s *Scheduler) reschedule(j *Job, acted bool) {
 		return
 	}
 	j.NextRunAt = next
-	_ = a.store.PutJob(j)
+	_ = a.store.PutJobProgress(j)
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
 }
 
@@ -254,13 +272,13 @@ func (s *Scheduler) reschedule(j *Job, acted bool) {
 // would take the answer with it.
 func (s *Scheduler) finish(j *Job) {
 	j.Status = jobDone
-	_ = s.app.store.PutJob(j)
+	_ = s.app.store.PutJobProgress(j)
 	s.app.hub.Broadcast(wsEvent{Kind: "jobs"})
 }
 
 // logRun writes one line of the job's own history.
 func (s *Scheduler) logRun(j *Job, sessionID string, due time.Time, outcome, message string) {
-	_ = s.app.store.PutJobRun(JobRun{ID: newID(), JobID: j.ID, SessionID: sessionID,
+	_ = s.app.store.LogJobRun(JobRun{ID: newID(), JobID: j.ID, SessionID: sessionID,
 		At: time.Now(), DueAt: due, Outcome: outcome, Message: truncate(message, 1000)})
 	s.app.hub.Broadcast(wsEvent{Kind: "jobs"})
 }
@@ -328,7 +346,7 @@ func (s *Scheduler) jobFailed(j *Job, err error) {
 		// A job failing while the breaker is open waits for the probe rather than
 		// counting the outage against itself.
 		j.NextRunAt = time.Now().Add(breakerProbeEvery)
-		_ = a.store.PutJob(j)
+		_ = a.store.PutJobProgress(j)
 		return
 	}
 	// A failing job is kept and keeps trying, its failures piling up in its own
@@ -340,7 +358,7 @@ func (s *Scheduler) jobFailed(j *Job, err error) {
 	}
 	backoff := time.Duration(1<<j.FailCount) * time.Minute
 	j.NextRunAt = time.Now().Add(backoff)
-	_ = a.store.PutJob(j)
+	_ = a.store.PutJobProgress(j)
 }
 
 func (s *Scheduler) isInflight(id string) bool {

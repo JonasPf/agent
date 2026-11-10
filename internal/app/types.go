@@ -157,11 +157,6 @@ type Session struct {
 	// working directory; a fork, an import, and a restart put back these
 	// paths rather than asking the release again.
 	Packages []Package `json:"packages,omitempty"`
-	// Comparison names the comparison this session is a candidate of, for as
-	// long as that comparison is undecided. Keeping one candidate clears it and
-	// deletes the rest, so a non-empty value always means a decision is still
-	// outstanding — there is no third state to read.
-	Comparison string `json:"comparison,omitempty"`
 	// CompactAtTokens and KeepVerbatimTokens are the whole trade between cost and
 	// retention, and they are independent: the first is what a call costs at its
 	// most expensive, the second is how much of the conversation is never lossy.

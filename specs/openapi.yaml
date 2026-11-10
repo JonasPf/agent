@@ -6,7 +6,10 @@ info:
     The agent's HTTP surface, as `internal/app/http.go` registers it; a test
     fails when a route is added or removed without this file following. The
     agent asks for no authentication: whatever stands in front of it decides
-    who reaches it. A WebSocket at /ws carries every change as it happens, and
+    who reaches it. A request a browser sends for a page on another site is
+    answered 403 when it is anything but a GET, or opens the socket (ADR-084);
+    a client that is not a browser sends neither `Sec-Fetch-Site` nor `Origin`
+    and is unaffected. A WebSocket at /ws carries every change as it happens, and
     everything it carries can also be read from the endpoints below.
 tags:
   - name: sessions
@@ -242,65 +245,6 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
         "404": {$ref: "#/components/responses/Error"}
-
-  /sessions/{id}/compare:
-    parameters:
-      - $ref: "#/components/parameters/SessionID"
-    post:
-      tags: [sessions]
-      summary: Put one message to several models, each in a fork of this session.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [text, models]
-              properties:
-                text: {type: string}
-                models:
-                  type: array
-                  minItems: 2
-                  items: {type: string}
-      responses:
-        "201":
-          description: The comparison and its candidates.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  comparison: {type: string}
-                  candidates:
-                    type: array
-                    items: {$ref: "#/components/schemas/Session"}
-        "400": {$ref: "#/components/responses/Error"}
-        "404": {$ref: "#/components/responses/Error"}
-
-  /sessions/{id}/keep:
-    parameters:
-      - $ref: "#/components/parameters/SessionID"
-    post:
-      tags: [sessions]
-      summary: Keep this candidate of a comparison and delete the others.
-      responses:
-        "200":
-          description: The kept session, and what was deleted.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  session: {$ref: "#/components/schemas/Session"}
-                  deleted:
-                    type: array
-                    items: {type: string}
-        "404": {$ref: "#/components/responses/Error"}
-        "409":
-          description: The session is not a candidate of an undecided comparison.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/Error"}
 
   /sessions/{id}/compact:
     parameters:
@@ -647,7 +591,7 @@ paths:
                 after_acting: {type: string, enum: [stop, continue]}
       responses:
         "200":
-          description: The job as changed.
+          description: The job as changed, with its estimate under the new schedule.
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Job"}
@@ -1233,7 +1177,6 @@ components:
             read_through: {type: integer, description: The last entry the operator was shown.}
             unread: {type: integer}
             forked_from: {type: string}
-            comparison: {type: string, description: Set while the session is a candidate of an undecided comparison.}
             compact_at_tokens: {type: integer}
             keep_verbatim_tokens: {type: integer}
             last_compacted_at: {type: string, format: date-time, nullable: true}

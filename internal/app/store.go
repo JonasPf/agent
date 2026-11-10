@@ -847,6 +847,23 @@ func (s *Store) PutJob(j *Job) error {
 	return err
 }
 
+// PutJobProgress writes what a wake changed about its job — its counters, its
+// last outcome, its state, and when it wakes next — and nothing else about it.
+// A wake holds the job as it was when the wake began, for as long as the turn
+// takes; written back whole, that copy put a job its own wake had deleted back
+// on the schedule, and took back a schedule the wake had changed. An update
+// cannot bring a row back, and these are the columns only the scheduler writes.
+func (s *Store) PutJobProgress(j *Job) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.deleted[j.SessionID] {
+		return errSessionDeleted
+	}
+	_, err := s.db.Exec(`update jobs set status=?, run_count=?, fail_count=?, next_run_at=?, last_status=? where id=?`,
+		j.Status, j.RunCount, j.FailCount, j.NextRunAt.Format(time.RFC3339), j.LastStatus, j.ID)
+	return err
+}
+
 func scanJobs(rows *sql.Rows) ([]*Job, error) {
 	defer rows.Close()
 	var out []*Job
@@ -980,6 +997,25 @@ func (s *Store) PutJobRun(r JobRun) error {
 	 values(?,?,?,?,?,?,?)`,
 		r.ID, r.JobID, r.SessionID, r.At.Format(time.RFC3339), formatOrEmpty(r.DueAt),
 		r.Outcome, r.Message)
+	return err
+}
+
+// LogJobRun is PutJobRun for a wake that has just ended: the line is written
+// only if its job is still there. A job deleted while its wake ran took its
+// log with it, and a line written after that belongs to nothing.
+func (s *Store) LogJobRun(r JobRun) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.deleted[r.SessionID] {
+		return errSessionDeleted
+	}
+	if r.ID == "" {
+		r.ID = newID()
+	}
+	_, err := s.db.Exec(`insert into job_runs(id,job_id,session_id,at,due_at,outcome,message)
+	 select ?,?,?,?,?,?,? where exists (select 1 from jobs where id=?)`,
+		r.ID, r.JobID, r.SessionID, r.At.Format(time.RFC3339), formatOrEmpty(r.DueAt),
+		r.Outcome, r.Message, r.JobID)
 	return err
 }
 

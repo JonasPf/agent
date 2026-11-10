@@ -1781,8 +1781,8 @@ workflow and <code>testenv/Dockerfile</code> &mdash; still name each other, and 
 pipeline over a runner's kernel.</p>
 </div>
 
-<div class="adr" id="adr-057">
-<div class="meta">ADR-057 · accepted · builds on <a href="#adr-022">ADR-022</a></div>
+<div class="adr superseded" id="adr-057">
+<div class="meta">ADR-057 · superseded by <a href="#adr-083">ADR-083</a></div>
 <h3>A comparison is a set of forks, and choosing one deletes the rest</h3>
 <h4>Context</h4>
 <p>Asking the same question of several models and keeping the best answer is an operator&rsquo;s
@@ -1814,6 +1814,8 @@ and the screen says so.</p>
 <p>The price is honest and unavoidable: each candidate re-sends the whole conversation to a different
 provider, so none of them reads the origin&rsquo;s cached prefix. An N-way comparison costs N
 uncached prompts, and the screen says what that is before it is spent.</p>
+<p><b>Superseded.</b> Forking from before a message, on another model, does what a comparison did,
+for any message rather than only the next one. See <a href="#adr-083">ADR-083</a>.</p>
 </div>
 
 <div class="adr" id="adr-058">
@@ -2623,6 +2625,58 @@ than they were under copying.</p>
 container they run in must be allowed to mount it. The database shares the volume, and copy-on-write
 fragments a file that is rewritten in place, so the database's directory is marked not to copy on
 write.</p>
+</div>
+
+<div class="adr" id="adr-083">
+<div class="meta">ADR-083 · accepted · supersedes <a href="#adr-057">ADR-057</a>, builds on <a href="#adr-082">ADR-082</a></div>
+<h3>A message is tried on another model by forking from before it</h3>
+<h4>Context</h4>
+<p>Comparing (<a href="#adr-057">ADR-057</a>) put one new message to several models, each in a fork of
+the whole conversation, showed the answers side by side on a screen of its own, and ended when one was
+kept and the rest deleted. It was confusing to use: the candidates were conversations, but titled and
+marked as something else; the conversation it started from never held the exchange; choosing deleted
+conversations; and only a message not yet sent could be compared.</p>
+<p>A fork can now start before any message, with the files as they were then
+(<a href="#adr-082">ADR-082</a>). It takes its own configuration, the model included, and an operator's
+message from that point waits in its composer.</p>
+<h4>Decision</h4>
+<p>Comparing is removed: the screen, its two requests, and the mark on a candidate. A message is tried on
+another model by forking from before it on that model and sending what the composer holds. Any message
+can be tried again this way, and each answer is an ordinary conversation, kept or deleted like any
+other.</p>
+<h4>Consequences</h4>
+<p>Two answers are no longer read side by side; they are two conversations, read one after the other,
+and trying three models is three forks. A conversation an older version left as an undecided candidate
+becomes an ordinary one, still titled with its model. A conversation a comparison was started from
+keeps its record of it: the comparison's identifier there is text, since nothing opens it any more,
+and each candidate it names still links to that conversation.</p>
+</div>
+
+<div class="adr" id="adr-084">
+<div class="meta">ADR-084 · accepted · builds on <a href="#adr-038">ADR-038</a></div>
+<h3>A request from a page on another site is refused</h3>
+<h4>Context</h4>
+<p>The agent has no login. A proxy in front of it asks for a password
+(<a href="#adr-038">ADR-038</a>), and a browser that holds the password sends it with every request
+to the agent's address, including one made by a page on some other site the operator has open. The
+browser stops that page reading the answer and nothing more. It could start a conversation and send
+it a message &mdash; a form may post a body that reads as JSON &mdash; and a message runs a shell. The
+socket had no check at all: any page could open it and be sent every entry of every conversation as
+it was written.</p>
+<h4>Decision</h4>
+<p>Every request that is not a plain read, and the request that opens the socket, is checked for
+where it came from. <code>Sec-Fetch-Site</code> is the browser's own answer, and anything but
+<code>same-origin</code> or <code>none</code> is refused with 403. A browser that does not send it
+sends <code>Origin</code>, which must name the host the request was sent to: the <code>Host</code>
+header, or <code>X-Forwarded-Host</code> where a proxy puts its own name for the agent in the first.
+A request with neither header is not from a browser and is served.</p>
+<h4>Consequences</h4>
+<p>This is not a login and adds no account: reachability and the proxy's password are still the whole
+of the access control (R3). A page the agent wrote and the operator opened from a working directory
+was already kept from the agent by its sandbox (<a href="#adr-073">ADR-073</a>); its origin is no
+origin, and it is refused here too. A script that sets an <code>Origin</code> of its own choosing must
+set the agent's. A proxy that rewrites the host and says nothing of the original would have an old
+browser refused; none in use does.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

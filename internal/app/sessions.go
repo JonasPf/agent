@@ -116,6 +116,16 @@ func (a *App) Fork(origin *Session, cfg SessionConfig, before int) (*Session, er
 	if err != nil {
 		return nil, err
 	}
+	// From here the fork exists, and a step below can still fail. One that
+	// does takes it away again: left behind, it sat in the list as an empty
+	// conversation for a request that had been refused.
+	made, forkID := false, fork.ID
+	defer func() {
+		if !made {
+			_ = a.DeleteSession(forkID)
+			a.hub.Broadcast(wsEvent{Kind: "sessions"})
+		}
+	}()
 	why := "fork"
 	if changed := describeConfigChange(origin.SessionConfig, fork.SessionConfig); changed != "" {
 		why += ", " + changed
@@ -206,6 +216,7 @@ func (a *App) Fork(origin *Session, cfg SessionConfig, before int) (*Session, er
 	if err != nil {
 		return nil, err
 	}
+	made = true
 	a.hub.Broadcast(wsEvent{Kind: "sessions"})
 	return fork, nil
 }

@@ -41,8 +41,6 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/{id}/messages", a.hSendMessage)
 	mux.HandleFunc("POST /sessions/{id}/cancel", a.hCancel)
 	mux.HandleFunc("POST /sessions/{id}/fork", a.hFork)
-	mux.HandleFunc("POST /sessions/{id}/compare", a.hCompare)
-	mux.HandleFunc("POST /sessions/{id}/keep", a.hKeep)
 	mux.HandleFunc("POST /sessions/{id}/compact", a.hCompact)
 	mux.HandleFunc("PUT /sessions/{id}/compaction", a.hEditCompaction)
 	mux.HandleFunc("POST /sessions/{id}/revert", a.hRevert)
@@ -93,7 +91,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("/ws", a.handleWS)
 
 	mux.Handle("/", revalidated(http.FileServer(http.Dir(a.cfg.WebDir))))
-	return compressed(mux)
+	return compressed(ownSite(mux))
 }
 
 // revalidated makes the browser ask before reusing an interface asset. The
@@ -537,56 +535,6 @@ func (a *App) hFork(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, a.enrich(fork))
 }
 
-// A comparison is started from the conversation it forks, so it is one request
-// naming the models and the message. What comes back is the candidates, so the
-// screen can show them filling in without asking again which they are.
-func (a *App) hCompare(w http.ResponseWriter, r *http.Request) {
-	s := a.store.Session(r.PathValue("id"))
-	if s == nil {
-		fail(w, 404, "no such session")
-		return
-	}
-	var in struct {
-		Text   string   `json:"text"`
-		Models []string `json:"models"`
-	}
-	if err := readJSON(r, &in); err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	group, cands, err := a.Compare(s, in.Text, in.Models)
-	if err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	out := make([]*Session, 0, len(cands))
-	for _, c := range cands {
-		out = append(out, a.enrich(c))
-	}
-	writeJSON(w, 201, map[string]any{"comparison": group, "candidates": out})
-}
-
-// Keeping is destructive and deliberate, so it is a request of its own rather
-// than a field on the session it decides.
-func (a *App) hKeep(w http.ResponseWriter, r *http.Request) {
-	s := a.store.Session(r.PathValue("id"))
-	if s == nil {
-		fail(w, 404, "no such session")
-		return
-	}
-	gone, err := a.Keep(s)
-	if err != nil {
-		fail(w, 409, "%v", err)
-		return
-	}
-	// Keeping changed the session; what is answered is the session it left.
-	kept := a.store.Session(s.ID)
-	if kept == nil {
-		kept = s
-	}
-	writeJSON(w, 200, map[string]any{"session": a.enrich(kept), "deleted": gone})
-}
-
 // hCompact folds a session now rather than at its threshold, for a conversation
 // that has grown expensive before it would have folded on its own. It takes its
 // place on the session's queue like a message: compaction happens only between
@@ -874,7 +822,7 @@ func (a *App) hPatchJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.hub.Broadcast(wsEvent{Kind: "jobs"})
-	writeJSON(w, 200, j)
+	writeJSON(w, 200, a.priceJobs(r.Context(), []*Job{j})[0])
 }
 
 func (a *App) hDeleteJob(w http.ResponseWriter, r *http.Request) {
@@ -1138,6 +1086,9 @@ func (a *App) hUpload(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "files larger than 250 MB are refused")
 		return
 	}
+	// A body sent in chunks states no length, and a form is read whole, to
+	// disk, before the file in it is looked at.
+	r.Body = http.MaxBytesReader(w, r.Body, maxUpload+uploadEnvelope)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		fail(w, 400, "%v", err)
 		return
@@ -1291,6 +1242,7 @@ func (a *App) hImportSession(w http.ResponseWriter, r *http.Request) {
 		fail(w, 413, "archives larger than 500 MB are refused")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxArchive+uploadEnvelope)
 	var body io.Reader = io.LimitReader(r.Body, maxArchive+1)
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
