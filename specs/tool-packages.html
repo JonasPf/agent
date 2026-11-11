@@ -32,7 +32,7 @@ what this conversation has installed.</p>
 install takes the revision that list belongs to, so what a search finds is what an install gets. The
 agent checks for a newer revision at most once a day.</p>
 
-<p>The agent installs, not the tool: the tool hands the names to the tool API, and the agent fetches
+<p>The agent installs, and the tool is the agent's own, run inside it (<a href="adrs.html#adr-086">ADR-086</a>): no program in the sandbox is part of an install. The agent fetches
 the packages into its store. From the next tool call on, their programs are on the conversation's
 <code>PATH</code>, in <code>bash</code> and in its jobs' checks. Another conversation's
 <code>PATH</code> does not have them; it installs them too, and finds them already downloaded. The

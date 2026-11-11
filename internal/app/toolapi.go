@@ -12,13 +12,12 @@ import (
 	"sync"
 )
 
-// A tool reaches the agent on an API of its own. It used to use the operator's,
-// which can create a conversation holding a credential and then send it the
-// message that spends it; a tool that could reach that could hand itself
-// anything the operator had ever set. The tool API offers what the shipped
-// tools call — the calling conversation's jobs, the skills it has, search,
-// and a call to another model made on its behalf — and the sandbox keeps a
-// tool off the operator's port.
+// A tool reaches the agent on an API of its own, never the operator's, which
+// can create a conversation holding a credential and then send it the message
+// that spends it. What is left of that API is one question: where a skill the
+// calling conversation has keeps its files, which the read tool asks. Jobs,
+// search, other models, and packages are the agent's own tools now and run
+// inside it (ADR-086); this goes too once read no longer asks.
 //
 // Every request names the call it belongs to with a token issued for that call
 // and revoked when it ends. The call, not the request, says which conversation
@@ -88,17 +87,7 @@ func (a *App) toolURL() string {
 
 func (a *App) toolRoutes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /jobs", a.tJobs)
-	mux.HandleFunc("POST /jobs", a.tCreateJob)
-	mux.HandleFunc("PATCH /jobs/{id}", a.ownJob(a.hPatchJob))
-	mux.HandleFunc("DELETE /jobs/{id}", a.ownJob(a.hDeleteJob))
 	mux.HandleFunc("GET /skills/{name}", a.tSkill)
-	mux.HandleFunc("GET /skills/{name}/files/{path...}", a.tSkillFile)
-	mux.HandleFunc("GET /search", a.hSearch)
-	mux.HandleFunc("GET /entry", a.tEntry)
-	mux.HandleFunc("POST /model", a.tModel)
-	mux.HandleFunc("GET /packages", a.tSearchPackages)
-	mux.HandleFunc("POST /packages", a.tInstallPackages)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 		g, ok := a.calls.lookup(token)
@@ -108,51 +97,6 @@ func (a *App) toolRoutes() http.Handler {
 		}
 		mux.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), callerKey{}, g)))
 	})
-}
-
-func (a *App) tJobs(w http.ResponseWriter, r *http.Request) {
-	jobs, err := a.store.SessionJobs(caller(r).SessionID)
-	if err != nil {
-		fail(w, 500, "%v", err)
-		return
-	}
-	writeJSON(w, 200, a.priceJobs(r.Context(), jobs))
-}
-
-// tCreateJob schedules into the calling conversation. Naming another is
-// refused rather than corrected: a job wakes its conversation with a prompt,
-// and one that asked for someone else's should be told it did not get it.
-func (a *App) tCreateJob(w http.ResponseWriter, r *http.Request) {
-	var spec JobSpec
-	if err := readJSON(r, &spec); err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	mine := caller(r).SessionID
-	if spec.SessionID != "" && spec.SessionID != mine {
-		fail(w, 403, "a tool schedules into its own conversation only, not %s", spec.SessionID)
-		return
-	}
-	spec.SessionID = mine
-	j, err := a.CreateJob(spec)
-	if err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	writeJSON(w, 201, a.priceJobs(r.Context(), []*Job{j})[0])
-}
-
-// ownJob lets a request through only for a job of the calling conversation.
-// Another conversation's job is not there, as far as this caller can tell.
-func (a *App) ownJob(h http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		j, err := a.store.Job(r.PathValue("id"))
-		if err != nil || j == nil || j.SessionID != caller(r).SessionID {
-			fail(w, 404, "no such job")
-			return
-		}
-		h(w, r)
-	}
 }
 
 // tSkill reads a skill the calling conversation has, and no other: its body,
@@ -177,28 +121,6 @@ func (a *App) tSkill(w http.ResponseWriter, r *http.Request) {
 		"source": sk.Source, "dir": dir, "files": files})
 }
 
-// tSkillFile reads one file of a skill the calling conversation has.
-func (a *App) tSkillFile(w http.ResponseWriter, r *http.Request) {
-	sk := a.callerSkill(w, r)
-	if sk == nil {
-		return
-	}
-	want := r.PathValue("path")
-	var have []string
-	for _, f := range sk.Files {
-		if f.Path == want {
-			writeJSON(w, 200, map[string]any{"path": f.Path, "body": f.Body})
-			return
-		}
-		have = append(have, f.Path)
-	}
-	if len(have) == 0 {
-		fail(w, 404, "the skill %s has no file %q; it is one file, and skill_read without a file reads it", sk.Name, want)
-		return
-	}
-	fail(w, 404, "the skill %s has no file %q; its files are %s", sk.Name, want, strings.Join(have, ", "))
-}
-
 func (a *App) callerSkill(w http.ResponseWriter, r *http.Request) *Skill {
 	sess := a.store.Session(caller(r).SessionID)
 	sk := a.skills.Get(r.PathValue("name"))
@@ -207,32 +129,4 @@ func (a *App) callerSkill(w http.ResponseWriter, r *http.Request) *Skill {
 		return nil
 	}
 	return sk
-}
-
-// tEntry reads one entry whole. A search hit is a dozen words around the match,
-// and an agent that lost an answer to a compaction once spent four hours and
-// 696 searches putting it back together from those. The calling conversation's
-// entry unless another is named, as with a search.
-func (a *App) tEntry(w http.ResponseWriter, r *http.Request) {
-	sessionID := r.URL.Query().Get("session")
-	if sessionID == "" {
-		sessionID = caller(r).SessionID
-	}
-	seq, err := strconv.Atoi(r.URL.Query().Get("seq"))
-	if err != nil {
-		fail(w, 400, "seq is required")
-		return
-	}
-	if a.store.Session(sessionID) == nil {
-		fail(w, 404, "no conversation %s", sessionID)
-		return
-	}
-	e, ok := a.store.EntryBySeq(sessionID, seq)
-	if !ok {
-		fail(w, 404, "no entry %d in %s", seq, sessionID)
-		return
-	}
-	h := SearchHit{SessionID: sessionID, Seq: seq}
-	a.store.describeHit(&h)
-	writeJSON(w, 200, map[string]any{"entry": e, "reverted": h.Reverted, "compacted": h.Compacted})
 }

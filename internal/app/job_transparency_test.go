@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -88,10 +89,12 @@ func TestJudgementRunIsRecordedInFull(t *testing.T) {
 	}
 }
 
-// The kernel is the loop, the scheduler, the store, the gateway, and the tool
-// registry. reload_tools is the registry's own control surface and cannot be a
-// tool that the registry has to load first. Nothing else is compiled in.
-func TestOnlyTheRegistryControlSurfaceIsCompiledIn(t *testing.T) {
+// What is compiled in is the agent's handle on itself and nothing else
+// (ADR-086): the registry's own control surface, and the tools that reach what
+// only the agent holds — its jobs, its transcripts, its skills, the model key,
+// the package store. A tool that only works on a conversation's files, or the
+// web, is not the agent's and is not here.
+func TestOnlyTheAgentsOwnHandlesAreCompiledIn(t *testing.T) {
 	a := newTestApp(t)
 	var builtin []string
 	for _, tl := range a.tools.All() {
@@ -99,8 +102,14 @@ func TestOnlyTheRegistryControlSurfaceIsCompiledIn(t *testing.T) {
 			builtin = append(builtin, tl.Name)
 		}
 	}
-	if len(builtin) != 1 || builtin[0] != "reload_tools" {
-		t.Errorf("compiled-in tools = %v, want [reload_tools]", builtin)
+	want := []string{"call_model", "packages", "reload_tools", "schedule", "session_search", "skill_read"}
+	if !slices.Equal(builtin, want) {
+		t.Errorf("compiled-in tools = %v, want %v", builtin, want)
+	}
+	// Each is what its manifest says and does what its code does: a manifest
+	// with no code, or code with no manifest, is not a tool.
+	if got := len(a.builtinRuns()); got != len(builtinNames()) {
+		t.Errorf("%d builtins have code and %d have a manifest", got, len(builtinNames()))
 	}
 }
 

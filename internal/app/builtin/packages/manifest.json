@@ -16,9 +16,5 @@
         "description": "Package names to install, exactly as a search listed them, e.g. [\"ffmpeg_8-headless\"]."
       }
     }
-  },
-  "agent": {
-    "db_prefix": "packages_",
-    "timeout_seconds": 1560
   }
 }

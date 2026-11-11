@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -82,6 +83,18 @@ func LoadEvalSuites(toolsDir string) ([]EvalSuite, error) {
 		}
 		out = append(out, s)
 	}
+	// A builtin's cases are compiled in beside its manifest.
+	for _, name := range builtinNames() {
+		raw, err := builtinFiles.ReadFile(path.Join("builtin", name, evalFile))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %s: %w", name, evalFile, err)
+		}
+		s, err := parseEvalSuite(name, raw)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		out = append(out, s)
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Tool < out[j].Tool })
 	return out, nil
 }
@@ -92,6 +105,11 @@ func loadEvalSuite(dir string) (EvalSuite, error) {
 	if err != nil {
 		return EvalSuite{Tool: name}, fmt.Errorf("%s: %w", evalFile, err)
 	}
+	return parseEvalSuite(name, b)
+}
+
+// parseEvalSuite reads one tool's cases and refuses a file that tests nothing.
+func parseEvalSuite(name string, b []byte) (EvalSuite, error) {
 	var s EvalSuite
 	if err := json.Unmarshal(b, &s); err != nil {
 		return EvalSuite{Tool: name}, fmt.Errorf("%s: %w", evalFile, err)
