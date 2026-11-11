@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 	"path"
 	"strings"
 	"time"
@@ -36,25 +35,6 @@ type modelCall struct {
 	Reasoning  string          `json:"reasoning"`
 	Questions  json.RawMessage `json:"questions"`
 	List       string          `json:"list"`
-}
-
-func (a *App) tModel(w http.ResponseWriter, r *http.Request) {
-	var c modelCall
-	if err := readJSON(r, &c); err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	id := caller(r).SessionID
-	content, cost, err := a.callModel(r.Context(), id, c)
-	if err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	if cost > 0 {
-		_, _ = a.store.UpdateSession(id, func(x *Session) { x.Cost += cost })
-		a.hub.Broadcast(wsEvent{Kind: "sessions"})
-	}
-	writeJSON(w, 200, map[string]string{"content": content})
 }
 
 // callModel does the call and says what came of it. A cost below zero is one

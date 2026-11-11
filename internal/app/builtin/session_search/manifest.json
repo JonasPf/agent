@@ -22,9 +22,5 @@
       }
     },
     "required": []
-  },
-  "agent": {
-    "db_prefix": "session_search_",
-    "timeout_seconds": 30
   }
 }

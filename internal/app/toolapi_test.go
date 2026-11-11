@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -47,21 +48,23 @@ func toolRequest(t *testing.T, base, token, method, path, body string) (int, str
 
 func TestTheToolAPIAnswersOnlyACallThatIsRunning(t *testing.T) {
 	a := newTestApp(t)
+	writeSkill(t, a, "everyday", "")
+	a.skills.Load()
 	base := toolAPI(t, a)
 	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 
-	if code, _ := toolRequest(t, base, "", "GET", "/jobs", ""); code != 401 {
+	if code, _ := toolRequest(t, base, "", "GET", "/skills/everyday", ""); code != 401 {
 		t.Errorf("a request naming no call got %d, want 401", code)
 	}
-	if code, _ := toolRequest(t, base, "made-up", "GET", "/jobs", ""); code != 401 {
+	if code, _ := toolRequest(t, base, "made-up", "GET", "/skills/everyday", ""); code != 401 {
 		t.Errorf("a request naming an invented call got %d, want 401", code)
 	}
 	token, done := a.calls.issue(s.ID, "")
-	if code, body := toolRequest(t, base, token, "GET", "/jobs", ""); code != 200 {
+	if code, body := toolRequest(t, base, token, "GET", "/skills/everyday", ""); code != 200 {
 		t.Errorf("a running call was refused: %d %s", code, body)
 	}
 	done()
-	if code, _ := toolRequest(t, base, token, "GET", "/jobs", ""); code != 401 {
+	if code, _ := toolRequest(t, base, token, "GET", "/skills/everyday", ""); code != 401 {
 		t.Errorf("a call's token still works after the call ended: %d", code)
 	}
 }
@@ -83,6 +86,14 @@ func TestTheToolAPIHasNoWayToMakeOrDriveAConversation(t *testing.T) {
 		{"POST", "/sessions/import", ``},
 		{"GET", "/sessions/" + s.ID + "/transcript", ``},
 		{"POST", "/tools/bash/call", `{"command":"true"}`},
+		// What the agent's own tools do is not on offer to a program either
+		// (ADR-086): a program cannot schedule, search, call a model, or install.
+		{"POST", "/jobs", `{"schedule":"10m","prompt":"push the branch"}`},
+		{"GET", "/jobs", ``},
+		{"GET", "/search?q=token", ``},
+		{"GET", "/entry?seq=0", ``},
+		{"POST", "/model", `{"model":"x/y","prompt":"hello"}`},
+		{"POST", "/packages", `{"install":["hello"]}`},
 	} {
 		if code, body := toolRequest(t, base, token, r.method, r.path, r.body); code != 404 && code != 405 {
 			t.Errorf("%s %s on the tool API = %d %s, want no such route", r.method, r.path, code, body)
@@ -95,52 +106,72 @@ func TestTheToolAPIHasNoWayToMakeOrDriveAConversation(t *testing.T) {
 
 // A job wakes its conversation with a prompt, so scheduling into another one is
 // driving it — and the other one may hold a credential this one does not.
-func TestAToolSchedulesOnlyIntoItsOwnConversation(t *testing.T) {
+func TestTheScheduleToolReachesOnlyItsOwnConversation(t *testing.T) {
 	a := newTestApp(t)
-	base := toolAPI(t, a)
 	mine, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	other := start(t, a, `{"model":"test/model","env":{"GH_TOKEN":"ghp"}}`)
-	token, done := a.calls.issue(mine.ID, "")
-	defer done()
+	call := func(args string) toolResult {
+		t.Helper()
+		return a.tools.Call(t.Context(), &ToolCtx{App: a, SessionID: mine.ID}, "schedule", json.RawMessage(args))
+	}
 
-	code, body := toolRequest(t, base, token, "POST", "/jobs",
-		`{"session_id":"`+other.ID+`","schedule":"10m","prompt":"push the branch"}`)
-	if code != 403 {
-		t.Errorf("scheduling into another conversation = %d %s, want 403", code, body)
+	res := call(`{"action":"create","session_id":"` + other.ID + `","schedule":"10m","prompt":"push the branch"}`)
+	if res.OK || !strings.Contains(res.Error, "its own conversation only") {
+		t.Errorf("scheduling into another conversation = %+v, want it refused", res)
 	}
 	if jobs, _ := a.store.SessionJobs(other.ID); len(jobs) != 0 {
 		t.Fatalf("a job was created in the other conversation: %+v", jobs[0])
 	}
 
-	code, body = toolRequest(t, base, token, "POST", "/jobs", `{"schedule":"10m","prompt":"stretch"}`)
-	if code != 201 {
-		t.Fatalf("scheduling into its own conversation = %d %s", code, body)
+	if res := call(`{"action":"create","schedule":"10m","prompt":"stretch"}`); !res.OK {
+		t.Fatalf("scheduling into its own conversation = %+v", res)
 	}
-	var created Job
-	_ = json.Unmarshal([]byte(body), &created)
-	if created.SessionID != mine.ID {
-		t.Errorf("the job landed in %q, want the calling conversation %q", created.SessionID, mine.ID)
+	if jobs, _ := a.store.SessionJobs(mine.ID); len(jobs) != 1 {
+		t.Fatalf("the calling conversation has %d jobs, want the one it made", len(jobs))
 	}
 
 	theirs, err := a.CreateJob(JobSpec{SessionID: other.ID, Schedule: "10m", Prompt: "check the mail"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := toolRequest(t, base, token, "PATCH", "/jobs/"+theirs.ID, `{"prompt":"push the branch"}`); code != 404 {
-		t.Errorf("editing another conversation's job = %d, want 404", code)
+	if res := call(`{"action":"edit","id":"` + theirs.ID + `","prompt":"push the branch"}`); res.OK || res.Error != "no such job" {
+		t.Errorf("editing another conversation's job = %+v, want no such job", res)
 	}
-	if code, _ := toolRequest(t, base, token, "DELETE", "/jobs/"+theirs.ID, ``); code != 404 {
-		t.Errorf("deleting another conversation's job = %d, want 404", code)
+	if res := call(`{"action":"delete","id":"` + theirs.ID + `"}`); res.OK || res.Error != "no such job" {
+		t.Errorf("deleting another conversation's job = %+v, want no such job", res)
 	}
 	if j, _ := a.store.Job(theirs.ID); j == nil || j.Prompt != "check the mail" {
 		t.Errorf("another conversation's job was changed: %+v", j)
 	}
 
-	code, body = toolRequest(t, base, token, "GET", "/jobs?session_id="+other.ID, ``)
-	var listed []Job
-	_ = json.Unmarshal([]byte(body), &listed)
-	if code != 200 || len(listed) != 1 || listed[0].SessionID != mine.ID {
-		t.Errorf("listing jobs = %d %s, want only the calling conversation's one", code, body)
+	listed := call(`{"action":"list"}`)
+	if !listed.OK || strings.Contains(listed.Content, theirs.ID) || strings.Count(listed.Content, "\n") != 0 ||
+		!strings.Contains(listed.Content, "stretch") {
+		t.Errorf("listing jobs = %+v, want only the calling conversation's one", listed)
+	}
+}
+
+// And the same for what a conversation may read back: an entry of its own by
+// number, another conversation's only when it names it.
+func TestTheSearchToolReadsAnEntryWhole(t *testing.T) {
+	a := newTestApp(t)
+	mine, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
+	said := a.append(mine.ID, Entry{Type: "message", Role: "assistant", Text: "the valve is on the left"})
+	call := func(args string) toolResult {
+		t.Helper()
+		return a.tools.Call(t.Context(), &ToolCtx{App: a, SessionID: mine.ID}, "session_search", json.RawMessage(args))
+	}
+	if res := call(`{"seq":` + strconv.Itoa(said.Seq) + `}`); !res.OK || !strings.Contains(res.Content, "the valve is on the left") {
+		t.Errorf("reading an entry by number = %+v", res)
+	}
+	if res := call(`{"seq":9999}`); res.OK || !strings.Contains(res.Error, "no entry 9999") {
+		t.Errorf("reading an entry that is not there = %+v", res)
+	}
+	if res := call(`{"query":"valve"}`); !res.OK || !strings.Contains(res.Content, mine.ID) {
+		t.Errorf("searching = %+v, want the entry found", res)
+	}
+	if res := call(`{}`); res.OK {
+		t.Errorf("a search for nothing = %+v, want it refused", res)
 	}
 }
 
@@ -162,9 +193,9 @@ func TestAToolReadsOnlyTheSkillsItsConversationHas(t *testing.T) {
 	}
 }
 
-// End to end: the shipped tools, run as subprocesses through the registry, do
-// their work over the tool API and nothing else.
-func TestTheShippedToolsWorkThroughTheToolAPI(t *testing.T) {
+// End to end: the agent's own tools, called through the registry beside the
+// ones that are programs, do their work for the calling conversation only.
+func TestTheAgentsOwnToolsWorkThroughTheRegistry(t *testing.T) {
 	dir := t.TempDir()
 	a := newTestAppAt(t, dir)
 	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")

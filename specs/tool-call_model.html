@@ -38,7 +38,8 @@ and the model named decides what the call is (<a href="adrs.html#adr-070">ADR-07
 with what they cost and, for speech, their voices; <code>prompt</code> then narrows the list, every word
 matching the model's id or name. That is how the agent finds a model to name.</p>
 
-<p>The agent makes the call, not the tool: the tool hands the request to the tool API, naming files by
+<p>The agent makes the call: the tool is the agent's own, run inside it
+(<a href="adrs.html#adr-086">ADR-086</a>), so the model key never leaves it. The request names files by
 path, and the agent reads them from the calling conversation's directory, calls the gateway with its
 own key, writes audio back there, and adds the cost to the conversation's. Every result says what the
 call cost, except one that spoke: the gateway knows what speech cost only some fifteen seconds after

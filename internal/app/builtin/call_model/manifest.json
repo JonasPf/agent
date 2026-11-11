@@ -59,9 +59,5 @@
         "description": "Instead of calling a model, list the models of this kind with their prices, and for speech their voices."
       }
     }
-  },
-  "agent": {
-    "db_prefix": "call_model_",
-    "timeout_seconds": 600
   }
 }
