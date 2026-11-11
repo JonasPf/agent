@@ -19,11 +19,6 @@ func searchTool(t *testing.T, a *App, sessionID string, args map[string]any) too
 // hit's number now reads the entry it names, whole.
 func TestASearchHitCanBeReadWhole(t *testing.T) {
 	a, s := userlandSession(t)
-	stop, err := a.listenTools()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stop)
 	long := "Mostly yes, same dose and same slot, but five real differences. " +
 		strings.Repeat("The form, the acidity, the price, and the tablet size all differ. ", 20) +
 		"One process point: do not start the new capsule today."

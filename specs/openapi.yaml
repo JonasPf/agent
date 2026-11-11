@@ -1383,7 +1383,6 @@ components:
         network_enforced: {type: boolean}
         network_reason: {type: string}
         ports: {type: array, items: {type: integer}}
-        tool_api_port: {type: integer}
         operator_port: {type: integer}
 
     ToolResult:
@@ -1526,4 +1525,3 @@ components:
         ports: {type: array, items: {type: integer}}
         ports_note: {type: string}
         operator_port: {type: integer}
-        tool_api_port: {type: integer}

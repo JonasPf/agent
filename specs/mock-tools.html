@@ -106,7 +106,6 @@ details[open] > summary .chev { transform: rotate(90deg); }
 .port { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 7px; padding: 1px 7px 1px 8px; font-size: 12px; }
 .port .l { color: var(--muted); white-space: nowrap; }
 .port .n { font-family: var(--mono); font-size: 11.5px; }
-.port.api { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .port.never { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: var(--bad); }
 .port.never .l { color: var(--bad); }
 .refused { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
@@ -227,8 +226,6 @@ stdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}</pre></li>
       <span class="port"><span class="l">web</span><span class="n">80 443</span></span>
       <span class="port"><span class="l">dev servers</span><span class="n">3000 4000 5000 5173 8000 8080 8443 8888</span></span>
       <span class="port"><span class="l">databases</span><span class="n">3306 5432 6379 27017</span></span>
-      <span class="port api"><span class="l">tool API</span><span class="n">41237</span>
-        <span class="help"><button aria-label="Tool API">?</button><span class="tip">How a tool reaches the agent: a separate API on a port the kernel picks at startup. A tool calls it with <code>AGENT_URL</code> and a token that is valid for one call. It can search, and see its own conversation's jobs and skills. It cannot create or message a conversation.</span></span></span>
       <span class="port never"><span class="l">never your API</span><span class="n">7770</span>
         <span class="help"><button aria-label="Your API">?</button><span class="tip">The API this screen uses. It can create a conversation holding a credential and send it a message, so a tool that reached it could hand itself any credential you have set.</span></span></span>
     </div></div>

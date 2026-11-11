@@ -43,9 +43,6 @@ type Sandbox struct {
 	// listens on it, so a missing port is explained rather than discovered.
 	PortsNote    string `json:"ports_note,omitempty"`
 	OperatorPort int    `json:"operator_port,omitempty"`
-	// ToolAPIPort is where a tool reaches the agent. It is chosen when the
-	// agent starts, so it is allowed here rather than listed above.
-	ToolAPIPort int `json:"tool_api_port,omitempty"`
 
 	workspaceRoot string
 	dataDir       string
@@ -157,27 +154,6 @@ func toolPorts(extra string, operator int) ([]int, string) {
 	return out, note
 }
 
-// SetToolAPIPort records where tools reach the agent, once it is listening.
-func (s *Sandbox) SetToolAPIPort(port int) { s.ToolAPIPort = port }
-
-// connectPorts is every port the policy lets a tool open.
-func (s *Sandbox) connectPorts() []int {
-	out := append([]int(nil), s.Ports...)
-	if s.ToolAPIPort > 0 && !hasInt(out, s.ToolAPIPort) {
-		out = append(out, s.ToolAPIPort)
-	}
-	return out
-}
-
-func hasInt(list []int, n int) bool {
-	for _, v := range list {
-		if v == n {
-			return true
-		}
-	}
-	return false
-}
-
 func (s *Sandbox) Enforcing() bool { return s != nil && s.Mechanism != "" && s.Mechanism != "none" }
 
 // Describe is the one line said at startup and shown in the interface.
@@ -188,7 +164,7 @@ func (s *Sandbox) Describe() string {
 			line += ", plus reads of " + strings.Join(s.ReadPaths, ", ")
 		}
 		if s.Network == "landlock" {
-			line += fmt.Sprintf("; it opens TCP connections to %d named ports and the tool API, never the operator's port %d",
+			line += fmt.Sprintf("; it opens TCP connections to %d named ports, never the operator's port %d",
 				len(s.Ports), s.OperatorPort)
 		} else {
 			line += "; network NOT ENFORCED (" + s.NetworkReason + ") — a tool can connect to any port, the operator's API included"
@@ -261,7 +237,7 @@ func (s *Sandbox) policyFor(ws, tools string, reads []string) policy {
 	// wrapper cannot apply stops every tool from starting.
 	if s.Network == "landlock" {
 		p.Net = true
-		p.Ports = s.connectPorts()
+		p.Ports = append([]int(nil), s.Ports...)
 	}
 	return p
 }
@@ -279,7 +255,6 @@ type ToolReach struct {
 	NetworkEnforced bool     `json:"network_enforced"`
 	NetworkReason   string   `json:"network_reason,omitempty"`
 	Ports           []int    `json:"ports"`
-	ToolAPIPort     int      `json:"tool_api_port,omitempty"`
 	OperatorPort    int      `json:"operator_port,omitempty"`
 }
 
@@ -294,7 +269,7 @@ func (s *Sandbox) Reach(toolRoot string) *ToolReach {
 	p := s.policyFor(sessionDirLabel, tools, nil)
 	r := &ToolReach{Mechanism: s.Mechanism, Enforced: s.Enforcing(), Reason: s.Reason, ReadWrite: p.Write,
 		Read: p.Read, Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
-		Ports: s.connectPorts(), ToolAPIPort: s.ToolAPIPort, OperatorPort: s.OperatorPort}
+		Ports: append([]int(nil), s.Ports...), OperatorPort: s.OperatorPort}
 	if !r.NetworkEnforced {
 		r.NetworkReason = s.NetworkReason
 		if !s.Enforcing() {

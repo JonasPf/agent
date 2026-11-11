@@ -21,8 +21,8 @@ import (
 // the environment held, so a conversation defining one of these names would
 // either be overwritten or break the call.
 var toolContractEnv = map[string]bool{
-	"AGENT_DB": true, "AGENT_DB_PREFIX": true, "AGENT_URL": true, "AGENT_WORKSPACE": true,
-	"AGENT_SESSION": true, "AGENT_JOB": true, "AGENT_TOKEN": true, "TMPDIR": true,
+	"AGENT_DB": true, "AGENT_DB_PREFIX": true, "AGENT_WORKSPACE": true,
+	"AGENT_SESSION": true, "AGENT_JOB": true, "AGENT_SKILL_DIRS": true, "TMPDIR": true,
 	"HOME": true,
 }
 

@@ -287,7 +287,6 @@ func packagesApp(t *testing.T, r *fakeRelease) *App {
 	copyToolTree(t, "../../tools", toolsDir)
 	a, _ := confinedApp(t, toolsDir, filepath.Join(root, "skills"), "")
 	confinementOrSkip(t, a.sandbox)
-	toolAPI(t, a)
 	r.use(a)
 	return a
 }

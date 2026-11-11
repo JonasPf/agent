@@ -465,13 +465,6 @@ func RunEvals(model string, only []string, w io.Writer) error {
 		or:       NewOpenRouter(cfg.APIKey),
 		hub:      NewHub(),
 		queues:   map[string]chan func(){}}
-	// Tools reach the system over the tool API, so the eval serves its own,
-	// against this store, on a port of its own.
-	stopTools, err := a.listenTools()
-	if err != nil {
-		return err
-	}
-	defer stopTools()
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		return fmt.Errorf("tools failed to load: %v", failures)

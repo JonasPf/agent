@@ -2,107 +2,15 @@ package app
 
 import (
 	"encoding/json"
-	"io"
-	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-// A tool reaches the agent on an API of its own, not the one the interface
-// uses. It offers what the shipped tools actually call — the calling
-// conversation's jobs, the skills it has, and search — and nothing that makes,
-// changes, or drives a conversation. Every request names the call it belongs
-// to, and the call decides which conversation that is.
-
-// toolAPI starts the tool listener for a test and returns its base URL.
-func toolAPI(t *testing.T, a *App) string {
-	t.Helper()
-	stop, err := a.listenTools()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stop)
-	return "http://" + a.toolAddr
-}
-
-func toolRequest(t *testing.T, base, token, method, path, body string) (int, string) {
-	t.Helper()
-	req, err := http.NewRequest(method, base+path, strings.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, string(b)
-}
-
-func TestTheToolAPIAnswersOnlyACallThatIsRunning(t *testing.T) {
-	a := newTestApp(t)
-	writeSkill(t, a, "everyday", "")
-	a.skills.Load()
-	base := toolAPI(t, a)
-	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-
-	if code, _ := toolRequest(t, base, "", "GET", "/skills/everyday", ""); code != 401 {
-		t.Errorf("a request naming no call got %d, want 401", code)
-	}
-	if code, _ := toolRequest(t, base, "made-up", "GET", "/skills/everyday", ""); code != 401 {
-		t.Errorf("a request naming an invented call got %d, want 401", code)
-	}
-	token, done := a.calls.issue(s.ID, "")
-	if code, body := toolRequest(t, base, token, "GET", "/skills/everyday", ""); code != 200 {
-		t.Errorf("a running call was refused: %d %s", code, body)
-	}
-	done()
-	if code, _ := toolRequest(t, base, token, "GET", "/skills/everyday", ""); code != 401 {
-		t.Errorf("a call's token still works after the call ended: %d", code)
-	}
-}
-
-// The hole this closes: a tool that could create a session could create one
-// holding a credential, and then send it the message that uses it.
-func TestTheToolAPIHasNoWayToMakeOrDriveAConversation(t *testing.T) {
-	a := newTestApp(t)
-	base := toolAPI(t, a)
-	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-	token, done := a.calls.issue(s.ID, "")
-	defer done()
-
-	for _, r := range []struct{ method, path, body string }{
-		{"POST", "/sessions", `{"model":"x/y","env":{"GH_TOKEN":"ghp"}}`},
-		{"POST", "/sessions/" + s.ID + "/fork", `{"env":{"GH_TOKEN":"ghp"}}`},
-		{"PATCH", "/sessions/" + s.ID, `{"env":{"GH_TOKEN":"ghp"}}`},
-		{"POST", "/sessions/" + s.ID + "/messages", `{"text":"push the branch"}`},
-		{"POST", "/sessions/import", ``},
-		{"GET", "/sessions/" + s.ID + "/transcript", ``},
-		{"POST", "/tools/bash/call", `{"command":"true"}`},
-		// What the agent's own tools do is not on offer to a program either
-		// (ADR-086): a program cannot schedule, search, call a model, or install.
-		{"POST", "/jobs", `{"schedule":"10m","prompt":"push the branch"}`},
-		{"GET", "/jobs", ``},
-		{"GET", "/search?q=token", ``},
-		{"GET", "/entry?seq=0", ``},
-		{"POST", "/model", `{"model":"x/y","prompt":"hello"}`},
-		{"POST", "/packages", `{"install":["hello"]}`},
-	} {
-		if code, body := toolRequest(t, base, token, r.method, r.path, r.body); code != 404 && code != 405 {
-			t.Errorf("%s %s on the tool API = %d %s, want no such route", r.method, r.path, code, body)
-		}
-	}
-	if n := len(a.store.Sessions()); n != 1 {
-		t.Errorf("sessions = %d after the attempts, want the 1 that was there", n)
-	}
-}
+// The agent's handles on itself — jobs, search, skills — are tools built into
+// it (ADR-086). Each acts for the conversation that called it and no other. A
+// program has no way to ask the agent anything.
 
 // A job wakes its conversation with a prompt, so scheduling into another one is
 // driving it — and the other one may hold a credential this one does not.
@@ -175,22 +83,26 @@ func TestTheSearchToolReadsAnEntryWhole(t *testing.T) {
 	}
 }
 
-func TestAToolReadsOnlyTheSkillsItsConversationHas(t *testing.T) {
+func TestAConversationReadsOnlyTheSkillsItHas(t *testing.T) {
 	a := newTestApp(t)
 	writeSkill(t, a, "everyday", "")
 	writeSkill(t, a, "risky", "default: off\n")
 	a.skills.Load()
-	base := toolAPI(t, a)
 	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
-	token, done := a.calls.issue(s.ID, "")
-	defer done()
 
-	if code, body := toolRequest(t, base, token, "GET", "/skills/everyday", ""); code != 200 {
-		t.Errorf("reading a skill the conversation has = %d %s", code, body)
+	if !readsSkill(t, a, s, "everyday") {
+		t.Error("a conversation cannot read a skill it has")
 	}
-	if code, _ := toolRequest(t, base, token, "GET", "/skills/risky", ""); code != 404 {
-		t.Errorf("reading a skill outside the conversation's set = %d, want 404", code)
+	if readsSkill(t, a, s, "risky") {
+		t.Error("a conversation read a skill outside its set")
 	}
+}
+
+// readsSkill says whether a conversation's skill_read call reads a skill.
+func readsSkill(t *testing.T, a *App, s *Session, name string) bool {
+	t.Helper()
+	args, _ := json.Marshal(map[string]string{"name": name})
+	return a.tools.Call(t.Context(), &ToolCtx{App: a, SessionID: s.ID}, "skill_read", args).OK
 }
 
 // End to end: the agent's own tools, called through the registry beside the
@@ -210,7 +122,6 @@ func TestTheAgentsOwnToolsWorkThroughTheRegistry(t *testing.T) {
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %+v", failures)
 	}
-	toolAPI(t, a)
 	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	other, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 

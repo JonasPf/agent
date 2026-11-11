@@ -78,11 +78,6 @@ func metricsApp(t *testing.T, dir string, srv *httptest.Server) *App {
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %v", failures)
 	}
-	stop, err := a.listenTools()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stop)
 	if srv != nil {
 		a.or = NewOpenRouter("test-key")
 		a.or.base = srv.URL

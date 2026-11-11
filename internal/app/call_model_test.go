@@ -120,9 +120,8 @@ func newFakeGateway(t *testing.T) (*fakeGateway, *httptest.Server) {
 	return g, srv
 }
 
-// callModelApp is an agent with the shipped tools loaded, the tool API
-// listening, and the gateway faked; call runs call_model as the subprocess it
-// is, in one conversation.
+// callModelApp is an agent with the shipped tools loaded and the gateway
+// faked; call runs call_model in one conversation.
 func callModelApp(t *testing.T) (*App, *Session, *fakeGateway, func(args string) toolResult) {
 	t.Helper()
 	dir := t.TempDir()
@@ -136,7 +135,6 @@ func callModelApp(t *testing.T) (*App, *Session, *fakeGateway, func(args string)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %+v", failures)
 	}
-	toolAPI(t, a)
 	s, err := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	if err != nil {
 		t.Fatal(err)

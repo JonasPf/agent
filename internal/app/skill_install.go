@@ -1,11 +1,14 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net/http"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -21,17 +24,36 @@ import (
 // its tools may read, and so run, and never write. A skill of one file has no
 // folder; its text is what skill_read returns.
 func (a *App) skillFolders(sessionID string) []string {
+	byName := a.skillDirs(sessionID)
+	dirs := make([]string, 0, len(byName))
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
+		dirs = append(dirs, byName[name])
+	}
+	return dirs
+}
+
+// skillDirs is the same folders by skill name.
+func (a *App) skillDirs(sessionID string) map[string]string {
+	dirs := map[string]string{}
 	sess := a.store.Session(sessionID)
 	if sess == nil {
-		return nil
+		return dirs
 	}
-	var dirs []string
 	for _, sk := range a.skills.All() {
 		if sk.Main() == skillMain && a.hasSkill(sess, sk) {
-			dirs = append(dirs, absOr(filepath.Dir(sk.Path)))
+			dirs[sk.Name] = absOr(filepath.Dir(sk.Path))
 		}
 	}
 	return dirs
+}
+
+// skillDirsEnv tells a tool where those folders are. A tool cannot ask the
+// agent anything (ADR-086), so the one fact a tool wanted from it — which
+// skill a path belongs to, so read can name the call that reads it — is given
+// with the call.
+func (a *App) skillDirsEnv(sessionID string) string {
+	b, _ := json.Marshal(a.skillDirs(sessionID))
+	return "AGENT_SKILL_DIRS=" + string(b)
 }
 
 func (a *App) hInstallSkill(w http.ResponseWriter, r *http.Request) {

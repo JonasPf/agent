@@ -1775,7 +1775,7 @@ const SANDBOX = {
   mechanism: 'landlock', enforced: true, network_enforced: true,
   read_write: ['this session’s working directory', '/app/state/data/db'],
   read: ['/app/tools', '/usr', '/etc'], files: ['/dev/null'],
-  ports: [22, 443, 5432, 8080, 45123], tool_api_port: 45123, operator_port: 7770,
+  ports: [22, 443, 5432, 8080], operator_port: 7770,
 };
 const sent = t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } });
 const SEARCH = {
@@ -1817,14 +1817,14 @@ test('the tools screen shows the sandbox once: what a tool may read, write, and 
     assert.ok(box.includes(want), `the sandbox does not say ${want}: ${box}`);
   }
   assert.match(box, /7770/, 'the sandbox does not say the operator port is out of reach');
-  assert.match(box, /tool API/, 'the sandbox does not say how a tool reaches the agent');
+  assert.doesNotMatch(box, /tool API/, 'the sandbox shows a way for a tool to reach the agent, and there is none');
   assert.match(box, /landlock/, 'the sandbox does not say what enforces it');
   assert.doesNotMatch(textOf(toolCard(v, 'web_search')), /\/usr|5432/, 'a tool card repeats the sandbox');
 });
 
 test('the ports are grouped by what they are for', async () => {
   const { ctx } = await toolsScreen();
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.portGroups([22, 53, 80, 443, 3000, 5432, 9418, 12345, 45123], 45123))), [
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.portGroups([22, 53, 80, 443, 3000, 5432, 9418, 12345]))), [
     ['ssh, git', [22, 9418]], ['DNS', [53]], ['web', [80, 443]], ['dev servers', [3000]],
     ['databases', [5432]], ['other', [12345]],
   ]);

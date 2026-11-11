@@ -195,11 +195,6 @@ type App struct {
 	// nil where there is no Nix, which says so rather than installing.
 	pkgs *Packages
 
-	// calls are the tool calls running now, which the tool API answers; toolAddr
-	// is where it listens.
-	calls    callTokens
-	toolAddr string
-
 	// memos keeps the session list's costly figures between reads.
 	memos listMemos
 
@@ -321,14 +316,6 @@ func Run() error {
 	if err := a.convertWorkspaces(); err != nil {
 		log.Printf("warning: %v", err)
 	}
-	// Before any tool can run, and before the sandbox is described: the tool
-	// API's port is part of the policy.
-	stopTools, err := a.listenTools()
-	if err != nil {
-		return err
-	}
-	defer stopTools()
-	log.Printf("tool API on %s", a.toolAddr)
 	log.Print(sandbox.Describe())
 	a.registerBuiltins()
 	loaded, failures := a.tools.Load(a)

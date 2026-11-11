@@ -1544,7 +1544,7 @@ has needed one.</p>
 </div>
 
 <div class="adr" id="adr-051">
-<div class="meta">ADR-051 · accepted · amended by <a href="#adr-070">ADR-070</a></div>
+<div class="meta">ADR-051 · the tool API is superseded by <a href="#adr-086">ADR-086</a>; the port allow-list stands · amended by <a href="#adr-070">ADR-070</a></div>
 <h3>A tool reaches the agent on an API of its own, and cannot reach the operator's</h3>
 <h4>Context</h4>
 <p>Tools reached the agent over <code>AGENT_URL</code>, the operator's own API. The filesystem sandbox kept
@@ -2719,7 +2719,7 @@ and says so by failing. The agent gains one dependency, the protocol's Go SDK.</
 </div>
 
 <div class="adr" id="adr-086">
-<div class="meta">ADR-086 · accepted, and carried out in steps: all six are built in; the last of the tool API follows · builds on <a href="#adr-085">ADR-085</a></div>
+<div class="meta">ADR-086 · accepted · supersedes the tool API of <a href="#adr-051">ADR-051</a> · builds on <a href="#adr-085">ADR-085</a></div>
 <h3>The agent's handles on itself are built in, and the tool API goes</h3>
 <h4>Context</h4>
 <p>Six tools do nothing of their own. <code>schedule</code>, <code>session_search</code>,
@@ -2731,7 +2731,9 @@ What they reach &mdash; the jobs, the transcripts, the model key, the package st
 <h4>Decision</h4>
 <p>Those six run inside the agent, as <code>reload_tools</code> already does. The tool API, its
 tokens, and its place in the sandbox's policy are removed. A bundle's server reaches nothing of the
-agent's.</p>
+agent's. The one fact a program still wanted &mdash; which skill a path belongs to, so
+<code>read</code> can name the call that reads it &mdash; is given with each call, in
+<code>AGENT_SKILL_DIRS</code>.</p>
 <h4>Consequences</h4>
 <p>A tool running in the sandbox has one fewer thing it can connect to, and the core one fewer
 listener. A built-in is part of the agent and changes only with it. A bundle cannot schedule, search

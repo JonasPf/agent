@@ -84,8 +84,8 @@ func TestAToolStillGetsWhatTheContractPromisesIt(t *testing.T) {
 	installEnvTool(t, a, "envcheck")
 
 	seen := toolEnv(t, a, "envcheck")
-	for _, want := range []string{"AGENT_DB", "AGENT_DB_PREFIX", "AGENT_URL", "AGENT_WORKSPACE",
-		"AGENT_SESSION", "AGENT_JOB", "TMPDIR", "PATH", "HOME"} {
+	for _, want := range []string{"AGENT_DB", "AGENT_DB_PREFIX", "AGENT_WORKSPACE",
+		"AGENT_SESSION", "AGENT_JOB", "AGENT_SKILL_DIRS", "TMPDIR", "PATH", "HOME"} {
 		if !seen[want] {
 			t.Errorf("%s did not reach the tool, and the contract says it will", want)
 		}
