@@ -30,7 +30,6 @@ func TestReadingASkillsFileNamesTheCallThatReadsIt(t *testing.T) {
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %+v", failures)
 	}
-	toolAPI(t, a)
 	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	read := func(path string) toolResult {
 		t.Helper()

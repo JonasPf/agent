@@ -449,7 +449,6 @@ restricted &mdash; a tool may start a server, it may not reach the operator's.</
 <tr><td>3000, 4000, 5000, 5173, 8000, 8080, 8443, 8888</td><td>Development servers</td></tr>
 <tr><td>3306, 5432, 6379, 27017</td><td>MySQL, Postgres, Redis, MongoDB</td></tr>
 <tr><td><code>AGENT_TOOL_PORTS</code></td><td>Named by the operator. It only adds, and never adds the operator's own port.</td></tr>
-<tr><td>The tool API's port</td><td>Chosen by the kernel when the agent starts; how a tool reaches the agent.</td></tr>
 </table>
 
 <p>The operator listens on 7770 by default, which nothing in that list commonly uses, so 8080 stays free
@@ -458,17 +457,13 @@ tools, and the Tools screen says so. Network rules need Landlock version 4, in L
 older kernel files stay confined, the network is not, and that is said at startup, in
 <code>/status</code>, and on the Tools screen.</p>
 
-<p><strong>A tool reaches the agent on an API of its own.</strong> <code>AGENT_URL</code> is the tool API,
-not the operator's, and it answers one question: where a skill the calling conversation has keeps its
-files. What it used to offer beside that &mdash; jobs, search, another model, packages &mdash; is done
-by tools that run inside the agent (<a href="adrs.html#adr-086">ADR-086</a>), so no program in the
-sandbox can ask for it. Every request carries <code>AGENT_TOKEN</code>, issued for one call and revoked when it ends, and
-the call &mdash; not the request &mdash; says which conversation it is. Nothing on it creates, forks,
-messages, or configures a conversation, schedules a job, searches, or calls a model, and a tool cannot
-read a skill outside the conversation it was called from.</p>
+<p><strong>A tool has no way to reach the agent.</strong> The agent listens on one port, the
+operator's, and a tool is refused it. There was a second listener for tools; what it offered
+&mdash; jobs, search, another model, packages &mdash; is done by tools that run inside the agent
+(<a href="adrs.html#adr-086">ADR-086</a>), and the last thing asked of it, where a conversation's
+skills keep their files, is told to each call in <code>AGENT_SKILL_DIRS</code>.</p>
 
-<p>What this is not: a tool still holds the agent's other privileges on that API. It is given
-<code>AGENT_DB</code>, and it may search every transcript when it asks to.
+<p>What this is not: a tool is still given <code>AGENT_DB</code>.
 On a platform with no Landlock none of the network half holds either, and nothing keeps a tool off the
 operator's port there.</p>
 
@@ -483,10 +478,10 @@ operator's port there.</p>
 <li>A check command is confined exactly as a tool is: the same files, the same ports, and the environment a tool in its conversation receives &mdash; what a program needs to start and that conversation's variables, never the model API key.</li>
 <li>A confined tool can drive a headless browser, so the web tools work under the sandbox rather than only outside it.</li>
 <li>When nothing is enforcing, the system says so at startup, in <code>/status</code>, and in the interface.</li>
-<li>A confined tool can open TCP connections to the listed ports, the ports named in <code>AGENT_TOOL_PORTS</code>, and the tool API, and is refused the operator's port by the operating system rather than by its own good manners.</li>
+<li>A confined tool can open TCP connections to the listed ports, and the ports named in <code>AGENT_TOOL_PORTS</code>, and is refused the operator's port and every port nobody named by the operating system rather than by its own good manners.</li>
 <li>The operator's default port is not one tools commonly use; an operator port among the tools' ports is taken from them, and that is said.</li>
 <li>Where the kernel cannot restrict the network, the system says so at startup, in <code>/status</code>, and on the Tools screen, and files stay confined.</li>
-<li>A tool reaches the agent only through the tool API, which answers only a running tool call, offers no way to create, fork, message, or configure a conversation, to schedule, to search, to call a model, or to install a package, and serves only the skills that conversation has.</li>
+<li>The agent listens nowhere for its tools: a tool is given no address for the agent and no token, and the policy holds the named ports and not one more.</li>
 <li>The agent's own tools &mdash; <code>schedule</code>, <code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, <code>packages</code>, <code>ask_operator</code> &mdash; run inside the agent, for the calling conversation only: a job is made, edited, or deleted only in it, and only its skills are read.</li>
 <li>Nothing recovers automatically from a tool that damages the system; repair is manual, and the specification says so rather than implying otherwise.</li>
 </ul>

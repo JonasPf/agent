@@ -53,24 +53,6 @@ func TestResolveInside(t *testing.T) {
 	}
 }
 
-// An error reply carries a message the model can act on. A reply that is not
-// the shape the API promises still has to produce something readable, because
-// the alternative is a tool that fails silently.
-func TestAPIError(t *testing.T) {
-	for _, c := range []struct{ name, raw, status, want string }{
-		{"the API's own shape", `{"error":"no such job"}`, "404 Not Found", "no such job"},
-		{"a body that is not JSON", "upstream exploded", "502 Bad Gateway", "upstream exploded"},
-		{"an empty body", "", "500 Internal Server Error", "500 Internal Server Error"},
-		{"JSON without an error field", `{"ok":false}`, "400 Bad Request", `{"ok":false}`},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			if got := APIError([]byte(c.raw), c.status); got != c.want {
-				t.Errorf("APIError(%q) = %q, want %q", c.raw, got, c.want)
-			}
-		})
-	}
-}
-
 // There is one browser, it is installed in the image, and it is at a path the
 // sandbox already grants. Discovery was six candidate paths, a Playwright cache
 // scan and an override variable, and every one of them existed because the

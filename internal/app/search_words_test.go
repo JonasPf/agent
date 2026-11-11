@@ -49,11 +49,6 @@ func TestASearchIsWordsWhateverTheyContain(t *testing.T) {
 // write, and a model writes "follow-up".
 func TestTheSearchToolTakesWordsWithPunctuation(t *testing.T) {
 	a, s := userlandSession(t)
-	stop, err := a.listenTools()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(stop)
 	a.append(s.ID, Entry{Type: "message", Role: "assistant", Text: "Booked the follow-up for Tuesday."})
 
 	raw, _ := json.Marshal(map[string]any{"query": "follow-up"})

@@ -2,8 +2,8 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,8 +37,13 @@ func Window(lines []string, offset, limit int) []string {
 // conversation has, or returns "". A skill's scripts run from its folder, so the
 // agent sees that path and reaches for read; told only that the path was
 // outside the workspace, it found skill_read on its next call, in conversation
-// after conversation. The skill is found by asking about each name in the path.
+// after conversation. The agent says where those folders are with each call,
+// in AGENT_SKILL_DIRS: skill name to folder.
 func skillFile(path string) string {
+	var dirs map[string]string
+	if json.Unmarshal([]byte(os.Getenv("AGENT_SKILL_DIRS")), &dirs) != nil {
+		return ""
+	}
 	full := filepath.Clean(path)
 	if !filepath.IsAbs(full) {
 		full = filepath.Join(tool.Workspace, full)
@@ -46,18 +51,7 @@ func skillFile(path string) string {
 	if real, err := filepath.EvalSymlinks(full); err == nil {
 		full = real
 	}
-	parts := strings.Split(full, string(filepath.Separator))
-	for _, name := range parts[:len(parts)-1] {
-		if name == "" {
-			continue
-		}
-		var sk struct {
-			Dir string `json:"dir"`
-		}
-		if tool.TryAPI("GET", "/skills/"+url.PathEscape(name), nil, nil, &sk) != nil || sk.Dir == "" {
-			continue
-		}
-		dir := sk.Dir
+	for name, dir := range dirs {
 		if real, err := filepath.EvalSymlinks(dir); err == nil {
 			dir = real
 		}

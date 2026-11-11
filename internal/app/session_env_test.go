@@ -206,7 +206,7 @@ func TestAForkCarriesItsOriginsVariablesAndCanChangeThem(t *testing.T) {
 func TestANameTheAgentSetsOrThatIsNoNameIsRefused(t *testing.T) {
 	a := newTestApp(t)
 	s := start(t, a, `{"model":"test/model","env":{"KEEP":"1"}}`)
-	for _, name := range []string{"AGENT_URL", "AGENT_TOKEN", "HOME", "TMPDIR", "PATH", "1ABC", "A-B", "A B"} {
+	for _, name := range []string{"AGENT_SESSION", "AGENT_SKILL_DIRS", "HOME", "TMPDIR", "PATH", "1ABC", "A-B", "A B"} {
 		body, _ := json.Marshal(map[string]any{"env": map[string]string{name: "x", "FINE": "y"}})
 		before := len(a.store.Sessions())
 		for _, r := range []struct{ method, path string }{

@@ -273,7 +273,7 @@ func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args js
 	env := append(toolBaseEnv(), b.env...)
 	env = append(env, sessionVars(tc.vars())...)
 	env = tc.App.withPackages(env, tc.SessionID)
-	env = append(env, "TMPDIR="+tmp, "HOME="+home)
+	env = append(env, tc.App.skillDirsEnv(tc.SessionID), "TMPDIR="+tmp, "HOME="+home)
 
 	fail := func(format string, a ...any) toolResult {
 		if cctx.Err() == context.DeadlineExceeded {

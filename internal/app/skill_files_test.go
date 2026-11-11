@@ -265,7 +265,6 @@ func TestSkillReadReadsAFolderSkillAndEachOfItsFiles(t *testing.T) {
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %+v", failures)
 	}
-	toolAPI(t, a)
 	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	call := func(args string) toolResult {
 		t.Helper()

@@ -174,21 +174,14 @@ func TestTheRequiredSkillsShip(t *testing.T) {
 func TestANewConversationHasOnlyTheSkillsThatShipOn(t *testing.T) {
 	a := newTestApp(t)
 	a.skills = NewSkills(filepath.Join("..", "..", "skills"), "")
-	base := toolAPI(t, a)
-	read := func(s *Session, name string) int {
-		t.Helper()
-		token, done := a.calls.issue(s.ID, "")
-		defer done()
-		code, _ := toolRequest(t, base, token, "GET", "/skills/"+name, "")
-		return code
-	}
+	read := func(s *Session, name string) bool { return readsSkill(t, a, s, name) }
 	s, _ := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	index, _ := promptSection(t, a, s, "skills_index")
-	if !strings.Contains(index, "- researching: ") || read(s, "researching") != 200 {
+	if !strings.Contains(index, "- researching: ") || !read(s, "researching") {
 		t.Error("a new conversation does not have researching")
 	}
 	for _, name := range []string{"keeping-records", "writing-skills", "voice-over", "video-edit"} {
-		if strings.Contains(index, "- "+name+": ") || read(s, name) != 404 {
+		if strings.Contains(index, "- "+name+": ") || read(s, name) {
 			t.Errorf("a new conversation has %s", name)
 		}
 	}
@@ -199,7 +192,7 @@ func TestANewConversationHasOnlyTheSkillsThatShipOn(t *testing.T) {
 	}
 
 	chose, _ := a.NewSession(SessionConfig{Model: "test/model", EnabledSkills: []string{"voice-over"}}, "")
-	if read(chose, "voice-over") != 200 {
+	if !read(chose, "voice-over") {
 		t.Error("a conversation that chose a skill that ships off cannot read it")
 	}
 }
@@ -213,14 +206,7 @@ func TestADefaultThatChangesReachesOnlyLaterConversations(t *testing.T) {
 	writeSkillFolder(t, root, "habit", "", files)
 	writeSkillFolder(t, root, "rarely", "default: off\n", files)
 	a.skills.Load()
-	base := toolAPI(t, a)
-	read := func(s *Session, name string) int {
-		t.Helper()
-		token, done := a.calls.issue(s.ID, "")
-		defer done()
-		code, _ := toolRequest(t, base, token, "GET", "/skills/"+name, "")
-		return code
-	}
+	read := func(s *Session, name string) bool { return readsSkill(t, a, s, name) }
 	reaches := func(s *Session, name string) bool {
 		for _, dir := range a.skillFolders(s.ID) {
 			if filepath.Base(dir) == name {
@@ -261,12 +247,8 @@ func TestADefaultThatChangesReachesOnlyLaterConversations(t *testing.T) {
 		name string
 		has  bool
 	}{{started, "habit", true}, {started, "rarely", false}, {later, "habit", false}, {later, "rarely", true}} {
-		code := 404
-		if c.has {
-			code = 200
-		}
-		if got := read(c.who, c.name); got != code {
-			t.Errorf("reading %s = %d, want %d", c.name, got, code)
+		if got := read(c.who, c.name); got != c.has {
+			t.Errorf("reading %s = %v, want %v", c.name, got, c.has)
 		}
 		if reaches(c.who, c.name) != c.has {
 			t.Errorf("a tool's access to %s's folder is not %v", c.name, c.has)

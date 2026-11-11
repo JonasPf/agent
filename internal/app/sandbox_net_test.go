@@ -43,19 +43,23 @@ func hasPort(ports []int, want int) bool {
 func TestToolsMayConnectToTheCommonPortsAndNotTheOperators(t *testing.T) {
 	s := NewSandbox(Config{Addr: ":7770"})
 	s.Mechanism, s.Network = "landlock", "landlock"
-	s.SetToolAPIPort(45123)
 
 	p := policyOf(t, s.Wrap("/t/x/run", "/w/S1", "/t", nil, nil))
 	if !p.Net {
 		t.Fatal("the policy does not restrict the network")
 	}
-	for _, want := range []int{22, 53, 80, 443, 5432, 8080, 45123} {
+	for _, want := range []int{22, 53, 80, 443, 5432, 8080} {
 		if !hasPort(p.Ports, want) {
 			t.Errorf("ports = %v, want %d among them", p.Ports, want)
 		}
 	}
 	if hasPort(p.Ports, 7770) {
 		t.Errorf("ports = %v include the operator's 7770", p.Ports)
+	}
+	// The agent listens nowhere for its tools (ADR-086), so the policy holds
+	// the named ports and not one more.
+	if len(p.Ports) != len(s.Ports) {
+		t.Errorf("ports = %v, want only the named ones %v", p.Ports, s.Ports)
 	}
 }
 
@@ -117,6 +121,8 @@ func TestAConfinedToolReachesAnAllowedPortAndNotTheOperators(t *testing.T) {
 	defer operator.Close()
 	allowed := httptest.NewServer(http.NotFoundHandler())
 	defer allowed.Close()
+	other := httptest.NewServer(http.NotFoundHandler())
+	defer other.Close()
 	_, allowedPort, _ := net.SplitHostPort(allowed.Listener.Addr().String())
 
 	dir := t.TempDir()
@@ -149,6 +155,10 @@ func TestAConfinedToolReachesAnAllowedPortAndNotTheOperators(t *testing.T) {
 	if ok, out := dial(operator.Listener.Addr().String()); ok || !strings.Contains(out, "refused:") {
 		t.Errorf("a confined process was not refused the operator's port: ok=%v %s", ok, out)
 	}
+	// Nor any other port of the agent's: a tool has no way to ask it anything.
+	if ok, out := dial(other.Listener.Addr().String()); ok || !strings.Contains(out, "refused:") {
+		t.Errorf("a confined process was not refused a port nobody named: ok=%v %s", ok, out)
+	}
 }
 
 // What the Tools screen says a tool may reach is what the wrapper applies,
@@ -176,7 +186,6 @@ func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 		t.Fatalf("%+v", failures)
 	}
 	a.sandbox.Mechanism, a.sandbox.Network = "landlock", "landlock"
-	a.sandbox.SetToolAPIPort(45123)
 
 	w := call(t, a, "GET", "/tools", "")
 	var got struct {

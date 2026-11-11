@@ -2600,7 +2600,6 @@ const TOOL_TIPS = {
   read: 'The tool folder holds the tool programs: readable so they can start, writable by none. The rest is the system: the programs, libraries, and certificates a tool needs to start. `/proc` is left out because it would show the agent’s own environment, API key included; a tool that needs it asks in its manifest.',
   devices: 'Files a program opens before any of its own code runs: a shell cannot redirect output without `/dev/null`. They are named one by one because granting `/dev` would grant every device.',
   network: 'Outgoing TCP to these ports only. Starting a server, and all UDP, are not restricted. This needs Linux 6.7 or later; on an older kernel this row says it is not enforced.',
-  toolApi: 'How a tool reaches the agent: a separate API on a port picked at startup. A tool calls it with `AGENT_URL` and a token that is valid for one call. It reaches the calling conversation’s jobs and skills, and search. It cannot create a conversation or message one.',
   never: 'The API this screen uses. It can create a conversation holding a credential and send it a message, so a tool that reached it could hand itself any credential you have set.',
   model: 'Sent with every model call, in the standard OpenAI tools format: the name, this description, and the parameters as JSON Schema. The model knows nothing else about the tool, so a parameter without a description is only its type.',
   agent: 'The manifest’s `agent` block. The agent reads it to run the tool, and never sends it to the model.',
@@ -2735,8 +2734,7 @@ function toolSandbox(s) {
     if (tip) c.append(help(tip));
     net.append(c);
   };
-  for (const [label, ports] of portGroups(s.ports || [], s.tool_api_port)) port(label, ports.join(' '));
-  if (s.tool_api_port) port('tool API', s.tool_api_port, 'api', TOOL_TIPS.toolApi);
+  for (const [label, ports] of portGroups(s.ports || [])) port(label, ports.join(' '));
   if (s.operator_port) port('never your API', s.operator_port, 'never', TOOL_TIPS.never);
   card.append(el('div', 'refused', 'Anything not listed is refused by the kernel: other conversations’ folders, the transcripts, the skills, and the home folder.'));
   return box;
@@ -2745,10 +2743,8 @@ function toolSandbox(s) {
 const PORT_GROUPS = [['ssh, git', [22, 9418]], ['DNS', [53]], ['web', [80, 443]],
   ['dev servers', [3000, 4000, 5000, 5173, 8000, 8080, 8443, 8888]], ['databases', [3306, 5432, 6379, 27017]]];
 
-// portGroups sorts the ports a tool may open by what they are usually for. The
-// tool API is left out, because it is shown on its own.
-function portGroups(ports, apiPort) {
-  const left = ports.filter(p => p !== apiPort);
+// portGroups sorts the ports a tool may open by what they are usually for.
+function portGroups(left) {
   const out = [];
   for (const [label, known] of PORT_GROUPS) {
     const mine = left.filter(p => known.includes(p));

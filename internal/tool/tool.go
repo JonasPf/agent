@@ -1,9 +1,8 @@
-// Package tool is what every tool binary is built on: the subprocess contract,
-// access to the agent's own HTTP API, and the workspace boundary.
+// Package tool is what every tool binary is built on: the subprocess contract
+// and the workspace boundary.
 //
-// A tool holds no private channel into the system. It reaches the agent over
-// AGENT_URL, the tool API — memory, its own conversation's jobs, the skills it
-// has, and search — naming its call with AGENT_TOKEN. Its filesystem reach is
+// A tool holds no channel into the system at all: what the agent tells it, it
+// tells it in the call's environment (ADR-086). Its filesystem reach is
 // whatever the sandbox permits, which is its own session's working directory
 // and nothing else.
 package tool
@@ -13,19 +12,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 // The environment the registry hands a tool. Read once, so a tool reads the
 // same values throughout a call.
 var (
-	BaseURL   = os.Getenv("AGENT_URL")
-	Token     = os.Getenv("AGENT_TOKEN")
 	Session   = os.Getenv("AGENT_SESSION")
 	Job       = os.Getenv("AGENT_JOB")
 	DBPath    = os.Getenv("AGENT_DB")
@@ -93,84 +87,6 @@ func emit(r result) {
 	}
 	os.Stdout.Write(append(b, '\n'))
 	os.Exit(0)
-}
-
-var client = &http.Client{Timeout: 30 * time.Second}
-
-// SetAPITimeout is for a tool whose request the agent takes long to answer: a
-// call to another model can run for minutes.
-func SetAPITimeout(d time.Duration) { client.Timeout = d }
-
-// API calls the agent's HTTP API — the same one the interface uses. body is
-// encoded as JSON when non-nil; out is filled from the response when non-nil.
-// Any failure ends the call, because a tool that cannot reach the system has
-// nothing further to say.
-func API(method, path string, body any, query url.Values, out any) {
-	if err := TryAPI(method, path, body, query, out); err != nil {
-		Failf("%s", err)
-	}
-}
-
-// TryAPI is API for a question whose answer may be no: it returns the failure
-// rather than ending the call.
-func TryAPI(method, path string, body any, query url.Values, out any) error {
-	// There is no default to fall back on: the tool API listens on a port the
-	// agent picks when it starts, and answers only a call it is running.
-	if BaseURL == "" {
-		return fmt.Errorf("AGENT_URL is not set: a tool reaches the agent only when the agent runs it")
-	}
-	u := BaseURL + path
-	if len(query) > 0 {
-		u += "?" + query.Encode()
-	}
-	var rdr io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("could not encode the request: %v", err)
-		}
-		rdr = bytes.NewReader(b)
-	}
-	req, err := http.NewRequest(method, u, rdr)
-	if err != nil {
-		return fmt.Errorf("could not build the request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+Token)
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("cannot reach the agent API at %s: %v", BaseURL, err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("cannot read the reply from %s: %v", BaseURL, err)
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("%s", APIError(raw, resp.Status))
-	}
-	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
-		return nil
-	}
-	if err := json.Unmarshal(raw, out); err != nil {
-		return fmt.Errorf("could not parse the reply from %s: %v", BaseURL, err)
-	}
-	return nil
-}
-
-// APIError reads the message out of an error reply, falling back to the status
-// line. The API answers with {"error": "..."}; a proxy or a panic may not.
-func APIError(raw []byte, status string) string {
-	var e struct {
-		Error string `json:"error"`
-	}
-	if json.Unmarshal(raw, &e) == nil && e.Error != "" {
-		return e.Error
-	}
-	if s := strings.TrimSpace(string(raw)); s != "" {
-		return s
-	}
-	return status
 }
 
 // InsideWorkspace resolves a path and refuses anything outside the working

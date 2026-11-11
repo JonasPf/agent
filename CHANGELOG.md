@@ -2,6 +2,9 @@
 
 ## 2026-11-11
 
+- **A tool can no longer reach the agent at all.** The agent kept a second,
+  private port open for its tools. Nothing needs it any more, so it is closed,
+  and the Tools screen no longer lists a "tool API" port.
 - **Asking you a question is part of the agent now.** `ask_operator` was a
   separate program with a screen of its own; both are built in. Links to an
   ask in older conversations still open. Tools can no longer add a screen to

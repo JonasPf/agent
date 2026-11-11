@@ -368,10 +368,6 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	home := tc.App.sandbox.HomeDir(workspace)
 	_ = os.MkdirAll(home, 0o755)
 	cmd.Stdin = strings.NewReader(string(args))
-	// The token is this call's, and dies with it: the tool API answers a
-	// request only for a call that is running, as the conversation it runs in.
-	token, done := tc.App.calls.issue(tc.SessionID, tc.JobID)
-	defer done()
 	// What a program needs to start, what the manifest names, then what the
 	// conversation holds, which takes the place of a manifest's variable of the
 	// same name; the contract goes last, so nothing stands in for it.
@@ -381,8 +377,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 	cmd.Env = append(cmd.Env,
 		"AGENT_DB="+r.dbPath,
 		"AGENT_DB_PREFIX="+t.Agent.DBPrefix,
-		"AGENT_URL="+tc.App.toolURL(),
-		"AGENT_TOKEN="+token,
+		tc.App.skillDirsEnv(tc.SessionID),
 		"AGENT_WORKSPACE="+workspace,
 		"AGENT_SESSION="+tc.SessionID,
 		"AGENT_JOB="+tc.JobID,
