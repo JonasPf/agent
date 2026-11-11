@@ -2946,3 +2946,17 @@ test('a file named by a message that arrives is linked when it is there', async 
   await tick();
   assert.deepStrictEqual(fileLinks(ctx._id('transcript')), ['/sessions/S1/files/out/final.mp4']);
 });
+
+// ---------- the one panel ----------
+
+// No tool brings a script into the interface any more (ADR-086): the address
+// that used to load one from a tool's folder opens ask_operator's screen and
+// nothing else. A link naming any other tool says so, and loads nothing.
+test('a panel link that names anything but ask_operator loads nothing', async () => {
+  const ctx = load({});
+  vm.runInContext("state.view = 'toolpanel'; state.arg = 'notes';", ctx);
+  const v = ctx._id('view');
+  await ctx.viewToolPanel(v);
+  const said = textOf(v);
+  assert.ok(/no panel named notes/.test(said), 'the screen did not say there is no such panel: ' + said);
+});

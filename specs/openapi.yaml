@@ -662,20 +662,6 @@ paths:
                     type: array
                     items: {$ref: "#/components/schemas/LoadFailure"}
 
-  /tools/{name}/panel.js:
-    parameters:
-      - $ref: "#/components/parameters/ToolName"
-    get:
-      tags: [tools]
-      summary: A tool's own panel, an ES module the interface imports.
-      responses:
-        "200":
-          description: The module.
-          content:
-            text/javascript:
-              schema: {type: string}
-        "404": {description: The tool has no panel.}
-
   /tools/{name}/call:
     parameters:
       - $ref: "#/components/parameters/ToolName"
@@ -1380,7 +1366,6 @@ components:
             timeout_seconds: {type: integer}
             reads: {type: array, items: {type: string}, description: Paths this tool may read beyond the sandbox every tool gets.}
             env: {type: array, items: {type: string}, description: Names of the variables this tool is given. Never their values.}
-        has_panel: {type: boolean}
         builtin: {type: boolean}
         loaded_at: {type: string, format: date-time}
         enabled: {type: boolean}

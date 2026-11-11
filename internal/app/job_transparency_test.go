@@ -102,7 +102,7 @@ func TestOnlyTheAgentsOwnHandlesAreCompiledIn(t *testing.T) {
 			builtin = append(builtin, tl.Name)
 		}
 	}
-	want := []string{"call_model", "packages", "reload_tools", "schedule", "session_search", "skill_read"}
+	want := []string{"ask_operator", "call_model", "packages", "reload_tools", "schedule", "session_search", "skill_read"}
 	if !slices.Equal(builtin, want) {
 		t.Errorf("compiled-in tools = %v, want %v", builtin, want)
 	}

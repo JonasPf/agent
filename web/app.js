@@ -2196,7 +2196,10 @@ async function viewToolPanel(v) {
   const gen = drawing;
   setHeader(state.arg, true);
   try {
-    const mod = await import('/tools/' + state.arg + '/panel.js');
+    // The one panel there is. A link in an old transcript names it by the
+    // tool it belonged to, and anything else names nothing.
+    if (state.arg !== 'ask_operator') throw new Error('there is no panel named ' + state.arg);
+    const mod = await import('/panels/ask_operator.js');
     if (stale(gen)) return;
     await mod.default({ root: v, api, el });
   } catch (e) {
@@ -2225,22 +2228,6 @@ async function viewPanels(v) {
     grid.append(row);
   }
   v.append(grid);
-  try {
-    const data = await api('/tools');
-    if (stale(gen)) return;
-    const withPanel = data.tools.filter(t => t.has_panel);
-    if (withPanel.length) v.append(el('h2', null, 'tool panels'));
-    const own = el('div', 'cards');
-    for (const t of withPanel) {
-      const row = el('button', 'row-item');
-      const m = el('div', 'm');
-      m.append(el('div', 'n', t.name), el('div', 's', t.description));
-      row.append(m);
-      row.onclick = () => location.hash = '#toolpanel/' + t.name;
-      own.append(row);
-    }
-    if (withPanel.length) v.append(own);
-  } catch (e) {}
   v.append(el('h2', null, 'device'), notifyControl());
   // A sandbox that quietly does nothing is worse than none, so this says which.
   const sb = state.status && state.status.sandbox;
@@ -2784,7 +2771,6 @@ function toolCard(t) {
   if (t.builtin) name.append(el('span', 'tchip builtin', 'built in'));
   if ((a.env || []).length) name.append(el('span', 'tchip key', 'env ' + a.env.join(' ')));
   if ((a.reads || []).length) name.append(el('span', 'tchip reads', 'reads ' + a.reads.join(' ')));
-  if (t.has_panel) name.append(el('span', 'tchip', 'panel'));
   if (bare.length) name.append(el('span', 'tchip warn', `${bare.length} parameter${bare.length > 1 ? 's' : ''} undescribed`));
   const meta = el('div', 'meta', a.timeout_seconds ? a.timeout_seconds + ' s' : '');
   meta.append(el('span', 'chev', '›'));

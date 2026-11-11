@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-11
+
+- **Asking you a question is part of the agent now.** `ask_operator` was a
+  separate program with a screen of its own; both are built in. Links to an
+  ask in older conversations still open. Tools can no longer add a screen to
+  the interface, and none but this one ever did.
+
 ## 2026-11-10
 
 - **Scheduling, search, skills, other models and packages run inside the
