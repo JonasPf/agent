@@ -13,6 +13,13 @@ the agent changes that the user did not approve: the agent they talk to tomorrow
 merged today. Prototype, not hardened.
 See [`specs/index.html`](specs/index.html).
 
+## Work in progress
+
+Three multi-step changes are under way, each with a plan in [`plans/`](plans/README.md): the core
+shrinking to an MCP host with tools and skills as plugins, voice-over as a bundle for any agent, and
+a redesign of the interface. **Read `plans/README.md` before starting work**, and update the plan in
+the same pull request that finishes or changes one of its steps.
+
 ## Build, run, lint, test
 
 Workflows live in [`Taskfile.yml`](Taskfile.yml); run `task` to list them.

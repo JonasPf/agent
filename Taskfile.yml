@@ -136,6 +136,17 @@ tasks:
       - task: on:linux
         vars: {CMD: 'task test:here'}
 
+  # Chosen Go tests, in the same place the whole suite runs. The tools are built
+  # first: the registry will not load one whose run is missing. RUN is a regular
+  # expression and may hold a bar; neither it nor PKG may hold a quote.
+  test:run:
+    desc: Run chosen Go tests, e.g. task test:run RUN='TestOne|TestTwo' (PKG defaults to ./internal/app)
+    vars:
+      PKG: '{{.PKG | default "./internal/app"}}'
+    cmds:
+      - task: on:linux
+        vars: {CMD: 'task build:tools >/dev/null && go test {{.PKG}} -run "{{.RUN}}" -count=1'}
+
   test:here:
     cmds:
       - task: test:go
