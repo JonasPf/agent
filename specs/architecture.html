@@ -487,7 +487,7 @@ operator's port there.</p>
 <li>The operator's default port is not one tools commonly use; an operator port among the tools' ports is taken from them, and that is said.</li>
 <li>Where the kernel cannot restrict the network, the system says so at startup, in <code>/status</code>, and on the Tools screen, and files stay confined.</li>
 <li>A tool reaches the agent only through the tool API, which answers only a running tool call, offers no way to create, fork, message, or configure a conversation, to schedule, to search, to call a model, or to install a package, and serves only the skills that conversation has.</li>
-<li>The agent's own tools &mdash; <code>schedule</code>, <code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, <code>packages</code> &mdash; run inside the agent, for the calling conversation only: a job is made, edited, or deleted only in it, and only its skills are read.</li>
+<li>The agent's own tools &mdash; <code>schedule</code>, <code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, <code>packages</code>, <code>ask_operator</code> &mdash; run inside the agent, for the calling conversation only: a job is made, edited, or deleted only in it, and only its skills are read.</li>
 <li>Nothing recovers automatically from a tool that damages the system; repair is manual, and the specification says so rather than implying otherwise.</li>
 </ul>
 </div>

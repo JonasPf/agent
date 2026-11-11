@@ -8,7 +8,7 @@ import path from 'node:path';
 const ROOT = path.resolve(import.meta.dirname, '..', '..');
 const SK = ROOT + '/skills/voice-over/scripts';
 const W = process.env.REVIEW_SHOTS || fs.mkdtempSync(path.join(os.tmpdir(), 'voice-over-browser-'));
-const PANEL = ROOT + '/tools/ask_operator/ui/panel.js';
+const PANEL = ROOT + '/web/panels/ask_operator.js';
 const CHROME = ['/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(p => fs.existsSync(p));
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

@@ -9,7 +9,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
 
-const SOURCE = path.join(__dirname, '..', 'tools', 'ask_operator', 'ui', 'panel.js');
+const SOURCE = path.join(__dirname, 'panels', 'ask_operator.js');
 const load = () => import('data:text/javascript,' + encodeURIComponent(fs.readFileSync(SOURCE, 'utf8')));
 
 test('a link names the conversation and the ask', async () => {

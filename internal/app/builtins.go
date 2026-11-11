@@ -17,7 +17,7 @@ import (
 // A builtin is a tool that runs inside the agent. Each one is the model's
 // handle on something that is the agent's own and cannot be handed to a
 // program in the sandbox: the jobs, the transcripts, the skills, the model
-// key, the package store (ADR-086). reload_tools is the registry's own
+// key, the package store, the operator (ADR-086). reload_tools is the registry's own
 // control surface.
 //
 // What the model is sent for a builtin is a manifest.json like any tool's —
@@ -35,6 +35,7 @@ func (a *App) builtinRuns() map[string]builtinFn {
 		"skill_read":     a.skillReadTool,
 		"call_model":     a.callModelTool,
 		"packages":       a.packagesTool,
+		"ask_operator":   a.askOperatorTool,
 	}
 }
 

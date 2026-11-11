@@ -63,7 +63,6 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("GET /tools", a.hTools)
 	mux.HandleFunc("POST /tools/reload", a.hReload)
-	mux.HandleFunc("GET /tools/{name}/panel.js", a.hPanel)
 	mux.HandleFunc("POST /tools/{name}/call", a.hCallTool)
 
 	mux.HandleFunc("GET /skills", a.hSkills)
@@ -882,7 +881,7 @@ func (a *App) hTools(w http.ResponseWriter, r *http.Request) {
 			enabled = sess.toolEnabled(t.Name)
 		}
 		entry := map[string]any{"name": t.Name, "description": t.Description, "parameters": t.Parameters,
-			"sent": t.schema(), "has_panel": t.HasPanel, "builtin": t.Builtin, "loaded_at": t.LoadedAt,
+			"sent": t.schema(), "builtin": t.Builtin, "loaded_at": t.LoadedAt,
 			"enabled": enabled}
 		// A builtin has no manifest, and runs inside the agent rather than in
 		// the sandbox, so it has nothing of its own to show.
@@ -905,16 +904,8 @@ func (a *App) hReload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"loaded": loaded, "failures": failures})
 }
 
-func (a *App) hPanel(w http.ResponseWriter, r *http.Request) {
-	t := a.tools.Get(r.PathValue("name"))
-	if t == nil || !t.HasPanel {
-		http.NotFound(w, r)
-		return
-	}
-	http.ServeFile(w, r, filepath.Join(t.Dir, "ui", "panel.js"))
-}
-
-// hCallTool lets a tool panel read and write its own data through the API.
+// hCallTool calls a tool for the operator. The ask_operator panel saves what a
+// page hands it this way.
 func (a *App) hCallTool(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if a.tools.Get(name) == nil {

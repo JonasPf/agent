@@ -33,13 +33,12 @@ reload.</p>
   main_test.go      required where there is logic to test — written first
   run               required — the compiled executable, built from this directory
   eval.json         required — the cases a real model is put through
-  schema.sql        optional — tables, applied on load
-  ui/panel.js       optional — an interface panel for this tool's data</code></pre>
+  schema.sql        optional — tables, applied on load</code></pre>
 
 <p>A tool that is the agent's handle on itself has no program. <code>schedule</code>,
-<code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, and
-<code>packages</code> reach what only the agent holds &mdash; its jobs, its transcripts, its skills, the
-model key, the package store &mdash; and run inside it, as <code>reload_tools</code> does
+<code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, <code>packages</code>, and
+<code>ask_operator</code> reach what only the agent holds &mdash; its jobs, its transcripts, its skills,
+the model key, the package store, the operator &mdash; and run inside it, as <code>reload_tools</code> does
 (<a href="adrs.html#adr-086">ADR-086</a>). Each still has a manifest and eval cases, compiled in from
 <code>internal/app/builtin/&lt;name&gt;/</code>: what the model is sent is a manifest's standard part
 either way.</p>
@@ -378,25 +377,21 @@ never the constraint.</p>
 </ul>
 </div>
 
-<h2>Interface plugins</h2>
+<h2>The one panel</h2>
 
-<p>A tool that stores data may ship a panel to display it. The panel is a JavaScript module the web
-interface loads and mounts under that tool's name &mdash; a tool that kept a list would show the
-list. The panel receives the element to draw in, the interface's <code>api</code> and <code>el</code>,
-and reads anything further from the address: <code>#toolpanel/&lt;name&gt;/&lt;anything&gt;</code>
-opens it, so a link can open a panel on one conversation's work. A tool's result that holds such a
-link gets an Open button in the transcript. <code>notes</code> had a panel and was removed
-(<a href="adrs.html#adr-063">ADR-063</a>);
-<a href="tool-ask_operator.html"><code>ask_operator</code></a> has the one that ships now.</p>
+<p>A tool used to be able to ship a screen of its own, a script the interface loaded from the tool's
+folder. Only <code>ask_operator</code> ever had one that shipped, and <code>ask_operator</code> is now
+part of the agent (<a href="adrs.html#adr-086">ADR-086</a>), so its screen is part of the interface
+and no tool brings a script into it. The address is unchanged:
+<code>#toolpanel/ask_operator/&lt;session&gt;/&lt;id&gt;</code> opens it, and a tool's result that holds
+such a link gets an Open button in the transcript, so a link in an old conversation still works.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A tool with a panel gains a navigable section in the interface without changes to the interface itself.</li>
-<li>A tool without a panel is still fully usable.</li>
-<li>A panel that fails to load reports the failure and does not prevent the rest of the interface from working.</li>
-<li>Panels read tool data through the API, not by querying the database directly.</li>
-<li>A link to a panel opens it from a tool's result, with the rest of the address left for the panel to read.</li>
+<li>No tool, built in or from a bundle, can add a script to the interface.</li>
+<li>A link to the <code>ask_operator</code> panel opens it from a tool's result, with the rest of the address left for the panel to read.</li>
+<li>A panel link that names anything else says there is no such panel, and the rest of the interface goes on working.</li>
 </ul>
 </div>
 

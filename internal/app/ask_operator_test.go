@@ -198,7 +198,7 @@ const (
 // keeps one going until the page's answer is on the screen.
 func heldOpen(t *testing.T, next http.Handler, hold string) http.Handler {
 	t.Helper()
-	panel, err := os.ReadFile("../../tools/ask_operator/ui/panel.js")
+	panel, err := os.ReadFile("../../web/panels/ask_operator.js")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func heldOpen(t *testing.T, next http.Handler, hold string) http.Handler {
 		case "/held":
 			time.Sleep(25 * time.Millisecond)
 			w.WriteHeader(http.StatusNoContent)
-		case "/tools/ask_operator/panel.js":
+		case "/panels/ask_operator.js":
 			w.Header().Set("Content-Type", "text/javascript")
 			_, _ = w.Write(panel)
 			_, _ = w.Write([]byte(hold))
@@ -359,5 +359,70 @@ func TestAPageOpenedFromFilesRunsAndCannotReachTheAgent(t *testing.T) {
 	}
 	if !strings.Contains(shown.Content, "stayed in the box") {
 		t.Errorf("the page did not run, or reached the agent:\n%s", shown.Content)
+	}
+}
+
+// The tool runs inside the agent, so nothing but its own care keeps it in the
+// conversation's directory. A page that is a link to a file outside is not a
+// file in the directory, an oversized page is refused before the panel is
+// asked to load it, and a form has no folder to save beside.
+func TestAskOperatorStaysInsideTheConversationsDirectory(t *testing.T) {
+	a := browseApp(t)
+	s := newSession(t, a)
+	dir := a.ensureWorkspace(s.ID)
+	outside := filepath.Join(t.TempDir(), "secret.html")
+	if err := os.WriteFile(outside, []byte("<p>theirs</p>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "link.html")); err != nil {
+		t.Fatal(err)
+	}
+	if res := callAsk(t, a, s.ID, map[string]any{"message": "Look.", "page": "link.html"}); res.OK {
+		t.Errorf("a page that is a link out of the directory was accepted: %s", res.Content)
+	}
+	if res := callAsk(t, a, s.ID, map[string]any{"message": "Look.", "page": outside}); res.OK ||
+		!strings.Contains(res.Error, "outside the working directory") {
+		t.Errorf("a page named by a path elsewhere = %+v", res)
+	}
+
+	big := filepath.Join(dir, "big.html")
+	if err := os.WriteFile(big, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(big, maxAskPage+1); err != nil {
+		t.Fatal(err)
+	}
+	if res := callAsk(t, a, s.ID, map[string]any{"message": "Look.", "page": "big.html"}); res.OK || !strings.Contains(res.Error, "MB") {
+		t.Errorf("a page over the limit = %+v", res)
+	}
+
+	// The path the model wrote the file at works as well as the short one.
+	if err := os.WriteFile(filepath.Join(dir, "page.html"), []byte("<p>hi</p>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := callAsk(t, a, s.ID, map[string]any{"message": "Look.", "page": filepath.Join(absOr(dir), "page.html")}); !res.OK {
+		t.Errorf("a page named by its full path in the directory was refused: %s", res.Error)
+	}
+
+	form := callAsk(t, a, s.ID, map[string]any{"message": "Well?",
+		"questions": []map[string]any{{"name": "a", "type": "text"}}})
+	if !form.OK {
+		t.Fatalf("a form was refused: %s", form.Error)
+	}
+	id := askLink.FindStringSubmatch(form.Content)[2]
+	if res := callAsk(t, a, s.ID, map[string]any{"ask": id, "save": "x.json", "content": "y"}); res.OK {
+		t.Error("a form saved a file")
+	}
+	if res := callAsk(t, a, s.ID, map[string]any{"ask": "../../etc", "save": "x", "content": "y"}); res.OK {
+		t.Error("an ask's name that climbs out was accepted")
+	}
+}
+
+// An ask's name starts with its time, so a folder of them reads in order.
+func TestAnAsksNameSortsByTime(t *testing.T) {
+	first := newAskID(time.Date(2026, 10, 31, 9, 0, 0, 0, time.UTC))
+	second := newAskID(time.Date(2026, 10, 31, 10, 0, 0, 0, time.UTC))
+	if first >= second || !validAskID.MatchString(first) {
+		t.Errorf("%q, %q", first, second)
 	}
 }

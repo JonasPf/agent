@@ -24,7 +24,6 @@ type Tool struct {
 	// Agent is the manifest's "agent" block. A builtin has no manifest and
 	// leaves it empty.
 	Agent    ToolAgent
-	HasPanel bool
 	LoadedAt time.Time
 	Builtin  bool
 	Dir      string
@@ -216,8 +215,6 @@ func loadToolDir(dir string) (*Tool, error) {
 	if t.Agent.Timeout <= 0 {
 		t.Agent.Timeout = 30
 	}
-	_, err = os.Stat(filepath.Join(dir, "ui", "panel.js"))
-	t.HasPanel = err == nil
 	t.Dir = dir
 	return &t, nil
 }

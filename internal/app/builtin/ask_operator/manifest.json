@@ -24,12 +24,21 @@
             },
             "type": {
               "type": "string",
-              "enum": ["text", "long_text", "number", "yes_no", "choice", "choices"],
+              "enum": [
+                "text",
+                "long_text",
+                "number",
+                "yes_no",
+                "choice",
+                "choices"
+              ],
               "description": "choice picks one option, choices any number of them."
             },
             "options": {
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "description": "The options, for choice and choices."
             },
             "default": {
@@ -41,7 +50,10 @@
               "description": "Whether the form cannot be sent without this answer."
             }
           },
-          "required": ["name", "type"]
+          "required": [
+            "name",
+            "type"
+          ]
         }
       },
       "page": {
@@ -49,10 +61,8 @@
         "description": "An HTML file in the working directory, holding everything it needs. Give this or questions, not both."
       }
     },
-    "required": ["message"]
-  },
-  "agent": {
-    "db_prefix": "ask_operator_",
-    "timeout_seconds": 30
+    "required": [
+      "message"
+    ]
   }
 }
