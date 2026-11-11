@@ -69,7 +69,7 @@ moves the file with it.
 | `OPENROUTER_API_KEY` | — | Required for model calls. |
 | `TAVILY_API_KEY` | — | Required by `web_search`, and by nothing else: a tool's manifest names the variables it is given, and no other tool receives this one. Without it a search fails saying so. |
 | `AGENT_ADDR` | `:7770` | Listen address. |
-| `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, `skills/`, `personas/`, and `.env` beneath it. The one directory a deployment mounts. |
+| `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, `skills/`, `personas/`, `plugins/`, and `.env` beneath it. The one directory a deployment mounts. |
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. The skills here are read-only; the ones you write live under `AGENT_STATE`. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. It only adds; nothing here removes a boundary. |
 | `AGENT_TOOL_PORTS` | none | Extra TCP ports a tool may **connect** to, beyond 22, 53, 80, 443, 3000, 3306, 4000, 5000, 5173, 5432, 6379, 8000, 8080, 8443, 8888, 9418, and 27017. The operator's own port is never added: a tool that could reach it could create a conversation holding a credential. The Tools screen shows what is in force. |
@@ -184,6 +184,7 @@ only read takes a snapshot it did not need.
 /app/state/workspace  one working directory per session
 /app/state/skills     the skills you write, which the image would otherwise replace
 /app/state/personas   the personas you write; the built-in one needs no file
+/app/state/plugins    the tool bundles you install, one folder each (ADR-085)
 ```
 
 They are two directories for the agent's convenience, not a boundary. The

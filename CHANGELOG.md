@@ -2,6 +2,11 @@
 
 ## 2026-11-10
 
+- **Tools can come from MCP bundles.** A bundle unpacked into `plugins/` in
+  the state directory is loaded with the other tools: its server says what
+  tools it has, and each call runs it confined to the conversation's
+  directory. Nothing ships as a bundle yet and there is no install screen
+  yet; a bundle that cannot run here is listed on Tools with the reason.
 - **Compare is gone.** To try a message on another model, press 🔀 beside
   it, choose the model on the fork screen, and send: the message is already
   in the box. It works for any message, not only the next one, and each

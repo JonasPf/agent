@@ -29,6 +29,9 @@ type Tool struct {
 	Builtin  bool
 	Dir      string
 	run      builtinFn
+	// bundle is the MCP bundle whose server offers this tool, or nil for a
+	// builtin or a tool with a program of its own (ADR-085).
+	bundle *bundle
 }
 
 // ToolAgent is what a manifest says under "agent": everything this agent reads
@@ -92,6 +95,9 @@ type Registry struct {
 	dir      string
 	dbPath   string
 	applied  map[string]bool
+	// bundleDirs are the directories bundles are unpacked in: what the image
+	// ships, then what the operator installed.
+	bundleDirs []string
 }
 
 func NewRegistry(dir, dbPath string, db *sql.DB) *Registry {
@@ -144,7 +150,8 @@ func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 
 	entries, err := os.ReadDir(r.dir)
 	if err != nil {
-		return nil, []LoadFailure{{Dir: r.dir, Reason: err.Error()}}
+		r.failures = []LoadFailure{{Dir: r.dir, Reason: err.Error()}}
+		return r.loadBundles(app), r.failures
 	}
 	prefixes := map[string]string{}
 	for _, t := range r.tools {
@@ -175,6 +182,7 @@ func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 		r.register(t)
 		loaded = append(loaded, t.Name)
 	}
+	loaded = append(loaded, r.loadBundles(app)...)
 	return loaded, r.failures
 }
 
@@ -326,6 +334,10 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 			b, _ := json.Marshal(v)
 			return toolResult{OK: true, Content: string(b)}
 		}
+	}
+
+	if t.bundle != nil {
+		return r.callBundle(ctx, tc, t, args)
 	}
 
 	cctx, cancel := context.WithTimeout(ctx, time.Duration(t.Agent.Timeout)*time.Second)

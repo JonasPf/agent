@@ -32,8 +32,14 @@ type Config struct {
 	// makes writable, so a tool cannot reach them (ADR-053).
 	UserSkillsDir string
 	PersonasDir   string
-	WebDir        string
-	EnvFile       string
+	// PluginsDir holds the bundles the image ships and UserPluginsDir the ones
+	// the operator installed (ADR-085). The second is beside the data for the
+	// reason UserSkillsDir is, and like it is outside every path the sandbox
+	// makes writable.
+	PluginsDir     string
+	UserPluginsDir string
+	WebDir         string
+	EnvFile        string
 	// ChangelogPath is the file the version screen reads. It ships with the
 	// app rather than being derived: the container has no repository.
 	ChangelogPath string
@@ -147,18 +153,20 @@ func LoadConfig() Config {
 		EnvFile: envFile,
 		// Not 8080: that is a port tools commonly use, and a tool may not reach
 		// the operator's. This one nothing else commonly takes.
-		Addr:          envOr("AGENT_ADDR", ":7770"),
-		ToolPorts:     os.Getenv("AGENT_TOOL_PORTS"),
-		DataDir:       filepath.Join(state, "data"),
-		Workspace:     filepath.Join(state, "workspace"),
-		Snapshots:     filepath.Join(state, "snapshots"),
-		ToolsDir:      filepath.Join(home, "tools"),
-		SkillsDir:     filepath.Join(home, "skills"),
-		UserSkillsDir: filepath.Join(state, "skills"),
-		PersonasDir:   filepath.Join(state, "personas"),
-		WebDir:        filepath.Join(home, "web"),
-		ChangelogPath: filepath.Join(home, "CHANGELOG.md"),
-		ReadPaths:     os.Getenv("AGENT_READ_PATHS"),
+		Addr:           envOr("AGENT_ADDR", ":7770"),
+		ToolPorts:      os.Getenv("AGENT_TOOL_PORTS"),
+		DataDir:        filepath.Join(state, "data"),
+		Workspace:      filepath.Join(state, "workspace"),
+		Snapshots:      filepath.Join(state, "snapshots"),
+		ToolsDir:       filepath.Join(home, "tools"),
+		SkillsDir:      filepath.Join(home, "skills"),
+		UserSkillsDir:  filepath.Join(state, "skills"),
+		PersonasDir:    filepath.Join(state, "personas"),
+		PluginsDir:     filepath.Join(home, "plugins"),
+		UserPluginsDir: filepath.Join(state, "plugins"),
+		WebDir:         filepath.Join(home, "web"),
+		ChangelogPath:  filepath.Join(home, "CHANGELOG.md"),
+		ReadPaths:      os.Getenv("AGENT_READ_PATHS"),
 		// The model a conversation starts on is not a setting either: it is the
 		// one last chosen on screen, kept beside the data (see startingModel).
 		//
@@ -303,6 +311,7 @@ func Run() error {
 		queues:   map[string]chan func(){},
 		pkgs:     newPackages(cfg.DataDir, defaultNixSource),
 	}
+	a.tools.bundleDirs = []string{cfg.PluginsDir, cfg.UserPluginsDir}
 	if a.push, err = newPusher(cfg.DataDir, a.unreadMessage); err != nil {
 		return err
 	}
