@@ -3,9 +3,11 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -56,21 +58,43 @@ func (a *App) skillDirsEnv(sessionID string) string {
 	return "AGENT_SKILL_DIRS=" + string(b)
 }
 
+// hInstallSkill installs a skill from one of three places: a folder the agent
+// drafted in a conversation's directory, an archive of a skill's folder sent
+// as the body, or one an https address serves. Wherever it came from it is
+// held to the same rules and saved the same way.
 func (a *App) hInstallSkill(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		SessionID string `json:"session_id"`
 		Path      string `json:"path"`
+		URL       string `json:"url"`
 		Replace   bool   `json:"replace"`
 	}
-	if err := readJSON(r, &in); err != nil {
-		fail(w, 400, "%v", err)
-		return
+	var body io.Reader = http.MaxBytesReader(w, r.Body, maxSkillArchive+uploadEnvelope)
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") || r.Header.Get("Content-Type") == "" {
+		if err := readJSON(r, &in); err != nil {
+			fail(w, 400, "%v", err)
+			return
+		}
+		body = nil
+	} else {
+		in.Replace = r.URL.Query().Get("replace") == "true"
 	}
-	if a.store.Session(in.SessionID) == nil {
-		fail(w, 404, "no such session")
-		return
+	var sk *Skill
+	var files []SkillFile
+	var err error
+	if in.URL != "" || body != nil {
+		var archive string
+		if archive, _, err = a.archiveFrom(in.URL, body, maxSkillArchive); err == nil {
+			sk, files, err = archivedSkill(archive)
+			os.Remove(archive)
+		}
+	} else {
+		if a.store.Session(in.SessionID) == nil {
+			fail(w, 404, "no such session")
+			return
+		}
+		sk, files, err = a.draftedSkill(in.SessionID, in.Path)
 	}
-	sk, files, err := a.draftedSkill(in.SessionID, in.Path)
 	if err != nil {
 		fail(w, 400, "%v", err)
 		return
@@ -98,6 +122,27 @@ func (a *App) hInstallSkill(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, skillDoc(saved))
 }
 
+// skillOf is the skill a SKILL.md and the files beside it make, or why
+// they do not make one.
+func skillOf(main []byte, files []SkillFile) (*Skill, error) {
+	sk, err := parseSkill(string(main))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v (it opens with front matter: ---, name:, description:, ---)", skillMain, err)
+	}
+	if err := validSkillName(sk.Name); err != nil {
+		return nil, fmt.Errorf("%s: %v", skillMain, err)
+	}
+	if err := checkAuthored(sk.Name, sk.Description, sk.Body); err != nil {
+		return nil, fmt.Errorf("%s: %v", skillMain, err)
+	}
+	for _, f := range files {
+		if !utf8.ValidString(f.Body) {
+			return nil, fmt.Errorf("%s is not text; a skill holds text only, so say what it needs instead of bundling it", f.Path)
+		}
+	}
+	return sk, nil
+}
+
 // draftedSkill reads a skill folder from a conversation's working directory:
 // SKILL.md, parsed as the skill, and every other file in the folder. It reads
 // through the directory's root, so a path that climbs out or a link that
@@ -117,15 +162,9 @@ func (a *App) draftedSkill(sessionID, dir string) (*Skill, []SkillFile, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s holds no %s in this conversation's directory", rel, skillMain)
 	}
-	sk, err := parseSkill(string(main))
+	sk, err := skillOf(main, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s/%s: %v (it opens with front matter: ---, name:, description:, ---)", rel, skillMain, err)
-	}
-	if err := validSkillName(sk.Name); err != nil {
-		return nil, nil, fmt.Errorf("%s/%s: %v", rel, skillMain, err)
-	}
-	if err := checkAuthored(sk.Name, sk.Description, sk.Body); err != nil {
-		return nil, nil, fmt.Errorf("%s/%s: %v", rel, skillMain, err)
+		return nil, nil, fmt.Errorf("%s/%v", rel, err)
 	}
 	var files []SkillFile
 	err = fs.WalkDir(root.FS(), rel, func(p string, d fs.DirEntry, err error) error {

@@ -97,6 +97,8 @@ type Registry struct {
 	// bundleDirs are the directories bundles are unpacked in: what the image
 	// ships, then what the operator installed.
 	bundleDirs []string
+	// plugins is every bundle found there at the last load, loaded or not.
+	plugins []Plugin
 }
 
 func NewRegistry(dir, dbPath string, db *sql.DB) *Registry {
@@ -133,6 +135,13 @@ func (r *Registry) All() []*Tool {
 	return out
 }
 
+// Plugins is every bundle found at the last load, whether or not it loaded.
+func (r *Registry) Plugins() []Plugin {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return append([]Plugin(nil), r.plugins...)
+}
+
 func (r *Registry) Failures() []LoadFailure {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -146,6 +155,15 @@ func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 	defer r.mu.Unlock()
 	r.failures = nil
 	var loaded []string
+	// What is on disk is read afresh, so a tool whose program or bundle has
+	// gone is no longer offered.
+	r.order = slices.DeleteFunc(r.order, func(name string) bool {
+		if r.tools[name].Builtin {
+			return false
+		}
+		delete(r.tools, name)
+		return true
+	})
 
 	entries, err := os.ReadDir(r.dir)
 	if err != nil {

@@ -16,6 +16,7 @@ tags:
   - name: files
   - name: jobs
   - name: tools
+  - name: plugins
   - name: skills
   - name: personas
   - name: push
@@ -662,6 +663,101 @@ paths:
                     type: array
                     items: {$ref: "#/components/schemas/LoadFailure"}
 
+  /plugins:
+    get:
+      tags: [plugins]
+      summary: Every bundle found, shipped or installed, loaded or not.
+      responses:
+        "200":
+          description: The bundles.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plugins:
+                    type: array
+                    items: {$ref: "#/components/schemas/Plugin"}
+    post:
+      tags: [plugins]
+      summary: Install the bundle an inspect described.
+      description: >-
+        The archive is sent again, as the body or as an https address, with the
+        sha256 that POST /plugins/inspect answered; another archive is refused
+        with 409. A bundle installed before under the same name is replaced and
+        keeps its values. Tools are reloaded (ADR-087).
+      parameters:
+        - name: sha256
+          in: query
+          required: true
+          schema: {type: string}
+      requestBody: {$ref: "#/components/requestBodies/Archive"}
+      responses:
+        "201":
+          description: The bundle as installed.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Plugin"}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+
+  /plugins/inspect:
+    post:
+      tags: [plugins]
+      summary: Say what a bundle's archive is and asks for. Installs nothing.
+      requestBody: {$ref: "#/components/requestBodies/Archive"}
+      responses:
+        "200":
+          description: >-
+            The bundle as it would be listed, with why it could not be installed
+            under failure if it could not, and the archive's sha256.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Plugin"
+                  - type: object
+                    properties:
+                      sha256: {type: string}
+        "400": {$ref: "#/components/responses/Error"}
+
+  /plugins/{name}:
+    parameters:
+      - $ref: "#/components/parameters/PluginName"
+    delete:
+      tags: [plugins]
+      summary: Remove a bundle the operator installed, and what it was told.
+      responses:
+        "204": {description: Removed.}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+
+  /plugins/{name}/config:
+    parameters:
+      - $ref: "#/components/parameters/PluginName"
+    put:
+      tags: [plugins]
+      summary: Set or clear what a bundle asks the operator for.
+      description: >-
+        Each key is one the bundle's manifest declares under user_config; a
+        string sets it and null clears it. Keys not named keep what they have.
+        The values are never served back. Tools are reloaded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: {type: [string, "null"]}
+      responses:
+        "200":
+          description: The bundle as it now stands.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Plugin"}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+
   /tools/{name}/call:
     parameters:
       - $ref: "#/components/parameters/ToolName"
@@ -734,23 +830,33 @@ paths:
   /skills/install:
     post:
       tags: [skills]
-      summary: Install a skill from a folder in a conversation's working directory.
+      summary: Install a skill from a folder in a conversation's working directory, or from a zip of one.
       description: >-
         The folder holds SKILL.md, whose front matter names the skill, and every
         other file in it becomes the skill's. It is checked as a save is. Over a
         skill the operator already has, it is refused with 409 unless replace is
-        true; a name that ships is refused either way (ADR-071).
+        true; a name that ships is refused either way (ADR-071). The folder is
+        one in a conversation's working directory (session_id and path), a zip
+        an https address serves (url), or a zip sent as the body, in which
+        SKILL.md is at the top or in the one folder the archive holds (ADR-087).
+      parameters:
+        - name: replace
+          in: query
+          schema: {type: boolean}
+          description: For a zip sent as the body, what replace is in a JSON body.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [session_id, path]
               properties:
                 session_id: {type: string}
                 path: {type: string, description: "The folder, relative to the working directory."}
+                url: {type: string, description: "An https address serving a zip of the folder, in place of session_id and path."}
                 replace: {type: boolean, description: "Replace a skill of the same name the operator has."}
+          application/zip:
+            schema: {type: string, format: binary}
       responses:
         "201":
           description: The skill as installed.
@@ -1075,6 +1181,20 @@ paths:
         "101": {description: Switching to the WebSocket protocol.}
 
 components:
+  requestBodies:
+    Archive:
+      required: true
+      description: A bundle's .mcpb archive as the body, or the https address it is fetched from.
+      content:
+        application/zip:
+          schema: {type: string, format: binary}
+        application/json:
+          schema:
+            type: object
+            required: [url]
+            properties:
+              url: {type: string}
+
   parameters:
     SessionID:
       name: id
@@ -1087,6 +1207,11 @@ components:
       required: true
       schema: {type: string}
     ToolName:
+      name: name
+      in: path
+      required: true
+      schema: {type: string}
+    PluginName:
       name: name
       in: path
       required: true
@@ -1391,6 +1516,44 @@ components:
         ok: {type: boolean}
         content: {type: string}
         error: {type: string}
+
+    Plugin:
+      type: object
+      description: One bundle (ADR-085, ADR-087).
+      properties:
+        name: {type: string}
+        version: {type: string}
+        description: {type: string}
+        source:
+          type: string
+          enum: [image, installed]
+          description: Shipped with the agent, or installed by the operator.
+        tools:
+          type: array
+          items: {type: string}
+        config:
+          type: array
+          description: What the bundle asks the operator for. A value is never served.
+          items:
+            type: object
+            properties:
+              key: {type: string}
+              type: {type: string}
+              title: {type: string}
+              description: {type: string}
+              required: {type: boolean}
+              sensitive: {type: boolean}
+              set: {type: boolean}
+        needs:
+          type: array
+          items: {type: string}
+          description: Required keys with no value. While there are any, the bundle's tools are not offered.
+        reads:
+          type: array
+          items: {type: string}
+          description: Paths its server may read beyond the runtime.
+        timeout_seconds: {type: integer}
+        failure: {type: string, description: "Why it is not loaded, when it is not."}
 
     LoadFailure:
       type: object
