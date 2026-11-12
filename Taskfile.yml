@@ -51,14 +51,14 @@ tasks:
     cmds:
       - go build -ldflags '{{.STAMP}}' ./...
 
-  # The bundles plugins.lock names, unpacked into plugins/ and checked against
-  # their sums. The image is built with the same command, so the tests and the
-  # evals run the tools the image ships. A bundle already fetched for this lock
-  # is not fetched again.
+  # The bundles and skills plugins.lock names, unpacked into plugins/ and
+  # skills/ and checked against their sums. The image is built with the same
+  # command, so the tests and the evals run what the image ships. What was
+  # already fetched for this lock is not fetched again.
   plugins:fetch:
     silent: true
     cmds:
-      - go run ./cmd/plugins -out plugins
+      - go run ./cmd/plugins -out plugins -skills skills
 
   dev:
     desc: Run the agent, serving http://localhost{{.ADDR}} — the one way to run it
@@ -166,7 +166,6 @@ tasks:
   # panel, and a second time as a browser sees it that cannot size a box to its words.
   test:skills:
     cmds:
-      - python3 testenv/skills/video_edit.py
       - python3 testenv/skills/voice_over_limits.py
       - python3 testenv/skills/voice_over_page.py
       - node testenv/skills/voice_over_page_browser.mjs

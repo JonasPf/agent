@@ -8,8 +8,11 @@ workspace/
 # Snapshots taken by `task db:clear`
 .backups/
 
-# The bundles plugins.lock names, fetched by `task plugins:fetch`
+# The bundles and skills plugins.lock names, fetched by `task plugins:fetch`.
+# voice-over is the one skill still kept here.
 /plugins/
+/skills/*
+!/skills/voice-over/
 
 # Operator's notes on this deployment: kept on disk, not published.
 TODO.md

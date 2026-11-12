@@ -2,6 +2,9 @@
 
 ## 2026-11-12
 
+- **Four skills now ship from their own releases.** `researching`,
+  `keeping-records`, `writing-skills` and `video-edit` read as they did. They
+  are pinned by version and checksum, like the tools.
 - **Set your Tavily key on the Plugins screen once after this upgrade, or
   search stops working.** Open Plugins, find `web-search`, and enter the key.
   It is no longer read from `TAVILY_API_KEY` in the environment.

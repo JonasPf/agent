@@ -40,13 +40,13 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     go build -trimpath \
       -ldflags "-s -w -X agent/internal/app.Version=${VERSION} -X agent/internal/app.BuiltAt=${BUILT_AT}" \
       -o /out/agent ./cmd/agent
-# The tools the image ships are bundles from their own releases, named in
+# The tools and skills the image ships come from their own releases, named in
 # plugins.lock with the sha256 each archive must have (ADR-088). A sum that
 # does not match fails the build here. They are unpacked to
-# /out/plugins/<name>, which is the layout the agent loads.
+# /out/plugins/<name> and /out/skills/<name>, the layouts the agent loads.
 ARG TARGETARCH=amd64
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    go run ./cmd/plugins -lock plugins.lock -out /out/plugins -arch "${TARGETARCH}"
+    go run ./cmd/plugins -lock plugins.lock -out /out/plugins -skills /out/skills -arch "${TARGETARCH}"
 
 # gh comes from its own release rather than an apt repository, so the runtime
 # image needs neither the repository nor the network client that would add it.
@@ -136,7 +136,9 @@ COPY --from=build /out/glab /usr/local/bin/glab
 COPY --from=nix /nix-static /usr/local/bin/nix
 COPY --from=build /out/plugins /app/plugins
 COPY web /app/web
-COPY skills /app/skills
+# The skills the lock names, then the one still kept in this repository.
+COPY --from=build /out/skills /app/skills
+COPY skills/voice-over /app/skills/voice-over
 # What changed, as written by whoever changed it. It is read from disk at the
 # version screen, because there is no repository here to derive it from.
 COPY CHANGELOG.md /app/CHANGELOG.md

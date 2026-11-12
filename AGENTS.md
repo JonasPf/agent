@@ -33,7 +33,7 @@ not a faster version of the check, it is a compile error. Use the tasks.
 | **Build** | `task build` | Compiles all packages. Agent entry point is `./cmd/agent`. |
 | **Run** | `task dev` | Builds the runtime image and serves http://localhost:7770, tools confined. The only way to run the agent. Its state is one btrfs image, `.dev/state.img`, made on first run and mounted by a privileged container (ADR-082). See the README table for `AGENT_*` env vars. |
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
-| **Test** | `task test` | Go tests across the agent, under the race detector, against the bundles `plugins.lock` names, which it fetches first; the browser's pure helpers (`web/*.test.js`) under node's built-in runner; and the scripts shipped skills carry (`testenv/skills`), on real video and in a real browser. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
+| **Test** | `task test` | Go tests across the agent, under the race detector, against the bundles `plugins.lock` names, which it fetches first; the browser's pure helpers (`web/*.test.js`) under node's built-in runner; and the scripts the `voice-over` skill carries (`testenv/skills`), on real video and in a real browser. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
 | **Check** | `task check` | Lint, build, and test together. The pre-commit gate; see below. |
 | **Eval** | `task eval -- [tool...]` | Puts each tool's eval cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
 | **Reset** | `task db:clear` | Moves the dev state image (sessions, jobs, files, snapshots) to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
@@ -107,6 +107,12 @@ architecture, from the release's `sha256sums.txt`).
 in); the test, eval, and image builds all run it, so tests run the tools the
 image ships. A test that needs a tool of its own makes one from the stand-in
 server in `testenv/mcp/shell` (`writeTool` and `writeBundle` in the tests).
+
+**Skills ship the same way.** `researching`, `keeping-records`,
+`writing-skills` and `video-edit` live in agent-plugins and are named in
+`plugins.lock` with `"kind": "skill"`; the fetch unpacks them into `skills/`
+beside `voice-over`, the one skill still kept here. Do not edit a fetched
+skill in this repository: change it there, release it, update the lock.
 
 **The agent is never rebuilt or restarted for a tool.** Install the bundle on
 the Plugins screen, or call `reload_tools` (or `task tools:reload`).
