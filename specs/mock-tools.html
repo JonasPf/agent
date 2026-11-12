@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tools Screen Mock — Agent Spec</title>
+<title>Plugins Screen Mock — Agent Spec</title>
 <style>
 /* The interface's own tokens, copied so this page looks like the screen it
    proposes whether it is opened from disk or served with the rest of the spec. */
@@ -161,11 +161,11 @@ details.tool[open] > summary { border-bottom: 1px solid var(--line); }
 </style></head>
 <body>
 
-<div class="mocknote">Mock of the Tools screen (More → Tools), with each manifest in its standard part and its
+<div class="mocknote">Mock of the Plugins screen (Plugins in the rail), with a bundle and what it asks for, and each older tool's manifest in its standard part and its
 <code>agent</code> block (<a href="adrs.html#adr-067">ADR-067</a>). Static data, and a few of the tools; the cards, the
 explainer, and every <b>?</b> work. <a href="webui.html">← Web UI spec</a></div>
 
-<div class="top"><span class="back">‹</span><h1>Tools</h1></div>
+<div class="top"><span class="back">‹</span><h1>Plugins</h1></div>
 
 <div class="wrap">
 
@@ -233,7 +233,26 @@ stdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}</pre></li>
   <div class="refused">Everything else is refused: other conversations, the skills folder, your home folder, and the file holding the API key.</div>
 </div></div>
 
-<h2>Tools</h2>
+<h2>Bundles</h2>
+
+<div class="card" style="padding:12px 14px">
+  <div class="tname"><span class="n">web-search</span><span style="font:12px var(--mono,monospace);opacity:.6">0.1.0</span><span class="chip">ships with the agent</span><span style="margin-left:auto;font-size:12px;opacity:.6">60 s</span></div>
+  <div class="desc">Search the web with Tavily.</div>
+  <div style="margin-top:8px;padding:7px 10px;border:1px solid #c9a24a;border-radius:8px;font-size:13px;color:#8a6a14">Needs Tavily API key. Its tools are not offered until it is set.</div>
+  <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(128,128,128,.25);display:grid;grid-template-columns:200px 1fr auto;gap:6px 10px;align-items:center;font-size:13px">
+    <div><b>Tavily API key</b><br><span style="opacity:.6;font-size:12px">not set · required</span></div><input type="password" style="padding:7px 9px"><span></span>
+    <div><b>Tavily address</b><br><span style="color:#2f7d4f;font-size:12px">set</span></div><input type="text" placeholder="Type to replace it" style="padding:7px 9px"><button>Clear</button>
+  </div>
+  <div style="margin-top:10px;font-size:12.5px"><button>Save</button> <span style="opacity:.6">Kept by the agent and never shown again.</span></div>
+</div>
+
+<div class="card" style="padding:12px 14px;margin-top:14px">
+  <div class="tname"><span class="n">shell</span><span style="font:12px var(--mono,monospace);opacity:.6">0.1.0</span><span class="chip">installed</span><span style="margin-left:auto;font-size:12px;opacity:.6">930 s</span></div>
+  <div class="desc">Run shell commands. Its tool, <code>bash</code>, is listed here as a card like the ones below.</div>
+  <div style="margin-top:10px"><button>Remove</button></div>
+</div>
+
+<h2>Tools on disk</h2>
 
 <details class="card tool" open>
   <summary>

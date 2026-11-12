@@ -209,7 +209,7 @@ test('the rail links the daily panels, and personas are behind More', async () =
   const ctx = load({ '/sessions': [] });
   await ctx.renderSidebar();
   const links = ctx._id('side-nav').children.map(b => b.textContent);
-  assert.deepStrictEqual(links, ['Jobs', 'Tools', 'Skills', 'More']);
+  assert.deepStrictEqual(links, ['Jobs', 'Plugins', 'Skills', 'More']);
   const v = ctx._id('view');
   await ctx.viewPanels(v);
   const panels = findAll(v, 'row-item').map(r => find(r, 'n').textContent);
@@ -1940,6 +1940,140 @@ test('a ? explains a term on tap, one at a time', async () => {
   assert.doesNotMatch(a.className, /\bopen\b/, 'two explanations are open at once');
   tap(b);
   assert.doesNotMatch(b.className, /\bopen\b/, 'a second tap does not close it');
+});
+
+// ---------- bundles on the plugins screen ----------
+
+const SH = { name: 'sh', description: 'Run a shell command.', bundle: 'shell 1.2.3',
+  parameters: { type: 'object', properties: { command: { type: 'string', description: 'The command.' } } },
+  agent: { timeout_seconds: 930 } };
+SH.sent = sent(SH);
+const plugin = over => Object.assign({ name: 'shell', version: '1.2.3', description: 'A shell.', source: 'installed',
+  tools: ['sh'], config: [], needs: [], reads: [], timeout_seconds: 930 }, over);
+const SEARCHER = plugin({ name: 'web-search', version: '0.1.0', description: 'Search the web.', source: 'image',
+  tools: ['web_search'], timeout_seconds: 60, needs: ['tavily_api_key'], config: [
+    { key: 'tavily_api_key', title: 'Tavily key', description: 'From tavily.com.', required: true, sensitive: true, set: false },
+    { key: 'tavily_url', title: 'Address', required: false, sensitive: false, set: true }] });
+
+async function pluginsScreen(plugins, routes) {
+  const ctx = load(Object.assign({
+    '/tools': { failures: [], sandbox: SANDBOX, tools: [RELOAD, SH, SEARCH] },
+    '/plugins': { plugins },
+  }, routes));
+  const v = node('div');
+  await ctx.viewTools(v);
+  return { ctx, v };
+}
+const pluginCard = (v, name) => findAll(v, 'plugin').find(c => textOf(find(c, 'pname')).includes(name));
+const sentTo = (ctx, method, path) => (ctx._calls || []).filter(c => c.method === method && c.path === path);
+
+// A bundle is the unit that is installed and allowed things, so the screen
+// lists bundles, each with the tools it brings, apart from what is built in.
+test('the plugins screen lists each bundle with where it came from and the tools it brings', async () => {
+  const { v } = await pluginsScreen([plugin({ reads: ['/proc'] }), SEARCHER]);
+  const card = pluginCard(v, 'shell');
+  assert.match(textOf(find(card, 'phead')), /1\.2\.3/);
+  assert.match(textOf(find(card, 'phead')), /installed/);
+  assert.match(textOf(find(card, 'phead')), /\/proc/, 'what a bundle reads beyond the sandbox is not on its card');
+  assert.match(textOf(card), /930 s/);
+  assert.ok(findAll(card, 'tooldef').some(c => textOf(find(c, 'tname')).includes('sh')), 'a bundle’s tool is not under it');
+  assert.match(textOf(find(pluginCard(v, 'web-search'), 'phead')), /ships with the agent/);
+  // A bundle's tool has no manifest of the older kind and no table prefix.
+  const sh = findAll(card, 'tooldef')[0];
+  assert.strictEqual(find(sh, 'json-manifest'), null);
+  assert.strictEqual(find(sh, 'agent-uses'), null);
+  assert.ok(find(sh, 'json-sent'));
+  // What is built in, and a tool with a program of its own, are listed once, outside any bundle.
+  const outside = findAll(v, 'tooldef').filter(c => !findAll(v, 'plugin').some(p => findAll(p, 'tooldef').includes(c)));
+  assert.deepStrictEqual(outside.map(c => find(find(c, 'tname'), 'n').textContent), ['reload_tools', 'web_search']);
+});
+
+test('a bundle that did not load says why on its own card, and is not repeated as a failed tool', async () => {
+  const { v } = await pluginsScreen([plugin({ tools: [], failure: 'there is already a tool named sh' })],
+    { '/tools': { failures: [{ dir: 'shell', reason: 'there is already a tool named sh' }], sandbox: SANDBOX, tools: [RELOAD] } });
+  assert.match(textOf(find(pluginCard(v, 'shell'), 'pfail')), /already a tool named sh/);
+  assert.strictEqual(find(v, 'fail'), null, 'the bundle’s failure is listed a second time');
+});
+
+// What a bundle is told is a credential: the screen says whether it is set and
+// has nothing else to show, because the agent never serves it.
+test('a bundle says what it needs, and its settings are saved without ever being shown', async () => {
+  const { ctx, v } = await pluginsScreen([SEARCHER]);
+  const card = pluginCard(v, 'web-search');
+  assert.match(textOf(find(card, 'pneeds')), /Tavily key/, 'a bundle that cannot run does not say what it needs');
+  const rows = findAll(card, 'pset');
+  assert.strictEqual(rows.length, 2);
+  const [key, url] = rows;
+  assert.match(textOf(key), /Tavily key.*From tavily\.com/s);
+  assert.match(textOf(key), /not set/);
+  assert.match(textOf(url), /set/);
+  assert.strictEqual(find(key, 'pin').type, 'password', 'a sensitive value is typed in the clear');
+  assert.strictEqual(find(url, 'pin').type, 'text');
+  assert.strictEqual(find(url, 'pin').value, '', 'a value the agent never serves is shown');
+  assert.strictEqual(find(key, 'pclear'), null, 'a value that is not set offers to be cleared');
+
+  // Only what was typed is sent: an empty box leaves a value as it is.
+  find(key, 'pin').value = 'tvly-1';
+  await find(card, 'psave').onclick();
+  const saved = sentTo(ctx, 'PUT', '/plugins/web-search/config');
+  assert.strictEqual(saved.length, 1);
+  assert.deepStrictEqual(JSON.parse(saved[0].body), { tavily_api_key: 'tvly-1' });
+
+  await find(url, 'pclear').onclick();
+  assert.deepStrictEqual(JSON.parse(sentTo(ctx, 'PUT', '/plugins/web-search/config')[1].body), { tavily_url: null });
+});
+
+test('a bundle the operator installed can be removed, after asking; one that ships cannot', async () => {
+  const { ctx, v } = await pluginsScreen([plugin(), SEARCHER]);
+  assert.strictEqual(find(pluginCard(v, 'web-search'), 'premove'), null, 'a shipped bundle offers to be removed');
+  const remove = find(pluginCard(v, 'shell'), 'premove');
+  ctx._confirm = false;
+  await remove.onclick();
+  assert.strictEqual(sentTo(ctx, 'DELETE', '/plugins/shell').length, 0, 'a bundle was removed without asking');
+  ctx._confirm = true;
+  await remove.onclick();
+  assert.strictEqual(sentTo(ctx, 'DELETE', '/plugins/shell').length, 1);
+});
+
+// Installing is two steps so that what a bundle is, brings, and asks for is
+// read before it is on disk.
+test('installing shows what the bundle is and asks for first, and installs that same archive', async () => {
+  const seen = Object.assign(plugin({ name: 'notes', version: '2.0.0', description: 'Keeps notes.', tools: ['note_add', 'note_find'],
+    reads: ['/var'], timeout_seconds: 45,
+    config: [{ key: 'token', title: 'Token', required: true, sensitive: true, set: false }], needs: ['token'] }), { sha256: 'abc123' });
+  const { ctx, v } = await pluginsScreen([], {
+    'POST /plugins/inspect': seen, 'POST /plugins?sha256=abc123': seen });
+  assert.strictEqual(find(v, 'pinstall'), null, 'the install form is open before it is asked for');
+  find(v, 'pnew').onclick();
+  const form = find(v, 'pinstall');
+  assert.strictEqual(find(form, 'pgo'), null, 'install is offered before the bundle was looked at');
+  find(form, 'purl').value = 'https://example.test/notes.mcpb';
+  await find(form, 'plook').onclick();
+  const look = sentTo(ctx, 'POST', '/plugins/inspect');
+  assert.deepStrictEqual(JSON.parse(look[0].body), { url: 'https://example.test/notes.mcpb' });
+  const what = textOf(find(form, 'pseen'));
+  for (const want of ['notes', '2.0.0', 'Keeps notes.', 'note_add', 'note_find', 'Token', '/var', '45 s']) {
+    assert.ok(what.includes(want), `the inspection does not show ${want}: ${what}`);
+  }
+  assert.strictEqual(sentTo(ctx, 'POST', '/plugins?sha256=abc123').length, 0, 'the bundle was installed by looking at it');
+  await find(form, 'pgo').onclick();
+  const done = sentTo(ctx, 'POST', '/plugins?sha256=abc123');
+  assert.strictEqual(done.length, 1);
+  assert.deepStrictEqual(JSON.parse(done[0].body), { url: 'https://example.test/notes.mcpb' });
+});
+
+test('a file is sent as it is, and a bundle that cannot be installed offers no install', async () => {
+  const file = { name: 'twin.mcpb', size: 10 };
+  const { ctx, v } = await pluginsScreen([], {
+    'POST /plugins/inspect': Object.assign(plugin({ name: 'twin', failure: 'there is already a tool named sh' }), { sha256: 'f00' }) });
+  find(v, 'pnew').onclick();
+  const form = find(v, 'pinstall');
+  find(form, 'pfile').files = [file];
+  await find(form, 'plook').onclick();
+  const look = sentTo(ctx, 'POST', '/plugins/inspect')[0];
+  assert.strictEqual(look.body, file, 'the file was wrapped rather than sent as the body');
+  assert.match(textOf(find(form, 'pseen')), /already a tool named sh/);
+  assert.strictEqual(find(form, 'pgo'), null, 'a bundle that cannot be installed offers to be');
 });
 
 // ---------- the model dialog ----------

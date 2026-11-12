@@ -131,7 +131,7 @@ $('back').onclick = () => history.length > 1 ? history.back() : (location.hash =
 // decides which of the two is on screen, so neither can disagree with the other.
 // Personas are chosen when a conversation starts and written rarely, so they are
 // reached from More rather than from the rail.
-const PANELS = [['jobs', 'Jobs'], ['tools', 'Tools'], ['skills', 'Skills'], ['panels', 'More']];
+const PANELS = [['jobs', 'Jobs'], ['tools', 'Plugins'], ['skills', 'Skills'], ['panels', 'More']];
 
 let folded = null;
 function closeMenu() {
@@ -437,7 +437,7 @@ function renderSideFoot() {
 // ---------- views ----------
 
 // A transcript is read in a column; a list of jobs or files is read across the
-// room a laptop actually has. The Tools screen is read in a column too: it is
+// room a laptop actually has. The Plugins screen is read in a column too: it is
 // mostly explanation, one tool under another.
 const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel'];
 
@@ -2212,7 +2212,7 @@ async function viewPanels(v) {
   setHeader('Panels', true);
   const items = [
     ['jobs', 'Jobs', 'Schedules attached to conversations'],
-    ['tools', 'Tools', 'Loaded tools and failures'],
+    ['tools', 'Plugins', 'Bundles, the tools they bring, and what is built in'],
     ['skills', 'Skills', 'What the agent knows how to do'],
     ['personas', 'Personas', 'Who the agent is when a conversation starts'],
     ['metrics', 'Metrics', 'How often each skill, tool, and job is used'],
@@ -2564,34 +2564,170 @@ function metricJobs(jobs) {
   return box;
 }
 
-// The Tools screen answers what a tool is to the model and what it is to the
+// The Plugins screen answers what a tool is to the model and what it is to the
 // agent: how a call goes, the sandbox every tool program runs in, and for each
 // tool what the model is sent beside what the agent uses to run it (ADR-067).
 async function viewTools(v) {
   const gen = drawing;
-  setHeader('Tools', true);
-  const data = await api('/tools');
+  setHeader('Plugins', true);
+  const [data, listed] = await Promise.all([api('/tools'), api('/plugins')]);
   if (stale(gen)) return;
-  const tools = data.tools || [], failures = data.failures || [];
+  const tools = data.tools || [], plugins = (listed && listed.plugins) || [];
+  // A bundle that did not load says so on its own card.
+  const failures = (data.failures || []).filter(f => !plugins.some(p => p.name === f.dir));
   const page = el('div', 'tools');
-  const rl = el('button', 'btn primary', 'Reload from disk');
+  const add = el('button', 'btn primary pnew', 'Install a bundle');
+  const rl = el('button', 'btn', 'Reload from disk');
   rl.onclick = async () => { const r = await post('/tools/reload', {}); toast({ title: 'Reloaded', body: (r.loaded || []).join(', ') }); render(); };
   const count = el('span', 'tcount', `${tools.length} tools · ${tools.filter(t => t.builtin).length} built in`);
   if (failures.length) count.append(el('span', 'bad', ` · ${failures.length} didn’t load`));
-  const bar = el('div', 'toolbar'); bar.append(rl, count);
-  page.append(bar, toolsHow());
+  const bar = el('div', 'toolbar'); bar.append(add, rl, count);
+  const installing = el('div', 'pinstalling');
+  add.onclick = () => { if (!installing.children.length) installing.append(pluginInstall(() => installing.children[0].remove())); };
+  page.append(bar, installing, toolsHow());
   for (const f of failures) {
     const c = el('div', 'tcard fail');
     c.append(el('div', 'h', `tools/${f.dir} didn’t load`), el('div', 'r', f.reason));
     page.append(c);
   }
   if (data.sandbox) page.append(toolSandbox(data.sandbox));
-  page.append(el('h2', 'tsec', 'Tools'));
-  for (const t of tools) page.append(toolCard(t));
+  const mine = p => tools.filter(t => t.bundle === `${p.name} ${p.version}`);
+  page.append(el('h2', 'tsec', 'Bundles'));
+  if (!plugins.length) page.append(el('div', 'empty', 'No bundles. A bundle is a set of tools, installed from a file or an address.'));
+  for (const p of plugins) page.append(pluginCard(p, mine(p)));
+  const rest = tools.filter(t => !t.bundle);
+  for (const [title, list] of [['Built in', rest.filter(t => t.builtin)], ['Tools on disk', rest.filter(t => !t.builtin)]]) {
+    if (!list.length) continue;
+    page.append(el('h2', 'tsec', title));
+    for (const t of list) page.append(toolCard(t));
+  }
   v.append(page);
 }
 
-// What each ? on the Tools screen says: the things its labels cannot.
+const PLUGIN_SOURCE = { image: 'ships with the agent', installed: 'installed' };
+
+// pluginFacts is what a bundle is, said the same way on its card and when it is
+// looked at before being installed: its name and version, where it came from,
+// what it reads beyond the sandbox, how long a call may take, and why it does
+// not load if it does not.
+function pluginFacts(p) {
+  const box = el('div', 'pfacts');
+  const head = el('div', 'phead');
+  const name = el('span', 'pname');
+  name.append(el('span', 'n', p.name), el('span', 'ver', p.version || ''));
+  head.append(name);
+  if (PLUGIN_SOURCE[p.source]) head.append(el('span', 'tchip ' + (p.source === 'image' ? 'builtin' : ''), PLUGIN_SOURCE[p.source]));
+  if ((p.reads || []).length) head.append(el('span', 'tchip reads', 'reads ' + p.reads.join(' ')));
+  head.append(el('span', 'meta', (p.timeout_seconds || 0) + ' s'));
+  box.append(head);
+  if (p.description) box.append(el('div', 'tdesc', p.description));
+  if (p.failure) box.append(el('div', 'pfail', 'Not loaded: ' + p.failure));
+  return box;
+}
+
+const settingName = c => c.title || c.key;
+
+// pluginCard is one bundle: what it is, what it asks the operator for, and the
+// tools it brings. A value is typed and saved and never shown again, because
+// the agent never serves one.
+function pluginCard(p, tools) {
+  const card = el('section', 'tcard plugin');
+  card.append(pluginFacts(p));
+  const config = p.config || [];
+  const change = async body => {
+    try { await put(`/plugins/${p.name}/config`, body); render(); }
+    catch (e) { toast({ title: 'Not saved', body: String(e.message) }); }
+  };
+  if ((p.needs || []).length) {
+    const names = p.needs.map(k => settingName(config.find(c => c.key === k) || { key: k }));
+    card.append(el('div', 'pneeds', `Needs ${names.join(', ')}. Its tools are not offered until ${names.length > 1 ? 'they are' : 'it is'} set.`));
+  }
+  if (config.length) {
+    const form = el('div', 'psettings');
+    const inputs = [];
+    for (const c of config) {
+      const row = el('div', 'pset');
+      const label = el('label', 'pl');
+      label.append(el('span', 'k', settingName(c)), el('span', 'state ' + (c.set ? 'on' : ''), c.set ? 'set' : c.required ? 'not set · required' : 'not set'));
+      const input = el('input', 'text pin');
+      input.type = c.sensitive ? 'password' : 'text';
+      input.placeholder = c.set ? 'Type to replace it' : '';
+      input.autocomplete = 'off';
+      inputs.push([c.key, input]);
+      row.append(label, input);
+      if (c.set) {
+        const clear = el('button', 'btn pclear', 'Clear');
+        clear.onclick = () => change({ [c.key]: null });
+        row.append(clear);
+      }
+      if (c.description) row.append(el('div', 'pd', c.description));
+      form.append(row);
+    }
+    const save = el('button', 'btn primary psave', 'Save');
+    save.onclick = () => {
+      const body = {};
+      for (const [key, input] of inputs) if (input.value) body[key] = input.value;
+      if (Object.keys(body).length) return change(body);
+    };
+    form.append(save, el('span', 'pnote', 'Kept by the agent and never shown again.'));
+    card.append(form);
+  }
+  for (const t of tools) card.append(toolCard(t));
+  if (p.source === 'installed') {
+    const remove = el('button', 'btn danger premove', 'Remove');
+    remove.onclick = async () => {
+      if (!confirm(`Remove ${p.name}? Its tools go with it, and so does what you told it.`)) return;
+      try { await del('/plugins/' + p.name); render(); }
+      catch (e) { toast({ title: 'Not removed', body: String(e.message) }); }
+    };
+    card.append(remove);
+  }
+  return card;
+}
+
+// pluginInstall is the two steps of installing a bundle: look inside a file or
+// an address, which installs nothing, then install what was looked at.
+function pluginInstall(close) {
+  const box = el('div', 'tcard pinstall');
+  const file = el('input', 'pfile'); file.type = 'file'; file.accept = '.mcpb,.zip';
+  const url = el('input', 'text purl'); url.type = 'url'; url.placeholder = 'or an https address';
+  const look = el('button', 'btn primary plook', 'Look inside');
+  const cancel = el('button', 'btn', 'Cancel');
+  cancel.onclick = close;
+  const from = el('div', 'pfrom'); from.append(file, url, look, cancel);
+  const seen = el('div', 'pseen');
+  box.append(el('div', 'lede', 'A bundle is a .mcpb file. Looking inside installs nothing.'), from, seen);
+  // The archive goes twice, as a file or as the address it is at: once to be
+  // looked at, once to be installed.
+  const send = path => {
+    const f = (file.files || [])[0];
+    return f ? api(path, { method: 'POST', headers: { 'content-type': 'application/zip' }, body: f }) : post(path, { url: url.value.trim() });
+  };
+  look.onclick = async () => {
+    seen.textContent = '';
+    let p;
+    try { p = await send('/plugins/inspect'); }
+    catch (e) { seen.append(el('div', 'pfail', String(e.message))); return; }
+    seen.append(pluginFacts(p));
+    const list = (title, items) => {
+      const row = el('div', 'kv');
+      row.append(el('div', 'k', title), el('div', 'v', items.length ? items.join(', ') : 'nothing'));
+      seen.append(row);
+    };
+    list('Tools', p.tools || []);
+    list('Asks you for', (p.config || []).map(c => settingName(c) + (c.required ? ' (required)' : '')));
+    if (p.failure) return;
+    const go = el('button', 'btn primary pgo', `Install ${p.name} ${p.version}`);
+    go.onclick = async () => {
+      try { await send('/plugins?sha256=' + p.sha256); toast({ title: 'Installed', body: p.name }); render(); }
+      catch (e) { toast({ title: 'Not installed', body: String(e.message) }); }
+    };
+    seen.append(go);
+  };
+  return box;
+}
+
+// What each ? on the Plugins screen says: the things its labels cannot.
 const TOOL_TIPS = {
   sandbox: 'Landlock, a Linux kernel feature, limits what each tool program can touch. Every list here is an allow-list: anything not named is refused by the kernel, whatever the tool tries. Built-in tools run inside the agent and are not sandboxed.',
   readWrite: 'The only places a tool can change anything.',
@@ -2773,7 +2909,9 @@ function toolCard(t) {
   const s = el('summary', 'tsum');
   s.append(name, meta, el('div', 'tdesc', t.description));
   d.append(s, modelSees(t, props));
-  d.append(t.builtin ? el('div', 'builtinnote', 'Runs inside the agent: no program, no sandbox, and no manifest file.') : agentUses(a));
+  d.append(t.builtin ? el('div', 'builtinnote', 'Runs inside the agent: no program, no sandbox, and no manifest file.')
+    : t.bundle ? el('div', 'builtinnote', 'Served by its bundle’s server, started in the sandbox for each call. What it may read and how long it may take are the bundle’s.')
+    : agentUses(a));
   d.append(toolJSON(t));
   return d;
 }
@@ -2854,7 +2992,7 @@ function toolJSON(t) {
     btns.append(b);
     box.append(panel);
   };
-  if (!t.builtin) {
+  if (!t.builtin && !t.bundle) {
     const std = JSON.stringify({ name: t.name, description: t.description, parameters: t.parameters }, null, 2);
     const pre = el('pre', 'json');
     pre.append(el('span', 'std', std.slice(0, -2) + ',\n'),

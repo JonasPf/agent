@@ -72,7 +72,7 @@ moves the file with it.
 | `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, `skills/`, `personas/`, `plugins/`, and `.env` beneath it. The one directory a deployment mounts. |
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. The skills here are read-only; the ones you write live under `AGENT_STATE`. |
 | `AGENT_READ_PATHS` | none | Extra directories a tool may **read**, `:`-separated. A tool otherwise reads only the runtime, the tool directory, and its own session's working directory, and writes only the latter. It only adds; nothing here removes a boundary. |
-| `AGENT_TOOL_PORTS` | none | Extra TCP ports a tool may **connect** to, beyond 22, 53, 80, 443, 3000, 3306, 4000, 5000, 5173, 5432, 6379, 8000, 8080, 8443, 8888, 9418, and 27017. The operator's own port is never added: a tool that could reach it could create a conversation holding a credential. The Tools screen shows what is in force. |
+| `AGENT_TOOL_PORTS` | none | Extra TCP ports a tool may **connect** to, beyond 22, 53, 80, 443, 3000, 3306, 4000, 5000, 5173, 5432, 6379, 8000, 8080, 8443, 8888, 9418, and 27017. The operator's own port is never added: a tool that could reach it could create a conversation holding a credential. The Plugins screen shows what is in force. |
 
 That is the whole list. There were eighteen: seven paths that only ever said
 where two roots were, four numbers nothing ever set — two of them defaults for a

@@ -453,9 +453,9 @@ restricted &mdash; a tool may start a server, it may not reach the operator's.</
 
 <p>The operator listens on 7770 by default, which nothing in that list commonly uses, so 8080 stays free
 for the development servers tools start. An operator who moves onto a listed port takes that port from
-tools, and the Tools screen says so. Network rules need Landlock version 4, in Linux 6.7 and later; on an
+tools, and the Plugins screen says so. Network rules need Landlock version 4, in Linux 6.7 and later; on an
 older kernel files stay confined, the network is not, and that is said at startup, in
-<code>/status</code>, and on the Tools screen.</p>
+<code>/status</code>, and on the Plugins screen.</p>
 
 <p><strong>A tool has no way to reach the agent.</strong> The agent listens on one port, the
 operator's, and a tool is refused it. There was a second listener for tools; what it offered
@@ -480,7 +480,7 @@ operator's port there.</p>
 <li>When nothing is enforcing, the system says so at startup, in <code>/status</code>, and in the interface.</li>
 <li>A confined tool can open TCP connections to the listed ports, and the ports named in <code>AGENT_TOOL_PORTS</code>, and is refused the operator's port and every port nobody named by the operating system rather than by its own good manners.</li>
 <li>The operator's default port is not one tools commonly use; an operator port among the tools' ports is taken from them, and that is said.</li>
-<li>Where the kernel cannot restrict the network, the system says so at startup, in <code>/status</code>, and on the Tools screen, and files stay confined.</li>
+<li>Where the kernel cannot restrict the network, the system says so at startup, in <code>/status</code>, and on the Plugins screen, and files stay confined.</li>
 <li>The agent listens nowhere for its tools: a tool is given no address for the agent and no token, and the policy holds the named ports and not one more.</li>
 <li>The agent's own tools &mdash; <code>schedule</code>, <code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, <code>packages</code>, <code>ask_operator</code> &mdash; run inside the agent, for the calling conversation only: a job is made, edited, or deleted only in it, and only its skills are read.</li>
 <li>Nothing recovers automatically from a tool that damages the system; repair is manual, and the specification says so rather than implying otherwise.</li>

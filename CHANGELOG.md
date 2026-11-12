@@ -6,7 +6,13 @@
   bundle is sent as a file or named by an https address. The agent first says
   what it offers and asks for, and installs it only when asked again for that
   same file. What a bundle asks for, such as a search key, is set the same way
-  and never shown again. There is no screen for this yet; that comes next.
+  and never shown again.
+- **Tools is now Plugins, and bundles are managed there.** The screen lists
+  each bundle with the tools it brings, then what is built in. Install a
+  bundle from a file or an https address: the screen shows what it brings and
+  asks for before anything is installed. A bundle's settings, such as a search
+  key, are typed on its card and never shown again. A bundle you installed has
+  a Remove button.
 - **A skill can be installed from a zip** of its folder, sent as a file or
   fetched from an https address.
 - **Reloading tools drops what is gone.** A tool whose folder or bundle was
