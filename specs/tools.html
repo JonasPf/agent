@@ -328,6 +328,42 @@ capability. That is the part of the job that needs the conversation.</p>
 </ul>
 </div>
 
+<h2>Pages</h2>
+
+<p>A bundle's tool can bring a page, as an MCP App (<a href="adrs.html#adr-090">ADR-090</a>). The
+tool's definition names it under <code>_meta.ui.resourceUri</code>, a <code>ui://</code> address its
+server answers with <code>resources/read</code>. The agent tells every server it takes such pages.
+When the model calls the tool, its result gets an Open button in the conversation, and the page
+opens on a screen of its own.</p>
+
+<p>The page runs in a box: a frame with no origin, under a policy that loads nothing from anywhere
+else, so it cannot reach the network or the agent's API. A bundle may say which domains its page
+would like; none is granted. Everything a page does, it asks the interface for in a message, and
+there are two things it can cause. It can call a tool of its own bundle, which runs in the
+conversation's directory like any call and is written on the transcript as an event the model is
+not sent. And it can send the conversation a message in words, which arrives as the operator's and
+is said on the page's screen. It cannot open a link, change what the model is sent without a
+message, or read another resource.</p>
+
+<p>The page is handed the call that opened it once it says it is ready: what the tool was called
+with, and the tool's whole result. The model is sent the result's text; anything else in it,
+<code>structuredContent</code> included, is the page's alone. Under
+<code>_meta.ui.visibility</code> a tool says who may call it: the model, a page, or by default
+both. A tool that is only a page's is not sent to the model, and a tool that is only the model's
+is refused to a page.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A tool that only a page may call is not sent to the model.</li>
+<li>The result of a tool with a page is kept whole for the page, and the model is sent its text only.</li>
+<li>A page is told nothing until it says it is ready, then what its tool was called with and the whole result, once.</li>
+<li>A page calls the tools of its own bundle that allow it, in its conversation's directory, and each call is on the transcript; a tool for the model only, another bundle's tool, and a built-in are refused.</li>
+<li>A page in a real browser cannot reach the agent or the network, and what it sends reaches the conversation as a message, which its screen says.</li>
+<li>What this host does not do for a page is refused by name, and a message that is not a request is ignored.</li>
+</ul>
+</div>
+
 <h2>The one panel</h2>
 
 <p>A tool used to be able to ship a screen of its own, a script the interface loaded from the tool's

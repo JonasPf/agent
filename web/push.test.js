@@ -111,7 +111,7 @@ function load({ permission = 'default', has = null, browser = 'push', devices = 
     ctx.PushManager = function () {};
   }
   vm.createContext(ctx);
-  for (const f of ['markdown.js', 'transcript.js', 'notify.js', 'models.js', 'app.js']) {
+  for (const f of ['markdown.js', 'transcript.js', 'notify.js', 'models.js', 'apphost.js', 'app.js']) {
     let src = fs.readFileSync(path.join(WEB, f), 'utf8');
     if (f === 'app.js') src = src.replace(/^boot\(\);$/m, '');
     vm.runInContext(src, ctx, { filename: f });

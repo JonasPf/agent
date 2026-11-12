@@ -100,6 +100,7 @@ function route() {
   // that saved — can go back to it rather than push a second copy of it.
   state.from = state.here || '';
   state.here = '#' + h;
+  dropAppListener();
   state.view = name;
   state.arg = arg;
   state.arg2 = arg2;
@@ -439,7 +440,7 @@ function renderSideFoot() {
 // A transcript is read in a column; a list of jobs or files is read across the
 // room a laptop actually has. The Plugins screen is read in a column too: it is
 // mostly explanation, one tool under another.
-const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel'];
+const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel', 'app'];
 
 // A screen is drawn from requests that answer in their own time, so two screens
 // asked for in quick succession can answer in the wrong order. Each draw keeps
@@ -491,6 +492,7 @@ function draw(v) {
     case 'files': return viewFiles(v);
     case 'new': return viewNew(v);
     case 'toolpanel': return viewToolPanel(v);
+    case 'app': return viewApp(v);
     default: return viewSessions(v);
   }
 }
@@ -1245,7 +1247,9 @@ function renderEntry(e, opts) {
     n.append(head, pre);
     // A tool that opens a screen says so with a link to it. It stays in sight
     // when the result is folded, and whether or not the agent repeats it.
-    const screen = !failed && panelLink(body);
+    // So does a tool whose bundle gives its result a page (ADR-090): the page
+    // opens from here, in the conversation the call was made in.
+    const screen = !failed && (panelLink(body) || (e.tool_app && o.revert ? '#app/' + state.arg + '/' + e.seq : ''));
     if (screen) {
       const open = el('a', 'btn', 'Open');
       open.href = screen;
@@ -2207,6 +2211,59 @@ async function viewToolPanel(v) {
   }
 }
 
+// ---------- a bundle's page ----------
+
+// appListener is the one listener for the page in the box, taken down when
+// another screen is drawn so a page left behind is heard by nobody.
+let appListener = null;
+function dropAppListener() {
+  if (appListener) window.removeEventListener('message', appListener);
+  appListener = null;
+}
+
+// viewApp shows the page a bundle's tool brought (ADR-090), in a box with no
+// network and no origin. What the page asks for goes through appHost, and
+// what it sends to the conversation is said on this screen.
+async function viewApp(v) {
+  const gen = drawing;
+  const sid = state.arg, seq = state.arg2;
+  setHeader('Page', true);
+  let app;
+  try {
+    app = await api('/sessions/' + sid + '/apps/' + seq);
+  } catch (e) {
+    if (stale(gen)) return;
+    v.append(el('div', 'empty', 'This page could not be opened: ' + e.message));
+    return;
+  }
+  if (stale(gen)) return;
+  setHeader(app.tool.name, true);
+  const note = el('div', 'app-note');
+  note.append('A page from ' + app.bundle + ', in a box. It cannot reach the network or this agent. It can call its own bundle’s tools and send a message to ');
+  const back = el('a', null, 'this conversation');
+  back.href = '#session/' + sid;
+  note.append(back, '.');
+  const sent = el('div', 'app-sent');
+  const frame = el('iframe', 'app-frame');
+  frame.setAttribute('sandbox', 'allow-scripts');
+  const host = appHost({
+    app,
+    version: state.status && state.status.version,
+    theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+    send: m => { if (frame.contentWindow) frame.contentWindow.postMessage(m, '*'); },
+    callTool: (name, args) => post('/sessions/' + sid + '/apps/' + seq + '/call', { name, arguments: args }),
+    sendMessage: async text => {
+      await post('/sessions/' + sid + '/messages', { text });
+      sent.append(el('div', null, 'The page sent: ' + text));
+    },
+  });
+  dropAppListener();
+  appListener = e => { if (e.source === frame.contentWindow) host.receive(e.data); };
+  window.addEventListener('message', appListener);
+  frame.srcdoc = appFrameDoc(app.html);
+  v.append(note, frame, sent);
+}
+
 async function viewPanels(v) {
   const gen = drawing;
   setHeader('Panels', true);
@@ -2898,6 +2955,8 @@ function toolCard(t) {
   const name = el('div', 'tname');
   name.append(el('span', 'n', t.name));
   if (t.builtin) name.append(el('span', 'tchip builtin', 'built in'));
+  if (t.app) name.append(el('span', 'tchip', 'opens a page'));
+  if (t.page_only) name.append(el('span', 'tchip', 'for its page only'));
   if ((a.reads || []).length) name.append(el('span', 'tchip reads', 'reads ' + a.reads.join(' ')));
   if (bare.length) name.append(el('span', 'tchip warn', `${bare.length} parameter${bare.length > 1 ? 's' : ''} undescribed`));
   const meta = el('div', 'meta', a.timeout_seconds ? a.timeout_seconds + ' s' : '');

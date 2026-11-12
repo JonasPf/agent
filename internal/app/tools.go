@@ -27,6 +27,9 @@ type Tool struct {
 	// bundle is the MCP bundle whose server offers this tool, or nil for a
 	// builtin (ADR-085).
 	bundle *bundle
+	// app is the page the tool's result opens and who may call the tool
+	// (ADR-090). A builtin has no page, and is the model's to call.
+	app toolApp
 }
 
 // ToolAgent is what a bundle's manifest says under _meta for this agent:
@@ -146,6 +149,10 @@ func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 func (r *Registry) SchemasFor(sess *Session) []ToolSchema {
 	out := []ToolSchema{}
 	for _, t := range r.All() {
+		// A tool that is only a page's to call is not the model's to know of.
+		if !t.Builtin && !t.app.forModel {
+			continue
+		}
 		if sess != nil && !sess.toolEnabled(t.Name) {
 			continue
 		}
@@ -166,6 +173,9 @@ type toolResult struct {
 	Content string `json:"content,omitempty"`
 	Error   string `json:"error,omitempty"`
 	stderr  string
+	// app is the result as the bundle's server answered it, and page the same
+	// when the tool has a page to hand it to.
+	app, page json.RawMessage
 }
 
 func errResult(format string, a ...any) toolResult {

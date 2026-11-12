@@ -139,7 +139,7 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 			results = append(results, result)
 			body, _ := json.Marshal(result)
 			emit(Entry{Type: "message", Role: "tool", ToolCallID: c.ID, ToolName: c.Name,
-				ToolResult: body, Stderr: result.stderr, JobID: opts.JobID})
+				ToolResult: body, ToolApp: result.page, Stderr: result.stderr, JobID: opts.JobID})
 			msgs = append(msgs, ChatMessage{Role: "tool", ToolCallID: c.ID, Name: c.Name,
 				Content: string(body)})
 		}

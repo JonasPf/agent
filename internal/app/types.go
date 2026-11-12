@@ -15,8 +15,12 @@ type Entry struct {
 	ToolCallID string          `json:"tool_call_id,omitempty"`
 	ToolName   string          `json:"tool_name,omitempty"`
 	ToolResult json.RawMessage `json:"tool_result,omitempty"`
-	Stderr     string          `json:"stderr,omitempty"`
-	JobID      string          `json:"job_id,omitempty"`
+	// ToolApp is the whole result of a tool whose bundle gives it a page
+	// (ADR-090), as its server answered it. It is for the page: the model is
+	// sent ToolResult, which holds the result's text.
+	ToolApp json.RawMessage `json:"tool_app,omitempty"`
+	Stderr  string          `json:"stderr,omitempty"`
+	JobID   string          `json:"job_id,omitempty"`
 	// DueAt is when a wake was scheduled for, which is not when it happened. A
 	// host that sleeps takes the scheduler with it, and a reminder delivered two
 	// hours late reads as current unless it says otherwise.

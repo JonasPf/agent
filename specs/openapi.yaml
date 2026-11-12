@@ -338,6 +338,75 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/Error"}
 
+  /sessions/{id}/apps/{seq}:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+      - name: seq
+        in: path
+        required: true
+        schema: {type: integer}
+        description: The sequence number of the tool result that opened the page.
+    get:
+      tags: [sessions]
+      summary: What a bundle's page is opened with (ADR-090).
+      description: >-
+        The page, read from its bundle's server now, and the call that opened
+        it: the tool, what it was called with, and its whole result.
+      responses:
+        "200":
+          description: The page and its call.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  html: {type: string}
+                  bundle: {type: string, description: "The bundle's name and version."}
+                  tool:
+                    type: object
+                    properties:
+                      name: {type: string}
+                      description: {type: string}
+                      inputSchema: {type: object}
+                  arguments: {type: object}
+                  result: {type: object, description: "The call's result as the server answered it: content, structuredContent, isError."}
+        "404": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
+
+  /sessions/{id}/apps/{seq}/call:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+      - name: seq
+        in: path
+        required: true
+        schema: {type: integer}
+    post:
+      tags: [sessions]
+      summary: Call a tool for a bundle's page.
+      description: >-
+        The tool is one the page's own bundle offers and allows a page to
+        call; any other is refused with 403. It runs in the conversation's
+        directory, and the call is written on the transcript as an event the
+        model is not sent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                arguments: {type: object}
+      responses:
+        "200":
+          description: The result as the bundle's server answered it.
+          content:
+            application/json:
+              schema: {type: object}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+
   /sessions/{id}/files:
     parameters:
       - $ref: "#/components/parameters/SessionID"
@@ -1332,6 +1401,7 @@ components:
         tool_call_id: {type: string}
         tool_name: {type: string}
         tool_result: {type: object, description: "The tool's answer: ok, content, error."}
+        tool_app: {type: object, description: "For a tool whose bundle gives it a page: its whole result, which the page is handed and the model is not sent."}
         stderr: {type: string}
         job_id: {type: string, description: Set when a job's wake produced the entry.}
         due_at: {type: string, format: date-time}
@@ -1490,6 +1560,8 @@ components:
             timeout_seconds: {type: integer}
             reads: {type: array, items: {type: string}, description: Paths this tool may read beyond the sandbox every tool gets.}
         builtin: {type: boolean}
+        app: {type: boolean, description: "Its result opens a page its bundle brings."}
+        page_only: {type: boolean, description: "Only a page may call it; the model is not sent it."}
         loaded_at: {type: string, format: date-time}
         enabled: {type: boolean}
 
