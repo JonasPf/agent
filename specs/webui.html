@@ -33,7 +33,7 @@ twice. Below 900&nbsp;pixels the rail is a drawer over the pane, opened from the
 going anywhere; at or above it the rail is a column of the layout and the pane loses its back button,
 because the rail is the way back.</p>
 
-<p>The rail links the panels used every day &mdash; Jobs, Tools, Skills &mdash; and More, which leads to
+<p>The rail links the panels used every day &mdash; Jobs, Plugins, Skills &mdash; and More, which leads to
 the rest. Personas are chosen when a conversation starts and written rarely, so they are behind More.</p>
 
 <p>Every screen has an address of its own, and reaching a screen changes it. A skill or persona being
@@ -65,7 +65,7 @@ middle.</p>
 <li>The rail names every conversation, newest activity first, marks the one being read, and carries its unread count. A conversation is kept or deleted; nothing sets one apart as archived.</li>
 <li>The rail states the credit remaining and whether tools are sandboxed, without opening a screen to ask.</li>
 <li>The page's first request on coming back is answered without waiting on OpenRouter; the credit shown is the last figure the agent heard, and the rail updates when a fresher one arrives.</li>
-<li>The rail links Jobs, Tools, Skills, and More; personas are reached from More.</li>
+<li>The rail links Jobs, Plugins, Skills, and More; personas are reached from More.</li>
 <li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
 <li>An address naming a conversation that no longer exists opens a screen saying so, under a header of its own that offers nothing acting on another conversation; a screen whose answers are refused for any other reason says that instead of staying blank.</li>
 <li>Saving an edit to a skill or persona returns to it, and saving a new one or deleting one returns to the list, in each case without adding the screen returned to to the history a second time.</li>
@@ -467,9 +467,16 @@ its own instead.</p>
 
 <p>Jobs, tools, skills, and personas each have a management panel. More also leads to <a href="#metrics">Metrics</a>.</p>
 
-<p>The Tools panel answers what a tool is to the model and what it is to the agent: how a call works,
-the sandbox every tool program runs in, and for each tool, what the model is sent and what the agent
-uses to run it. It is drawn in <a href="mock-tools.html">the Tools mock</a>.</p>
+<p>The Plugins panel answers what a tool is to the model and what it is to the agent: how a call
+works, the sandbox every tool program runs in, and for each tool, what the model is sent and what the
+agent uses to run it. It is drawn in <a href="mock-tools.html">the Plugins mock</a>.</p>
+
+<p>It lists bundles first (<a href="adrs.html#adr-087">ADR-087</a>), since a bundle is what is
+installed and what is allowed things: each with its version, whether it ships with the agent or was
+installed, what it reads beyond the sandbox, its timeout, what it asks the operator for, and the
+tools it brings. What is built in follows, and then any tool that still has a program of its own.
+A bundle is installed from here in two steps: the panel shows what a file or an address holds, and
+installs it only when asked again.</p>
 
 <p>Skills and personas are the same kind of thing on disk &mdash; a Markdown file with frontmatter that
 the operator writes &mdash; so they are listed, written, and deleted through one screen, and only the
@@ -499,7 +506,12 @@ a tab to write or preview, with files added, renamed, and removed there. It is d
 <li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
-<li>The Tools panel shows the sandbox once, from the policy it applies to every tool program: the paths a tool may read and write, the device files, and the ports it may connect to, grouped by what they are for, and that it can never reach the operator's port. It says when either half is not enforced.</li>
+<li>The Plugins panel lists each bundle with its version, whether it ships with the agent or was installed, what it reads beyond the sandbox, its timeout, and the tools it brings; what is built in, and a tool with a program of its own, are listed apart from any bundle.</li>
+<li>A bundle that did not load says why on its own card, and is not listed again among the tools that failed. One that needs a value says which, and that its tools are not offered until it is set.</li>
+<li>What a bundle asks for is typed and saved on its card: a sensitive value is typed hidden, the panel says only whether each is set, an empty box leaves a value as it is, and a set value can be cleared.</li>
+<li>Installing a bundle, from a file or an <code>https</code> address, first shows what it is, the tools it brings, what it asks for, what it reads and its timeout, and installs nothing; Install then sends that same archive with the sum the inspection answered. A bundle that could not be installed says why and offers no Install.</li>
+<li>A bundle the operator installed can be removed, after asking; one that ships with the agent offers no Remove.</li>
+<li>The Plugins panel shows the sandbox once, from the policy it applies to every tool program: the paths a tool may read and write, the device files, and the ports it may connect to, grouped by what they are for, and that it can never reach the operator's port. It says when either half is not enforced.</li>
 <li>Each tool shows what the model is sent apart from what only the agent reads (<a href="adrs.html#adr-067">ADR-067</a>). The first is its description and each parameter, with its type, whether it is required, and its own description. The second is its timeout, its table prefix, the names of the variables it is given, and the paths it may read beyond the sandbox.</li>
 <li>A parameter without a description is flagged, on the parameter and on the tool's summary line, because the model sees only its type.</li>
 <li>Each tool shows its manifest, with the <code>agent</code> block set apart, and the entry the model is sent, exactly as sent. A builtin says it runs inside the agent, with no sandbox and no manifest.</li>
@@ -553,7 +565,7 @@ done, and its wakes that acted, were skipped, and failed. A row nothing used is 
 too long for its row is cut short rather than wrapped. Money is to the cent.</p>
 
 <p>Hovering over a bar, or tapping it, gives its numbers in a sentence. A <strong>?</strong> beside a term
-explains it, as on the Tools screen: what a conversation counts as, what failed means, what offered
+explains it, as on the Plugins screen: what a conversation counts as, what failed means, what offered
 means, what each kind of wake is, and what a job's check runs. Where the numbers come from, and that a
 deleted conversation takes its numbers with it, is the <strong>?</strong> beside the window.</p>
 
