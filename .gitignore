@@ -9,7 +9,7 @@ workspace/
 .backups/
 
 # The bundles plugins.lock names, fetched by `task plugins:fetch`
-plugins/
+/plugins/
 
 # Operator's notes on this deployment: kept on disk, not published.
 TODO.md
