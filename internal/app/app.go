@@ -194,6 +194,11 @@ type App struct {
 	// pkgs installs the programs a conversation asks for from Nix (ADR-072);
 	// nil where there is no Nix, which says so rather than installing.
 	pkgs *Packages
+	// pluginMu is held while a bundle is installed, configured or removed, so
+	// that two of those do not interleave. fetch is what an archive named by
+	// address is fetched with; nil is the default.
+	pluginMu sync.Mutex
+	fetch    *http.Client
 
 	// memos keeps the session list's costly figures between reads.
 	memos listMemos

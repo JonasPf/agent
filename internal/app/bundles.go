@@ -35,6 +35,7 @@ type bundleManifest struct {
 	ManifestVersion string `json:"manifest_version"`
 	Name            string `json:"name"`
 	Version         string `json:"version"`
+	Description     string `json:"description"`
 	Server          struct {
 		Type      string `json:"type"`
 		MCPConfig struct {
@@ -47,7 +48,12 @@ type bundleManifest struct {
 		Platforms []string `json:"platforms"`
 	} `json:"compatibility"`
 	UserConfig map[string]struct {
-		Required bool `json:"required"`
+		Type        string `json:"type"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Required    bool   `json:"required"`
+		Sensitive   bool   `json:"sensitive"`
+		Default     any    `json:"default"`
 	} `json:"user_config"`
 	Meta map[string]json.RawMessage `json:"_meta"`
 }
@@ -62,65 +68,105 @@ type bundleMeta struct {
 // bundle is one loaded bundle: where it is and how its server is started.
 type bundle struct {
 	Name, Version, Dir string
+	Description        string
 	command            string
 	args, env          []string
 	reads              []string
 	timeout            int
+	// config is what the manifest asks the operator for, and needs the keys
+	// it cannot run without and has no value for.
+	config []PluginSetting
+	needs  []string
 }
 
 func (b *bundle) label() string { return b.Name + " " + b.Version }
 
-// readBundle reads the bundle unpacked at dir and refuses one that could not
-// run here, saying why.
-func readBundle(dir string) (*bundle, error) {
+// readBundle reads the bundle unpacked at dir, filling what its manifest asks
+// the operator for from what config holds under its name, and refuses one that could not run here,
+// saying why. Whatever it could read of the bundle it answers either way, so
+// that one that is refused can still be named.
+func readBundle(dir string, config map[string]map[string]string) (*bundle, error) {
+	abs := absOr(dir)
+	b := &bundle{Name: filepath.Base(abs), Dir: abs, timeout: defaultBundleTimeout}
 	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
 	if err != nil {
-		return nil, fmt.Errorf("manifest.json: %w", err)
+		return b, fmt.Errorf("manifest.json: %w", err)
 	}
 	var m bundleManifest
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, fmt.Errorf("manifest.json: %w", err)
+		return b, fmt.Errorf("manifest.json: %w", err)
 	}
 	if m.ManifestVersion == "" {
-		return nil, fmt.Errorf("manifest.json names no manifest_version, so it is not an MCP bundle")
+		return b, fmt.Errorf("manifest.json names no manifest_version, so it is not an MCP bundle")
 	}
 	if err := validAuthoredName(m.Name); err != nil {
-		return nil, fmt.Errorf("manifest.json: %w", err)
+		return b, fmt.Errorf("manifest.json: %w", err)
 	}
+	b.Name, b.Version, b.Description = m.Name, m.Version, m.Description
 	if m.Version == "" {
-		return nil, fmt.Errorf("manifest.json names no version")
+		return b, fmt.Errorf("manifest.json names no version")
 	}
 	// One executable needs nothing from the image. A node or python server
 	// needs a runtime inside the sandbox, and which one is a promise the image
 	// does not make.
 	if m.Server.Type != "binary" {
-		return nil, fmt.Errorf("server.type is %q; only a binary server runs here", m.Server.Type)
+		return b, fmt.Errorf("server.type is %q; only a binary server runs here", m.Server.Type)
 	}
 	if p := m.Compatibility.Platforms; len(p) > 0 && !slices.Contains(p, "linux") {
-		return nil, fmt.Errorf("it runs on %s, and this is linux", strings.Join(p, ", "))
+		return b, fmt.Errorf("it runs on %s, and this is linux", strings.Join(p, ", "))
 	}
-	// What a bundle asks the operator for is asked on the screen that installs
-	// it. Until there is one, a bundle that cannot run without an answer is
-	// refused rather than started without it.
+	values := config[m.Name]
+	// What the manifest asks the operator for: the value that was set, else
+	// the manifest's own default, else nothing. A key it cannot run without
+	// and has nothing for is named, and the bundle offers no tools until it
+	// is set.
+	filled := map[string]string{}
 	for key, c := range m.UserConfig {
-		if c.Required {
-			return nil, fmt.Errorf("it needs a value for %q, and bundles cannot be configured yet", key)
+		v, set := values[key]
+		b.config = append(b.config, PluginSetting{Key: key, Type: c.Type, Title: c.Title,
+			Description: c.Description, Required: c.Required, Sensitive: c.Sensitive, Set: set})
+		if !set {
+			switch d := c.Default.(type) {
+			case string:
+				v = d
+			case float64, bool:
+				v = fmt.Sprint(d)
+			}
+			if c.Required && v == "" {
+				b.needs = append(b.needs, key)
+			}
 		}
+		filled["user_config."+key] = v
 	}
-	abs := absOr(dir)
+	slices.SortFunc(b.config, func(x, y PluginSetting) int { return strings.Compare(x.Key, y.Key) })
+	slices.Sort(b.needs)
+	filled["__dirname"] = abs
+	// fill puts the values in. What it has put in is not read again, so a
+	// value that looks like a variable is only a value.
 	fill := func(s string) (string, error) {
-		s = strings.ReplaceAll(s, "${__dirname}", abs)
-		if i := strings.Index(s, "${"); i >= 0 {
-			return "", fmt.Errorf("mcp_config uses %s, which is not filled in here", s[i:])
+		var out strings.Builder
+		for {
+			i := strings.Index(s, "${")
+			if i < 0 {
+				return out.String() + s, nil
+			}
+			j := strings.Index(s[i:], "}")
+			if j < 0 {
+				return "", fmt.Errorf("mcp_config has an unclosed %s", s[i:])
+			}
+			v, ok := filled[s[i+2:i+j]]
+			if !ok {
+				return "", fmt.Errorf("mcp_config uses %s, which is not filled in here", s[i:i+j+1])
+			}
+			out.WriteString(s[:i] + v)
+			s = s[i+j+1:]
 		}
-		return s, nil
 	}
-	b := &bundle{Name: m.Name, Version: m.Version, Dir: abs, timeout: defaultBundleTimeout}
 	if b.command, err = fill(m.Server.MCPConfig.Command); err != nil {
-		return nil, err
+		return b, err
 	}
 	if b.command == "" {
-		return nil, fmt.Errorf("server.mcp_config names no command")
+		return b, fmt.Errorf("server.mcp_config names no command")
 	}
 	if !filepath.IsAbs(b.command) {
 		b.command = filepath.Join(abs, b.command)
@@ -128,16 +174,16 @@ func readBundle(dir string) (*bundle, error) {
 	// The server is the bundle's own: a command elsewhere would run whatever
 	// is at that path with the bundle's name on it.
 	if rel, err := filepath.Rel(abs, filepath.Clean(b.command)); err != nil || !filepath.IsLocal(rel) {
-		return nil, fmt.Errorf("its command is not inside the bundle")
+		return b, fmt.Errorf("its command is not inside the bundle")
 	}
 	if st, err := os.Stat(b.command); err != nil {
-		return nil, fmt.Errorf("its command: %w", err)
+		return b, fmt.Errorf("its command: %w", err)
 	} else if st.IsDir() || st.Mode()&0o111 == 0 {
-		return nil, fmt.Errorf("its command is not an executable file")
+		return b, fmt.Errorf("its command is not an executable file")
 	}
 	for _, arg := range m.Server.MCPConfig.Args {
 		if arg, err = fill(arg); err != nil {
-			return nil, err
+			return b, err
 		}
 		b.args = append(b.args, arg)
 	}
@@ -149,7 +195,7 @@ func readBundle(dir string) (*bundle, error) {
 	for _, name := range names {
 		v, err := fill(m.Server.MCPConfig.Env[name])
 		if err != nil {
-			return nil, err
+			return b, err
 		}
 		// The model key is the agent's and no manifest is handed it; a name the
 		// agent sets for every program is the agent's to set.
@@ -161,7 +207,7 @@ func readBundle(dir string) (*bundle, error) {
 	if raw, ok := m.Meta[bundleMetaKey]; ok {
 		var meta bundleMeta
 		if err := json.Unmarshal(raw, &meta); err != nil {
-			return nil, fmt.Errorf("_meta.%s: %w", bundleMetaKey, err)
+			return b, fmt.Errorf("_meta.%s: %w", bundleMetaKey, err)
 		}
 		b.reads = meta.Reads
 		if meta.Timeout > 0 {
@@ -209,7 +255,8 @@ func (b *bundle) tools(a *App) ([]*Tool, error) {
 		return nil, err
 	}
 	defer os.RemoveAll(scratch)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(b.timeout)*time.Second)
+	// Saying what it has is not a call, and is not given a call's time.
+	ctx, cancel := context.WithTimeout(context.Background(), defaultBundleTimeout*time.Second)
 	defer cancel()
 	env := append(toolBaseEnv(), b.env...)
 	env = append(env, "TMPDIR="+scratch, "HOME="+scratch)
@@ -328,12 +375,71 @@ func bundleText(out *mcp.CallToolResult) string {
 	return strings.Join(parts, "\n")
 }
 
+// examine reads the bundle at dir and asks its server what it offers: what
+// the Plugins screen says of it, and the tools to offer if nothing is wrong.
+func (a *App) examine(dir string, config map[string]map[string]string) (Plugin, []*Tool) {
+	b, err := readBundle(dir, config)
+	p := Plugin{Name: b.Name, Version: b.Version, Description: b.Description, Tools: []string{},
+		Config: b.config, Needs: b.needs, Reads: b.reads, Timeout: b.timeout, dir: b.Dir}
+	if p.Config == nil {
+		p.Config = []PluginSetting{}
+	}
+	if p.Needs == nil {
+		p.Needs = []string{}
+	}
+	if p.Reads == nil {
+		p.Reads = []string{}
+	}
+	if err != nil {
+		p.Failure = err.Error()
+		return p, nil
+	}
+	tools, err := b.tools(a)
+	if err != nil {
+		p.Failure = err.Error()
+		return p, nil
+	}
+	for _, t := range tools {
+		p.Tools = append(p.Tools, t.Name)
+	}
+	return p, tools
+}
+
+// taken says why a bundle cannot join what is loaded, or nothing. The model
+// can only be told of one tool by a name, and the operator of one bundle.
+// replacing is an install: the installed bundle of the same name is the one
+// being replaced, and is not in its way.
+func (r *Registry) taken(p Plugin, tools []*Tool, replacing bool) string {
+	for _, have := range r.plugins {
+		if have.Name != p.Name {
+			continue
+		}
+		if have.Source == sourceImage && replacing {
+			return fmt.Sprintf("a bundle named %s ships with the agent, and is replaced with the agent", p.Name)
+		}
+		if !replacing {
+			return fmt.Sprintf("there is already a bundle named %s", p.Name)
+		}
+	}
+	for _, t := range tools {
+		if have := r.tools[t.Name]; have != nil && (have.bundle == nil || have.bundle.Name != p.Name) {
+			return fmt.Sprintf("there is already a tool named %s", t.Name)
+		}
+	}
+	return ""
+}
+
 // loadBundles reads every bundle in the registry's bundle directories and
 // registers its tools. The caller holds the registry's lock. A tool keeps the
 // first bundle that offered it: a second of the same name is refused, since
 // the model can only be told of one.
 func (r *Registry) loadBundles(app *App) []string {
 	var loaded []string
+	r.plugins = nil
+	if len(r.bundleDirs) == 0 {
+		return nil
+	}
+	values := app.pluginValues()
 	for _, root := range r.bundleDirs {
 		entries, err := os.ReadDir(root)
 		if err != nil {
@@ -346,27 +452,21 @@ func (r *Registry) loadBundles(app *App) []string {
 			if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 				continue
 			}
-			refuse := func(err error) {
-				r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: err.Error()})
+			p, tools := app.examine(filepath.Join(root, e.Name()), values)
+			p.Source = sourceImage
+			if root == app.cfg.UserPluginsDir {
+				p.Source = sourceInstalled
 			}
-			b, err := readBundle(filepath.Join(root, e.Name()))
-			if err != nil {
-				refuse(err)
-				continue
+			if p.Failure == "" {
+				p.Failure = r.taken(p, tools, false)
 			}
-			tools, err := b.tools(app)
-			if err != nil {
-				refuse(err)
-				continue
+			reason := p.Failure
+			if reason == "" && len(p.Needs) > 0 {
+				reason = "it needs a value for " + strings.Join(p.Needs, ", ") + ", set on the Plugins screen"
 			}
-			taken := ""
-			for _, t := range tools {
-				if have := r.tools[t.Name]; have != nil && (have.bundle == nil || have.bundle.Dir != b.Dir) {
-					taken = t.Name
-				}
-			}
-			if taken != "" {
-				refuse(fmt.Errorf("there is already a tool named %s", taken))
+			r.plugins = append(r.plugins, p)
+			if reason != "" {
+				r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: reason})
 				continue
 			}
 			for _, t := range tools {

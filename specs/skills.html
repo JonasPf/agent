@@ -159,6 +159,7 @@ operator reads it on the Skills screen before deciding.</p>
 <li>The interface sets whether a skill is on by default, and the choice survives a reload.</li>
 <li>A folder in a conversation's working directory holding <code>SKILL.md</code> is installed as a skill through the API, named by its front matter, with every other file in the folder as the skill's.</li>
 <li>Installing over a skill the operator already has is refused unless the request says to replace it, and the refusal names that skill; a name that ships is refused either way.</li>
+<li>A skill is installed from a zip archive of its folder, sent as the request's body or fetched from an <code>https</code> address, by the rules a drafted one is; <code>SKILL.md</code> is at the top of the archive or in the one folder it holds.</li>
 <li>A folder that would be refused as a save &mdash; no front matter, a description over one line, a file that is not text &mdash; is refused as an install, says why, and nothing is stored.</li>
 <li>A tool can read and run the files of a skill folder its conversation has, cannot write them, and cannot read a skill its conversation does not have.</li>
 </ul>

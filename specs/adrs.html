@@ -2741,6 +2741,35 @@ conversations, or call a model; if one ever must, the protocol's own means for a
 host is the place to add it, not a side door.</p>
 </div>
 
+<div class="adr" id="adr-087">
+<div class="meta">ADR-087 · accepted · builds on <a href="#adr-085">ADR-085</a> and <a href="#adr-053">ADR-053</a></div>
+<h3>The operator installs and configures bundles, in two steps, and nothing else can</h3>
+<h4>Context</h4>
+<p>A bundle unpacked into the state directory by hand is loaded (<a href="#adr-085">ADR-085</a>),
+but there was no way to put one there from the interface, and a bundle that asks the operator for a
+value &mdash; a search key &mdash; could not be given it. An install is code the agent will run on
+the operator's word, so the operator has to see what it is first; and the value is a credential,
+so it has to be somewhere no tool reads.</p>
+<h4>Decision</h4>
+<p>Bundles are installed, configured, and removed through the API, by the operator. Installing is
+two requests: one that unpacks the archive aside and says what it offers and asks for, and one that
+installs it only if it names the sha256 the first answered. The archive is the request's body or
+is fetched from an <code>https</code> address. It is unpacked into its own folder beside the others
+and moved into place whole. Values for <code>user_config</code> are kept in one file beside the
+data, mode 0600, and filled into the server's arguments and variables when the bundle is loaded; a
+response says whether a value is set and never what it is. A required value that is missing keeps
+the bundle's tools from being offered. A bundle the image ships can be configured but not replaced
+or removed. Skills install the same way from a zip of their folder, by the rules of
+<a href="#adr-071">ADR-071</a>.</p>
+<h4>Consequences</h4>
+<p>There is no tool that installs, so the agent cannot change what it can do; the folder bundles
+live in stays outside every sandbox. The agent the operator talks to is still the one that was
+merged, plus what the operator added by hand on a screen. Zip is the one archive format. A value is
+held in the agent's memory and in each server's environment for the length of a call, as a tool's
+declared variable was. A reload now offers exactly what is on disk, since removing a bundle has to
+remove its tools.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

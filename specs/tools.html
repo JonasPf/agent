@@ -248,7 +248,7 @@ parseable output.</p>
 <li>A newly registered tool is not callable in a session already running, whose prompt was written without it.</li>
 <li>The session that asked for the reload records what was added, as a visible entry the model is not sent.</li>
 <li>A tool failing validation is not registered, and the reason is returned to the caller.</li>
-<li>A failed reload leaves previously loaded tools working.</li>
+<li>A reload offers what is on disk: a tool whose folder or bundle is gone, or which no longer passes validation, is no longer offered, and the others keep working.</li>
 <li>Reloading applies any new <code>schema.sql</code> exactly once per tool version.</li>
 </ul>
 </div>
@@ -273,10 +273,13 @@ error is an error result.</p>
 <p>Only what can run here is loaded. The server is one executable inside the bundle
 (<code>server.type</code> <code>binary</code>), for Linux. <code>${__dirname}</code> in its command,
 arguments, and variables is the bundle's folder; anything else in <code>${&hellip;}</code> is not
-filled in, and a bundle that needs it is refused. Under <code>_meta</code>, the key
-<code>io.github.jonaspf.agent</code> may give <code>reads</code> and <code>timeout_seconds</code>,
-which mean what they mean in a tool's own manifest; a call is otherwise bounded at thirty seconds. A
-bundle that requires a value from the operator is refused until there is a screen to give it on.</p>
+<code>${user_config.<em>key</em>}</code> is what the operator set for a key the manifest declares
+under <code>user_config</code>, else the manifest's default for it, else nothing. Anything else in
+<code>${&hellip;}</code> is not filled in, and a bundle that uses it is refused. Under
+<code>_meta</code>, the key <code>io.github.jonaspf.agent</code> may give <code>reads</code> and
+<code>timeout_seconds</code>, which mean what they mean in a tool's own manifest; a call is otherwise
+bounded at thirty seconds. A bundle that requires a value it has not been given is listed, and
+offers no tools until the value is set.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -284,7 +287,47 @@ bundle that requires a value from the operator is refused until there is a scree
 <li>A bundle's tools are the ones its server lists, described as the server describes them, and each names the bundle and version it came from.</li>
 <li>A bundle's tool called in a turn runs in the conversation's directory, and reaches nothing outside it: not another conversation's files, not the agent's settings, not the directory bundles are installed in.</li>
 <li>A tool that reports an error, or outlives its bundle's timeout, is an error result the model reads, never a failed turn; the next call works.</li>
-<li>A bundle that cannot run here &mdash; no manifest, a server that is not a binary, another platform, a command outside the bundle, a value it requires, a tool name already taken &mdash; is not loaded, and the Tools screen says why.</li>
+<li>A bundle that cannot run here &mdash; no manifest, a server that is not a binary, another platform, a command outside the bundle, a tool name already taken, a second bundle of the same name &mdash; is not loaded, and the Tools screen says why.</li>
+</ul>
+</div>
+
+<h2>Installing a bundle</h2>
+
+<p>The operator installs a bundle, and nothing else does (<a href="adrs.html#adr-087">ADR-087</a>):
+there is no tool for it, and the directory bundles are installed in is outside every path the
+sandbox makes writable. A bundle arrives as its <code>.mcpb</code> archive, sent as a request's body
+or named by an <code>https</code> address the agent fetches it from.</p>
+
+<p>An install is two requests. <code>POST /plugins/inspect</code> unpacks the archive aside, asks
+its server what it offers, and answers what <code>GET /plugins</code> would say of it &mdash; its
+tools, what it asks the operator for, the paths it would read, its timeout, and why it could not be
+installed if it could not &mdash; with the archive's sha256. It installs nothing. <code>POST
+/plugins?sha256=&hellip;</code> takes the same archive again and installs it only if it is the one
+that sum names, so what is installed is what was looked at. A bundle installed before under the
+same name is replaced, whole, and keeps what the operator told it. A bundle the image ships is not
+replaced this way: it changes when the agent does.</p>
+
+<p>An archive is unpacked into a folder of its own and can write nowhere else: a path that climbs
+or is absolute, a link, or a device refuses the whole archive. One that unpacks to more than
+300&nbsp;MB, or holds a file over 200&nbsp;MB, is refused. A file keeps whether it may be run and
+nothing else of its mode.</p>
+
+<p>What a bundle asks for under <code>user_config</code> is set with <code>PUT
+/plugins/{name}/config</code>, for a shipped bundle as for an installed one. The values are kept in
+<code>plugins.json</code> beside the data, readable by the agent alone: not in the database, which
+every tool is handed, and never in a response, which says only whether each is set.
+<code>DELETE /plugins/{name}</code> removes an installed bundle and what it was told.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A bundle is installed in two requests: the first says what it is and what it asks for and installs nothing, the second installs it only when it names the sha256 the first answered.</li>
+<li>A value a bundle asks for is set through the API and never served back; a key the bundle does not ask for is refused.</li>
+<li>A bundle that needs a value it does not have offers no tools; once the value is set its tools are offered, and its server is started with it.</li>
+<li>Installing a newer version replaces the older one and keeps its values; removing a bundle removes its tools and its values.</li>
+<li>A bundle the image ships is configured like any other and cannot be removed or replaced through the API; nor can a bundle be installed that offers a tool already there.</li>
+<li>An archive that would write outside its own folder, or is larger than a bundle may be, is refused, and a refused install leaves the version that was there.</li>
+<li>A bundle can be installed from an <code>https</code> address, which the agent fetches; any other address is refused.</li>
 </ul>
 </div>
 

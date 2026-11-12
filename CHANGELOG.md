@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-12
+
+- **Bundles can be installed, configured and removed through the API.** A
+  bundle is sent as a file or named by an https address. The agent first says
+  what it offers and asks for, and installs it only when asked again for that
+  same file. What a bundle asks for, such as a search key, is set the same way
+  and never shown again. There is no screen for this yet; that comes next.
+- **A skill can be installed from a zip** of its folder, sent as a file or
+  fetched from an https address.
+- **Reloading tools drops what is gone.** A tool whose folder or bundle was
+  removed used to stay offered until the agent restarted.
+
 ## 2026-11-11
 
 - **A tool can no longer reach the agent at all.** The agent kept a second,

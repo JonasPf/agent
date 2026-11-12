@@ -65,6 +65,12 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /tools/reload", a.hReload)
 	mux.HandleFunc("POST /tools/{name}/call", a.hCallTool)
 
+	mux.HandleFunc("GET /plugins", a.hPlugins)
+	mux.HandleFunc("POST /plugins", a.hInstallPlugin)
+	mux.HandleFunc("POST /plugins/inspect", a.hInspectPlugin)
+	mux.HandleFunc("PUT /plugins/{name}/config", a.hConfigurePlugin)
+	mux.HandleFunc("DELETE /plugins/{name}", a.hDeletePlugin)
+
 	mux.HandleFunc("GET /skills", a.hSkills)
 	mux.HandleFunc("POST /skills", a.hSaveSkill)
 	mux.HandleFunc("POST /skills/install", a.hInstallSkill)
