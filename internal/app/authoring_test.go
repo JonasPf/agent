@@ -240,11 +240,11 @@ func TestASkillMissingWhatItNeedsIsRefusedWithAReason(t *testing.T) {
 func TestTheOperatorsRootsAreOutsideEveryPathAToolCanWrite(t *testing.T) {
 	cfg := Config{
 		DataDir: filepath.Join("/srv/state", "data"), Workspace: filepath.Join("/srv/state", "workspace"),
-		ToolsDir: "/srv/tools", SkillsDir: "/srv/skills",
+		SkillsDir:     "/srv/skills",
 		UserSkillsDir: filepath.Join("/srv/state", "skills"),
 		PersonasDir:   filepath.Join("/srv/state", "personas"),
 	}
-	reach := NewSandbox(cfg).Reach("")
+	reach := NewSandbox(cfg).Reach()
 	for _, dir := range []string{cfg.UserSkillsDir, cfg.PersonasDir, cfg.SkillsDir} {
 		for _, w := range reach.ReadWrite {
 			if w == dir || strings.HasPrefix(dir, strings.TrimSuffix(w, "/")+"/") {

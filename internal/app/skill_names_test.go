@@ -1,9 +1,6 @@
 package app
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -63,23 +60,14 @@ func TestASkillOnDiskWithAnotherKindOfNameIsSkippedOutLoud(t *testing.T) {
 // starting with a letter."
 func TestEveryShippedToolIsNamedLikeAFunction(t *testing.T) {
 	named := regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
-	dirs, err := os.ReadDir(filepath.Join("..", "..", "tools"))
-	if err != nil {
-		t.Fatal(err)
+	a := newTestApp(t)
+	a.tools.bundleDirs = []string{shippedBundles(t)}
+	if _, failures := a.tools.Load(a); len(failures) > 0 {
+		t.Fatalf("shipped bundles did not load: %+v", failures)
 	}
-	for _, d := range dirs {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "tools", d.Name(), "manifest.json"))
-		if err != nil {
-			continue
-		}
-		var m struct {
-			Name string `json:"name"`
-		}
-		if err := json.Unmarshal(raw, &m); err != nil {
-			t.Fatalf("%s: %v", d.Name(), err)
-		}
-		if !named.MatchString(m.Name) {
-			t.Errorf("the tool %q is not named in lowercase words joined by underscores", m.Name)
+	for _, tl := range a.tools.All() {
+		if !named.MatchString(tl.Name) {
+			t.Errorf("the tool %q is not named in lowercase words joined by underscores", tl.Name)
 		}
 	}
 }

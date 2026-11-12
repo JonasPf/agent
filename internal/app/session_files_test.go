@@ -42,7 +42,7 @@ func catTool(t *testing.T, a *App, file string) {
 	t.Helper()
 	dir := t.TempDir()
 	writeTool(t, dir, "catter", "#!/bin/sh\nprintf '{\"ok\":true,\"content\":\"%s\"}' \"$(cat "+file+" 2>/dev/null)\"\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}
@@ -209,7 +209,7 @@ func TestAForkRunsWhatItsOriginInstalled(t *testing.T) {
 	writeTool(t, dir, "runner", "#!/bin/sh\n"+
 		"printf '{\"ok\":true,\"content\":\"%s / %s / %s\"}' "+
 		"\"$(./bin/hello 2>&1)\" \"$(./bin/relative 2>&1)\" \"$(./bin/absolute 2>&1)\"\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}
@@ -300,7 +300,7 @@ func TestSessionFilesNameTheirDirectories(t *testing.T) {
 	dir := t.TempDir()
 	writeTool(t, dir, "maker", "#!/bin/sh\nmkdir -p src/empty && printf hi > src/main.go && "+
 		"printf '{\"ok\":true,\"content\":\"made\"}'\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}

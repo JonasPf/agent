@@ -19,36 +19,40 @@
 <div class="wrap">
 
 <h1>Tools</h1>
-<p class="lede">A tool is a directory containing an executable and a manifest. Nothing more.</p>
+<p class="lede">A tool is either part of the agent or offered by an MCP server in a bundle. Nothing else.</p>
 
-<p>You write one, and the agent loads it. Because a tool is a directory on disk rather than compiled
-into the agent, adding one restarts nothing: the agent keeps running and picks the tool up on a
-reload.</p>
+<p>The agent itself holds only the tools that are its handle on itself. Every other tool comes from a
+bundle: an MCP server packaged as an MCP Bundle, living in its own repository, installed like a
+plugin (<a href="adrs.html#adr-085">ADR-085</a>, <a href="adrs.html#adr-088">ADR-088</a>). Adding one
+restarts nothing: the agent keeps running and picks it up on a reload.</p>
 
-<h2>Layout</h2>
+<h2>The two kinds</h2>
 
-<pre><code>tools/deploys/
-  manifest.json     required — identity, parameter schema, database prefix
-  main.go           required — the tool, in Go, with the agent's own discipline
-  main_test.go      required where there is logic to test — written first
-  run               required — the compiled executable, built from this directory
-  eval.json         required — the cases a real model is put through
-  schema.sql        optional — tables, applied on load</code></pre>
+<p><strong>Built in.</strong> <code>schedule</code>, <code>session_search</code>,
+<code>skill_read</code>, <code>call_model</code>, <code>packages</code>, and <code>ask_operator</code>
+reach what only the agent holds &mdash; its jobs, its transcripts, its skills, the model key, the
+package store, the operator &mdash; and run inside it, as <code>reload_tools</code> does
+(<a href="adrs.html#adr-086">ADR-086</a>). Each has a manifest and eval cases, compiled in from
+<code>internal/app/builtin/&lt;name&gt;/</code>. The manifest is exactly a function definition
+&mdash; <code>name</code>, <code>description</code>, <code>parameters</code> &mdash; which is what the
+model is sent.</p>
 
-<p>A tool that is the agent's handle on itself has no program. <code>schedule</code>,
-<code>session_search</code>, <code>skill_read</code>, <code>call_model</code>, <code>packages</code>, and
-<code>ask_operator</code> reach what only the agent holds &mdash; its jobs, its transcripts, its skills,
-the model key, the package store, the operator &mdash; and run inside it, as <code>reload_tools</code> does
-(<a href="adrs.html#adr-086">ADR-086</a>). Each still has a manifest and eval cases, compiled in from
-<code>internal/app/builtin/&lt;name&gt;/</code>: what the model is sent is a manifest's standard part
-either way.</p>
+<p><strong>From a bundle.</strong> <code>bash</code>, <code>read</code>, <code>write</code>,
+<code>edit</code>, <code>clock</code>, <code>web_fetch</code>, <code>web_search</code>, and
+<code>web_browse</code> come from six bundles released from
+<a href="https://github.com/JonasPf/agent-plugins">agent-plugins</a>. The image ships them: the file
+<code>plugins.lock</code>, checked in beside the code, names each bundle, its version, and for each
+architecture where its archive is and the sha256 it must have. Building the image fetches them,
+checks each sum, and unpacks them into <code>plugins/</code>; a sum that does not match fails the
+build. So the tools the agent ships with change only in a commit, as the rest of it does. The tests
+and the evals run against the same fetched bundles (<code>task plugins:fetch</code>).</p>
 
 <h2>The tools that ship</h2>
 
 <p>Each has a page of its own: what it does, what it refuses, how it fails, and the criteria that hold
-it to that. A manifest states a tool's interface and is the only statement of it — the pages below do
+it to that. A tool's definition states its interface and is the only statement of it — the pages below do
 not repeat the parameter schema, because two descriptions of one interface is one of them going stale.
-What a page carries is everything a manifest cannot: the behaviour, the boundary, and the reasoning.</p>
+What a page carries is everything a definition cannot: the behaviour, the boundary, and the reasoning.</p>
 
 <table>
 <tr><th>Tool</th><th>For</th></tr>
@@ -68,154 +72,62 @@ What a page carries is everything a manifest cannot: the behaviour, the boundary
 <tr><td><a href="tool-write.html"><code>write</code></a></td><td>Create or replace a file in the session's working directory.</td></tr>
 </table>
 
-<div class="note">
-<strong>A tool without a page is not finished.</strong> The manifest tells the model what the tool
-takes; the page tells the operator what it does and the test suite what to hold it to. A capability
-whose failure modes are written down nowhere is one whose behaviour is discovered in production.
-</div>
-
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every directory under <code>tools/</code> has a specification page, and every page names a tool that exists.</li>
-<li>A page states what the tool refuses and how it fails, not only what it does.</li>
-<li>A page carries acceptance criteria, and each is discharged by a test that runs the tool as a subprocess.</li>
-<li>No page restates the manifest's parameter schema; the manifest is the single statement of the interface.</li>
-</ul>
-</div>
-
-<h2>Tools are written the way the agent is</h2>
-
-<p>A tool is Go, in this module, developed test-first, and it ships eval cases. The registry executes
-<code>run</code> and does not care what produced it &mdash; the contract below is a subprocess, JSON in
-and JSON out, which any language satisfies. This is a rule about how tools are written here, not a
-limit the code enforces.</p>
-
-<p>The rule exists because the argument for a scripting language died with self-modification. A tool
-used to be something the agent wrote at three in the morning, where an interpreter meant no build step
-between deciding and running. <a href="adrs.html#adr-033">ADR-033</a> ended that: tools are written by
-the operator, at a keyboard, with a toolchain already open. What is left is a program that runs beside
-the scheduler and the database, holds the same privileges, and had none of the discipline applied to
-everything around it &mdash; no compiler, no vet, a separate test runner, and a second language to keep
-correct. The reasoning is in <a href="adrs.html#adr-035">ADR-035</a>.</p>
-
-<p>So a tool is held to what the agent is held to:</p>
-
-<table>
-<tr><th>What</th><th>Means</th></tr>
-<tr><td>Go, in this module</td><td><code>tools/&lt;name&gt;</code> is <code>package main</code>. <code>go build ./...</code>, <code>go vet ./...</code>, and <code>go test ./...</code> reach it without being told.</td></tr>
-<tr><td>Test-first</td><td>Behaviour is captured by a failing test before it is written. Logic worth having is worth separating from the subprocess plumbing so it can be tested directly.</td></tr>
-<tr><td>Evals</td><td><code>eval.json</code>, as before. A test cannot tell whether a description reads correctly to a model; only a model can.</td></tr>
-<tr><td>End to end</td><td>A criterion is discharged by a test that runs the tool as an actual subprocess, through the registry, inside the sandbox.</td></tr>
-<tr><td>Shared helper</td><td><code>internal/tool</code> carries the subprocess contract, the API client, the workspace boundary, and the headless browser. A tool that reimplements one of these is a tool that will disagree with the others.</td></tr>
-</table>
-
-<div class="note">
-<strong>The build is not the agent's.</strong> <code>task build</code> compiles each tool directory to
-its own <code>run</code>. Changing a tool means rebuilding <em>that tool</em> and reloading; it never
-means rebuilding or restarting the agent, which is the property
-<a href="index.html">R4</a> is actually about. The binaries are not in the repository.
-</div>
-
-<h2>Manifest</h2>
-
-<p>A manifest has two parts, and keeps them apart. Its top level is a standard OpenAI function
-definition &mdash; <code>name</code>, <code>description</code>, <code>parameters</code> &mdash; and is
-what the model is sent, wrapped as one entry of the request's <code>tools</code> list. Everything only
-this agent reads sits under <code>agent</code>: how long the tool may run, its table prefix, and what
-the sandbox adds for it. That block is never sent to the model (<a href="adrs.html#adr-067">ADR-067</a>).</p>
-
-<pre><code>{
-  "name": "deploys",
-  "description": "Query deployment status and history.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "action": { "type": "string", "enum": ["status", "history"] },
-      "service": { "type": "string" }
-    },
-    "required": ["action"]
-  },
-  "agent": {
-    "db_prefix": "deploys_",
-    "timeout_seconds": 30,
-    "reads": ["/proc"],
-    "env": ["DEPLOY_TOKEN"]
-  }
-}</code></pre>
-
-<div class="ac">
-<h4>Acceptance criteria</h4>
-<ul>
-<li><code>description</code> is a single sentence.</li>
-<li>The top level holds <code>name</code>, <code>description</code>, <code>parameters</code>, and <code>agent</code>, and <code>agent</code> holds <code>db_prefix</code>, <code>timeout_seconds</code>, <code>reads</code>, and <code>env</code>. A field anywhere else prevents that tool from loading, and the reason names it: a setting written where the model would be sent it, or misspelled where the agent would ignore it, is caught when the tool loads rather than at the call it was meant to change.</li>
-<li>What the model is sent for a tool is its <code>name</code>, <code>description</code>, and <code>parameters</code>, and nothing from <code>agent</code>.</li>
+<li>Only the agent's own handles are compiled in; every other tool that ships comes from a bundle <code>plugins.lock</code> names.</li>
+<li>The image's bundles are the ones <code>plugins.lock</code> names: an archive whose sha256 is not the lock's fails the fetch and is not unpacked, and a folder the lock does not name is removed.</li>
+<li>Every bundle the image ships loads, and every parameter of every tool it offers has its own <code>description</code>: without it the model is given a bare name and a type, and guesses the rest.</li>
 <li>Every shipped tool's name is lowercase words of letters and digits joined by underscores, as a function's is: <code>call_model</code>, <code>web_search</code>.</li>
-<li><code>agent.db_prefix</code> is required, unique across tools, and every table the tool creates begins with it.</li>
-<li><code>agent.timeout_seconds</code> is optional, 30 when unsaid; the registry stops the tool after it.</li>
-<li><code>agent.reads</code> is optional and names the paths this tool may read beyond the runtime every tool gets. A tool that asks for nothing reads the runtime, its own directory, and its session's working directory. Granting the union of what any tool might need would give every tool the widest boundary any of them asks for. The Plugins screen shows these apart from what every tool gets.</li>
-<li><code>agent.env</code> is optional and names variables from the agent's own environment this tool is given on every call, in every session. It is for a credential the tool's own service needs and nothing else can supply, and it is declared per tool for the reason <code>reads</code> is: <code>bash</code> runs commands the model wrote, and must not be handed a key because another tool needed one. The model key is refused however a manifest asks for it. The Plugins screen prints the names on that tool's card, and never the values.</li>
-<li><code>parameters</code> is a valid JSON Schema object and is exposed verbatim to the model.</li>
-<li>Every parameter of a tool the image ships has its own <code>description</code>, and the test run names one that does not: without it the model is given a bare name and a type, and guesses the rest. The Plugins screen flags an undescribed parameter on any tool, supplied or added.</li>
-<li>A tool directory without <code>eval.json</code> is reported by the test run, so a capability cannot be added without evidence that a model can use it.</li>
-<li>A manifest missing a required field prevents that tool from loading and does not affect other tools.</li>
-<li>Every tool directory is a Go package in this module, and <code>go vet ./...</code> and <code>go test ./...</code> cover it without a separate runner.</li>
-<li>Building or changing a tool requires no rebuild and no restart of the agent.</li>
+<li>What the model is sent for a tool is its <code>name</code>, <code>description</code>, and <code>parameters</code>, and nothing of how the agent runs it.</li>
+<li>Every tool that ships, built in or from a bundle, carries eval cases, and the test run names one that does not.</li>
+<li>Adding or changing a bundle requires no rebuild and no restart of the agent.</li>
 </ul>
 </div>
 
 <h2>Execution</h2>
 
-<p>A tool call runs the executable as a subprocess. Parameters arrive as JSON on standard input; the
-result is JSON on standard output. The environment carries what a tool needs to reach the rest of the
-system: the database path, the tool's table prefix, the API base URL, and the session and job the call
-belongs to.</p>
+<p>A built-in runs inside the agent. A bundle's tool runs as described under Bundles: its server is
+started for the call, confined to the calling conversation's directory, and ended when the call
+returns.</p>
 
-<p>It carries nothing else. A subprocess used to inherit the agent's whole environment, which handed
-the model API key to every tool including the one that runs shell commands the model wrote. The
-environment is now built from an allow-list &mdash; what any program needs to start, what the table
-below promises, and the variables the calling conversation holds
-(<a href="adrs.html#adr-037">ADR-037</a>, <a href="adrs.html#adr-068">ADR-068</a>). A variable nobody
-defined is absent.</p>
+<p>The server's environment is built from an allow-list. A subprocess used to inherit the agent's
+whole environment, which handed the model API key to every tool including the one that runs shell
+commands the model wrote. Now it holds what any program needs to start, what the bundle's manifest
+sets, the variables the calling conversation holds (<a href="adrs.html#adr-037">ADR-037</a>,
+<a href="adrs.html#adr-068">ADR-068</a>), and the three below. A variable nobody defined is
+absent.</p>
 
 <table>
 <tr><th>Variable</th><th>Holds</th></tr>
-<tr><td><code>AGENT_DB</code></td><td>Path to the SQLite database.</td></tr>
-<tr><td><code>AGENT_DB_PREFIX</code></td><td>The tool's table prefix.</td></tr>
 <tr><td><code>AGENT_SKILL_DIRS</code></td><td>Where the folder skills the calling conversation has keep their files: a JSON object of skill name to folder. It is how <code>read</code> names the <code>skill_read</code> call for a path in one. A tool has no way to ask the agent anything (<a href="adrs.html#adr-086">ADR-086</a>).</td></tr>
-<tr><td><code>AGENT_SESSION</code></td><td>The session this call belongs to.</td></tr>
-<tr><td><code>AGENT_JOB</code></td><td>The job this call belongs to, empty when the user asked directly.</td></tr>
 <tr><td><code>TMPDIR</code></td><td>A directory inside the session's own working directory. A tool's scratch files are as confined and as visible as everything else it writes.</td></tr>
 <tr><td><code>HOME</code></td><td>Another directory inside it, for the same reason. The container user's home is granted to no tool, so a program that keeps state there &mdash; <code>pip</code>, <code>npm</code>, <code>git</code> &mdash; would fail on a path it never names (<a href="adrs.html#adr-058">ADR-058</a>).</td></tr>
 </table>
 
 <p>Beyond that list, and the handful any program needs to start at all &mdash; <code>PATH</code>,
 which begins with the programs the conversation installed (<a href="adrs.html#adr-072">ADR-072</a>),
-the locale, the certificate paths &mdash; a tool receives a variable only because the
+the locale, the certificate paths &mdash; a server receives a variable only because the
 conversation it is running in holds it (<a href="adrs.html#adr-068">ADR-068</a>), or because its
-manifest names one from the agent's own environment. A conversation's variable belongs to it, not to a
-tool: a credential is something an operator hands to one conversation, where a manifest can only say
-every session or none of them. Where both name the same variable, the conversation's wins in that
-conversation. Nothing reads the agent's own environment on a conversation's behalf, so the
-<code>OPENROUTER_API_KEY</code> reaches no tool.</p>
+bundle's manifest sets it, from a fixed value or from what the operator set for that bundle
+(<a href="adrs.html#adr-087">ADR-087</a>). A conversation's variable belongs to it, not to a tool.
+Where both name the same variable, the conversation's wins in that conversation. Nothing reads the
+agent's own environment on a tool's behalf, so the <code>OPENROUTER_API_KEY</code> reaches no tool,
+and no manifest can set it.</p>
 
-<pre><code>stdin   {"action": "status", "service": "web"}
-stdout  {"ok": true, "content": "web: deployed 12m ago, healthy"}
-        {"ok": false, "error": "service 'web' not found"}</code></pre>
-
-<p>A tool that fails returns an error the model can read and act on. A tool that crashes, times out, or
-writes unparseable output is reported to the model in the same shape, so a broken tool degrades the
-turn rather than the process.</p>
+<p>A server can write only the conversation's directory. It reads the runtime, its own bundle's
+folder, what its manifest asks for, and the folders of the skills the conversation has. It cannot
+read another bundle's folder, the database, or any transcript.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A tool exceeding its timeout is killed and reported as an error result.</li>
-<li>A tool is given no address for the agent and no token to name itself with; what the agent tells it is in the variables above.</li>
-<li>A tool crashing or emitting invalid JSON produces an error result, not a failed turn.</li>
+<li>A tool exceeding its timeout is ended and reported as an error result.</li>
+<li>A tool is given no address for the agent, no token to name itself with, and no path to the database; what the agent tells it is in the variables above.</li>
 <li>Standard error is captured and stored with the result, not shown to the model, and readable by the operator beside the call that wrote it.</li>
-<li>A tool subprocess receives only the variables above, the ones its manifest names, and the ones its calling conversation holds; the model API key and every other variable of the agent's environment are absent.</li>
-<li>A variable a manifest names is passed only to that tool, and only when it is set.</li>
+<li>A server receives only the variables above, the ones its manifest sets, and the ones its calling conversation holds; the model API key and every other variable of the agent's environment are absent.</li>
+<li>A value the operator set for a bundle reaches that bundle's server and no other.</li>
+<li>A tool can read its own bundle's folder and cannot change it; it cannot read another bundle's folder, install a tool, or write a skill.</li>
 <li>Tool results are recorded as transcript entries.</li>
 </ul>
 </div>
@@ -237,9 +149,8 @@ nothing reaches one any other way either: no section of the prompt is rewritten 
 tool is a definition the model programmes against, and changing the callable set mid-conversation is the
 thing <a href="adrs.html#adr-019">ADR-019</a> removed. Forking is the route for all of it.</p>
 
-<p>Loading validates before registering. A tool is registered only if its manifest parses, its schema is
-valid, its executable is executable, its database prefix is unused, and a trial invocation returns
-parseable output.</p>
+<p>Loading validates before registering. A bundle's tools are registered only if its manifest can run
+here and its server, started once, lists them (see Bundles below).</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -249,7 +160,6 @@ parseable output.</p>
 <li>The session that asked for the reload records what was added, as a visible entry the model is not sent.</li>
 <li>A tool failing validation is not registered, and the reason is returned to the caller.</li>
 <li>A reload offers what is on disk: a tool whose folder or bundle is gone, or which no longer passes validation, is no longer offered, and the others keep working.</li>
-<li>Reloading applies any new <code>schema.sql</code> exactly once per tool version.</li>
 </ul>
 </div>
 
@@ -260,8 +170,7 @@ parseable output.</p>
 format and the server it names. Bundles are read from two directories &mdash;
 <code>plugins/</code> beside the agent, for what the image ships, and <code>plugins/</code> in the
 state directory, for what the operator installed &mdash; when tools are loaded and when they are
-reloaded. The tools of the older kind, with a <code>run</code> of their own, load beside them until
-they have moved.</p>
+reloaded.</p>
 
 <p>The agent asks a bundle's server what it offers once, on loading it, with <code>tools/list</code>:
 each tool's name, description, and input schema are the server's, and are what the model is sent.
@@ -338,8 +247,10 @@ against, and nothing deterministic tests them. A schema the system handles perfe
 no model reads correctly — the failure is real, it costs a round trip or a wrong action every time,
 and every test that stubs the model out is blind to it.</p>
 
-<p>So every tool directory carries an <code>eval.json</code>: requests put to a real model with that
-tool available, and what its tool use has to look like.</p>
+<p>So every tool carries eval cases: requests put to a real model with that tool available, and what
+its tool use has to look like. A built-in's are in <code>eval.json</code> beside its manifest. A
+bundle's are in the bundle, one file per tool, <code>evals/&lt;tool&gt;.json</code>, written and
+released with the tool; the agent reads them from the bundles it has fetched.</p>
 
 <pre><code>{
   "cases": [
@@ -357,9 +268,8 @@ tool available, and what its tool use has to look like.</p>
   ]
 }</code></pre>
 
-<p>A case runs in a throwaway session against the whole system: the real store, the real tool as a
-subprocess, and the API served on its own port so the tool reaches the same system it is being tested
-in. Only the work's destination is temporary.</p>
+<p>A case runs in a throwaway session against the whole system: the real store and the real tool,
+a bundle's run as its server is in a turn. Only the work's destination is temporary.</p>
 
 <p><code>clean</code> is the assertion that matters most. It requires that the tool under test never
 returned an error — that the model got the shape right first time rather than learning it from a
@@ -380,8 +290,8 @@ is fixed there.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>Every tool directory contains <code>eval.json</code> with at least one case, and the test run fails when one does not.</li>
-<li>An eval case runs against the real store, the real tool subprocess, and an API the tool can reach, in a session discarded afterwards.</li>
+<li>Every tool that ships has at least one eval case, and the test run fails when one does not.</li>
+<li>An eval case runs against the real store and the real tool, in a session discarded afterwards.</li>
 <li>Evals never run as part of the test suite, and never require an API key to run the suite.</li>
 <li>The eval model is configurable and defaults to one that is free to run.</li>
 <li>A case can require that the tool under test was never rejected during the turn.</li>
@@ -392,30 +302,29 @@ is fixed there.</p>
 </ul>
 </div>
 
-<h2>Who writes a tool</h2>
+<h2>Who adds a tool</h2>
 
-<p><strong>The operator does.</strong> A tool is a directory the person running the agent creates on the
-filesystem, with whatever editor they already use. The agent does not write tools, and the
-specification no longer says it does &mdash; the reasoning, including why the sandbox was not opened up
-instead, is in <a href="adrs.html#adr-033">ADR-033</a>.</p>
+<p><strong>The operator does.</strong> A tool arrives in a bundle the person running the agent
+installs on the Plugins screen, or in the image they deployed. The agent does not write or install
+tools &mdash; the reasoning, including why the sandbox was not opened up instead, is in
+<a href="adrs.html#adr-033">ADR-033</a> and <a href="adrs.html#adr-087">ADR-087</a>.</p>
 
-<p>The boundary is the operating system's, not a convention. The tool directory is readable by a tool
-&mdash; it has to be, or nothing would start &mdash; and writable by none. A tool that tries to create
-<code>tools/&lt;name&gt;/</code> is refused by the kernel, and no route on the API writes one:
-<code>POST /tools/reload</code> registers what is already on disk.</p>
+<p>The boundary is the operating system's, not a convention. A bundle's folder is readable by its
+own server &mdash; it has to be, or nothing would start &mdash; and writable by none. A tool that
+tries to create a folder where bundles live is refused by the kernel, and there is no tool that
+installs one.</p>
 
 <p>What the agent does instead is say which tool it wants and why, at the point it runs out of
-capability. That is the part of the job that needs the conversation; the hundred lines of Python were
-never the constraint.</p>
+capability. That is the part of the job that needs the conversation.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A tool subprocess cannot create or modify anything in the tool directory, and is refused by the operating system rather than by its own good manners.</li>
+<li>A tool cannot create or modify anything where bundles are installed, and is refused by the operating system rather than by its own good manners.</li>
 <li>A request for a capability that does not exist is answered by naming the missing tool, not by attempting to install one.</li>
-<li>A tool the operator installs appears in the interface after a reload, marked as new, with its manifest readable.</li>
+<li>A bundle the operator installs appears in the interface, with what it asks for and the tools it brings.</li>
 <li>A tool outside a session's set is absent from that session's prompt, so there is nothing to refuse.</li>
-<li>Deleting a tool removes it from the model's schema list and leaves its tables intact.</li>
+<li>Removing a bundle removes its tools from what the model is sent.</li>
 </ul>
 </div>
 
@@ -439,15 +348,16 @@ such a link gets an Open button in the transcript, so a link in an old conversat
 
 <h2>The supplied tools</h2>
 
-<p>The agent ships with a set of tools in the tool directory. They are ordinary tool directories with
-no privileges of their own: readable, editable, and removable without a rebuild, exactly like one you
-write yourself. Deleting one removes the capability and nothing else.</p>
+<p>The agent ships with the tools below. Those from bundles have no privileges of their own: they are
+confined exactly like a bundle the operator installs. What each does is written and tested where the
+bundle lives; the sections here say what the agent relies on, and the criteria are the ones its own
+tests run against the shipped bundles.</p>
 
 <table>
 <tr><th>Tool</th><th>Purpose</th></tr>
 <tr><td><code>bash</code>, <code>read</code>, <code>write</code>, <code>edit</code></td><td>Filesystem and shell access within the workspace.</td></tr>
 <tr><td><code>clock</code></td><td>The current date and time, with an optional offset. An autonomous agent cannot read a clock from a prompt written once at the session's creation, so it asks.</td></tr>
-<tr><td><code>web_search</code>, <code>web_browse</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. <code>web_search</code> calls a search API with the agent's own key (<a href="adrs.html#adr-059">ADR-059</a>); <code>web_browse</code> renders a page in a headless browser, so what it reads is what a person would see; <code>web_fetch</code> reads what the server sent, and says when that was not enough.</td></tr>
+<tr><td><code>web_search</code>, <code>web_browse</code>, <code>web_fetch</code></td><td>Retrieve information from the internet. <code>web_search</code> calls a search API with a key the operator sets for its bundle (<a href="adrs.html#adr-059">ADR-059</a>, <a href="adrs.html#adr-087">ADR-087</a>); <code>web_browse</code> renders a page in a headless browser, so what it reads is what a person would see; <code>web_fetch</code> reads what the server sent, and says when that was not enough.</td></tr>
 <tr><td><code>schedule</code></td><td>Create, list, edit, and delete jobs.</td></tr>
 <tr><td><code>session_search</code></td><td>Full-text search across all transcripts.</td></tr>
 <tr><td><code>skill_read</code></td><td>Load the full text of a skill.</td></tr>
@@ -457,32 +367,28 @@ write yourself. Deleting one removes the capability and nothing else.</p>
 
 <h3>Searching the web</h3>
 
-<p><code>web_search</code> calls a search API with the agent's own key and returns what it answered
+<p><code>web_search</code> calls a search API with the operator's key and returns what it answered
 (<a href="adrs.html#adr-059">ADR-059</a>). It used to read a search engine's own results page in the
 headless browser, which is the one surface a search company will not serve an automated client: the
 engines that decline say so, and the one that does not answers with results belonging to somebody
 else's query — a page that looks exactly like an answer and is not.</p>
 
-<p>The key comes from the agent's environment rather than from a session's grant, because search
-belongs to the agent the way the model does. A tool's manifest names the variables it is given, so
-the key reaches <code>web_search</code> and no other tool — <code>bash</code>, which runs commands
-the model wrote, declares nothing and receives nothing. <a href="tool-web_search.html">The tool's own
-page</a> has the rest.</p>
+<p>The key is the operator's, set once for the <code>web-search</code> bundle on the Plugins screen
+rather than granted to a conversation, because search belongs to the agent the way the model does.
+It reaches that bundle's server and no other &mdash; <code>bash</code>, which runs commands the model
+wrote, is given nothing. <a href="tool-web_search.html">The tool's own page</a> has the rest.</p>
 
 <div class="note">
-<strong>The dependency sits in the tool.</strong> Nothing in the agent knows which search provider
-this is; the name appears in one tool directory and in two variable names. Changing providers is a
-change to that directory, with no rebuild and no restart. This is the shape
-<a href="index.html">R4</a> is for.
+<strong>The dependency sits in the bundle.</strong> Nothing in the agent knows which search provider
+this is. Changing providers is a new version of that bundle, or another bundle, with no rebuild and
+no restart. This is the shape <a href="index.html">R4</a> is for.
 </div>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>A search returns result titles, absolute URLs, and snippets.</li>
-<li>The API refusing the query is reported as a refusal carrying what it said, distinct from a query with no results.</li>
-<li>The key reaches the tool that declares it in its manifest and no other tool.</li>
-<li>With no key configured the tool fails naming the variable and where it is set, and every other tool keeps working.</li>
+<li>A search with the key set returns what the API answered.</li>
+<li>The key reaches the bundle it was set for and no other tool.</li>
 </ul>
 </div>
 
@@ -553,10 +459,6 @@ one that can do better leaves the choice where it belongs, in the transcript.</p
 <li>A response of 400 or worse is reported as a failure naming the status code and carrying the body that came with it.</li>
 </ul>
 </div>
-
-<p>One tool is compiled in, for the reason given in
-<a href="architecture.html">Architecture</a>: <code>reload_tools</code>, which is the registry's own
-control surface.</p>
 
 <footer><a href="jobs.html">← Jobs</a> · <a href="skills.html">Skills →</a></footer>
 </div>

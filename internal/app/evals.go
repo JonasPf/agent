@@ -66,22 +66,26 @@ type EvalSuite struct {
 	Cases []EvalCase `json:"cases"`
 }
 
-// LoadEvalSuites reads every tool directory's eval.json, in tool-name order.
-func LoadEvalSuites(toolsDir string) ([]EvalSuite, error) {
-	entries, err := os.ReadDir(toolsDir)
-	if err != nil {
-		return nil, err
-	}
+// LoadEvalSuites reads the eval cases each bundle in bundleDirs carries, one
+// file per tool under evals/, and the builtins' own, in tool-name order.
+func LoadEvalSuites(bundleDirs ...string) ([]EvalSuite, error) {
 	var out []EvalSuite
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		s, err := loadEvalSuite(filepath.Join(toolsDir, e.Name()))
+	for _, root := range bundleDirs {
+		files, err := filepath.Glob(filepath.Join(root, "*", "evals", "*.json"))
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", e.Name(), err)
+			return nil, err
 		}
-		out = append(out, s)
+		for _, f := range files {
+			b, err := os.ReadFile(f)
+			if err != nil {
+				return nil, err
+			}
+			s, err := parseEvalSuite(strings.TrimSuffix(filepath.Base(f), ".json"), b)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", f, err)
+			}
+			out = append(out, s)
+		}
 	}
 	// A builtin's cases are compiled in beside its manifest.
 	for _, name := range builtinNames() {
@@ -97,15 +101,6 @@ func LoadEvalSuites(toolsDir string) ([]EvalSuite, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Tool < out[j].Tool })
 	return out, nil
-}
-
-func loadEvalSuite(dir string) (EvalSuite, error) {
-	name := filepath.Base(dir)
-	b, err := os.ReadFile(filepath.Join(dir, evalFile))
-	if err != nil {
-		return EvalSuite{Tool: name}, fmt.Errorf("%s: %w", evalFile, err)
-	}
-	return parseEvalSuite(name, b)
 }
 
 // parseEvalSuite reads one tool's cases and refuses a file that tests nothing.
@@ -424,7 +419,7 @@ func RunEvals(model string, only []string, w io.Writer) error {
 			return err
 		}
 	}
-	suites, err := LoadEvalSuites(cfg.ToolsDir)
+	suites, err := LoadEvalSuites(cfg.PluginsDir)
 	if err != nil {
 		return err
 	}
@@ -456,10 +451,9 @@ func RunEvals(model string, only []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	dbPath := DBPath(cfg.DataDir)
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:    NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
+		tools:    NewRegistry(cfg.PluginsDir),
 		skills:   NewSkills(cfg.SkillsDir, cfg.UserSkillsDir),
 		personas: NewPersonas(cfg.PersonasDir),
 		or:       NewOpenRouter(cfg.APIKey),

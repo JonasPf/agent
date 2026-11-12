@@ -245,3 +245,19 @@ func TestABundleThatCannotRunIsRefusedWithAReason(t *testing.T) {
 		}
 	}
 }
+
+// shippedBundles is where the bundles the image ships are unpacked for the
+// tests: the ones plugins.lock names, fetched by `task plugins:fetch`, which
+// every test task runs first. They are the real ones, so what is tested here
+// is what runs.
+func shippedBundles(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.Abs("../../plugins")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "shell", "manifest.json")); err != nil {
+		t.Fatalf("the shipped bundles are not in %s; run `task plugins:fetch`: %v", dir, err)
+	}
+	return dir
+}

@@ -30,7 +30,7 @@ func newTestAppAt(t *testing.T, dir string) *App {
 		sandbox: NewSandbox(cfg),
 		cfg:     cfg,
 		store:   st,
-		tools:   NewRegistry(filepath.Join(dir, "tools"), DBPath(dir), st.DB()),
+		tools:   NewRegistry(filepath.Join(dir, "tools")),
 		skills: NewSkills(filepath.Join(dir, "skills"),
 			filepath.Join(dir, "user-skills")),
 		personas: NewPersonas(filepath.Join(dir, "personas")),

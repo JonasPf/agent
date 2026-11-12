@@ -901,7 +901,7 @@ func (a *App) hTools(w http.ResponseWriter, r *http.Request) {
 	}
 	// The sandbox is the same for every tool program, so it is said once; each
 	// tool's agent block says what its manifest adds.
-	writeJSON(w, 200, map[string]any{"tools": out, "sandbox": a.sandbox.Reach(a.tools.dir),
+	writeJSON(w, 200, map[string]any{"tools": out, "sandbox": a.sandbox.Reach(),
 		"failures": a.tools.Failures()})
 }
 

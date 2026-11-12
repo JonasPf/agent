@@ -82,9 +82,9 @@ func shellApp(t *testing.T) *App {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"), ToolsDir: "../../tools"}
+	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"), PluginsDir: shippedBundles(t)}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
+		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills("", ""), personas: NewPersonas(filepath.Join(dir, "personas")),
 		hub: NewHub(), queues: map[string]chan func(){}}
 	a.registerBuiltins()

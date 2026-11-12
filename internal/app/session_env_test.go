@@ -24,19 +24,8 @@ import (
 // started with, base64 so that no value needs quoting.
 func installEnvDump(t *testing.T, a *App) {
 	t.Helper()
-	dir := filepath.Join(a.tools.dir, "envdump")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	manifest := `{"name":"envdump","description":"Dump the environment.",
-	  "parameters":{"type":"object","properties":{}},"agent":{"db_prefix":"envdump_"}}`
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	script := "#!/bin/sh\ncat >/dev/null\nprintf '{\"ok\":true,\"content\":\"%s\"}' \"$(env | base64 -w0)\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "run"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeTool(t, a.tools.bundleDirs[0], "envdump", script)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("envdump did not load: %+v", failures)
 	}
@@ -206,7 +195,7 @@ func TestAForkCarriesItsOriginsVariablesAndCanChangeThem(t *testing.T) {
 func TestANameTheAgentSetsOrThatIsNoNameIsRefused(t *testing.T) {
 	a := newTestApp(t)
 	s := start(t, a, `{"model":"test/model","env":{"KEEP":"1"}}`)
-	for _, name := range []string{"AGENT_SESSION", "AGENT_SKILL_DIRS", "HOME", "TMPDIR", "PATH", "1ABC", "A-B", "A B"} {
+	for _, name := range []string{"AGENT_SKILL_DIRS", "HOME", "TMPDIR", "PATH", "1ABC", "A-B", "A B"} {
 		body, _ := json.Marshal(map[string]any{"env": map[string]string{name: "x", "FINE": "y"}})
 		before := len(a.store.Sessions())
 		for _, r := range []struct{ method, path string }{

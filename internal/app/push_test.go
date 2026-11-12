@@ -645,9 +645,9 @@ func TestAToolCannotReachThePushKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: data, Workspace: workspace, ToolsDir: "../../tools"}
+	cfg := Config{DataDir: data, Workspace: workspace, PluginsDir: shippedBundles(t)}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(data), st.DB()),
+		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	if a.push, err = newPusher(data, a.unreadMessage); err != nil {

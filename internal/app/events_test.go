@@ -44,7 +44,7 @@ func TestRegisteringAToolWritesNoEvent(t *testing.T) {
 	}
 	dir := t.TempDir()
 	writeTool(t, dir, "latecomer", "#!/bin/sh\nprintf '{\"ok\":true,\"content\":\"hi\"}'\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.ReloadTools(s.ID); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}

@@ -37,7 +37,7 @@ nothing here is required.
 | `task dev` | Serve the agent in its container, the way production runs it, with tools confined |
 | `task check` | Lint, build, and every test suite — run this before committing |
 | `task test` | The test suites only |
-| `task eval -- schedule` | Put one tool's `eval.json` cases to a real model; omit the name for all |
+| `task eval -- schedule` | Put one tool's eval cases to a real model; omit the name for all |
 | `task db:clear` | Move the dev state (`.dev/state.img`: sessions, jobs, files) to `.backups/<stamp>` and start fresh |
 | `task db:restore` | Put the newest backup back |
 | `task db:status` | What the running agent holds |
@@ -67,7 +67,6 @@ moves the file with it.
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OPENROUTER_API_KEY` | — | Required for model calls. |
-| `TAVILY_API_KEY` | — | Required by `web_search`, and by nothing else: a tool's manifest names the variables it is given, and no other tool receives this one. Without it a search fails saying so. |
 | `AGENT_ADDR` | `:7770` | Listen address. |
 | `AGENT_STATE` | `.` | What outlives the container: `data/`, `workspace/`, `skills/`, `personas/`, `plugins/`, and `.env` beneath it. The one directory a deployment mounts. |
 | `AGENT_HOME` | `.` | What the image ships: `tools/`, `skills/`, `web/`, `CHANGELOG.md` beneath it. The skills here are read-only; the ones you write live under `AGENT_STATE`. |
@@ -91,14 +90,18 @@ changing it appears to do something.
 ```
 Taskfile.yml       every workflow; `task` lists them
 cmd/agent          entry point
-cmd/eval           puts each tool's eval.json cases to a real model
+cmd/eval           puts each tool's eval cases to a real model
+cmd/plugins        fetches the bundles plugins.lock names, checking each sha256
+plugins.lock       the bundles the image ships: version, address and sha256 of each
 internal/app
   loop.go          assemble, call, dispatch tools, repeat
   projection.go    transcript → messages (pure; tested)
   sessions.go      prompt entry, availability, summary, rotation, fork
   sched.go         ticks, checks, run log, circuit breaker
-  tools.go         manifests, subprocess contract, hot loading
-  builtins.go      reload_tools — the only capability that cannot live on disk
+  tools.go         the registry: built-in tools and the ones bundles offer
+  bundles.go       an MCP bundle: read, started confined for each call
+  plugins.go       install, configure and remove bundles
+  builtins.go      the tools that are the agent's handle on itself
   store.go         JSONL transcripts, SQLite for everything else
   files.go         one working directory per session; uploads, listing, copy on fork
   sandbox.go       what a tool may read and write, enforced by the OS
@@ -107,11 +110,9 @@ internal/app
 web/               the PWA
 skills/            prose the agent loads on demand — the ones that ship, read-only;
                    the ones you write through the interface live under AGENT_STATE
-internal/tool      the package every tool is built on (subprocess contract, API, browser)
-tools/<name>/      one Go package per capability, each with manifest.json,
-                   main.go, eval.json, and a `run` built from it: bash read write
-                   edit clock web_fetch web_browse web_search schedule session_search
-                   skill_read — written by you, not by the agent
+plugins/           the bundles plugins.lock names, fetched by `task plugins:fetch`
+                   (not checked in): bash read write edit clock web_fetch web_browse
+                   web_search. They are developed in github.com/JonasPf/agent-plugins
 data/sessions/<id>/{meta.json,transcript.jsonl}
 data/db/agent.db   the database and its journals, alone in a directory of their
                    own because Landlock grants a tree or it does not
@@ -139,7 +140,7 @@ fetch a static `nix`; then a Debian runtime with `git`, `gh`, `chromium`, `curl`
 `wget`, `python3`, `perl`, and `nix`. Anything else a conversation needs, the agent
 installs with Nix (ADR-072). The sandbox needs no package: Landlock is the kernel's.
 
-The runtime is Debian because tools are subprocesses: `tools/bash` execs
+The runtime is Debian because tools are subprocesses: the shell bundle execs
 `/bin/sh`, and the model writes GNU-flavoured shell. `agent -health` is the
 container's health check, so it depends on nothing but the agent.
 
@@ -216,7 +217,8 @@ docker run -d --name agent \
 | Variable | Is |
 | --- | --- |
 | `OPENROUTER_API_KEY` | Required for model calls. |
-| `TAVILY_API_KEY` | Required for `web_search`, which names it in its manifest and is given it on every call, in every session; no other tool is. A free account gives 1,000 searches a month and takes no card. |
+
+`web_search` needs a Tavily key. Set it on the Plugins screen, on the `web-search` bundle; a free account gives 1,000 searches a month and takes no card. It is not read from the environment.
 
 A credential for one piece of work — `GH_TOKEN` for a repository, `GITLAB_TOKEN`,
 a clone URL in `AGENT_REPO` — is not set in the deployment at all. It is a

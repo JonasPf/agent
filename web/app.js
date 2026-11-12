@@ -2732,16 +2732,13 @@ const TOOL_TIPS = {
   sandbox: 'Landlock, a Linux kernel feature, limits what each tool program can touch. Every list here is an allow-list: anything not named is refused by the kernel, whatever the tool tries. Built-in tools run inside the agent and are not sandboxed.',
   readWrite: 'The only places a tool can change anything.',
   folder: 'The folder the tool runs in, one per conversation. Its temp folder and `HOME` are inside it too, so scratch files stay confined, and show on the Files screen.',
-  db: 'The folder holding the shared database, `agent.db`, and the journal files SQLite writes beside it. Every tool is handed the database to keep its own tables, named with its prefix. The folder above it, with every transcript and the push keys, is not granted.',
-  read: 'The tool folder holds the tool programs: readable so they can start, writable by none. The rest is the system: the programs, libraries, and certificates a tool needs to start. `/proc` is left out because it would show the agent’s own environment, API key included; a tool that needs it asks in its manifest.',
+  read: 'A bundle’s own folder holds its server: readable by that server so it can start, writable by none, and closed to every other bundle. The rest is the system: the programs, libraries, and certificates a tool needs to start. `/proc` is left out because it would show the agent’s own environment, API key included; a bundle that needs it asks in its manifest.',
   devices: 'Files a program opens before any of its own code runs: a shell cannot redirect output without `/dev/null`. They are named one by one because granting `/dev` would grant every device.',
   network: 'Outgoing TCP to these ports only. Starting a server, and all UDP, are not restricted. This needs Linux 6.7 or later; on an older kernel this row says it is not enforced.',
   never: 'The API this screen uses. It can create a conversation holding a credential and send it a message, so a tool that reached it could hand itself any credential you have set.',
   model: 'Sent with every model call, in the standard OpenAI tools format: the name, this description, and the parameters as JSON Schema. The model knows nothing else about the tool, so a parameter without a description is only its type.',
-  agent: 'The manifest’s `agent` block. The agent reads it to run the tool, and never sends it to the model.',
+  agent: 'What the tool’s bundle says about running it. The agent reads it to run the tool, and never sends it to the model.',
   timeout: 'The program is stopped after this, and the model is told the call failed.',
-  prefix: 'Every table this tool creates in the shared database starts with this, so each tool’s tables are told apart. No two tools may share one.',
-  env: 'Passed to this tool on every call, in every conversation, from the agent’s own environment. Names only: values are never shown. A credential for one conversation is set as that conversation’s variable instead, and takes the place of one named here.',
   reads: 'Paths this tool may read on top of what every tool gets.',
 };
 
@@ -2811,8 +2808,8 @@ const TOOL_HOW = [
     '{"type": "function", "function": {"name": "web_search", "description": "Search the web…", "parameters": {…}}}'],
   ['Call', 'The model answers with a tool call instead of text: a name, and arguments as JSON.',
     '{"id": "call_7", "function": {"name": "web_search", "arguments": "{\\"query\\": \\"Go 1.25\\"}"}}'],
-  ['Run', 'The agent starts `tools/web_search/run` inside the sandbox below. The arguments go in on standard input; the tool answers on standard output, or is stopped at its timeout.',
-    'stdin   {"query": "Go 1.25"}\nstdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}'],
+  ['Run', 'A built-in tool runs inside the agent. Any other comes from a bundle: the agent starts the bundle’s MCP server inside the sandbox below, sends it the call, and ends it when it answers or at its timeout.',
+    'tools/call  {"name": "web_search", "arguments": {"query": "Go 1.25"}}\nresult      {"content": [{"type": "text", "text": "1. Go 1.25 Release Notes …"}]}'],
   ['Return', 'The answer is kept in the transcript and sent back to the model as a `tool` message. The model then answers, or calls another tool.'],
 ];
 
@@ -2827,7 +2824,7 @@ function toolsHow() {
     if (code) li.append(el('pre', null, code));
     ol.append(li);
   }
-  d.append(s, ol, rich('div', 'split', 'A manifest has two parts. `name`, `description`, and `parameters` are the standard part, and are what step 1 sends. The `agent` block is this agent’s own: the timeout, the table prefix, and what the sandbox adds. The agent reads it to run the tool; it is never sent to the model.'));
+  d.append(s, ol, rich('div', 'split', 'A tool has two parts. `name`, `description`, and `parameters` are what step 1 sends. How it is run, its timeout and what the sandbox adds for it, is its bundle’s to say and the agent’s to read; it is never sent to the model. What a bundle asks you for, such as a key, is set on its card above.'));
   return d;
 }
 
@@ -2857,7 +2854,7 @@ function toolSandbox(s) {
     return c;
   };
   row('Read & write', TOOL_TIPS.readWrite, 'paths').append(...(s.read_write || []).map(p =>
-    path(p, p.startsWith('/') ? TOOL_TIPS.db : TOOL_TIPS.folder)));
+    path(p, TOOL_TIPS.folder)));
   row('Read only', TOOL_TIPS.read, 'paths').append(...(s.read || []).map(p => path(p)));
   row('Devices', TOOL_TIPS.devices, 'paths').append(...(s.files || []).map(p => path(p)));
   const net = row('Network', TOOL_TIPS.network, 'ports');
@@ -2901,7 +2898,6 @@ function toolCard(t) {
   const name = el('div', 'tname');
   name.append(el('span', 'n', t.name));
   if (t.builtin) name.append(el('span', 'tchip builtin', 'built in'));
-  if ((a.env || []).length) name.append(el('span', 'tchip key', 'env ' + a.env.join(' ')));
   if ((a.reads || []).length) name.append(el('span', 'tchip reads', 'reads ' + a.reads.join(' ')));
   if (bare.length) name.append(el('span', 'tchip warn', `${bare.length} parameter${bare.length > 1 ? 's' : ''} undescribed`));
   const meta = el('div', 'meta', a.timeout_seconds ? a.timeout_seconds + ' s' : '');
@@ -2960,8 +2956,6 @@ function agentUses(a) {
     facts.append(f);
   };
   fact('Timeout', TOOL_TIPS.timeout, a.timeout_seconds ? a.timeout_seconds + ' seconds' : '');
-  fact('Table prefix', TOOL_TIPS.prefix, a.db_prefix, true);
-  fact('Environment', TOOL_TIPS.env, (a.env || []).join(' '), true);
   fact('Extra reads', TOOL_TIPS.reads, (a.reads || []).join(' '), true);
   sec.append(h, facts);
   return sec;

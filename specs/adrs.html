@@ -918,7 +918,7 @@ explicitly; allowing only the database file leaves a tool that cannot open its o
 </div>
 
 <div class="adr" id="adr-035">
-<div class="meta">ADR-035 · accepted</div>
+<div class="meta">ADR-035 · accepted · superseded by <a href="#adr-088">ADR-088</a></div>
 <h3>Tools are written in Go, test-first, in this module</h3>
 <h4>Context</h4>
 <p>Every supplied tool was a Python script. The reason was self-modification: a tool was something the
@@ -2115,7 +2115,7 @@ itself.</p>
 </div>
 
 <div class="adr" id="adr-067">
-<div class="meta">ADR-067 · accepted</div>
+<div class="meta">ADR-067 · accepted · superseded by <a href="#adr-088">ADR-088</a></div>
 <h3>A manifest keeps the agent's own settings under <code>agent</code></h3>
 <h4>Context</h4>
 <p>A manifest held the three fields of an OpenAI function definition &mdash; <code>name</code>,
@@ -2768,6 +2768,33 @@ merged, plus what the operator added by hand on a screen. Zip is the one archive
 held in the agent's memory and in each server's environment for the length of a call, as a tool's
 declared variable was. A reload now offers exactly what is on disk, since removing a bundle has to
 remove its tools.</p>
+</div>
+
+<div class="adr" id="adr-088">
+<div class="meta">ADR-088 · accepted · supersedes <a href="#adr-035">ADR-035</a> and <a href="#adr-067">ADR-067</a> · builds on <a href="#adr-085">ADR-085</a></div>
+<h3>The image's tools are bundles pinned in a lock file, and the tool directory is gone</h3>
+<h4>Context</h4>
+<p>Eight tools lived in this repository as programs with a contract of their own: JSON on standard
+input, a <code>manifest.json</code> with an <code>agent</code> block, a table prefix, a path to the
+database. The same eight exist as bundles in their own repository
+(<a href="#adr-085">ADR-085</a>), so there were two ways to be a tool and two copies of each.</p>
+<h4>Decision</h4>
+<p><code>tools/</code>, <code>internal/tool</code>, and the loader for that contract are removed. A
+tool is built in or comes from a bundle. The image ships the bundles <code>plugins.lock</code>
+names: for each, a version and, per architecture, an address and a sha256. The image build, the
+tests, and the evals fetch them with one command, which refuses an archive whose sum differs. A
+bundle carries its tools' eval cases. No tool is handed the database or a directory beside it: a
+server writes the conversation's directory and nothing else, and reads only its own bundle's
+folder. <code>AGENT_DB</code>, <code>AGENT_DB_PREFIX</code>, <code>AGENT_WORKSPACE</code>,
+<code>AGENT_SESSION</code>, and <code>AGENT_JOB</code> are no longer set. A credential a tool needs
+is set for its bundle (<a href="#adr-087">ADR-087</a>), not named in a manifest and read from the
+agent's environment.</p>
+<h4>Consequences</h4>
+<p>The agent that runs is still the one that was merged: its tools change when the lock file does.
+Building and testing need the network once per lock, to fetch the archives. A tool is developed and
+released in its own repository and reaches the agent by a change to the lock. The search key moves
+from <code>TAVILY_API_KEY</code> in the environment to the Plugins screen, once, by hand. A tool can
+no longer keep tables in the agent's database; none did.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

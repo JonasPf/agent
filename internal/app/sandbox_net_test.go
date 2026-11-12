@@ -126,12 +126,7 @@ func TestAConfinedToolReachesAnAllowedPortAndNotTheOperators(t *testing.T) {
 	_, allowedPort, _ := net.SplitHostPort(allowed.Listener.Addr().String())
 
 	dir := t.TempDir()
-	// The policy makes the database's directory writable, and a writable path
-	// has to exist; OpenStore makes it in every real agent.
-	if err := os.MkdirAll(filepath.Dir(DBPath(dir)), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	s := NewSandbox(Config{DataDir: dir, Workspace: dir, ToolsDir: dir,
+	s := NewSandbox(Config{DataDir: dir, Workspace: dir,
 		Addr: operator.Listener.Addr().String(), ToolPorts: allowedPort})
 	confinementOrSkip(t, s)
 	if s.Network != "landlock" {
@@ -165,23 +160,10 @@ func TestAConfinedToolReachesAnAllowedPortAndNotTheOperators(t *testing.T) {
 // field for field, not a second description that can drift from it.
 func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 	a := newTestApp(t)
-	installEnvTool(t, a, "envcheck")
 	// A path of the tool's own, so the screen has something to set apart from
 	// what every tool gets.
 	extra := t.TempDir()
-	mf := filepath.Join(a.tools.dir, "envcheck", "manifest.json")
-	var manifest map[string]any
-	if b, err := os.ReadFile(mf); err != nil {
-		t.Fatal(err)
-	} else if err := json.Unmarshal(b, &manifest); err != nil {
-		t.Fatal(err)
-	}
-	manifest["agent"].(map[string]any)["reads"] = []string{extra}
-	if b, err := json.Marshal(manifest); err != nil {
-		t.Fatal(err)
-	} else if err := os.WriteFile(mf, b, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	installEnvTool(t, a, "envcheck", extra)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("%+v", failures)
 	}
@@ -211,7 +193,14 @@ func TestTheToolsScreenShowsThePolicyEachToolRunsUnder(t *testing.T) {
 
 	// What every tool gets, then what this one asked for, is what it runs under.
 	ws := "/w/S1"
-	p := policyOf(t, a.sandbox.Wrap("/x/run", ws, a.tools.dir, a.tools.Get("envcheck").Agent.Reads, nil))
+	bundleDir := a.tools.Get("envcheck").Dir
+	p := policyOf(t, a.sandbox.Wrap("/x/run", ws, bundleDir, a.tools.Get("envcheck").Agent.Reads, nil))
+	// The screen speaks of every bundle, so it names the folder rather than one.
+	for i, r := range p.Read {
+		if r == bundleDir {
+			p.Read[i] = bundleDirLabel
+		}
+	}
 	if !reach.Enforced || !reach.NetworkEnforced {
 		t.Errorf("reach = %+v, want both halves enforced", reach)
 	}

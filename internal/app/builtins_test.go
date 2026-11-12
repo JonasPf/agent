@@ -110,8 +110,8 @@ func readsSkill(t *testing.T, a *App, s *Session, name string) bool {
 func TestTheAgentsOwnToolsWorkThroughTheRegistry(t *testing.T) {
 	dir := t.TempDir()
 	a := newTestAppAt(t, dir)
-	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")
-	a.tools = NewRegistry(a.cfg.ToolsDir, DBPath(dir), a.store.DB())
+	a.cfg.PluginsDir = shippedBundles(t)
+	a.tools = NewRegistry(a.cfg.PluginsDir)
 	userSkills := t.TempDir()
 	writeSkillIn(t, userSkills, "chosen-only", "default: off\n")
 	a.skills = NewSkills(filepath.Join("..", "..", "skills"), userSkills)

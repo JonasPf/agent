@@ -2,64 +2,42 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 )
 
-// Tool is either a builtin or a directory containing a manifest and an executable.
+// Tool is either a builtin or one a bundle's server offers.
 type Tool struct {
 	Name        string
 	Description string
 	Parameters  map[string]any
-	// Agent is the manifest's "agent" block. A builtin has no manifest and
-	// leaves it empty.
+	// Agent is what the tool's bundle says of how it is run. A builtin runs
+	// inside the agent and leaves it empty.
 	Agent    ToolAgent
 	LoadedAt time.Time
 	Builtin  bool
 	Dir      string
 	run      builtinFn
 	// bundle is the MCP bundle whose server offers this tool, or nil for a
-	// builtin or a tool with a program of its own (ADR-085).
+	// builtin (ADR-085).
 	bundle *bundle
 }
 
-// ToolAgent is what a manifest says under "agent": everything this agent reads
-// to run the tool, and never sends to the model.
+// ToolAgent is what a bundle's manifest says under _meta for this agent:
+// everything the agent reads to run the tool, and never sends to the model.
 type ToolAgent struct {
-	DBPrefix string `json:"db_prefix"`
-	Timeout  int    `json:"timeout_seconds"`
+	Timeout int `json:"timeout_seconds"`
 	// Reads names the paths this tool may read beyond the runtime every tool
 	// gets. A browser reads /proc and /sys before it renders anything; a tool
 	// that edits a file does not, and granting the union of what any tool might
 	// need would hand every tool the widest boundary any of them asks for.
 	Reads []string `json:"reads,omitempty"`
-	// Env names variables from the agent's own environment that this tool is
-	// given, because the service it talks to needs a credential and there is
-	// nowhere else for one to come from. It is declared per tool for the reason
-	// Reads is: web_search needs a search key, and bash — which runs commands
-	// the model wrote — must never be handed one. The value is never shown
-	// anywhere; the name is, on the tool's own card.
-	Env []string `json:"env,omitempty"`
-}
-
-// manifest is manifest.json. Its top level is exactly an OpenAI function
-// definition, which is what the model is sent; the agent's own settings sit
-// under "agent", so that neither can be mistaken for the other (ADR-067).
-type manifest struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Parameters  map[string]any `json:"parameters"`
-	Agent       ToolAgent      `json:"agent"`
 }
 
 type builtinFn func(ctx context.Context, tc *ToolCtx, args json.RawMessage) (any, error)
@@ -86,14 +64,10 @@ type LoadFailure struct {
 }
 
 type Registry struct {
-	db       *sql.DB
 	mu       sync.RWMutex
 	tools    map[string]*Tool
 	order    []string
 	failures []LoadFailure
-	dir      string
-	dbPath   string
-	applied  map[string]bool
 	// bundleDirs are the directories bundles are unpacked in: what the image
 	// ships, then what the operator installed.
 	bundleDirs []string
@@ -101,8 +75,8 @@ type Registry struct {
 	plugins []Plugin
 }
 
-func NewRegistry(dir, dbPath string, db *sql.DB) *Registry {
-	return &Registry{tools: map[string]*Tool{}, dir: dir, dbPath: dbPath, db: db, applied: map[string]bool{}}
+func NewRegistry(bundleDirs ...string) *Registry {
+	return &Registry{tools: map[string]*Tool{}, bundleDirs: bundleDirs}
 }
 
 func (r *Registry) register(t *Tool) {
@@ -148,15 +122,13 @@ func (r *Registry) Failures() []LoadFailure {
 	return append([]LoadFailure(nil), r.failures...)
 }
 
-// Load scans the tool directory. A tool that fails validation is not registered
-// and previously loaded tools keep working.
+// Load reads the bundle directories. What is on disk is read afresh: a bundle
+// that fails validation is not registered, one that has gone is no longer
+// offered, and the others keep working.
 func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.failures = nil
-	var loaded []string
-	// What is on disk is read afresh, so a tool whose program or bundle has
-	// gone is no longer offered.
 	r.order = slices.DeleteFunc(r.order, func(name string) bool {
 		if r.tools[name].Builtin {
 			return false
@@ -164,137 +136,7 @@ func (r *Registry) Load(app *App) ([]string, []LoadFailure) {
 		delete(r.tools, name)
 		return true
 	})
-
-	entries, err := os.ReadDir(r.dir)
-	if err != nil {
-		r.failures = []LoadFailure{{Dir: r.dir, Reason: err.Error()}}
-		return r.loadBundles(app), r.failures
-	}
-	prefixes := map[string]string{}
-	for _, t := range r.tools {
-		if t.Agent.DBPrefix != "" {
-			prefixes[t.Agent.DBPrefix] = t.Name
-		}
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		dir := filepath.Join(r.dir, e.Name())
-		t, err := loadToolDir(dir)
-		if err != nil {
-			r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: err.Error()})
-			continue
-		}
-		if owner, ok := prefixes[t.Agent.DBPrefix]; ok && owner != t.Name {
-			r.failures = append(r.failures, LoadFailure{Dir: e.Name(),
-				Reason: fmt.Sprintf("db_prefix %q already used by %s", t.Agent.DBPrefix, owner)})
-			continue
-		}
-		if err := r.applySchema(t); err != nil {
-			r.failures = append(r.failures, LoadFailure{Dir: e.Name(), Reason: "schema.sql: " + err.Error()})
-			continue
-		}
-		prefixes[t.Agent.DBPrefix] = t.Name
-		r.register(t)
-		loaded = append(loaded, t.Name)
-	}
-	loaded = append(loaded, r.loadBundles(app)...)
-	return loaded, r.failures
-}
-
-func loadToolDir(dir string) (*Tool, error) {
-	b, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
-	if err != nil {
-		return nil, fmt.Errorf("manifest.json: %w", err)
-	}
-	if err := strayField(b); err != nil {
-		return nil, fmt.Errorf("manifest.json: %w", err)
-	}
-	var m manifest
-	if err := json.Unmarshal(b, &m); err != nil {
-		return nil, fmt.Errorf("manifest.json: %w", err)
-	}
-	if m.Name == "" || m.Description == "" || m.Agent.DBPrefix == "" || m.Parameters == nil {
-		return nil, fmt.Errorf("manifest missing name, description, parameters, or agent.db_prefix")
-	}
-	t := Tool{Name: m.Name, Description: m.Description, Parameters: m.Parameters, Agent: m.Agent}
-	if typ, _ := t.Parameters["type"].(string); typ != "object" {
-		return nil, fmt.Errorf("parameters must be a JSON Schema object")
-	}
-	run := filepath.Join(dir, "run")
-	st, err := os.Stat(run)
-	if err != nil {
-		return nil, fmt.Errorf("run: %w", err)
-	}
-	if st.Mode()&0o111 == 0 {
-		return nil, fmt.Errorf("run is not executable")
-	}
-	if t.Agent.Timeout <= 0 {
-		t.Agent.Timeout = 30
-	}
-	t.Dir = dir
-	return &t, nil
-}
-
-// strayField names the first field a manifest does not define. A setting at the
-// top level would sit beside what the model is sent, and one misspelt under
-// "agent" would be ignored for its default; either is refused when the tool
-// loads, rather than noticed at the call it was meant to change.
-func strayField(b []byte) error {
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(b, &top); err != nil {
-		return err
-	}
-	if err := onlyFields(top, "name", "description", "parameters", "agent"); err != nil {
-		return fmt.Errorf("%w; the top level is what the model is sent, and the agent's own settings go under \"agent\"", err)
-	}
-	raw, ok := top["agent"]
-	if !ok {
-		return nil
-	}
-	var agent map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &agent); err != nil {
-		return fmt.Errorf("agent: %w", err)
-	}
-	if err := onlyFields(agent, "db_prefix", "timeout_seconds", "reads", "env"); err != nil {
-		return fmt.Errorf("agent: %w", err)
-	}
-	return nil
-}
-
-func onlyFields(m map[string]json.RawMessage, known ...string) error {
-	var stray []string
-	for k := range m {
-		if !slices.Contains(known, k) {
-			stray = append(stray, k)
-		}
-	}
-	if len(stray) == 0 {
-		return nil
-	}
-	sort.Strings(stray)
-	return fmt.Errorf("%q is not a manifest field", stray[0])
-}
-
-func (r *Registry) applySchema(t *Tool) error {
-	path := filepath.Join(t.Dir, "schema.sql")
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	key := t.Name + ":" + fmt.Sprint(len(b))
-	if r.applied[key] {
-		return nil
-	}
-	if _, err := r.db.Exec(string(b)); err != nil {
-		return err
-	}
-	r.applied[key] = true
-	return nil
+	return r.loadBundles(app), r.failures
 }
 
 // SchemasFor returns the tool definitions a session may use, exactly as the
@@ -351,75 +193,7 @@ func (r *Registry) Call(ctx context.Context, tc *ToolCtx, name string, args json
 		}
 	}
 
-	if t.bundle != nil {
-		return r.callBundle(ctx, tc, t, args)
-	}
-
-	cctx, cancel := context.WithTimeout(ctx, time.Duration(t.Agent.Timeout)*time.Second)
-	defer cancel()
-	bin, err := filepath.Abs(filepath.Join(t.Dir, "run"))
-	if err != nil {
-		return errResult("tool %q: %v", name, err)
-	}
-	// A tool runs in the working directory of the session that called it, so a
-	// relative path in a tool call means that conversation's own files — and,
-	// where the operating system can enforce it, that directory is the only one
-	// it can reach.
-	workspace := tc.App.ensureWorkspace(tc.SessionID)
-	// Whatever the tool did, it did it here: what the directory holds is
-	// measured again rather than read from what was kept.
-	defer tc.App.workspaceChanged(tc.SessionID)
-	reads := append(append([]string(nil), t.Agent.Reads...), tc.App.skillFolders(tc.SessionID)...)
-	argv := tc.App.sandbox.Wrap(bin, workspace, r.dir, reads, nil)
-	cmd := exec.CommandContext(cctx, argv[0], argv[1:]...)
-	cmd.Dir = workspace
-	if abs, err := filepath.Abs(workspace); err == nil {
-		workspace = abs
-	}
-	// The system temporary directory is not writable, so a tool is given one
-	// inside its own working directory. Created here rather than by the tool,
-	// because an interpreter reaches for it before any tool code runs.
-	tmp := tc.App.sandbox.TempDir(workspace)
-	_ = os.MkdirAll(tmp, 0o755)
-	// The same for the home directory: the container user's is granted nothing,
-	// and a program that keeps state there fails on a path it never names.
-	home := tc.App.sandbox.HomeDir(workspace)
-	_ = os.MkdirAll(home, 0o755)
-	cmd.Stdin = strings.NewReader(string(args))
-	// What a program needs to start, what the manifest names, then what the
-	// conversation holds, which takes the place of a manifest's variable of the
-	// same name; the contract goes last, so nothing stands in for it.
-	cmd.Env = append(toolBaseEnv(), declaredEnv(t.Agent.Env)...)
-	cmd.Env = append(cmd.Env, sessionVars(tc.vars())...)
-	cmd.Env = tc.App.withPackages(cmd.Env, tc.SessionID)
-	cmd.Env = append(cmd.Env,
-		"AGENT_DB="+r.dbPath,
-		"AGENT_DB_PREFIX="+t.Agent.DBPrefix,
-		tc.App.skillDirsEnv(tc.SessionID),
-		"AGENT_WORKSPACE="+workspace,
-		"AGENT_SESSION="+tc.SessionID,
-		"AGENT_JOB="+tc.JobID,
-		"TMPDIR="+tmp,
-		"HOME="+home)
-	var stderr strings.Builder
-	cmd.Stderr = &stderr
-	stdout, err := cmd.Output()
-	if cctx.Err() == context.DeadlineExceeded {
-		res := errResult("tool %q exceeded its %ds timeout", name, t.Agent.Timeout)
-		res.stderr = stderr.String()
-		return res
-	}
-	if err != nil {
-		res := errResult("tool %q failed: %v", name, err)
-		res.stderr = stderr.String()
-		return res
-	}
-	var res toolResult
-	if err := json.Unmarshal(stdout, &res); err != nil {
-		res = errResult("tool %q returned unparseable output: %s", name, truncate(string(stdout), 400))
-	}
-	res.stderr = stderr.String()
-	return res
+	return r.callBundle(ctx, tc, t, args)
 }
 
 // toolPassthrough is what a subprocess needs to start at all: where to find its
@@ -433,7 +207,7 @@ var toolPassthrough = []string{
 	"SSL_CERT_FILE", "SSL_CERT_DIR", "TERM",
 }
 
-// neverDeclared is the one name a manifest cannot ask for. The allow-list
+// neverDeclared is the one name a manifest cannot set. The allow-list
 // exists because this variable reached every tool, including the one that runs
 // commands the model composed; a manifest that could hand it back would undo the
 // decision rather than refine it.
@@ -448,25 +222,6 @@ func toolBaseEnv() []string {
 	var out []string
 	for _, name := range toolPassthrough {
 		if v, ok := os.LookupEnv(name); ok {
-			out = append(out, name+"="+v)
-		}
-	}
-	return out
-}
-
-// declaredEnv is what a tool's manifest asked for, from the agent's own
-// environment. A name that is not set is absent rather than empty, the way a
-// grant is: a tool asks whether it has a credential by asking whether the
-// variable is there. The model key is refused however it is asked for — a
-// manifest is reviewed by a person before it ships, but the one variable the
-// whole allow-list exists to keep out is not opened by review.
-func declaredEnv(names []string) []string {
-	var out []string
-	for _, name := range names {
-		if neverDeclared[name] || toolContractEnv[name] {
-			continue
-		}
-		if v, ok := os.LookupEnv(name); ok && v != "" {
 			out = append(out, name+"="+v)
 		}
 	}

@@ -129,8 +129,8 @@ func callModelApp(t *testing.T) (*App, *Session, *fakeGateway, func(args string)
 	g, srv := newFakeGateway(t)
 	a.or = NewOpenRouter("the-agents-own-key")
 	a.or.base = srv.URL
-	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")
-	a.tools = NewRegistry(a.cfg.ToolsDir, DBPath(dir), a.store.DB())
+	a.cfg.PluginsDir = shippedBundles(t)
+	a.tools = NewRegistry(a.cfg.PluginsDir)
 	a.registerBuiltins()
 	if _, failures := a.tools.Load(a); len(failures) > 0 {
 		t.Fatalf("tools failed to load: %+v", failures)
@@ -412,12 +412,7 @@ func TestCallModelRefusesWhatItCannotSend(t *testing.T) {
 // variable that holds it, and the call that reaches the gateway is the
 // agent's, under its key.
 func TestCallModelNeverHoldsTheKey(t *testing.T) {
-	a, _, g, call := callModelApp(t)
-	for _, name := range a.tools.Get("call_model").Agent.Env {
-		if strings.Contains(name, "OPENROUTER") || strings.Contains(name, "KEY") {
-			t.Errorf("call_model's manifest asks for %s", name)
-		}
-	}
+	_, _, g, call := callModelApp(t)
 	if res := call(`{"model":"x/textonly","prompt":"hi"}`); !res.OK {
 		t.Fatalf("call failed: %s", res.Error)
 	}

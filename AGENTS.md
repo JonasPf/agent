@@ -4,7 +4,7 @@ A single-user autonomous agent in Go: one process, one container, one user. It h
 conversations and schedules work inside them. Nothing crosses from one conversation to another on its
 own: what one holds, another reaches by searching for it (ADR-055). It cannot modify the copy
 of itself that is running: a tool reads and writes only its own session's working directory, and the
-tool and skill directories are outside it. What it can do is propose a change — a branch, a pull
+plugin and skill directories are outside it. What it can do is propose a change — a branch, a pull
 request, a pipeline — which a person reviews and merges.
 
 The guiding constraint is **no surprises**, in two halves. Nothing happens that the user cannot see:
@@ -30,12 +30,12 @@ not a faster version of the check, it is a compile error. Use the tasks.
 
 | Task | Command | Notes |
 |------|---------|-------|
-| **Build** | `task build` | Compiles all packages and every tool. Agent entry point is `./cmd/agent`; each `tools/<name>` builds to its own `run`. |
+| **Build** | `task build` | Compiles all packages. Agent entry point is `./cmd/agent`. |
 | **Run** | `task dev` | Builds the runtime image and serves http://localhost:7770, tools confined. The only way to run the agent. Its state is one btrfs image, `.dev/state.img`, made on first run and mounted by a privileged container (ADR-082). See the README table for `AGENT_*` env vars. |
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
-| **Test** | `task test` | Go tests across the agent and every tool, under the race detector; the browser's pure helpers (`web/*.test.js`) under node's built-in runner; and the scripts shipped skills carry (`testenv/skills`), on real video and in a real browser. The Go side builds the tools first, because the registry will not load one whose `run` is missing. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
+| **Test** | `task test` | Go tests across the agent, under the race detector, against the bundles `plugins.lock` names, which it fetches first; the browser's pure helpers (`web/*.test.js`) under node's built-in runner; and the scripts shipped skills carry (`testenv/skills`), on real video and in a real browser. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
 | **Check** | `task check` | Lint, build, and test together. The pre-commit gate; see below. |
-| **Eval** | `task eval -- [tool...]` | Puts each tool's `eval.json` cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
+| **Eval** | `task eval -- [tool...]` | Puts each tool's eval cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
 | **Reset** | `task db:clear` | Moves the dev state image (sessions, jobs, files, snapshots) to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
 | **Inspect** | `task db:status` | What the running agent currently holds. |
 | **Specs** | `task spec` | Serves `specs/` at http://localhost:8000, where the API page loads `openapi.yaml`. Not part of `check`. |
@@ -85,35 +85,42 @@ is exercised as shipped.
 When you add or change a criterion, add or update the end-to-end test that names
 it. A unit test is welcome alongside, but does not discharge the criterion.
 
-## Tools are written the way the agent is
+## Tools live in bundles, outside this repository
 
-A tool is a Go package in this module at `tools/<name>`, `package main`, developed
-test-first, shipping eval cases. `go build ./...`, `go vet ./...`, and
-`go test ./...` reach every tool without being told; `task build` compiles each
-directory to its own `run`, which is gitignored.
+A tool is either built into the agent or offered by an MCP server in a bundle
+([ADR-085](specs/adrs.html#adr-085), [ADR-088](specs/adrs.html#adr-088)).
 
-The shared plumbing — the subprocess contract, the API client, the workspace
-boundary, the headless browser — is [`internal/tool`](internal/tool). Use it; a
-tool that reimplements one of these will disagree with the others.
+**Built in** are only the agent's handles on itself: `schedule`,
+`session_search`, `skill_read`, `call_model`, `packages`, `ask_operator`,
+`reload_tools`. Each has `manifest.json` and `eval.json` under
+`internal/app/builtin/<name>/` and its code in `internal/app`. Add one only for
+something a bundle cannot be handed.
 
-The registry contract itself is language-agnostic (JSON in on stdin, JSON out on
-stdout). This is a rule about how tools are written here, not something the
-loader checks. See [`specs/tools.html`](specs/tools.html) and
-[ADR-035](specs/adrs.html#adr-035).
+**Everything else is a bundle**, developed and released in
+[agent-plugins](https://github.com/JonasPf/agent-plugins): `bash`, `read`,
+`write`, `edit`, `clock`, `web_fetch`, `web_search`, `web_browse`. Do not add a
+tool's code here. To change one, change it there, release it, and update its
+entry in [`plugins.lock`](plugins.lock) (version, address, and sha256 for each
+architecture, from the release's `sha256sums.txt`).
 
-**The agent is never rebuilt or restarted for a tool.** Build the tool, call
-`reload_tools` (or `task tools:reload`).
+`task plugins:fetch` unpacks the locked bundles into `plugins/` (not checked
+in); the test, eval, and image builds all run it, so tests run the tools the
+image ships. A test that needs a tool of its own makes one from the stand-in
+server in `testenv/mcp/shell` (`writeTool` and `writeBundle` in the tests).
+
+**The agent is never rebuilt or restarted for a tool.** Install the bundle on
+the Plugins screen, or call `reload_tools` (or `task tools:reload`).
 
 ## Every tool ships eval cases
 
 A tool's `description` and `parameters` are the surface the model programmes
 against, and no deterministic test can tell whether they read correctly. So
-every directory under `tools/` carries an `eval.json`, and so does every built-in
-under `internal/app/builtin/` — requests put to a real
-model, and what its tool use must look like. `go test ./...` fails if a tool
-directory has none.
+every built-in carries an `eval.json` beside its manifest, and every bundle
+carries `evals/<tool>.json` for each of its tools — requests put to a real
+model, and what its tool use must look like. `go test ./...` fails if a shipped
+tool has none.
 
-When you add a tool, write its eval cases in the same change, and run
+When you add a built-in, write its eval cases in the same change, and run
 `task eval -- <tool>`. A failing case is usually a defect in the description,
 not in the model; fix it there. See [`specs/tools.html`](specs/tools.html).
 

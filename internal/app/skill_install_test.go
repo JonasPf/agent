@@ -155,7 +155,7 @@ func TestAnInstallThatWouldNotSaveIsRefused(t *testing.T) {
 func TestAConversationsToolsRunTheSkillsItHas(t *testing.T) {
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 	userSkills := filepath.Join(root, "user-skills")
 	writeSkillFolder(t, userSkills, "runner", "", map[string]string{
 		"scripts/hello.sh": "echo hello from a skill\n",
@@ -189,8 +189,8 @@ func TestAConversationsToolsRunTheSkillsItHas(t *testing.T) {
 func TestSkillReadReturnsTheFileAsStoredAndWhereItLives(t *testing.T) {
 	dir := t.TempDir()
 	a := newTestAppAt(t, dir)
-	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")
-	a.tools = NewRegistry(a.cfg.ToolsDir, DBPath(dir), a.store.DB())
+	a.cfg.PluginsDir = shippedBundles(t)
+	a.tools = NewRegistry(a.cfg.PluginsDir)
 	userSkills := t.TempDir()
 	writeSkillFolder(t, userSkills, "trip", "", map[string]string{"packing.md": "Chargers.\n"})
 	a.skills = NewSkills(filepath.Join("..", "..", "skills"), userSkills)
