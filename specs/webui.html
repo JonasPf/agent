@@ -210,7 +210,9 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>A keyboard sends the composer with Enter and breaks the line with shift-Enter; a touch screen breaks the line with Enter and sends from the button. The platform's own combination sends on either.</li>
 <li>A key that ends a composition &mdash; an accent, a kana, a candidate &mdash; sends nothing.</li>
 <li>Opening a conversation on a keyboard puts the cursor in the composer without scrolling the transcript; on a touch screen nothing is focused, so no keyboard rises.</li>
-<li>Up in the composer recalls the operator's own messages in this conversation, newest first, and never a job's prompt; down steps back to the newest and then to what was being typed. Up reaches history only from the first line and down only from the last, and with a modifier held the arrows only select.</li>
+<li>Up in the composer recalls the operator's own messages in this conversation, newest first, and never a job's prompt.</li>
+<li>Down steps back to the newest and then to what was being typed.</li>
+<li>Up reaches history only from the first line and down only from the last; with a modifier held the arrows only select.</li>
 <li>From the moment a message is sent until the agent's last queued turn in that conversation ends, the status line says the agent is working and counts the seconds; a conversation opened mid-turn counts from when the turn started, and the indicator goes when the turn ends.</li>
 <li>A session reports whether it is working and for how long, and the change is pushed as it happens, once when work starts and once when the last queued turn ends.</li>
 <li>While a conversation is working, the status line offers a way to stop the turn, and the offer goes when the turn does.</li>
@@ -219,14 +221,29 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>An entry arriving is added without drawing again what is already on screen; a tool result the reader opened stays open.</li>
 <li>A conversation opened while it is working shows every entry, each once: what the socket delivers while the transcript is on its way is kept beside it, and an entry heard twice is drawn once.</li>
 <li>An answer arriving reads exactly as the finished answer will, is drawn at most once a frame, and draws again only the block still growing; a reader who has scrolled up is left where they are.</li>
-<li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
+<li>The whole conversation copies to the clipboard as Markdown from its header, without the prompt or the event log. The copy holds:
+<ul>
+<li>the title;</li>
+<li>every message with its speaker and time;</li>
+<li>each tool call with its arguments;</li>
+<li>each tool result, clipped to a readable length that says how much it left out;</li>
+<li>the logs of any call that wrote some;</li>
+<li>each compaction's summary.</li>
+</ul></li>
 <li>Every message that started a turn, the operator's or a wake's, offers to revert the conversation to before it; no other entry does.</li>
-<li>Reverting asks first, in a dialog: it says how many entries go, that the agent will no longer see them, that the files go back to how they were before that message or, when they are no longer kept, that they stay as they are, that jobs it created are not undone, and, when it would, that a compaction is undone with them. Dismissing it changes nothing.</li>
+<li>Reverting asks first, in a dialog, and dismissing it changes nothing. The dialog says:
+<ul>
+<li>how many entries go, and that the agent will no longer see them;</li>
+<li>that the files go back to how they were before that message or, when they are no longer kept, that they stay as they are;</li>
+<li>that jobs it created are not undone;</li>
+<li>when it would, that a compaction is undone with them.</li>
+</ul></li>
 <li>Every message that started a turn, and every line that records a revert, offers to fork from before it when its files are still kept; no other entry does. It opens the fork screen, which says from which message it copies.</li>
 <li>A fork from a message the operator typed opens with that message in its composer.</li>
 <li>While the conversation is working the revert dialog says to stop the turn first, and offers no revert.</li>
 <li>A revert the agent refuses says why, and changes nothing on screen.</li>
-<li>After a revert the conversation is drawn without what it took back, on every page showing it, and ends with the line recording the revert. The operator's message is in the composer, ready to change and send, unless something was already being typed there, which is kept; a wake puts nothing there.</li>
+<li>After a revert the conversation is drawn without what it took back, on every page showing it, and ends with the line recording the revert.</li>
+<li>After a revert the operator's message is in the composer, ready to change and send, unless something was already being typed there, which is kept; a wake puts nothing there.</li>
 <li>Entries a revert took back are not drawn in the conversation and are not copied with it; the history shows them dimmed, and a search hit on one says the agent no longer sees it.</li>
 </ul>
 </div>
@@ -250,7 +267,9 @@ always measured on the spot.</p>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>Search opened from a conversation looks in that conversation, and can be widened to every conversation in one tap. It searches as it is typed, each word matching as a prefix, and punctuation is looked for rather than read as syntax.</li>
 <li>Each search hit says who wrote it and when, marks what matched, and says so when the agent no longer sees it.</li>
-<li>A search hit opens the conversation's history at that entry: everything the session stored, oldest first, folded entries, superseded summaries, and what a revert took back included and dimmed, the hit picked out and scrolled to. Nothing in the history can be edited or sent.</li>
+<li>A search hit opens the conversation's history at that entry, the hit picked out and scrolled to.</li>
+<li>The history is everything the session stored, oldest first; folded entries, superseded summaries, and what a revert took back are included and dimmed.</li>
+<li>Nothing in the history can be edited or sent.</li>
 <li>The list shows which sessions have jobs attached.</li>
 <li>Every session shows what it occupies on disk, so it is clear what deleting one frees.</li>
 <li>What a tool writes or an upload adds, and what a delete frees, shows in the session list on its next read; a session's context figure moves with every entry.</li>
@@ -273,19 +292,29 @@ always measured on the spot.</p>
 <li>The details screen sets the size at which this conversation compacts and how much it keeps word for word, says the second can be at most half the first, and says why when a pair is refused (<a href="adrs.html#adr-060">ADR-060</a>).</li>
 <li>The details screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
 <li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
-<li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
+<li>The model is chosen in a dialog that slides over the screen.</li>
+<li>Each model in the dialog shows its price per million input and output tokens and its context window, and links to its page on OpenRouter.</li>
+<li>Each model shows its intelligence, coding, and agentic indices where the gateway reports them; an index the gateway did not report is absent, never zero.</li>
 <li>A model's figures &mdash; prices, context, indices &mdash; are one wrapping row of small figures under its name, wherever a model is named: never a card each.</li>
 <li>Wherever a screen names a model, its figures come from the catalogue as the agent currently holds it, fetched when the screen is drawn, so the configuration and the model dialog never show one model at two prices.</li>
 <li>The model dialog ranks by intelligence by default, and can be ranked by price, context, or release instead; a model without the figure ranked on comes last.</li>
 <li>The model list is searchable: a query narrows it to the models whose identifier or name contains every term, and the model already chosen stays selectable even when the query excludes it.</li>
 <li>Dismissing a dialog changes nothing; only picking in it does.</li>
-<li>A variable is defined as a name and a value, the value typed into a field that hides it (<a href="adrs.html#adr-068">ADR-068</a>). Once entered a value is never shown again: the screen lists the names that are set, and replacing a value means typing it anew. A name the agent refuses says why, and nothing is changed.</li>
+<li>A variable is defined as a name and a value, the value typed into a field that hides it (<a href="adrs.html#adr-068">ADR-068</a>).</li>
+<li>Once entered a variable's value is never shown again: the screen lists the names that are set, and replacing a value means typing it anew.</li>
+<li>A variable name the agent refuses says why, and nothing is changed.</li>
 <li>The details screen sets, replaces, and removes the conversation's variables, each change taking effect at the next tool call.</li>
 <li>A skill that ships off starts unticked in a configuration that did not choose its skills, and ticking it chooses them.</li>
 <li>Starting or forking a conversation sets everything about it that can be set: its title, model, tools, skills, persona, variables, and when it compacts. The details screen repeats only what can still change once it exists.</li>
 <li>Forking opens a configuration screen carrying the origin's settings, its variables and thresholds included, and creates the fork when it is confirmed.</li>
 <li>The fork screen says how much of the conversation is copied &mdash; all of it, or everything before the message or revert it forks from &mdash; and that the origin keeps its jobs.</li>
-<li>Starting a conversation reaches the same screen, prefilled with the most recent session's tools and the skills that are on by default, on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>), with no variables, the default thresholds, and a title left to be generated.</li>
+<li>Starting a conversation reaches the same screen (<a href="adrs.html#adr-049">ADR-049</a>), prefilled with:
+<ul>
+<li>the most recent session's tools;</li>
+<li>the skills that are on by default;</li>
+<li>the model last chosen;</li>
+<li>no variables, the default thresholds, and a title left to be generated.</li>
+</ul></li>
 <li>Starting a conversation and creating a fork are each one action: the button stops offering while its request is out, so a press that lands twice creates one, and a refusal says why and offers it again.</li>
 <li>No screen offers to edit the configuration of a session that already exists.</li>
 <li>Enable-all and disable-all act on the whole list in one tap.</li>
@@ -322,7 +351,9 @@ agent nor the network.</p>
 <li>A PDF opened from a working directory still shows.</li>
 <li>A file can be uploaded from a phone, including from the camera and the photo library.</li>
 <li>An uploaded file is written to the session's working directory and appears in its file list.</li>
-<li>An upload never replaces a file already there: a name already taken gets a number &mdash; <code>image.jpg</code>, then <code>image-2.jpg</code> &mdash; and the message names each file where it landed. Two photos from a phone's camera, both called <code>image.jpg</code>, are two files.</li>
+<li>An upload never replaces a file already there: a name already taken gets a number &mdash; <code>image.jpg</code>, then <code>image-2.jpg</code>.</li>
+<li>The message names each uploaded file where it landed.</li>
+<li>Two photos from a phone's camera, both called <code>image.jpg</code>, are two files.</li>
 <li>The file list shows every file and directory the session holds as a tree, empty directories included. A file shows its size and age and can be downloaded or deleted; a directory shows what it holds and folds and unfolds when tapped.</li>
 <li>A tree of more than a hundred entries opens with its directories folded; a smaller one opens in full.</li>
 <li>A file attached from the composer shows as a chip with its upload progress, and stays until the message is sent or it is taken off.</li>
@@ -506,13 +537,21 @@ a tab to write or preview, with files added, renamed, and removed there. It is d
 <li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
-<li>The Plugins panel lists each bundle with its version, whether it ships with the agent or was installed, what it reads beyond the sandbox, its timeout, and the tools it brings; what is built in, and a tool with a program of its own, are listed apart from any bundle.</li>
-<li>A bundle that did not load says why on its own card, and is not listed again among the tools that failed. One that needs a value says which, and that its tools are not offered until it is set.</li>
-<li>What a bundle asks for is typed and saved on its card: a sensitive value is typed hidden, the panel says only whether each is set, an empty box leaves a value as it is, and a set value can be cleared.</li>
-<li>Installing a bundle, from a file or an <code>https</code> address, first shows what it is, the tools it brings, what it asks for, what it reads and its timeout, and installs nothing; Install then sends that same archive with the sum the inspection answered. A bundle that could not be installed says why and offers no Install.</li>
+<li>The Plugins panel lists each bundle with its version, whether it ships with the agent or was installed, what it reads beyond the sandbox, its timeout, and the tools it brings.</li>
+<li>What is built in, and a tool with a program of its own, are listed apart from any bundle.</li>
+<li>A bundle that did not load says why on its own card, and is not listed again among the tools that failed.</li>
+<li>A bundle that needs a value says which, and that its tools are not offered until it is set.</li>
+<li>What a bundle asks for is typed and saved on its card. A sensitive value is typed hidden, and the panel says only whether each is set.</li>
+<li>An empty box leaves a bundle's value as it is, and a set value can be cleared.</li>
+<li>Installing a bundle, from a file or an <code>https</code> address, first shows what it is, the tools it brings, what it asks for, what it reads and its timeout, and installs nothing.</li>
+<li>Install then sends that same archive with the sum the inspection answered.</li>
+<li>A bundle that could not be installed says why and offers no Install.</li>
 <li>A bundle the operator installed can be removed, after asking; one that ships with the agent offers no Remove.</li>
-<li>The Plugins panel shows the sandbox once, from the policy it applies to every tool program: the paths a tool may read and write, the device files, and the ports it may connect to, grouped by what they are for, and that it can never reach the operator's port. It says when either half is not enforced.</li>
-<li>Each tool shows what the model is sent apart from what only the agent reads (<a href="adrs.html#adr-067">ADR-067</a>). The first is its description and each parameter, with its type, whether it is required, and its own description. The second is its timeout, its table prefix, the names of the variables it is given, and the paths it may read beyond the sandbox.</li>
+<li>The Plugins panel shows the sandbox once, from the policy it applies to every tool program, and says when either half is not enforced.</li>
+<li>The sandbox is shown as the paths a tool may read and write, the device files, and the ports it may connect to, grouped by what they are for, and that a tool can never reach the operator's port.</li>
+<li>Each tool shows what the model is sent apart from what only the agent reads (<a href="adrs.html#adr-067">ADR-067</a>).</li>
+<li>What the model is sent is a tool's description and each parameter, with its type, whether it is required, and its own description.</li>
+<li>What only the agent reads is a tool's timeout, its table prefix, the names of the variables it is given, and the paths it may read beyond the sandbox.</li>
 <li>A parameter without a description is flagged, on the parameter and on the tool's summary line, because the model sees only its type.</li>
 <li>Each tool shows its manifest, with the <code>agent</code> block set apart, and the entry the model is sent, exactly as sent. A builtin says it runs inside the agent, with no sandbox and no manifest.</li>
 <li>A term the screen cannot explain in its label has a <b>?</b> beside it, which explains it on hover with a pointer and on tap on a phone, and stays on screen near an edge.</li>
