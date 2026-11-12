@@ -176,9 +176,23 @@ operator reads it on the Skills screen before deciding.</p>
 <tr><td><code>video-edit</code></td><td>off</td><td>How to cut parts out of videos and join them: find the moments from times or from what was said, cut exactly, fit clips that do not match, and carry on a long job that a time limit stopped. It comes before a voice-over, because a cut moves every time after it.</td></tr>
 </table>
 
-<p>These two carry scripts, and <code>task check</code> runs them from <code>testenv/skills</code> on real
-video, with the review page in the real <code>ask_operator</code> panel in a real browser
+<p>Four of these are not kept here. <code>keeping-records</code>, <code>writing-skills</code>,
+<code>researching</code>, and <code>video-edit</code> are written, tested, and released in
+<a href="https://github.com/JonasPf/agent-plugins">agent-plugins</a>, each as a zip of its folder.
+<code>plugins.lock</code> names the version and sha256 of each, and the image is built with exactly
+those, as it is with its bundles (<a href="adrs.html#adr-088">ADR-088</a>). They ship read-only,
+like any skill in the image. <code>voice-over</code> is still kept in this repository, because its
+review page runs in the <code>ask_operator</code> panel: <code>task check</code> runs its scripts
+from <code>testenv/skills</code> on real video, with the page in the real panel in a real browser
 (<a href="adrs.html#adr-075">ADR-075</a>).</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A skill <code>plugins.lock</code> names is fetched, checked against its sha256, and loads as a skill that ships: listed, readable, and not editable.</li>
+<li>A skill an earlier lock fetched and this one does not name is removed; a skill kept in the repository is left alone.</li>
+</ul>
+</div>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>

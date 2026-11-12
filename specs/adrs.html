@@ -2797,6 +2797,25 @@ from <code>TAVILY_API_KEY</code> in the environment to the Plugins screen, once,
 no longer keep tables in the agent's database; none did.</p>
 </div>
 
+<div class="adr" id="adr-089">
+<div class="meta">ADR-089 · accepted · builds on <a href="#adr-088">ADR-088</a></div>
+<h3>The skills the image ships are pinned in the same lock file</h3>
+<h4>Context</h4>
+<p>The tools left this repository for their own, pinned by <code>plugins.lock</code>. Four skills
+&mdash; <code>researching</code>, <code>keeping-records</code>, <code>writing-skills</code>,
+<code>video-edit</code> &mdash; are no more part of the agent than those tools were.</p>
+<h4>Decision</h4>
+<p>They are released from the same repository as the bundles, each as a zip of its folder, and
+<code>plugins.lock</code> names each with <code>"kind": "skill"</code>, a version, an address, and a
+sha256. The one fetch command unpacks them beside the bundles' and by the same rules.
+<code>voice-over</code> stays here until its review page no longer needs the
+<code>ask_operator</code> panel.</p>
+<h4>Consequences</h4>
+<p>A shipped skill changes in a commit to the lock, as a shipped tool does. Tests and evals that
+read a shipped skill read the fetched one. The fetch removes only folders it made itself, so the
+skill kept here is left alone.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

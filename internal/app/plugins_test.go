@@ -410,57 +410,86 @@ func TestASkillInstallsFromAnArchive(t *testing.T) {
 	}
 }
 
-// "The image's bundles are the ones plugins.lock names: an archive whose
-// sha256 is not the lock's fails the fetch and is not unpacked."
-func TestTheLockedBundlesAreFetchedAndCheckedAgainstTheirSums(t *testing.T) {
-	archive := mcpb(t, shellManifest)
+// "The image's bundles and skills are the ones plugins.lock names: an archive
+// whose sha256 is not the lock's fails the fetch and is not unpacked, and
+// what an earlier lock fetched and this one does not name is removed."
+func TestTheLockedBundlesAndSkillsAreFetchedAndCheckedAgainstTheirSums(t *testing.T) {
+	bundle := mcpb(t, shellManifest)
+	skill := zipOf(t,
+		zipEntry{name: "SKILL.md", body: []byte(zippedSkill)},
+		zipEntry{name: "notes/more.md", body: []byte("More.\n")})
 	fetched := 0
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fetched++
-		w.Write(archive)
+		if strings.HasSuffix(r.URL.Path, ".zip") {
+			w.Write(skill)
+			return
+		}
+		w.Write(bundle)
 	}))
 	t.Cleanup(srv.Close)
-	lock := func(sum string) string {
+	lock := func(bundleSum string, withSkill bool) string {
 		p := filepath.Join(t.TempDir(), "plugins.lock")
-		body := `[{"name": "shell", "version": "1.2.3", "files": {"arm64": {"url": "` + srv.URL + `/shell.mcpb", "sha256": "` + sum + `"}}}]`
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		body := `[{"name": "shell", "version": "1.2.3", "files": {"arm64": {"url": "` + srv.URL + `/shell.mcpb", "sha256": "` + bundleSum + `"}}}`
+		if withSkill {
+			body += `, {"kind": "skill", "name": "zipped", "version": "0.1.0", "files": {"any": {"url": "` + srv.URL + `/zipped.zip", "sha256": "` + sumOf(skill) + `"}}}`
+		}
+		if err := os.WriteFile(p, []byte(body+"]"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return p
 	}
-	out := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(out, "left-over"), 0o755); err != nil {
+	plugins, skills := t.TempDir(), t.TempDir()
+	// A skill that is checked in beside the fetched ones is not the lock's.
+	if err := os.MkdirAll(filepath.Join(skills, "checked-in"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	fetch := func(lockPath, arch string) error {
+		return FetchPlugins(lockPath, plugins, skills, arch, srv.Client(), io.Discard)
+	}
 
-	err := FetchPlugins(lock(strings.Repeat("0", 64)), out, "arm64", srv.Client(), io.Discard)
+	err := fetch(lock(strings.Repeat("0", 64), false), "arm64")
 	if err == nil || !strings.Contains(err.Error(), "sha256") {
 		t.Errorf("a wrong sum = %v, want the fetch to fail naming it", err)
 	}
-	if _, err := os.Stat(filepath.Join(out, "shell")); err == nil {
+	if _, err := os.Stat(filepath.Join(plugins, "shell")); err == nil {
 		t.Error("an archive with the wrong sum was unpacked")
 	}
-	if err := FetchPlugins(lock(sumOf(archive)), out, "amd64", srv.Client(), io.Discard); err == nil {
+	if err := fetch(lock(sumOf(bundle), false), "amd64"); err == nil {
 		t.Error("an architecture the lock has no archive for was not an error")
 	}
 
-	if err := FetchPlugins(lock(sumOf(archive)), out, "arm64", srv.Client(), io.Discard); err != nil {
+	if err := fetch(lock(sumOf(bundle), true), "arm64"); err != nil {
 		t.Fatal(err)
 	}
-	if st, err := os.Stat(filepath.Join(out, "shell", "server", "shell")); err != nil || st.Mode()&0o111 == 0 {
+	if st, err := os.Stat(filepath.Join(plugins, "shell", "server", "shell")); err != nil || st.Mode()&0o111 == 0 {
 		t.Errorf("the server was not unpacked executable: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(out, "left-over")); err == nil {
-		t.Error("a folder the lock does not name was left in place")
 	}
 	// The same lock again fetches nothing.
 	before := fetched
-	if err := FetchPlugins(lock(sumOf(archive)), out, "arm64", srv.Client(), io.Discard); err != nil || fetched != before {
+	if err := fetch(lock(sumOf(bundle), true), "arm64"); err != nil || fetched != before {
 		t.Errorf("a second fetch of the same lock: err %v, %d more downloads", err, fetched-before)
 	}
-	// And what was fetched loads.
-	a, failures := bundleApp(t, out)
+	// What was fetched loads: the bundle's tool, and the skill with its file,
+	// as one that ships.
+	a, failures := bundleApp(t, plugins)
 	if len(failures) > 0 || a.tools.Get("sh") == nil {
 		t.Errorf("the fetched bundle did not load: %+v", failures)
+	}
+	shipped := NewSkills(skills, "")
+	if sk := shipped.Get("zipped"); sk == nil || sk.Editable || len(sk.Files) != 1 {
+		t.Errorf("the fetched skill = %+v, want it shipped with its one file", sk)
+	}
+
+	// A lock that no longer names the skill takes it away, and leaves what it
+	// never fetched.
+	if err := fetch(lock(sumOf(bundle), false), "arm64"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(skills, "zipped")); err == nil {
+		t.Error("a skill the lock no longer names was left in place")
+	}
+	if _, err := os.Stat(filepath.Join(skills, "checked-in")); err != nil {
+		t.Error("a folder the lock never fetched was removed")
 	}
 }

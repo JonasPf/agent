@@ -82,5 +82,49 @@
         "sha256": "90933afb4c74338d15915c957bca5663c9d3a32e53e02b82f16d7d2ca1add343"
       }
     }
+  },
+  {
+    "kind": "skill",
+    "name": "researching",
+    "version": "0.1.0",
+    "files": {
+      "any": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/skill-researching-v0.1.0/researching-0.1.0.zip",
+        "sha256": "61fc2a6fbb9e82929829d075c1d22c0283631bf148eefa4eda034cc3d088e0e3"
+      }
+    }
+  },
+  {
+    "kind": "skill",
+    "name": "keeping-records",
+    "version": "0.1.0",
+    "files": {
+      "any": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/skill-keeping-records-v0.1.0/keeping-records-0.1.0.zip",
+        "sha256": "e41628269f669c439cb128550669b2f30a75d626a0c423666a4ad56ac6ab71ed"
+      }
+    }
+  },
+  {
+    "kind": "skill",
+    "name": "writing-skills",
+    "version": "0.1.0",
+    "files": {
+      "any": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/skill-writing-skills-v0.1.0/writing-skills-0.1.0.zip",
+        "sha256": "871de831425db0aef7a6f137caf07327fccfc6fd9f78933d9c034b42efdc466e"
+      }
+    }
+  },
+  {
+    "kind": "skill",
+    "name": "video-edit",
+    "version": "0.1.0",
+    "files": {
+      "any": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/skill-video-edit-v0.1.0/video-edit-0.1.0.zip",
+        "sha256": "654a35e83aacf1c38d490541db0df6eff8cca499db22ed09181159d551faa9cb"
+      }
+    }
   }
 ]

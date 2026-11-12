@@ -10,31 +10,36 @@ import (
 	"strings"
 )
 
-// The bundles the image ships are named in plugins.lock, checked in beside
-// the code: for each, its version, and for each architecture where its
-// archive is and the sha256 it must have. So the tools the agent ships with
-// change only in a commit, like the rest of it (ADR-088).
+// The bundles and skills the image ships are named in plugins.lock, checked in
+// beside the code: for each, its version, where its archive is, and the sha256
+// it must have. So what the agent ships with changes only in a commit, like
+// the rest of it (ADR-088).
 
 // LockedPlugin is one entry of plugins.lock.
 type LockedPlugin struct {
+	// Kind is "skill" for a skill and empty for a bundle.
+	Kind    string `json:"kind,omitempty"`
 	Name    string `json:"name"`
 	Version string `json:"version"`
-	// Files is the archive for each architecture, by Go's name for it.
+	// Files is the archive for each architecture, by Go's name for it, or
+	// under "any" for one that is the same everywhere, as a skill's is.
 	Files map[string]struct {
 		URL    string `json:"url"`
 		SHA256 string `json:"sha256"`
 	} `json:"files"`
 }
 
-// lockMark is the file in an unpacked bundle saying which archive it came
-// from, so a second fetch of the same lock downloads nothing.
+// lockMark is the file in an unpacked archive saying which one it came from,
+// so a second fetch of the same lock downloads nothing, and so a folder this
+// fetched can be told from one that was put there another way.
 const lockMark = ".sha256"
 
-// FetchPlugins unpacks each bundle the lock names, for arch, into
-// out/<name>. An archive whose sha256 is not the one the lock gives is not
-// unpacked, and the fetch fails. A folder in out the lock does not name is
-// removed: what is there afterwards is what the lock says.
-func FetchPlugins(lockPath, out, arch string, client *http.Client, log io.Writer) error {
+// FetchPlugins unpacks each bundle the lock names into plugins/<name> and
+// each skill into skills/<name>, for arch. An archive whose sha256 is not the
+// one the lock gives is not unpacked, and the fetch fails. A folder an earlier
+// fetch made and this lock does not name is removed; one that was never
+// fetched is left alone.
+func FetchPlugins(lockPath, plugins, skills, arch string, client *http.Client, log io.Writer) error {
 	raw, err := os.ReadFile(lockPath)
 	if err != nil {
 		return err
@@ -43,24 +48,35 @@ func FetchPlugins(lockPath, out, arch string, client *http.Client, log io.Writer
 	if err := json.Unmarshal(raw, &lock); err != nil {
 		return fmt.Errorf("%s: %w", lockPath, err)
 	}
-	if err := os.MkdirAll(out, 0o755); err != nil {
-		return err
-	}
-	a := &App{cfg: Config{DataDir: out}, fetch: client}
 	named := map[string]bool{}
 	for _, p := range lock {
+		out := plugins
+		switch p.Kind {
+		case "":
+		case "skill":
+			out = skills
+		default:
+			return fmt.Errorf("%s: %s is a %q, which is neither a bundle nor a skill", lockPath, p.Name, p.Kind)
+		}
 		if err := validAuthoredName(p.Name); err != nil {
 			return fmt.Errorf("%s: %w", lockPath, err)
 		}
-		named[p.Name] = true
 		f, ok := p.Files[arch]
+		if !ok {
+			f, ok = p.Files["any"]
+		}
 		if !ok {
 			return fmt.Errorf("%s: %s %s has no archive for %s", lockPath, p.Name, p.Version, arch)
 		}
 		target := filepath.Join(out, p.Name)
+		named[target] = true
 		if have, _ := os.ReadFile(filepath.Join(target, lockMark)); strings.TrimSpace(string(have)) == f.SHA256 {
 			continue
 		}
+		if err := os.MkdirAll(out, 0o755); err != nil {
+			return err
+		}
+		a := &App{cfg: Config{DataDir: out}, fetch: client}
 		archive, sum, err := a.archiveFrom(f.URL, nil, maxBundle)
 		if err != nil {
 			return fmt.Errorf("%s %s: %w", p.Name, p.Version, err)
@@ -91,13 +107,14 @@ func FetchPlugins(lockPath, out, arch string, client *http.Client, log io.Writer
 		}
 		fmt.Fprintf(log, "fetched %s %s\n", p.Name, p.Version)
 	}
-	entries, err := os.ReadDir(out)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.IsDir() && !named[e.Name()] {
-			if err := os.RemoveAll(filepath.Join(out, e.Name())); err != nil {
+	for _, out := range []string{plugins, skills} {
+		entries, _ := os.ReadDir(out)
+		for _, e := range entries {
+			dir := filepath.Join(out, e.Name())
+			if _, err := os.Stat(filepath.Join(dir, lockMark)); err != nil || named[dir] {
+				continue
+			}
+			if err := os.RemoveAll(dir); err != nil {
 				return err
 			}
 		}
