@@ -15,8 +15,8 @@ import (
 func TestReadingASkillsFileNamesTheCallThatReadsIt(t *testing.T) {
 	dir := t.TempDir()
 	a := newTestAppAt(t, dir)
-	a.cfg.ToolsDir = filepath.Join("..", "..", "tools")
-	a.tools = NewRegistry(a.cfg.ToolsDir, DBPath(dir), a.store.DB())
+	a.cfg.PluginsDir = shippedBundles(t)
+	a.tools = NewRegistry(a.cfg.PluginsDir)
 	userSkills := t.TempDir()
 	writeSkillFolder(t, userSkills, "trip", "", map[string]string{
 		"packing.md":      "Chargers are one item per device.\n",

@@ -3,11 +3,11 @@
 # any part of the agent is a new image, and an upgrade is running it — nothing
 # is ever modified in place.
 #
-# Three stages. The first compiles the agent and every tool the way `task build`
-# does, and fetches the two binaries that are not built here. The second fetches
+# Three stages. The first compiles the agent, fetches the bundles its tools come
+# in, and fetches the two binaries that are not built here. The second fetches
 # a static Nix. The third carries them, the interface, the skills, and the
 # userland the tools need — a shell,
-# because tools/bash execs /bin/sh; git, gh and glab, because the agent proposes
+# because the shell bundle execs /bin/sh; git, gh and glab, because the agent proposes
 # changes — to itself, and to whatever other repository it is asked to work on —
 # by opening a pull request; chromium, because reading most of
 # the web means running it; curl, wget, python3, perl, and the document and
@@ -40,28 +40,18 @@ RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache
     go build -trimpath \
       -ldflags "-s -w -X agent/internal/app.Version=${VERSION} -X agent/internal/app.BuiltAt=${BUILT_AT}" \
       -o /out/agent ./cmd/agent
-# Every tool directory becomes /out/tools/<name>/{manifest.json,run}, which is
-# the layout the registry scans. A directory without a manifest is not a tool.
-# Everything in a tool's directory ships except its source and its eval cases:
-# a tool may carry a schema, a panel, or a file nobody has thought of yet, and
-# naming them one by one is how notes reached production without the schema that
-# creates its table.
+# The tools the image ships are bundles from their own releases, named in
+# plugins.lock with the sha256 each archive must have (ADR-088). A sum that
+# does not match fails the build here. They are unpacked to
+# /out/plugins/<name>, which is the layout the agent loads.
+ARG TARGETARCH=amd64
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    set -eu; \
-    for d in tools/*/; do \
-      [ -f "$d/manifest.json" ] || continue; \
-      name=$(basename "$d"); \
-      mkdir -p "/out/tools/$name"; \
-      cp -R "$d". "/out/tools/$name/"; \
-      rm -f "/out/tools/$name"/*.go "/out/tools/$name/eval.json"; \
-      go build -trimpath -ldflags "-s -w" -o "/out/tools/$name/run" "./$d"; \
-    done
+    go run ./cmd/plugins -lock plugins.lock -out /out/plugins -arch "${TARGETARCH}"
 
 # gh comes from its own release rather than an apt repository, so the runtime
 # image needs neither the repository nor the network client that would add it.
 # Bump the version and both digests together; they are from the release's own
 # checksums file.
-ARG TARGETARCH=amd64
 ARG GH_VERSION=2.100.0
 ARG GH_SHA256_amd64=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be
 ARG GH_SHA256_arm64=ea4e7a581a32ccad6cc7923cb1576ac5859ba4b9a16ab22eb8f8a96e78e2e961
@@ -144,7 +134,7 @@ COPY --from=build /out/agent /app/agent
 COPY --from=build /out/gh /usr/local/bin/gh
 COPY --from=build /out/glab /usr/local/bin/glab
 COPY --from=nix /nix-static /usr/local/bin/nix
-COPY --from=build /out/tools /app/tools
+COPY --from=build /out/plugins /app/plugins
 COPY web /app/web
 COPY skills /app/skills
 # What changed, as written by whoever changed it. It is read from disk at the

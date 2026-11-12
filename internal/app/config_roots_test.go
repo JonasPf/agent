@@ -23,7 +23,8 @@ func TestTheLayoutIsTwoRootsAndNotSevenSettings(t *testing.T) {
 		{"data", cfg.DataDir, "/app/state/data"},
 		{"workspace", cfg.Workspace, "/app/state/workspace"},
 		{"settings file", cfg.EnvFile, "/app/state/.env"},
-		{"tools", cfg.ToolsDir, "/app/tools"},
+		{"plugins", cfg.PluginsDir, "/app/plugins"},
+		{"installed plugins", cfg.UserPluginsDir, "/app/state/plugins"},
 		{"skills", cfg.SkillsDir, "/app/skills"},
 		{"web", cfg.WebDir, "/app/web"},
 		{"changelog", cfg.ChangelogPath, "/app/CHANGELOG.md"},
@@ -35,7 +36,7 @@ func TestTheLayoutIsTwoRootsAndNotSevenSettings(t *testing.T) {
 }
 
 // Unset, both roots are the working directory, which is what running from a
-// checkout has always meant: data/ and workspace/ beside tools/ and skills/.
+// checkout has always meant: data/ and workspace/ beside plugins/ and skills/.
 func TestUnsetRootsMeanTheWorkingDirectory(t *testing.T) {
 	t.Setenv("AGENT_STATE", "")
 	t.Setenv("AGENT_HOME", "")
@@ -47,7 +48,7 @@ func TestUnsetRootsMeanTheWorkingDirectory(t *testing.T) {
 		{"data", cfg.DataDir, filepath.Join(".", "data")},
 		{"workspace", cfg.Workspace, filepath.Join(".", "workspace")},
 		{"settings file", cfg.EnvFile, filepath.Join(".", ".env")},
-		{"tools", cfg.ToolsDir, filepath.Join(".", "tools")},
+		{"plugins", cfg.PluginsDir, filepath.Join(".", "plugins")},
 		{"changelog", cfg.ChangelogPath, filepath.Join(".", "CHANGELOG.md")},
 	} {
 		if c.got != c.want {

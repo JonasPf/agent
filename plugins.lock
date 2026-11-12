@@ -1,0 +1,86 @@
+[
+  {
+    "name": "files",
+    "version": "0.1.1",
+    "files": {
+      "amd64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/files-v0.1.1/files-0.1.1-linux-amd64.mcpb",
+        "sha256": "94222039641351219765fcc64074e93a0deacae7e157198ce66afcf09a2fddaf"
+      },
+      "arm64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/files-v0.1.1/files-0.1.1-linux-arm64.mcpb",
+        "sha256": "9a9aab759a530a3de8428ba3270817f293cc1c486417b348b9ea5198d5035d5f"
+      }
+    }
+  },
+  {
+    "name": "shell",
+    "version": "0.1.1",
+    "files": {
+      "amd64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/shell-v0.1.1/shell-0.1.1-linux-amd64.mcpb",
+        "sha256": "4bc46bbef1a1ea2981d9e301d85ff3eb67ad2de248b82c509b33938f22c53cf6"
+      },
+      "arm64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/shell-v0.1.1/shell-0.1.1-linux-arm64.mcpb",
+        "sha256": "598e6bbaed6076d166b130774d6f44359e1a50822e9afc05299ef41336ca5d9b"
+      }
+    }
+  },
+  {
+    "name": "clock",
+    "version": "0.1.1",
+    "files": {
+      "amd64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/clock-v0.1.1/clock-0.1.1-linux-amd64.mcpb",
+        "sha256": "7cd461ab49f1ec0a9a96da05fe1ffde0c78ee15627eea5bfe0c022ad662a9dab"
+      },
+      "arm64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/clock-v0.1.1/clock-0.1.1-linux-arm64.mcpb",
+        "sha256": "939e02b33050a3f95e7c9a1b64b97381047a7f6d64ba277fda42b1231fb6e5cf"
+      }
+    }
+  },
+  {
+    "name": "web-fetch",
+    "version": "0.1.1",
+    "files": {
+      "amd64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/web-fetch-v0.1.1/web-fetch-0.1.1-linux-amd64.mcpb",
+        "sha256": "d82fd5e3b6f58f8b79013f7bd0ebe2de3a288eb207af489410bccda5dcbf2142"
+      },
+      "arm64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/web-fetch-v0.1.1/web-fetch-0.1.1-linux-arm64.mcpb",
+        "sha256": "9b9e46c224ad4adf72b08b1d032723ffc2e825797cd8360b25e6b80fb9e895ad"
+      }
+    }
+  },
+  {
+    "name": "web-search",
+    "version": "0.1.1",
+    "files": {
+      "amd64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/web-search-v0.1.1/web-search-0.1.1-linux-amd64.mcpb",
+        "sha256": "67d3c9136fb5faf082dd0406a926f9aa3e45d11e2b36358c768715ae5b63047d"
+      },
+      "arm64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/web-search-v0.1.1/web-search-0.1.1-linux-arm64.mcpb",
+        "sha256": "d0b64513f7595a15e6cc084e656774be065cb4e956e2b3bb08257dd9b6d4dfda"
+      }
+    }
+  },
+  {
+    "name": "web-browse",
+    "version": "0.1.1",
+    "files": {
+      "amd64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/web-browse-v0.1.1/web-browse-0.1.1-linux-amd64.mcpb",
+        "sha256": "93fd3d70e168db7306b9a3bcb7db4cacdd0249d96eb9f3b8d8fc83d20d91c710"
+      },
+      "arm64": {
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/web-browse-v0.1.1/web-browse-0.1.1-linux-arm64.mcpb",
+        "sha256": "90933afb4c74338d15915c957bca5663c9d3a32e53e02b82f16d7d2ca1add343"
+      }
+    }
+  }
+]

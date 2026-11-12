@@ -46,8 +46,6 @@ type Sandbox struct {
 
 	workspaceRoot string
 	dataDir       string
-	toolsDir      string
-	dbPath        string
 }
 
 // linuxReads is the same set for Landlock, which grants access beneath a
@@ -90,12 +88,13 @@ var defaultToolPorts = []int{
 // about every session rather than one.
 const sessionDirLabel = "this session's working directory"
 
+// bundleDirLabel stands for the folder of the bundle being run, the same way.
+const bundleDirLabel = "the bundle's own folder"
+
 func NewSandbox(cfg Config) *Sandbox {
 	s := &Sandbox{
 		workspaceRoot: absOr(cfg.Workspace),
 		dataDir:       absOr(cfg.DataDir),
-		toolsDir:      absOr(cfg.ToolsDir),
-		dbPath:        absOr(DBPath(cfg.DataDir)),
 		ReadPaths:     readPaths(cfg.ReadPaths),
 		OperatorPort:  portOf(cfg.Addr),
 	}
@@ -179,12 +178,9 @@ func (s *Sandbox) Describe() string {
 }
 
 // Wrap returns the argv that runs bin, confined to workspace. toolRoot is the
-// tool directory in force — a tool must be able to read its own executable and
-// the helper beside it — and may be empty for a command that lives in the
-// system paths, such as the shell a check runs in. It is a parameter rather
-// than a field because the registry's directory is what is actually in use, and
-// a sandbox pointed at the configured one would refuse a tool loaded from
-// anywhere else.
+// folder of the bundle being run — a server must be able to read its own
+// executable and what is beside it — and is empty for a command that lives in
+// the system paths, such as the shell a check runs in.
 // reads are the paths this tool asked for beyond the runtime, from its manifest.
 func (s *Sandbox) Wrap(bin, workspace, toolRoot string, reads []string, args []string) []string {
 	cmd := append([]string{bin}, args...)
@@ -192,7 +188,7 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, reads []string, args []s
 		return cmd
 	}
 	ws := absOr(workspace)
-	tools := s.toolsDir
+	tools := ""
 	if toolRoot != "" {
 		tools = absOr(toolRoot)
 	}
@@ -221,16 +217,18 @@ func (s *Sandbox) Wrap(bin, workspace, toolRoot string, reads []string, args []s
 // Tools screen shows it, from this one place, so what is said is what is done.
 func (s *Sandbox) policyFor(ws, tools string, reads []string) policy {
 	p := policy{
-		// The working directory, and the directory the database lives in so
-		// SQLite can create the journals it writes beside it.
-		Write: []string{ws, filepath.Dir(s.dbPath)},
-		Read:  append(append(append([]string{tools}, linuxReads...), s.ReadPaths...), reads...),
+		// The working directory, and nothing else.
+		Write: []string{ws},
+		Read:  append(append(append([]string(nil), linuxReads...), s.ReadPaths...), reads...),
 		// The device files a program opens before any of its own code runs.
 		// bubblewrap gave a fresh /dev and this grants the same handful by
 		// name: without /dev/null a shell cannot redirect, and every tool
 		// fails on launch rather than on anything it was asked to do.
 		Files: linuxDevices,
 		Chdir: ws,
+	}
+	if tools != "" {
+		p.Read = append([]string{tools}, p.Read...)
 	}
 	// Ports are an allow-list like paths: a port nobody named is refused. It
 	// is asked for only where the kernel can apply it, because a policy the
@@ -261,12 +259,8 @@ type ToolReach struct {
 // Reach describes the policy every tool runs under, before its manifest adds
 // anything. Where nothing is enforced it still says what the policy is — the
 // one the container applies — beside the reason it does not apply here.
-func (s *Sandbox) Reach(toolRoot string) *ToolReach {
-	tools := s.toolsDir
-	if toolRoot != "" {
-		tools = absOr(toolRoot)
-	}
-	p := s.policyFor(sessionDirLabel, tools, nil)
+func (s *Sandbox) Reach() *ToolReach {
+	p := s.policyFor(sessionDirLabel, bundleDirLabel, nil)
 	r := &ToolReach{Mechanism: s.Mechanism, Enforced: s.Enforcing(), Reason: s.Reason, ReadWrite: p.Write,
 		Read: p.Read, Files: p.Files, NetworkEnforced: s.Enforcing() && s.Network == "landlock",
 		Ports: append([]int(nil), s.Ports...), OperatorPort: s.OperatorPort}

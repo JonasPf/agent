@@ -23,7 +23,6 @@ type Config struct {
 	// of its turns (ADR-082). It must be on the same btrfs filesystem as the
 	// workspace, and outside it, where no tool can reach.
 	Snapshots string
-	ToolsDir  string
 	SkillsDir string
 	// UserSkillsDir and PersonasDir hold what the operator writes through the
 	// interface. They sit beside the data rather than beside the image, because
@@ -158,7 +157,6 @@ func LoadConfig() Config {
 		DataDir:        filepath.Join(state, "data"),
 		Workspace:      filepath.Join(state, "workspace"),
 		Snapshots:      filepath.Join(state, "snapshots"),
-		ToolsDir:       filepath.Join(home, "tools"),
 		SkillsDir:      filepath.Join(home, "skills"),
 		UserSkillsDir:  filepath.Join(state, "skills"),
 		PersonasDir:    filepath.Join(state, "personas"),
@@ -273,7 +271,7 @@ func Run() error {
 	if cfg.APIKey == "" {
 		log.Println("warning: OPENROUTER_API_KEY is not set; model calls will fail")
 	}
-	for _, d := range []string{cfg.DataDir, cfg.Workspace, cfg.Snapshots, cfg.ToolsDir, cfg.SkillsDir,
+	for _, d := range []string{cfg.DataDir, cfg.Workspace, cfg.Snapshots, cfg.SkillsDir,
 		cfg.UserSkillsDir, cfg.PersonasDir} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return err
@@ -289,10 +287,6 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	dbPath, err := filepath.Abs(DBPath(cfg.DataDir))
-	if err != nil {
-		return err
-	}
 	// Before any tool can run: the agent's own environment holds the model key,
 	// and a tool granted /proc could otherwise read it out of /proc/<pid>/environ.
 	if err := hideProcess(); err != nil {
@@ -303,7 +297,7 @@ func Run() error {
 		cfg:      cfg,
 		sandbox:  sandbox,
 		store:    st,
-		tools:    NewRegistry(cfg.ToolsDir, dbPath, st.DB()),
+		tools:    NewRegistry(cfg.PluginsDir, cfg.UserPluginsDir),
 		skills:   NewSkills(cfg.SkillsDir, cfg.UserSkillsDir),
 		personas: NewPersonas(cfg.PersonasDir),
 		or:       NewOpenRouter(cfg.APIKey),
@@ -311,7 +305,6 @@ func Run() error {
 		queues:   map[string]chan func(){},
 		pkgs:     newPackages(cfg.DataDir, defaultNixSource),
 	}
-	a.tools.bundleDirs = []string{cfg.PluginsDir, cfg.UserPluginsDir}
 	if a.push, err = newPusher(cfg.DataDir, a.unreadMessage); err != nil {
 		return err
 	}

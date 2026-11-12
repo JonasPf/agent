@@ -11,28 +11,27 @@ import (
 // cases, and this is what makes "every" true: add a tool without them and the
 // test run says so, rather than the omission being noticed months later.
 func TestEveryToolShipsEvalCases(t *testing.T) {
-	suites, err := LoadEvalSuites("../../tools")
+	suites, err := LoadEvalSuites(shippedBundles(t))
 	if err != nil {
-		t.Fatalf("%v\n\nevery tool directory needs an %s; see specs/tools.html", err, evalFile)
+		t.Fatalf("%v\n\nevery tool needs eval cases; see specs/tools.html", err)
 	}
-	dirs, err := os.ReadDir("../../tools")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var want []string
-	for _, d := range dirs {
-		if d.IsDir() {
-			want = append(want, d.Name())
-		}
-	}
-	// And every builtin that carries a manifest carries cases beside it.
-	want = append(want, builtinNames()...)
-	if len(suites) != len(want) {
-		t.Fatalf("%d suites for %d tools", len(suites), len(want))
-	}
+	have := map[string]bool{}
 	for _, s := range suites {
+		have[s.Tool] = true
 		if len(s.Cases) == 0 {
 			t.Errorf("%s ships no eval cases", s.Tool)
+		}
+	}
+	// Every builtin carries cases beside its manifest, and every tool a
+	// shipped bundle offers carries them in the bundle.
+	a := newTestApp(t)
+	a.tools.bundleDirs = []string{shippedBundles(t)}
+	if _, failures := a.tools.Load(a); len(failures) > 0 {
+		t.Fatalf("shipped bundles did not load: %+v", failures)
+	}
+	for _, tl := range a.tools.All() {
+		if tl.Name != "reload_tools" && !have[tl.Name] {
+			t.Errorf("%s ships no eval cases", tl.Name)
 		}
 	}
 }
@@ -49,27 +48,17 @@ func TestLoadEvalSuiteRejectsIncompleteFiles(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir := filepath.Join(t.TempDir(), "atool")
+			dir := filepath.Join(t.TempDir(), "abundle", "evals")
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, evalFile), []byte(c.body), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "atool.json"), []byte(c.body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := loadEvalSuite(dir); err == nil {
+			if _, err := LoadEvalSuites(filepath.Dir(filepath.Dir(dir))); err == nil {
 				t.Error("want an error, got none")
 			}
 		})
-	}
-}
-
-func TestMissingEvalFileIsAnError(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "bare")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := loadEvalSuite(dir); err == nil {
-		t.Error("a tool directory with no eval.json must be an error")
 	}
 }
 

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,47 +19,11 @@ import (
 
 var envRead = regexp.MustCompile(`(?:envOr|envInt|os\.Getenv|os\.LookupEnv)\("([A-Z][A-Z0-9_]*)"`)
 
-// A tool may also be given a variable by naming it in its manifest, which is
-// the declaration the registry acts on — the tool's own source may reach for it
-// through a constant, where the scan above would not see it. The manifest is
-// where the agent looks, so it is where this looks too.
-func manifestEnvNames(t *testing.T) map[string]bool {
-	t.Helper()
-	out := map[string]bool{}
-	dirs, err := os.ReadDir(filepath.Join("..", "..", "tools"))
-	if err != nil {
-		t.Fatalf("the tool directory is missing: %v", err)
-	}
-	for _, d := range dirs {
-		if !d.IsDir() {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join("..", "..", "tools", d.Name(), "manifest.json"))
-		if err != nil {
-			continue
-		}
-		var m struct {
-			Agent struct {
-				Env []string `json:"env"`
-			} `json:"agent"`
-		}
-		if err := json.Unmarshal(b, &m); err != nil {
-			t.Errorf("%s has an unreadable manifest: %v", d.Name(), err)
-			continue
-		}
-		for _, name := range m.Agent.Env {
-			out[name] = true
-		}
-	}
-	return out
-}
-
 // toolContract is set by the agent for each tool subprocess rather than read
 // from configuration. Naming one of these in .env.example would invite an
 // operator to set a value the agent overwrites on every call.
 var toolContract = map[string]bool{
-	"AGENT_SESSION": true, "AGENT_JOB": true, "AGENT_SKILL_DIRS": true,
-	"AGENT_DB": true, "AGENT_DB_PREFIX": true, "TMPDIR": true,
+	"AGENT_SKILL_DIRS": true, "TMPDIR": true,
 }
 
 func TestEverySettingIsInTheExampleEnvironment(t *testing.T) {
@@ -71,7 +34,7 @@ func TestEverySettingIsInTheExampleEnvironment(t *testing.T) {
 	documented := string(example)
 
 	found := map[string]bool{}
-	for _, root := range []string{"..", "../../cmd", "../../tools"} {
+	for _, root := range []string{"..", "../../cmd"} {
 		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") ||
 				strings.HasSuffix(path, "_test.go") {
@@ -89,9 +52,6 @@ func TestEverySettingIsInTheExampleEnvironment(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	}
-	for name := range manifestEnvNames(t) {
-		found[name] = true
 	}
 	if len(found) == 0 {
 		t.Fatal("no environment variables found in the source; the scan is broken")
@@ -118,7 +78,7 @@ func TestTheExampleEnvironmentNamesNothingThatIsNotRead(t *testing.T) {
 	}
 
 	read := map[string]bool{}
-	for _, root := range []string{"..", "../../cmd", "../../tools"} {
+	for _, root := range []string{"..", "../../cmd"} {
 		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
 				return err
@@ -132,10 +92,6 @@ func TestTheExampleEnvironmentNamesNothingThatIsNotRead(t *testing.T) {
 			}
 			return nil
 		})
-	}
-
-	for name := range manifestEnvNames(t) {
-		read[name] = true
 	}
 
 	// An assignment in the file, commented out or not: NAME=value at line start.

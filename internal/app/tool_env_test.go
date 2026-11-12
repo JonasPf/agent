@@ -3,8 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,28 +18,13 @@ import (
 
 // installEnvTool writes a tool that reports the environment it was started
 // with. It is a real subprocess, launched through the registry the agent uses.
-func installEnvTool(t *testing.T, a *App, name string) {
+func installEnvTool(t *testing.T, a *App, name string, reads ...string) {
 	t.Helper()
-	dir := filepath.Join(a.tools.dir, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	manifest := map[string]any{
-		"name": name, "description": "Report the environment.",
-		"parameters": map[string]any{"type": "object", "properties": map[string]any{}},
-		"agent":      map[string]any{"db_prefix": name + "_"},
-	}
-	b, _ := json.Marshal(manifest)
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), b, 0o644); err != nil {
-		t.Fatal(err)
-	}
 	// cat swallows the arguments on stdin; jq is not available, so the dump is
 	// assembled with the shell's own quoting of a newline-free list of names.
 	script := "#!/bin/sh\ncat >/dev/null\nnames=$(env | cut -d= -f1 | tr '\\n' ' ')\n" +
 		"printf '{\"ok\":true,\"content\":\"%s\"}' \"$names\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "run"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeTool(t, a.tools.bundleDirs[0], name, script, reads...)
 }
 
 // toolEnv runs the named tool in a new session, and returns the variable
@@ -84,8 +67,7 @@ func TestAToolStillGetsWhatTheContractPromisesIt(t *testing.T) {
 	installEnvTool(t, a, "envcheck")
 
 	seen := toolEnv(t, a, "envcheck")
-	for _, want := range []string{"AGENT_DB", "AGENT_DB_PREFIX", "AGENT_WORKSPACE",
-		"AGENT_SESSION", "AGENT_JOB", "AGENT_SKILL_DIRS", "TMPDIR", "PATH", "HOME"} {
+	for _, want := range []string{"AGENT_SKILL_DIRS", "TMPDIR", "PATH", "HOME"} {
 		if !seen[want] {
 			t.Errorf("%s did not reach the tool, and the contract says it will", want)
 		}

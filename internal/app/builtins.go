@@ -39,6 +39,14 @@ func (a *App) builtinRuns() map[string]builtinFn {
 	}
 }
 
+// manifest is a builtin's manifest.json: exactly an OpenAI function
+// definition, which is what the model is sent.
+type manifest struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Parameters  map[string]any `json:"parameters"`
+}
+
 // builtinNames are the builtins that carry a manifest, in order.
 func builtinNames() []string {
 	entries, _ := fs.ReadDir(builtinFiles, "builtin")

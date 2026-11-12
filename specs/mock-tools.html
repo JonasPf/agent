@@ -256,7 +256,7 @@ stdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}</pre></li>
 
 <details class="card tool" open>
   <summary>
-    <div class="tname"><span class="n">web_search</span><span class="chip key">env TAVILY_API_KEY TAVILY_URL</span></div>
+    <div class="tname"><span class="n">web_search</span></div>
     <div class="meta">60 s <span class="chev">›</span></div>
     <div class="desc">Search the web and return result titles, URLs, and snippets.</div>
   </summary>
@@ -274,8 +274,6 @@ stdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}</pre></li>
       <span class="help"><button aria-label="What the agent uses">?</button><span class="tip">The manifest's <code>agent</code> block. The agent reads it to run the tool, and never sends it to the model.</span></span></div>
     <div class="facts">
       <div class="fact"><div class="k">Timeout <span class="help"><button aria-label="Timeout">?</button><span class="tip">The program is stopped after this, and the model is told it failed.</span></span></div><div class="v">60 seconds</div></div>
-      <div class="fact"><div class="k">Table prefix <span class="help"><button aria-label="Table prefix">?</button><span class="tip">Every table this tool creates in the shared database starts with this, so two tools cannot write into each other's tables.</span></span></div><div class="v mono">web_search_</div></div>
-      <div class="fact"><div class="k">Environment <span class="help"><button aria-label="Environment">?</button><span class="tip">Passed to this tool on every call, in every conversation. Names only: values are never shown. A credential for one conversation is set as that conversation’s variable instead, and takes the place of one named here.</span></span></div><div class="v mono">TAVILY_API_KEY<br>TAVILY_URL</div></div>
       <div class="fact"><div class="k">Extra reads <span class="help"><button aria-label="Extra reads">?</button><span class="tip">Folders this tool may read on top of what every tool gets.</span></span></div><div class="v none">none</div></div>
     </div>
   </div>
@@ -294,9 +292,7 @@ stdout  {"ok": true, "content": "1. Go 1.25 Release Notes …"}</pre></li>
     "required": ["query"]
   },</span>
 <span class="ours">  "agent": {
-    "db_prefix": "web_search_",
-    "timeout_seconds": 60,
-    "env": ["TAVILY_API_KEY", "TAVILY_URL"]
+    "timeout_seconds": 60
   }</span>
 <span class="std">}</span></pre>
       <div class="cap">Black is standard and sent to the model; the <span style="color:var(--accent)">agent block</span> is this agent's own.</div>

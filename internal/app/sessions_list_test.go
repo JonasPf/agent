@@ -33,7 +33,7 @@ func TestTheListSeesWhatAToolWrote(t *testing.T) {
 	dir := t.TempDir()
 	writeTool(t, dir, "scribble",
 		"#!/bin/sh\nhead -c 30000 /dev/zero > blob.bin\nprintf '{\"ok\":true,\"content\":\"written\"}'\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}

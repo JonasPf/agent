@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,12 +12,11 @@ import (
 )
 
 // web_search reaches a search API, and the key it needs is the operator's, set
-// once for the agent rather than granted to a conversation (ADR-059). These
-// drive the tool as a subprocess with the API substituted — the one thing R5
-// allows to be, alongside the model provider.
+// once for its bundle rather than granted to a conversation (ADR-087). This
+// drives the real bundle with the API substituted — the one thing R5 allows
+// to be, alongside the model provider. What the tool does with an answer is
+// tested where the bundle lives.
 
-// call is what the substituted API saw. The tool runs as a subprocess, so the
-// only evidence of what it sent is what the server was handed.
 type apiCall struct {
 	made   bool
 	header http.Header
@@ -49,111 +49,27 @@ func searchWith(t *testing.T, a *App, s *Session, args map[string]any) toolResul
 	return a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "web_search", raw)
 }
 
-func TestWebSearchReturnsWhatTheAPIAnswered(t *testing.T) {
+// "A value the operator set for a bundle reaches that bundle's server and no
+// other." The shell runs commands the model composed, and a credential in its
+// environment is one the model can print.
+func TestABundlesValueReachesItsOwnToolAndNoOther(t *testing.T) {
 	url, got := tavilyServer(t, tavilyBody, 200)
-	t.Setenv("TAVILY_API_KEY", "tvly-test-key")
-	t.Setenv("TAVILY_URL", url)
 	a, s := userlandSession(t)
 	allowServer(t, a, url)
+	set := map[string]any{"tavily_api_key": "tvly-secret-value", "tavily_url": url}
+	if w := sendJSON(t, a, "PUT", "/plugins/web-search/config", set); w.Code != 200 {
+		t.Fatalf("config = %d %s", w.Code, w.Body)
+	}
 
 	res := searchWith(t, a, s, map[string]any{"query": "landlock go", "limit": 5})
-	if !res.OK {
-		t.Fatalf("search failed: %s%s", res.Content, res.Error)
+	if !res.OK || !strings.Contains(res.Content, "pkg.go.dev/landlock") {
+		t.Fatalf("search = %+v, want what the API answered", res)
 	}
-	for _, want := range []string{"Landlock for Go", "https://pkg.go.dev/landlock",
-		"Bindings for the kernel's Landlock LSM.", "docs.kernel.org"} {
-		if !strings.Contains(res.Content, want) {
-			t.Errorf("the answer does not carry %q:\n%s", want, res.Content)
-		}
+	if !got.made || !strings.Contains(fmt.Sprint(got.header)+got.body, "tvly-secret-value") {
+		t.Errorf("the API was not asked with the key that was set: %v %s", got.header, got.body)
 	}
-	if !got.made {
-		t.Fatal("the tool did not call the API")
-	}
-	if h := got.header.Get("Authorization"); h != "Bearer tvly-test-key" {
-		t.Errorf("Authorization = %q, want the operator's key as a bearer token", h)
-	}
-	if !strings.Contains(got.body, `"landlock go"`) {
-		t.Errorf("the query was not sent: %s", got.body)
-	}
-}
 
-// The limit is the caller's, and it is what the API is asked for rather than
-// something trimmed afterwards: a search that fetches ten to show three is
-// three times the price for the same answer.
-func TestWebSearchAsksTheAPIForTheLimitItWasGiven(t *testing.T) {
-	url, got := tavilyServer(t, tavilyBody, 200)
-	t.Setenv("TAVILY_API_KEY", "tvly-test-key")
-	t.Setenv("TAVILY_URL", url)
-	a, s := userlandSession(t)
-	allowServer(t, a, url)
-
-	if res := searchWith(t, a, s, map[string]any{"query": "landlock go", "limit": 3}); !res.OK {
-		t.Fatalf("search failed: %s%s", res.Content, res.Error)
-	}
-	if !strings.Contains(got.body, `"max_results":3`) {
-		t.Errorf("the limit did not reach the API: %s", got.body)
-	}
-}
-
-// A search with no key is the operator's to fix, and the message has to say
-// which variable and where — a model cannot set it and must not keep trying.
-func TestWebSearchWithoutAKeySaysWhichVariableIsMissing(t *testing.T) {
-	t.Setenv("TAVILY_API_KEY", "")
-	a, s := userlandSession(t)
-
-	res := searchWith(t, a, s, map[string]any{"query": "landlock go"})
-	if res.OK {
-		t.Fatalf("a search without a key succeeded: %s", res.Content)
-	}
-	for _, want := range []string{"TAVILY_API_KEY", ".env"} {
-		if !strings.Contains(res.Error+res.Content, want) {
-			t.Errorf("the failure does not mention %q: %s%s", want, res.Content, res.Error)
-		}
-	}
-}
-
-// An API that refuses the key is a different failure from one that has nothing
-// to say, and neither is an empty result set.
-func TestWebSearchReportsWhatTheAPISaid(t *testing.T) {
-	url, _ := tavilyServer(t, `{"detail":{"error":"Unauthorized: missing or invalid API key"}}`, 401)
-	t.Setenv("TAVILY_API_KEY", "tvly-wrong")
-	t.Setenv("TAVILY_URL", url)
-	a, s := userlandSession(t)
-	allowServer(t, a, url)
-
-	res := searchWith(t, a, s, map[string]any{"query": "landlock go"})
-	if res.OK {
-		t.Fatalf("a rejected key was reported as success: %s", res.Content)
-	}
-	if !strings.Contains(res.Error+res.Content, "401") {
-		t.Errorf("the failure does not carry what the API said: %s%s", res.Content, res.Error)
-	}
-}
-
-func TestWebSearchWithNoMatchesSaysSoRatherThanFailing(t *testing.T) {
-	url, _ := tavilyServer(t, `{"query":"nothing at all","results":[]}`, 200)
-	t.Setenv("TAVILY_API_KEY", "tvly-test-key")
-	t.Setenv("TAVILY_URL", url)
-	a, s := userlandSession(t)
-	allowServer(t, a, url)
-
-	res := searchWith(t, a, s, map[string]any{"query": "nothing at all"})
-	if !res.OK {
-		t.Fatalf("an empty result set was reported as a failure: %s%s", res.Content, res.Error)
-	}
-	if !strings.Contains(res.Content, "nothing at all") {
-		t.Errorf("the answer does not name the query: %s", res.Content)
-	}
-}
-
-// The key reaches the tool that declared it and no other. bash runs commands the
-// model composed, and a credential in its environment is a credential the model
-// can print — which is the whole reason a tool's environment is an allow-list.
-func TestOnlyTheToolThatDeclaresTheKeyReceivesIt(t *testing.T) {
-	t.Setenv("TAVILY_API_KEY", "tvly-secret-value")
-	a, s := userlandSession(t)
-
-	res := runShell(t, a, s, "env")
+	res = runShell(t, a, s, "env")
 	if !res.OK {
 		t.Fatalf("env failed: %s%s", res.Content, res.Error)
 	}

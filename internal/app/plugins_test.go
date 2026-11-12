@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -406,5 +407,60 @@ func TestASkillInstallsFromAnArchive(t *testing.T) {
 	}
 	if a.skills.Get("binary") != nil || a.skills.Get("climbs") != nil {
 		t.Error("a refused archive installed a skill")
+	}
+}
+
+// "The image's bundles are the ones plugins.lock names: an archive whose
+// sha256 is not the lock's fails the fetch and is not unpacked."
+func TestTheLockedBundlesAreFetchedAndCheckedAgainstTheirSums(t *testing.T) {
+	archive := mcpb(t, shellManifest)
+	fetched := 0
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetched++
+		w.Write(archive)
+	}))
+	t.Cleanup(srv.Close)
+	lock := func(sum string) string {
+		p := filepath.Join(t.TempDir(), "plugins.lock")
+		body := `[{"name": "shell", "version": "1.2.3", "files": {"arm64": {"url": "` + srv.URL + `/shell.mcpb", "sha256": "` + sum + `"}}}]`
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	out := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(out, "left-over"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	err := FetchPlugins(lock(strings.Repeat("0", 64)), out, "arm64", srv.Client(), io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "sha256") {
+		t.Errorf("a wrong sum = %v, want the fetch to fail naming it", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "shell")); err == nil {
+		t.Error("an archive with the wrong sum was unpacked")
+	}
+	if err := FetchPlugins(lock(sumOf(archive)), out, "amd64", srv.Client(), io.Discard); err == nil {
+		t.Error("an architecture the lock has no archive for was not an error")
+	}
+
+	if err := FetchPlugins(lock(sumOf(archive)), out, "arm64", srv.Client(), io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(filepath.Join(out, "shell", "server", "shell")); err != nil || st.Mode()&0o111 == 0 {
+		t.Errorf("the server was not unpacked executable: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(out, "left-over")); err == nil {
+		t.Error("a folder the lock does not name was left in place")
+	}
+	// The same lock again fetches nothing.
+	before := fetched
+	if err := FetchPlugins(lock(sumOf(archive)), out, "arm64", srv.Client(), io.Discard); err != nil || fetched != before {
+		t.Errorf("a second fetch of the same lock: err %v, %d more downloads", err, fetched-before)
+	}
+	// And what was fetched loads.
+	a, failures := bundleApp(t, out)
+	if len(failures) > 0 || a.tools.Get("sh") == nil {
+		t.Errorf("the fetched bundle did not load: %+v", failures)
 	}
 }

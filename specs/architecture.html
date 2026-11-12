@@ -409,8 +409,7 @@ is what lets a tool run at all rather than a convenience:</p>
 <table>
 <tr><th>Path</th><th>Access</th><th>Why</th></tr>
 <tr><td>The runtime &mdash; <code>/usr</code>, <code>/System</code>, <code>/Library</code>, <code>/bin</code>, <code>/sbin</code>, <code>/opt</code>, <code>/dev</code>, <code>/private/etc</code>, <code>/private/var/db</code>, and <code>/</code> itself</td><td>read</td><td>The interpreter and everything it loads. Without it no tool starts.</td></tr>
-<tr><td>The tool directory</td><td>read</td><td>A tool loads its own executable and the helper beside it. The agent's own program text, not the operator's data.</td></tr>
-<tr><td>The database file and its <code>-wal</code> and <code>-shm</code> journals</td><td>read, write</td><td>A tool is handed <code>AGENT_DB</code> on purpose and may keep its own tables. Narrowed from the data directory, which holds every session's transcript.</td></tr>
+<tr><td>The bundle's own folder</td><td>read</td><td>A bundle's server loads its own executable and what is beside it. Another bundle's folder is not granted.</td></tr>
 <tr><td><code>AGENT_READ_PATHS</code></td><td>read</td><td>Named by the operator. A browser installed outside the system roots is the case it exists for.</td></tr>
 <tr><td>The folders of the skills the conversation has</td><td>read</td><td>A skill can carry a script, run from where it is installed (<a href="adrs.html#adr-071">ADR-071</a>). Only the skills this conversation has; the rest of the skill directory stays denied.</td></tr>
 <tr><td>The Nix store, <code>/nix/store</code></td><td>read</td><td>The programs conversations installed (<a href="adrs.html#adr-072">ADR-072</a>). Every path in it is named by a hash of its content, so reading another conversation's package reads a public package nothing can change.</td></tr>
@@ -463,7 +462,7 @@ operator's, and a tool is refused it. There was a second listener for tools; wha
 (<a href="adrs.html#adr-086">ADR-086</a>), and the last thing asked of it, where a conversation's
 skills keep their files, is told to each call in <code>AGENT_SKILL_DIRS</code>.</p>
 
-<p>What this is not: a tool is still given <code>AGENT_DB</code>.
+<p>A tool is given neither the database nor a path to it (<a href="adrs.html#adr-088">ADR-088</a>).
 On a platform with no Landlock none of the network half holds either, and nothing keeps a tool off the
 operator's port there.</p>
 

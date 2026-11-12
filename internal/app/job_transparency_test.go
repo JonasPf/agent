@@ -113,16 +113,16 @@ func TestOnlyTheAgentsOwnHandlesAreCompiledIn(t *testing.T) {
 	}
 }
 
-// A tool on disk is told the session and job its call belongs to, and nothing
-// about where the agent is: it has no address to reach it on and no token to
-// name itself with (ADR-086).
-func TestToolEnvironmentCarriesSessionAndJobAndNoWayToTheAgent(t *testing.T) {
+// A bundle's server is told nothing about where the agent is: it has no
+// address to reach it on and no token to name itself with (ADR-086).
+func TestAToolIsGivenNoWayToTheAgent(t *testing.T) {
 	a := newTestApp(t)
 	dir := t.TempDir()
 	writeTool(t, dir, "envtool", `#!/bin/sh
-printf '{"ok":true,"content":"%s%s|%s|%s"}' "$AGENT_URL" "$AGENT_TOKEN" "$AGENT_SESSION" "$AGENT_JOB"
+env | grep -c '^AGENT_URL=\|^AGENT_TOKEN=\|^AGENT_DB='
+true
 `)
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}
@@ -131,23 +131,24 @@ printf '{"ok":true,"content":"%s%s|%s|%s"}' "$AGENT_URL" "$AGENT_TOKEN" "$AGENT_
 	if !res.OK {
 		t.Fatalf("call failed: %s", res.Error)
 	}
-	want := "|S1|J1"
-	if res.Content != want {
-		t.Errorf("tool saw %q, want %q", res.Content, want)
+	if strings.TrimSpace(res.Content) != "0" {
+		t.Errorf("the tool was given %s of the agent's address, token and database", res.Content)
 	}
 }
 
-func writeTool(t *testing.T, root, name, script string) {
+// writeTool makes a bundle under root whose one tool, name, runs script: the
+// stand-in server, given the script to run. reads are paths the bundle asks to
+// read beyond the runtime.
+func writeTool(t *testing.T, root, name, script string, reads ...string) {
 	t.Helper()
-	d := root + "/" + name
-	if err := os.MkdirAll(d, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	manifest := `{"name":"` + name + `","description":"Test tool.",` +
-		`"parameters":{"type":"object","properties":{}},"agent":{"db_prefix":"` + name + `_"}}`
-	if err := os.WriteFile(d+"/manifest.json", []byte(manifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	meta, _ := json.Marshal(map[string]any{bundleMetaKey: map[string]any{"reads": reads}})
+	d := writeBundle(t, root, name, `{
+  "_meta": `+string(meta)+`,
+  "manifest_version": "0.3", "name": "`+name+`", "version": "0.0.1",
+  "description": "Test tool.", "author": {"name": "the tests"},
+  "server": {"type": "binary", "entry_point": "server/shell",
+    "mcp_config": {"command": "${__dirname}/server/shell", "args": ["`+name+`", "Test tool.", "${__dirname}/run"]}}
+}`)
 	if err := os.WriteFile(d+"/run", []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}

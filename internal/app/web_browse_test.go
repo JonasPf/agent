@@ -11,8 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"agent/internal/tool"
 )
 
 // Most of the web arrives empty: the HTML a server sends is a shell, and the
@@ -28,9 +26,13 @@ const scriptedPage = `<html><head><title>Shop</title></head><body>
 // the image and by CI, at one path; a laptop has neither it nor a sandbox, and
 // the answer to both is the same — run the container. A test that cannot reach
 // a browser says so rather than passing against a tool that never ran one.
+// browserPath is the one browser the web-browse bundle looks for, and the one
+// the image installs.
+const browserPath = "/usr/bin/chromium"
+
 func browserOrSkip(t *testing.T) {
 	t.Helper()
-	if _, err := tool.Browser(); err != nil {
+	if _, err := os.Stat(browserPath); err != nil {
 		notRun(t, "%v. This test is proved where the browser is installed — "+
 			"in CI, and in the test container that `task check` uses.", err)
 	}
@@ -54,9 +56,9 @@ func browseApp(t *testing.T) *App {
 	// No ReadPaths: the browser lives under /usr, which every tool may already
 	// read. Needing to name it here would mean the deployment needed to as well.
 	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"),
-		ToolsDir: "../../tools"}
+		PluginsDir: shippedBundles(t)}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
+		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
@@ -128,9 +130,9 @@ func TestWebBrowseReturnsAJSONBodyVerbatim(t *testing.T) {
 // the server is the only reader whose opinion of it matters.
 func TestWebBrowseIntroducesItselfAsTheChromeItIs(t *testing.T) {
 	browserOrSkip(t)
-	banner, err := exec.Command(tool.BrowserPath, "--version").Output()
+	banner, err := exec.Command(browserPath, "--version").Output()
 	if err != nil {
-		t.Fatalf("%s --version: %v", tool.BrowserPath, err)
+		t.Fatalf("%s --version: %v", browserPath, err)
 	}
 	major := regexp.MustCompile(`(\d+)\.\d+\.\d+\.\d+`).FindStringSubmatch(string(banner))
 	if major == nil {

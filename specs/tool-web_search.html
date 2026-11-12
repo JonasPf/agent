@@ -41,10 +41,9 @@ belongs to a piece of work — this repository, this forge, this conversation �
 the agent the way the model does: a conversation that had to be granted it would be a conversation
 that cannot look anything up until somebody notices.</p>
 
-<p>So the tool's manifest names <code>TAVILY_API_KEY</code>, and the registry gives it that variable
-from the agent's own environment on every call. A manifest that names a variable is the only way a
-tool receives one outside a grant, it is declared per tool for the reason read paths are, and the
-Plugins screen prints the names on that tool's card — the name, never the value.
+<p>So the <code>web-search</code> bundle asks the operator for the key, and the operator sets it once on
+the Plugins screen (<a href="adrs.html#adr-087">ADR-087</a>). The agent keeps it beside the data and
+gives it to that bundle's server on every call. The screen says whether it is set, never what it is.
 <code>bash</code> declares nothing, so the search key is not in the environment of the tool that runs
 commands the model wrote.</p>
 
@@ -58,7 +57,7 @@ inviting a retry.</p>
 <tr><td>Results found</td><td>Title, URL, and snippet for each, numbered.</td></tr>
 <tr><td>The API had no matches</td><td>Says there were no results for the query.</td></tr>
 <tr><td>The API refused — a rejected key, a spent allowance, a rate limit</td><td>Fails, carrying the status and what the API said about it.</td></tr>
-<tr><td>No key configured</td><td>Fails, naming <code>TAVILY_API_KEY</code> and where the operator sets it.</td></tr>
+<tr><td>No key configured</td><td>Fails, saying the operator sets the key in the plugin's settings.</td></tr>
 </table>
 
 <p>Conflating the first two is the failure that matters, and it is why a refusal is never reported as

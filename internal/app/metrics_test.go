@@ -64,10 +64,10 @@ func metricsApp(t *testing.T, dir string, srv *httptest.Server) *App {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"), ToolsDir: "../../tools",
+	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"), PluginsDir: shippedBundles(t),
 		SkillsDir: filepath.Join(dir, "skills")}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
+		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills(cfg.SkillsDir, ""), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()

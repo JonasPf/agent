@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -36,7 +35,7 @@ func TestTheSandboxNamesWhatIsEnforcing(t *testing.T) {
 func TestWrappingKeepsTheCommandIntact(t *testing.T) {
 	for _, mech := range []string{"landlock", "none"} {
 		t.Run(mech, func(t *testing.T) {
-			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d", toolsDir: "/t", dbPath: "/d/db/agent.db"}
+			s := &Sandbox{Mechanism: mech, workspaceRoot: "/w", dataDir: "/d"}
 			argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", nil, []string{"-x"})
 			if argv[len(argv)-1] != "-x" {
 				t.Errorf("argv = %v, want it to end with the tool's own argument", argv)
@@ -60,7 +59,7 @@ func TestWrappingKeepsTheCommandIntact(t *testing.T) {
 // denied, which is what makes this an allow-list.
 func TestTheLandlockPolicyGrantsOnlyWhatIsAllowed(t *testing.T) {
 	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d",
-		toolsDir: "/t", dbPath: "/d/db/agent.db", ReadPaths: []string{"/opt/browsers"}}
+		ReadPaths: []string{"/opt/browsers"}}
 	argv := s.Wrap("/tools/bash/run", "/w/S1", "/t", nil, []string{"-c", "true"})
 
 	if len(argv) < 4 || argv[1] != "-confine" || argv[3] != "--" {
@@ -74,11 +73,10 @@ func TestTheLandlockPolicyGrantsOnlyWhatIsAllowed(t *testing.T) {
 	if err := json.Unmarshal([]byte(argv[2]), &p); err != nil {
 		t.Fatalf("policy is not readable: %v", err)
 	}
-	// Two writable trees and no more: this session's own directory, and the
-	// directory holding the database a tool is handed on purpose. Not the data
-	// directory above it, which holds every transcript.
-	if len(p.Write) != 2 || p.Write[0] != "/w/S1" || p.Write[1] != "/d/db" {
-		t.Errorf("writable = %v, want this session's directory and the database's own", p.Write)
+	// One writable tree and no more: this session's own directory. Not the
+	// data directory, which holds every transcript and the database.
+	if len(p.Write) != 1 || p.Write[0] != "/w/S1" {
+		t.Errorf("writable = %v, want this session's directory and nothing else", p.Write)
 	}
 	for _, denied := range []string{"/w", "/d", "/"} {
 		for _, granted := range append(append([]string{}, p.Write...), p.Read...) {
@@ -143,10 +141,10 @@ func TestAShellInOneSessionCannotReachAnother(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte("OPENROUTER_API_KEY=sk-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: dir, Workspace: workspace, ToolsDir: "../../tools", EnvFile: envFile}
+	cfg := Config{DataDir: dir, Workspace: workspace, PluginsDir: shippedBundles(t), EnvFile: envFile}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
+		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
@@ -249,7 +247,7 @@ func TestAToolCannotModifyTheAgent(t *testing.T) {
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
 	skillsDir := filepath.Join(root, "skills")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 	copyToolTree(t, "../../skills", skillsDir)
 
 	a, _ := confinedApp(t, toolsDir, skillsDir, "")
@@ -259,12 +257,14 @@ func TestAToolCannotModifyTheAgent(t *testing.T) {
 	// A tool's executable is a compiled binary, so "did it change" is asked of
 	// its bytes rather than of a word in it: the Go runtime already contains
 	// most words anyone would grep for.
-	before := digest(t, filepath.Join(toolsDir, "clock", "run"))
+	before := digest(t, filepath.Join(toolsDir, "clock", "server"))
 
 	installTool := run("mkdir -p " + toolsDir + "/self_installed")
-	rewriteTool := run("echo broken >> " + toolsDir + "/clock/run")
+	rewriteTool := run("echo broken >> " + toolsDir + "/clock/server")
 	writeSkill := run("echo hi > " + skillsDir + "/self_written.md")
-	readTool := run("cat " + toolsDir + "/clock/manifest.json")
+	readOwn := run("cat " + toolsDir + "/shell/manifest.json")
+	rewriteOwn := run("echo broken >> " + toolsDir + "/shell/server")
+	readOther := run("cat " + toolsDir + "/clock/manifest.json")
 
 	if !a.sandbox.Enforcing() {
 		if !strings.Contains(a.sandbox.Describe(), "NOT ENFORCED") {
@@ -292,15 +292,23 @@ func TestAToolCannotModifyTheAgent(t *testing.T) {
 				}
 			}
 		}
-		if digest(t, filepath.Join(toolsDir, "clock", "run")) != before {
+		if digest(t, filepath.Join(toolsDir, "clock", "server")) != before {
 			t.Error("another tool's executable was modified despite the refusal")
 		}
+		// Its own bundle it can read and not change; another's is none of
+		// its business.
+		if rewriteOwn.OK {
+			t.Errorf("a tool rewrote its own server: %q", rewriteOwn.Content)
+		}
+		if readOther.OK {
+			t.Errorf("a tool read another bundle's folder: %q", readOther.Content)
+		}
 	}
-	// A tool must still be able to read the directory it was loaded from, or it
+	// A tool must still be able to read the folder it was loaded from, or it
 	// could not have been executed in the first place.
-	if !readTool.OK || !strings.Contains(readTool.Content, `"clock"`) {
-		t.Errorf("a tool could not read the tool directory: ok=%v %s%s",
-			readTool.OK, readTool.Content, readTool.Error)
+	if !readOwn.OK || !strings.Contains(readOwn.Content, `"shell"`) {
+		t.Errorf("a tool could not read its own bundle: ok=%v %s%s",
+			readOwn.OK, readOwn.Content, readOwn.Error)
 	}
 }
 
@@ -322,7 +330,7 @@ func digest(t *testing.T, path string) [32]byte {
 func TestAToolReadsNothingOutsideItsOwnDirectory(t *testing.T) {
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 
 	// Somewhere outside every allowed path, holding something worth taking.
 	outside := t.TempDir()
@@ -382,7 +390,7 @@ func TestAToolReadsNothingOutsideItsOwnDirectory(t *testing.T) {
 func TestANamedReadPathIsReadableAndNotWritable(t *testing.T) {
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 
 	named := t.TempDir()
 	if err := os.WriteFile(filepath.Join(named, "browser.txt"), []byte("a browser lives here"), 0o644); err != nil {
@@ -431,10 +439,10 @@ func confinedApp(t *testing.T, toolsDir, skillsDir, readPaths string) (*App, str
 		t.Fatal(err)
 	}
 	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"),
-		ToolsDir: toolsDir, SkillsDir: skillsDir,
+		PluginsDir: toolsDir, SkillsDir: skillsDir,
 		EnvFile: envFile, ReadPaths: readPaths}
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
+		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()
@@ -482,64 +490,6 @@ func mustAbs(t *testing.T, p string) string {
 	return abs
 }
 
-// A tool is handed AGENT_DB deliberately and may keep its own tables there. A
-// sandbox that confined writes to the session's own directory broke the one
-// tool that did, silently, and no test ran a tool that writes to the database,
-// so nothing said so. That tool is gone; the grant is not, so a tool written for
-// this test keeps it honest.
-func TestASandboxedToolCanStillWriteToTheDatabase(t *testing.T) {
-	if _, err := exec.LookPath("python3"); err != nil {
-		if os.Getenv("AGENT_TEST_FULL") == "" {
-			notRun(t, "python3 is not installed on this machine; the image and the test container ship it")
-		}
-		t.Fatal("python3 is missing from the test container")
-	}
-	dir := t.TempDir()
-	st, err := OpenStore(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	toolsDir := filepath.Join(dir, "tools")
-	writeTool(t, toolsDir, "keeper", `#!/bin/sh
-exec python3 -c '
-import json, os, sqlite3, sys
-a = json.load(sys.stdin)
-db = sqlite3.connect(os.environ["AGENT_DB"])
-t = os.environ["AGENT_DB_PREFIX"] + "items"
-db.execute("create table if not exists " + t + " (text text)")
-if a.get("text"):
-    db.execute("insert into " + t + " values (?)", (a["text"],))
-    db.commit()
-print(json.dumps({"ok": True, "content": "\n".join(r[0] for r in db.execute("select text from " + t))}))
-'
-`)
-	cfg := Config{DataDir: dir, Workspace: filepath.Join(dir, "workspace"), ToolsDir: toolsDir}
-	sandbox := NewSandbox(cfg)
-	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(dir), st.DB()),
-		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
-		queues: map[string]chan func(){}}
-	a.registerBuiltins()
-	dropSnapshots(t, a)
-	if _, failures := a.tools.Load(a); len(failures) > 0 {
-		t.Fatalf("tools failed to load: %v", failures)
-	}
-	s, err := a.NewSession(SessionConfig{Model: "test/model"}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	args, _ := json.Marshal(map[string]string{"text": "kept through the sandbox"})
-	res := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "keeper", args)
-	if !res.OK {
-		t.Fatalf("the tool could not write: %s (stderr %s)", res.Error, res.stderr)
-	}
-	back := a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: s.ID}, "keeper", []byte(`{}`))
-	if !back.OK || !strings.Contains(back.Content, "kept through the sandbox") {
-		t.Errorf("the row did not survive: ok=%v %s%s", back.OK, back.Content, back.Error)
-	}
-}
-
 // A sandbox that is selected but cannot run confines nothing, and says it does.
 // The deployed container had bubblewrap installed on a host that refuses
 // unprivileged user namespaces: the agent reported "sandbox: bubblewrap", the
@@ -577,8 +527,7 @@ func TestWhatTheSandboxClaimsIsWhatTheToolGets(t *testing.T) {
 // needs it and nothing else does, so it is not in the runtime every tool gets —
 // a tool that needs it asks, and the answer is written in its manifest.
 func TestOnlyAToolThatAsksForAPathCanReadIt(t *testing.T) {
-	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d",
-		toolsDir: "/t", dbPath: "/d/db/agent.db"}
+	s := &Sandbox{Mechanism: "landlock", workspaceRoot: "/w", dataDir: "/d"}
 
 	plain := landlockPolicy(t, s.Wrap("/tools/edit/run", "/w/S1", "/t", nil, nil))
 	for _, path := range plain.Read {
@@ -604,35 +553,6 @@ func landlockPolicy(t *testing.T, argv []string) policy {
 		t.Fatalf("policy is not readable: %v", err)
 	}
 	return p
-}
-
-// The manifest is the tool's whole declaration, so what it says about the paths
-// it needs has to survive being read back.
-func TestTheManifestReportsThePathsAToolAsksFor(t *testing.T) {
-	dir := t.TempDir()
-	r := NewRegistry(dir, DBPath(dir), nil)
-	toolDir := filepath.Join(dir, "browser")
-	if err := os.MkdirAll(toolDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	manifest := `{"name":"browser","description":"Render a page.",
-	  "parameters":{"type":"object","properties":{}},"agent":{"db_prefix":"browser_","reads":["/proc"]}}`
-	if err := os.WriteFile(filepath.Join(toolDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(toolDir, "run"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, failures := r.Load(nil); len(failures) > 0 {
-		t.Fatalf("tool did not load: %+v", failures)
-	}
-	got := r.Get("browser")
-	if got == nil {
-		t.Fatal("the tool did not load")
-	}
-	if len(got.Agent.Reads) != 1 || got.Agent.Reads[0] != "/proc" {
-		t.Errorf("reads = %v, want [/proc]", got.Agent.Reads)
-	}
 }
 
 // Where nothing is enforcing, the line that says so has to be a warning. A
@@ -680,10 +600,10 @@ func TestOneVolumeIsStillTwoTrustLevels(t *testing.T) {
 	if err := os.WriteFile(envFile, []byte("OPENROUTER_API_KEY=sk-secret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{DataDir: data, Workspace: workspace, ToolsDir: "../../tools", EnvFile: envFile}
+	cfg := Config{DataDir: data, Workspace: workspace, PluginsDir: shippedBundles(t), EnvFile: envFile}
 	sandbox := NewSandbox(cfg)
 	a := &App{cfg: cfg, sandbox: sandbox, store: st,
-		tools:  NewRegistry(cfg.ToolsDir, DBPath(data), st.DB()),
+		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
 		queues: map[string]chan func(){}}
 	a.registerBuiltins()

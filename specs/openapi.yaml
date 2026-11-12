@@ -1485,12 +1485,10 @@ components:
                 parameters: {type: object}
         agent:
           type: object
-          description: The manifest's agent block, which is never sent to the model. Absent for a builtin, which has no manifest.
+          description: What the tool's bundle says about running it, which is never sent to the model. Absent for a builtin, which runs inside the agent.
           properties:
-            db_prefix: {type: string}
             timeout_seconds: {type: integer}
             reads: {type: array, items: {type: string}, description: Paths this tool may read beyond the sandbox every tool gets.}
-            env: {type: array, items: {type: string}, description: Names of the variables this tool is given. Never their values.}
         builtin: {type: boolean}
         loaded_at: {type: string, format: date-time}
         enabled: {type: boolean}

@@ -284,7 +284,7 @@ func packagesApp(t *testing.T, r *fakeRelease) *App {
 	t.Helper()
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 	a, _ := confinedApp(t, toolsDir, filepath.Join(root, "skills"), "")
 	confinementOrSkip(t, a.sandbox)
 	r.use(a)

@@ -7,7 +7,9 @@ workspace/
 
 # Snapshots taken by `task db:clear`
 .backups/
-tools/*/run
+
+# The bundles plugins.lock names, fetched by `task plugins:fetch`
+/plugins/
 
 # Operator's notes on this deployment: kept on disk, not published.
 TODO.md

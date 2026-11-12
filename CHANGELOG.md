@@ -2,6 +2,18 @@
 
 ## 2026-11-12
 
+- **Set your Tavily key on the Plugins screen once after this upgrade, or
+  search stops working.** Open Plugins, find `web-search`, and enter the key.
+  It is no longer read from `TAVILY_API_KEY` in the environment.
+- **The eight everyday tools now come from bundles.** `bash`, `read`, `write`,
+  `edit`, `clock`, `web_fetch`, `web_search` and `web_browse` are no longer
+  part of the agent's own code. They ship with it as bundles, pinned by
+  version and checksum, and do what they did. Existing conversations keep
+  working; each pays for one uncached prompt, because the order of the tools
+  sent to the model changed.
+- **A tool can no longer touch the agent's database, or another tool's
+  files.** A tool writes only its conversation's folder and reads only its own
+  bundle.
 - **Bundles can be installed, configured and removed through the API.** A
   bundle is sent as a file or named by an https address. The agent first says
   what it offers and asks for, and installs it only when asked again for that

@@ -46,7 +46,7 @@ func TestATurnRunsAsManyToolRoundsAsTheWorkTakes(t *testing.T) {
 	a := newTestApp(t)
 	dir := t.TempDir()
 	writeTool(t, dir, "ticker", "#!/bin/sh\nprintf '{\"ok\":true,\"content\":\"tick\"}'\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}
@@ -102,7 +102,7 @@ func TestARunawayTurnStopsAtTheRoundLimitAndSaysSo(t *testing.T) {
 	a := newTestApp(t)
 	dir := t.TempDir()
 	writeTool(t, dir, "ticker", "#!/bin/sh\nprintf '{\"ok\":true,\"content\":\"tick\"}'\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}
@@ -199,7 +199,7 @@ func failingToolApp(t *testing.T) *App {
 	a := newTestApp(t)
 	dir := t.TempDir()
 	writeTool(t, dir, "picky", "#!/bin/sh\nprintf '{\"ok\":false,\"error\":\"name a model\"}'\n")
-	a.tools.dir = dir
+	a.tools.bundleDirs = []string{dir}
 	if _, f := a.tools.Load(a); len(f) > 0 {
 		t.Fatalf("load failures: %v", f)
 	}

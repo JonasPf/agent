@@ -17,7 +17,7 @@ import (
 // needs one is a change to the architecture, and it should have to say so here
 // before it says so in the code.
 func TestNothingInTheAgentKnowsItCanChangeItself(t *testing.T) {
-	roots := []string{"..", "../../cmd", "../../tools"}
+	roots := []string{"..", "../../cmd"}
 	forbidden := []string{"GH_TOKEN", "AGENT_REPO", "changing-yourself"}
 
 	for _, root := range roots {

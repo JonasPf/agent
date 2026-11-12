@@ -1784,13 +1784,13 @@ const SEARCH = {
     query: { type: 'string', description: 'Search query.' },
     limit: { type: 'integer' },
   } },
-  agent: { db_prefix: 'web_search_', timeout_seconds: 60, env: ['TAVILY_API_KEY'] },
+  agent: { timeout_seconds: 60 },
 };
 SEARCH.sent = sent(SEARCH);
 const BROWSE = {
   name: 'web_browse', description: 'Open a page in a browser.',
   parameters: { type: 'object', properties: { url: { type: 'string', description: 'The page.' } } },
-  agent: { db_prefix: 'web_browse_', timeout_seconds: 60, reads: ['/proc', '/sys'] },
+  agent: { timeout_seconds: 60, reads: ['/proc', '/sys'] },
 };
 BROWSE.sent = sent(BROWSE);
 const RELOAD = { name: 'reload_tools', description: 'Validate and register tools from disk.',
@@ -1851,14 +1851,12 @@ test('each tool shows what the model is sent apart from what the agent uses', as
   for (const want of ['Search the web. It calls a search API.', 'query', 'string', 'required', 'Search query.', 'limit', 'integer', 'optional']) {
     assert.ok(model.includes(want), `what the model sees does not say ${want}: ${model}`);
   }
-  assert.doesNotMatch(model, /web_search_|TAVILY|60 seconds/, 'the agent’s own settings are shown as what the model sees');
+  assert.doesNotMatch(model, /60 seconds/, 'the agent’s own settings are shown as what the model sees');
   const agent = textOf(find(card, 'agent-uses'));
-  for (const want of ['60 seconds', 'web_search_', 'TAVILY_API_KEY']) {
+  for (const want of ['60 seconds']) {
     assert.ok(agent.includes(want), `what the agent uses does not say ${want}: ${agent}`);
   }
   assert.match(textOf(find(toolCard(v, 'web_browse'), 'agent-uses')), /\/proc/, 'a tool’s extra reads are not shown');
-  const summary = textOf(find(card, 'tsum'));
-  assert.match(summary, /TAVILY_API_KEY/, 'a tool given a credential does not say so before it is opened');
   assert.match(textOf(find(toolCard(v, 'web_browse'), 'tsum')), /\/proc/, 'a tool that reads more does not say so before it is opened');
 });
 
@@ -1887,7 +1885,7 @@ test('the manifest sets the agent block apart, and the entry the model is sent i
   assert.ok(manifest && manifest.hidden, 'the manifest is not there, or is open before it is asked for');
   assert.deepStrictEqual(JSON.parse(flat(find(manifest, 'json'))), {
     name: SEARCH.name, description: SEARCH.description, parameters: SEARCH.parameters, agent: SEARCH.agent });
-  assert.match(flat(find(manifest, 'ours')), /"agent"[\s\S]*web_search_/, 'the agent block is not set apart');
+  assert.match(flat(find(manifest, 'ours')), /"agent"[\s\S]*timeout_seconds/, 'the agent block is not set apart');
   assert.doesNotMatch(flat(find(manifest, 'std')), /agent|web_search_/, 'the standard part holds the agent’s own settings');
   const asSent = find(card, 'json-sent');
   assert.deepStrictEqual(JSON.parse(flat(find(asSent, 'json'))), SEARCH.sent);
@@ -1911,10 +1909,10 @@ test('a builtin says it runs inside the agent, and has no manifest', async () =>
 });
 
 test('a tool that failed to load says why, and the count says how many', async () => {
-  const { v } = await toolsScreen({ failures: [{ dir: 'notes', reason: 'manifest.json: "db_prefix" is not a manifest field' }] });
+  const { v } = await toolsScreen({ failures: [{ dir: 'notes', reason: 'manifest.json: no such file' }] });
   const fail = textOf(find(v, 'fail'));
   assert.match(fail, /notes/);
-  assert.match(fail, /"db_prefix" is not a manifest field/);
+  assert.match(fail, /manifest.json: no such file/);
   assert.match(textOf(find(v, 'tcount')), /3 tools.*1 built in.*1 didn’t load/s);
 });
 

@@ -15,7 +15,7 @@ import (
 func TestACommandThatLeavesAProcessRunningReturnsAtOnce(t *testing.T) {
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 	a, _ := confinedApp(t, toolsDir, "", "")
 	run := shellIn(t, a)
 
@@ -37,7 +37,7 @@ func TestACommandThatLeavesAProcessRunningReturnsAtOnce(t *testing.T) {
 func TestABackgroundProcessThatExitsIsGone(t *testing.T) {
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 	a, _ := confinedApp(t, toolsDir, "", "")
 	run := shellIn(t, a)
 
@@ -70,7 +70,7 @@ func TestABackgroundProcessThatExitsIsGone(t *testing.T) {
 func TestACommandPastItsTimeoutEndsWithEverythingItStarted(t *testing.T) {
 	root := t.TempDir()
 	toolsDir := filepath.Join(root, "tools")
-	copyToolTree(t, "../../tools", toolsDir)
+	copyToolTree(t, shippedBundles(t), toolsDir)
 	a, _ := confinedApp(t, toolsDir, "", "")
 	s, err := a.NewSession(SessionConfig{Model: "test/model"}, "")
 	if err != nil {

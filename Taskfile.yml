@@ -33,7 +33,7 @@ vars:
 
 # A task named `x:here` is the work itself, run where the work belongs; `x` is
 # what you type, and puts `x:here` on Linux. They carry no description, so the
-# list above stays the set of things worth typing. build:tools, test:go, and
+# list above stays the set of things worth typing. plugins:fetch, test:go, and
 # test:web are the same: steps of a suite, not entry points.
 tasks:
   default:
@@ -42,7 +42,7 @@ tasks:
     silent: true
 
   build:
-    desc: Compile the agent and every tool
+    desc: Compile the agent
     cmds:
       - task: on:linux
         vars: {CMD: 'task build:here'}
@@ -50,18 +50,15 @@ tasks:
   build:here:
     cmds:
       - go build -ldflags '{{.STAMP}}' ./...
-      - task: build:tools
 
-  build:tools:
+  # The bundles plugins.lock names, unpacked into plugins/ and checked against
+  # their sums. The image is built with the same command, so the tests and the
+  # evals run the tools the image ships. A bundle already fetched for this lock
+  # is not fetched again.
+  plugins:fetch:
     silent: true
     cmds:
-      - |
-        set -e
-        for d in tools/*/; do
-          [ -f "$d/manifest.json" ] || continue
-          go build -o "$d/run" "./$d"
-        done
-        echo "tools built"
+      - go run ./cmd/plugins -out plugins
 
   dev:
     desc: Run the agent, serving http://localhost{{.ADDR}} — the one way to run it
@@ -131,13 +128,13 @@ tasks:
       - go vet ./...
 
   test:
-    desc: Run every test suite — Go (agent and tools), the browser helpers, and the skills' scripts
+    desc: Run every test suite — Go, the browser helpers, and the skills' scripts
     cmds:
       - task: on:linux
         vars: {CMD: 'task test:here'}
 
-  # Chosen Go tests, in the same place the whole suite runs. The tools are built
-  # first: the registry will not load one whose run is missing. RUN is a regular
+  # Chosen Go tests, in the same place the whole suite runs. The shipped bundles
+  # are fetched first: tests that run a real tool run those. RUN is a regular
   # expression and may hold a bar; neither it nor PKG may hold a quote.
   test:run:
     desc: Run chosen Go tests, e.g. task test:run RUN='TestOne|TestTwo' (PKG defaults to ./internal/app)
@@ -145,7 +142,7 @@ tasks:
       PKG: '{{.PKG | default "./internal/app"}}'
     cmds:
       - task: on:linux
-        vars: {CMD: 'task build:tools >/dev/null && go test {{.PKG}} -run "{{.RUN}}" -count=1'}
+        vars: {CMD: 'task plugins:fetch && go test {{.PKG}} -run "{{.RUN}}" -count=1'}
 
   test:here:
     cmds:
@@ -157,7 +154,7 @@ tasks:
   # every page at once, and a race between them reads as nothing in particular
   # until it corrupts something. The detector makes one a failing test.
   test:go:
-    deps: [build:tools]
+    deps: [plugins:fetch]
     cmds:
       - go test -race ./...
 
@@ -188,15 +185,15 @@ tasks:
       - task: test:here
 
   eval:
-    desc: Put each tool's eval.json cases to a real model (costs money; CLI={{.CLI_ARGS}})
+    desc: Put each tool's eval cases to a real model (costs money; CLI={{.CLI_ARGS}})
     cmds:
       - task: on:linux
         vars: {CMD: 'task eval:here -- {{.CLI_ARGS}}', ENV_FILE: '--env-file .env'}
 
   eval:here:
-    # A case runs the tool it calls, and the registry will not load a tool whose
-    # run is missing.
-    deps: [build:tools]
+    # A case runs the tool it calls, and the cases themselves come with the
+    # bundles.
+    deps: [plugins:fetch]
     cmds:
       - go run ./cmd/eval {{.CLI_ARGS}}
 
@@ -209,9 +206,10 @@ tasks:
       # with.
       #
       # Otherwise: the environment is built once and holds no source. The working
-      # tree is mounted read-only and copied in, so the Linux executables a build
-      # writes to tools/*/run never land in the tree. The Go caches outlive the
-      # container, so a second run does not recompile everything. .env stays out
+      # tree is mounted read-only and copied in, so nothing a build writes lands
+      # in the tree. The Go caches outlive the container, so a second run does
+      # not recompile everything, and so do the fetched bundles, in a volume
+      # over plugins/, so a second run does not download them. .env stays out
       # of the copy and out of the image; the evals are handed it at run time.
       #
       # Either way the temporary directory is made btrfs first, where it can be
@@ -229,9 +227,10 @@ tasks:
           -v "$PWD:/repo:ro" \
           -v agent-test-gomod:/go/pkg/mod \
           -v agent-test-gocache:/root/.cache/go-build \
+          -v agent-test-plugins:/src/plugins \
           agent:test sh -c 'tar -C /repo -cf - \
             --exclude=./.git --exclude=./.backups --exclude=./.dev --exclude=./data --exclude=./workspace \
-            --exclude=./.env --exclude="./tools/*/run" . | tar -C /src -xf - && . ./testenv/btrfs.sh && {{.CMD}}'
+            --exclude=./.env --exclude=./plugins . | tar -C /src -xf - && . ./testenv/btrfs.sh && {{.CMD}}'
 
   db:clear:
     desc: Move the dev agent's state — sessions, jobs, files — to a timestamped backup and start fresh
