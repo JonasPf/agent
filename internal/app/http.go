@@ -51,6 +51,8 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("DELETE /sessions/{id}/files/{path...}", a.hDeleteSessionFile)
 	mux.HandleFunc("GET /sessions/{id}/export", a.hExportSession)
 	mux.HandleFunc("POST /sessions/import", a.hImportSession)
+	mux.HandleFunc("GET /sessions/{id}/apps/{seq}", a.hApp)
+	mux.HandleFunc("POST /sessions/{id}/apps/{seq}/call", a.hAppCall)
 	mux.HandleFunc("GET /search", a.hSearch)
 
 	mux.HandleFunc("GET /jobs", a.hJobs)
@@ -896,6 +898,10 @@ func (a *App) hTools(w http.ResponseWriter, r *http.Request) {
 		}
 		if t.bundle != nil {
 			entry["bundle"] = t.bundle.label()
+			// Whether its result opens a page, and whether only a page may
+			// call it, in which case the model is not sent it.
+			entry["app"] = t.app.URI != ""
+			entry["page_only"] = !t.app.forModel
 		}
 		out = append(out, entry)
 	}

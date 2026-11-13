@@ -463,6 +463,23 @@ its own instead.</p>
 </ul>
 </div>
 
+<h2>A bundle's page</h2>
+
+<p>A tool result whose tool brings a page (<a href="tools.html">Tools</a>,
+<a href="adrs.html#adr-090">ADR-090</a>) has an Open button, which stays in sight when the result
+is folded. It opens <code>#app/&lt;session&gt;/&lt;seq&gt;</code>: a line saying which bundle the
+page is from and what it can and cannot do, with a link back to the conversation; the page in its
+box; and under it, each message the page sent to the conversation.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A result that opened a page has an Open button in its conversation, and the screen behind it names the bundle and links back.</li>
+<li>A page that cannot be opened, because the bundle is gone or its server gives no page, says so on that screen.</li>
+<li>A message a page sent is said on the page's screen as well as in the conversation.</li>
+</ul>
+</div>
+
 <h2>Panels</h2>
 
 <p>Jobs, tools, skills, and personas each have a management panel. More also leads to <a href="#metrics">Metrics</a>.</p>

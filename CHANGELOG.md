@@ -2,6 +2,11 @@
 
 ## 2026-11-12
 
+- **A plugin can bring a page.** When a tool's bundle has one, its result in
+  the conversation gets an Open button. The page runs in a box with no network
+  and no way to reach the agent. It can call its own bundle's tools, which
+  shows in the conversation, and send the conversation a message, which the
+  page's screen repeats. No shipped bundle has a page yet.
 - **Four skills now ship from their own releases.** `researching`,
   `keeping-records`, `writing-skills` and `video-edit` read as they did. They
   are pinned by version and checksum, like the tools.

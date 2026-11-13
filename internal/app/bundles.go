@@ -229,7 +229,8 @@ func (b *bundle) serve(ctx context.Context, a *App, workspace string, reads, env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stderr := &strings.Builder{}
 	cmd.Stderr = stderr
-	client := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: Version}, nil)
+	client := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: Version},
+		&mcp.ClientOptions{Capabilities: appCapabilities()})
 	cs, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd, TerminateDuration: time.Second}, nil)
 	if err != nil {
 		if cmd.Process != nil {
@@ -285,7 +286,7 @@ func (b *bundle) tools(a *App) ([]*Tool, error) {
 			return nil, fmt.Errorf("tool %q has no name or no description, and the description is all the model has to go on", t.Name)
 		}
 		out = append(out, &Tool{Name: t.Name, Description: t.Description, Parameters: params,
-			Agent: ToolAgent{Timeout: b.timeout, Reads: b.reads}, Dir: b.Dir, bundle: b})
+			Agent: ToolAgent{Timeout: b.timeout, Reads: b.reads}, Dir: b.Dir, bundle: b, app: appOf(t.Meta)})
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("its server lists no tools")
@@ -302,14 +303,10 @@ func said(stderr *strings.Builder) string {
 	return ""
 }
 
-// callBundle runs one call of a bundle's tool. Like any tool call it ends in a
-// result the model can read, whatever went wrong.
-func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args json.RawMessage) toolResult {
-	b := t.bundle
-	cctx, cancel := context.WithTimeout(ctx, time.Duration(b.timeout)*time.Second)
-	defer cancel()
+// serveIn starts a bundle's server for a conversation: confined to its
+// directory, with what the conversation holds in its environment.
+func (r *Registry) serveIn(ctx context.Context, tc *ToolCtx, b *bundle) (*mcp.ClientSession, *strings.Builder, func(), error) {
 	workspace := absOr(tc.App.ensureWorkspace(tc.SessionID))
-	defer tc.App.workspaceChanged(tc.SessionID)
 	tmp := tc.App.sandbox.TempDir(workspace)
 	_ = os.MkdirAll(tmp, 0o755)
 	home := tc.App.sandbox.HomeDir(workspace)
@@ -321,6 +318,16 @@ func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args js
 	env = append(env, sessionVars(tc.vars())...)
 	env = tc.App.withPackages(env, tc.SessionID)
 	env = append(env, tc.App.skillDirsEnv(tc.SessionID), "TMPDIR="+tmp, "HOME="+home)
+	return b.serve(ctx, tc.App, workspace, tc.App.skillFolders(tc.SessionID), env)
+}
+
+// callBundle runs one call of a bundle's tool. Like any tool call it ends in a
+// result the model can read, whatever went wrong.
+func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args json.RawMessage) toolResult {
+	b := t.bundle
+	cctx, cancel := context.WithTimeout(ctx, time.Duration(b.timeout)*time.Second)
+	defer cancel()
+	defer tc.App.workspaceChanged(tc.SessionID)
 
 	fail := func(format string, a ...any) toolResult {
 		if cctx.Err() == context.DeadlineExceeded {
@@ -328,7 +335,7 @@ func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args js
 		}
 		return errResult(format, a...)
 	}
-	cs, stderr, stop, err := b.serve(cctx, tc.App, workspace, tc.App.skillFolders(tc.SessionID), env)
+	cs, stderr, stop, err := r.serveIn(cctx, tc, b)
 	if err != nil {
 		res := fail("tool %q: its server did not start: %v", t.Name, err)
 		res.stderr = stderr.String()
@@ -346,6 +353,10 @@ func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args js
 	}
 	text := bundleText(out)
 	res := toolResult{OK: !out.IsError, stderr: stderr.String()}
+	res.app, _ = json.Marshal(out)
+	if t.app.URI != "" {
+		res.page = res.app
+	}
 	if out.IsError {
 		res.Error = text
 	} else {

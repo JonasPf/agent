@@ -2816,6 +2816,45 @@ read a shipped skill read the fetched one. The fetch removes only folders it mad
 skill kept here is left alone.</p>
 </div>
 
+<div class="adr" id="adr-090">
+<div class="meta">ADR-090 · accepted · builds on <a href="#adr-085">ADR-085</a></div>
+<h3>A bundle brings a page as an MCP App, hosted in a box with no network</h3>
+<h4>Context</h4>
+<p>The only way a page reaches the operator is <code>ask_operator</code>, a built-in with a
+contract of its own. A bundle that needs a screen &mdash; voice-over's review page &mdash; has no
+way to bring one, and a second contract for pages would be a second thing to keep. MCP has an
+extension for this: MCP Apps (<code>io.modelcontextprotocol/ui</code>, specification
+2026-01-26).</p>
+<h4>Decision</h4>
+<p>The agent hosts MCP Apps. A tool names its page under <code>_meta.ui.resourceUri</code>; the
+agent reads it from the bundle's server with <code>resources/read</code>, started confined as for a
+call, and the interface shows it from an Open button on that tool's result. The page and the
+interface speak the specification's JSON-RPC messages over <code>postMessage</code>.</p>
+<p>Three things are this host's own choices, each allowed by the specification:</p>
+<ul>
+<li><strong>One frame with no origin.</strong> The specification's stable text asks for a frame
+on another origin with <code>allow-same-origin</code>. This agent has one origin, and that flag
+would hand the page the agent's. The frame has <code>allow-scripts</code> only, which gives it an
+origin of its own that is nobody's, and the policy travels in the document. This is the single
+frame the specification's draft allows.</li>
+<li><strong>No network.</strong> A resource may declare domains its page wants. None is granted:
+a page loads only what is in its own text, and reaches data by calling its bundle's tools.</li>
+<li><strong>A small set of messages.</strong> A page can call its own bundle's tools that allow
+it, and send the conversation a message in words. Opening links, changing the model's context
+without a message, reading other resources, and other display modes are refused by name.</li>
+</ul>
+<p>A page's tool call is written on the transcript as an event. A page's message arrives as the
+operator's, without a second confirmation: pressing the button in the page is the confirmation,
+as Send was for <code>ask_operator</code>, and the page's screen says what was sent.</p>
+<h4>Consequences</h4>
+<p>A bundle written for this agent's pages works in other hosts that take MCP Apps, and the
+reverse, as far as the page needs no network. A page can spend money or change files only through
+its own bundle's tools, and every such call is on the transcript. A page that misleads the
+operator into pressing a button can put words in the conversation; the bundle was installed by
+the operator, and the screen says the page is the bundle's. <code>ask_operator</code> stays until
+its one user has moved to a page of its own, and is then removed.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>
