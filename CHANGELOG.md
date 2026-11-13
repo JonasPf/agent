@@ -2,6 +2,9 @@
 
 ## 2026-11-13
 
+- **The voice-over plugin has a "Review page" setting.** Leave it on auto:
+  here the page opens in the conversation. The other choice, a link on this
+  machine, is for running the plugin in other coding agents.
 - **The agent asks in words.** It no longer shows you forms or pages of its
   own: when it needs something from you, it says so in its reply, like any
   other question. A plugin's page, such as the voice-over review page, still
