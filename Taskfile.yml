@@ -148,7 +148,6 @@ tasks:
     cmds:
       - task: test:go
       - task: test:web
-      - task: test:skills
 
   # Under the race detector: a session is changed by a turn, the operator, and
   # every page at once, and a race between them reads as nothing in particular
@@ -161,15 +160,6 @@ tasks:
   test:web:
     cmds:
       - node --test web/*.test.js
-
-  # The scripts a shipped skill carries, on real video. The page runs in the real
-  # panel, and a second time as a browser sees it that cannot size a box to its words.
-  test:skills:
-    cmds:
-      - python3 testenv/skills/voice_over_limits.py
-      - python3 testenv/skills/voice_over_page.py
-      - node testenv/skills/voice_over_page_browser.mjs
-      - NO_FIELD_SIZING=1 node testenv/skills/voice_over_page_browser.mjs
 
   check:
     desc: Everything that must pass before committing

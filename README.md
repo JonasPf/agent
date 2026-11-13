@@ -109,7 +109,7 @@ internal/app
   http.go ws.go    the only network surface
 web/               the PWA
 skills/            prose the agent loads on demand — the ones that ship, read-only.
-                   voice-over is kept here; the others are fetched with the bundles;
+                   voice-over, a page on starting its plugin, is kept here; the others are fetched;
                    the ones you write through the interface live under AGENT_STATE
 plugins/           the bundles plugins.lock names, fetched by `task plugins:fetch`
                    (not checked in): bash read write edit clock web_fetch web_browse

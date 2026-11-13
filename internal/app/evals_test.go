@@ -30,6 +30,11 @@ func TestEveryToolShipsEvalCases(t *testing.T) {
 		t.Fatalf("shipped bundles did not load: %+v", failures)
 	}
 	for _, tl := range a.tools.All() {
+		// A tool only a page may call (ADR-090) is never shown to a model,
+		// so it has no description to test.
+		if !tl.app.forModel {
+			continue
+		}
 		if tl.Name != "reload_tools" && !have[tl.Name] {
 			t.Errorf("%s ships no eval cases", tl.Name)
 		}

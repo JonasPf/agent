@@ -33,7 +33,7 @@ not a faster version of the check, it is a compile error. Use the tasks.
 | **Build** | `task build` | Compiles all packages. Agent entry point is `./cmd/agent`. |
 | **Run** | `task dev` | Builds the runtime image and serves http://localhost:7770, tools confined. The only way to run the agent. Its state is one btrfs image, `.dev/state.img`, made on first run and mounted by a privileged container (ADR-082). See the README table for `AGENT_*` env vars. |
 | **Lint** | `task lint` | `gofmt -l .` must print nothing, then `go vet ./...`. `task fmt` fixes formatting. |
-| **Test** | `task test` | Go tests across the agent, under the race detector, against the bundles `plugins.lock` names, which it fetches first; the browser's pure helpers (`web/*.test.js`) under node's built-in runner; and the scripts the `voice-over` skill carries (`testenv/skills`), on real video and in a real browser. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
+| **Test** | `task test` | Go tests across the agent, under the race detector, against the bundles `plugins.lock` names, which it fetches first; the browser's pure helpers (`web/*.test.js`) under node's built-in runner. The browser helpers are pure node and also run straight off the host: `node --test web/*.test.js`. |
 | **Check** | `task check` | Lint, build, and test together. The pre-commit gate; see below. |
 | **Eval** | `task eval -- [tool...]` | Puts each tool's eval cases to a real model. Costs money; results vary. `go run ./cmd/eval -model <id>` puts the cases to another model; the default is `DefaultEvalModel` in `internal/app/evals.go`, and a run against a model the gateway no longer lists says so rather than failing every case. Not part of the test run. |
 | **Reset** | `task db:clear` | Moves the dev state image (sessions, jobs, files, snapshots) to `.backups/<stamp>`; `task db:restore` puts the newest back. Refuses while the agent is running. |
@@ -111,7 +111,8 @@ server in `testenv/mcp/shell` (`writeTool` and `writeBundle` in the tests).
 **Skills ship the same way.** `researching`, `keeping-records`,
 `writing-skills` and `video-edit` live in agent-plugins and are named in
 `plugins.lock` with `"kind": "skill"`; the fetch unpacks them into `skills/`
-beside `voice-over`, the one skill still kept here. Do not edit a fetched
+beside `voice-over`, the one skill still kept here: a short page saying how
+to start the voice-over bundle in this agent (ADR-091). Do not edit a fetched
 skill in this repository: change it there, release it, update the lock.
 
 **The agent is never rebuilt or restarted for a tool.** Install the bundle on
@@ -124,7 +125,8 @@ against, and no deterministic test can tell whether they read correctly. So
 every built-in carries an `eval.json` beside its manifest, and every bundle
 carries `evals/<tool>.json` for each of its tools — requests put to a real
 model, and what its tool use must look like. `go test ./...` fails if a shipped
-tool has none.
+tool has none. A tool only a page may call (`_meta.ui.visibility: ["app"]`,
+ADR-090) has none: a model is never shown it.
 
 When you add a built-in, write its eval cases in the same change, and run
 `task eval -- <tool>`. A failing case is usually a defect in the description,

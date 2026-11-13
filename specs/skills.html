@@ -172,7 +172,7 @@ operator reads it on the Skills screen before deciding.</p>
 <tr><td><code>keeping-records</code></td><td>off</td><td>How to keep whatever the operator asks to have remembered &mdash; a series that accumulates (measurements, appointments, incidents), a list with no dates, or a note of a fact, a preference, or a decision &mdash; as files in the session's working directory; that every date written comes from <code>clock</code> in the same turn; and how to read any of it back with a command.</td></tr>
 <tr><td><code>writing-skills</code></td><td>off</td><td>When to offer to turn a task that worked into a skill, and how to draft one in the working directory: a description that says when, a lean <code>SKILL.md</code> that explains why, scripts for work that repeats, test cases in the layout <code>claude plugin eval</code> reads, a run of them before handing it over, and how the operator installs it.</td></tr>
 <tr><td><code>researching</code></td><td>on</td><td>How to answer a question from the web: plan narrow searches, read the page rather than the snippet, rank sources from primary to unverified, keep findings in a file as they accumulate, and give every claim its source.</td></tr>
-<tr><td><code>voice-over</code></td><td>off</td><td>How to put a synthesized voice on a video: transcribe it with times, given the names it uses, take the ums out of the narration and keep the narrator's words, speak each line and place it at its moment, then offer a page shown through <a href="tool-ask_operator.html"><code>ask_operator</code></a> where the operator hears every line at its real length and changes the words, timing, language, and voice, joining and splitting lines. Send there speaks again only what changed (<a href="adrs.html#adr-080">ADR-080</a>). A video with no audio takes its script from that page.</td></tr>
+<tr><td><code>voice-over</code></td><td>off</td><td>How to start the voice-over plugin here: install ffmpeg with <code>packages</code> first, cut the video before anything else, then transcribe, write the script, speak it, and show the operator the review page, ending the turn there; no page on a scheduled run. The work, the review page included, is the plugin's (<a href="adrs.html#adr-091">ADR-091</a>).</td></tr>
 <tr><td><code>video-edit</code></td><td>off</td><td>How to cut parts out of videos and join them: find the moments from times or from what was said, cut exactly, fit clips that do not match, and carry on a long job that a time limit stopped. It comes before a voice-over, because a cut moves every time after it.</td></tr>
 </table>
 
@@ -181,10 +181,11 @@ operator reads it on the Skills screen before deciding.</p>
 <a href="https://github.com/JonasPf/agent-plugins">agent-plugins</a>, each as a zip of its folder.
 <code>plugins.lock</code> names the version and sha256 of each, and the image is built with exactly
 those, as it is with its bundles (<a href="adrs.html#adr-088">ADR-088</a>). They ship read-only,
-like any skill in the image. <code>voice-over</code> is still kept in this repository, because its
-review page runs in the <code>ask_operator</code> panel: <code>task check</code> runs its scripts
-from <code>testenv/skills</code> on real video, with the page in the real panel in a real browser
-(<a href="adrs.html#adr-075">ADR-075</a>).</p>
+like any skill in the image. <code>voice-over</code> is still kept in this repository: it says how
+to start the voice-over plugin in this agent, ffmpeg from <code>packages</code>, which the plugin,
+written for any host, cannot say. The plugin itself, its review page and its tests included, is
+written and released in agent-plugins and ships from <code>plugins.lock</code>
+(<a href="adrs.html#adr-091">ADR-091</a>).</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -198,18 +199,6 @@ from <code>testenv/skills</code> on real video, with the page in the real panel 
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every required skill ships and loads.</li>
-<li>A draft is spoken whole before the page, in the voice the request names or <code>gareth</code>: <code>--speak-all</code> lists every chunk with its words and notes the voice. A request to check the script first gets the page before any speech.</li>
-<li>The voice-over review page lays the script along the video: a screenshot every 30 seconds, each the frame at its time, and each line beside it at the moment it starts. A line already spoken is as tall as its speech once trimmed as it will be placed, and a tap on its handle, or Enter, plays it; a drag only moves it. A line not spoken yet is dashed, and as tall as its words would take at the pace of the speech there is, in that voice. It fits what <code>ask_operator</code> will load, with an hour of speech in it.</li>
-<li>On that page the operator changes a line's words, splits a line where the cursor is or joins it to the next, moves it along the video by dragging with a mouse or a finger or with the arrow keys, and picks the language and the voice. A changed line, and every line in another voice or language, is to be spoken again, and the cost of what Send would speak follows.</li>
-<li>While any line is a guess, a note stays in sight at the foot of the page, and its coming moves nothing. It says first, in bold, how many lines are guesses, or that every length is a guess until the new voice or language is spoken, and then that Send speaks them, at what cost, and brings the page back with their real lengths. A new language adds that the lines are sized from their words as written. With nothing to guess there is no note.</li>
-<li>Picking a voice on that page plays that voice saying the same line as every other voice, from a sample the skill carries. Nothing plays until a voice is picked.</li>
-<li>Every line starts where it was put. One still speaking when the next starts, or when the video ends, is cut off there, and the page and the placement script both say which. Only a line that starts after the video ends stops the track being written.</li>
-<li>Send is the approval, and there is no other. It saves the script as the page shows it at that moment beside the page; nothing is saved before it, so <code>--apply</code> refuses until then, and Decline saves nothing.</li>
-<li>Send is held back, saying why, while the page has no line or a line too long to speak in one go.</li>
-<li>A video with no draft starts the page empty, and a script pasted there reaches speech the way a draft does.</li>
-<li>An approval that names a new language asks for a translation, which is spoken whole and shown again.</li>
-<li>An approval lists every line to speak with its words as approved. Approved again, a line whose words and voice are unchanged keeps its speech wherever it moved; a new voice or language speaks every line again.</li>
-<li>The page built again after the speech starts from the lines and the voice that were spoken.</li>
 <li>A cut lands on the frame asked for, sound and picture stay together across a join, and whole clips that match, frame rate included, are joined without re-encoding. A result whose length or sound comes out wrong is removed.</li>
 <li>A long edit stopped by its time limit carries on from where it stopped when run again, and sources are never changed.</li>
 <li>A recording too long for a turn is stopped before anything is done, and goes on only with the operator's agreement.</li>
