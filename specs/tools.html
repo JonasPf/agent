@@ -80,7 +80,7 @@ What a page carries is everything a definition cannot: the behaviour, the bounda
 <li>Every bundle the image ships loads, and every parameter of every tool it offers has its own <code>description</code>: without it the model is given a bare name and a type, and guesses the rest.</li>
 <li>Every shipped tool's name is lowercase words of letters and digits joined by underscores, as a function's is: <code>call_model</code>, <code>web_search</code>.</li>
 <li>What the model is sent for a tool is its <code>name</code>, <code>description</code>, and <code>parameters</code>, and nothing of how the agent runs it.</li>
-<li>Every tool that ships, built in or from a bundle, carries eval cases, and the test run names one that does not.</li>
+<li>Every tool that ships, built in or from a bundle, carries eval cases, and the test run names one that does not. A tool only a page may call is never shown to a model and carries none.</li>
 <li>Adding or changing a bundle requires no rebuild and no restart of the agent.</li>
 </ul>
 </div>

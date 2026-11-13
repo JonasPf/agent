@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-13
+
+- **Voice-over is a plugin now.** Making a voice-over takes a few tool calls
+  instead of dozens of rounds: one call transcribes, one places your script,
+  and one speaks every line and puts it on the video, however many lines
+  there are. The review page opens from the conversation as before, with Send
+  at its top. The plugin speaks with its own OpenRouter key: set it under
+  Plugins → voice-over, or its tools will say they have none. The finished
+  video is now `<name>.voiceover.mp4` beside the original.
+
 ## 2026-11-12
 
 - **A plugin can bring a page.** When a tool's bundle has one, its result in

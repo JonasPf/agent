@@ -2415,7 +2415,7 @@ is the operator, behind the login, and what opens is a box with a button only th
 </div>
 
 <div class="adr" id="adr-075">
-<div class="meta">ADR-075 · accepted</div>
+<div class="meta">ADR-075 · accepted · amended by <a href="#adr-091">ADR-091</a></div>
 <h3>The video skills ship in the image, with their tests</h3>
 <h4>Context</h4>
 <p><code>voice-over</code> and <code>video-edit</code> were worked out in a conversation and would have
@@ -2519,7 +2519,7 @@ further down the screen. Edits still last only until the page is reloaded, as th
 </div>
 
 <div class="adr" id="adr-080">
-<div class="meta">ADR-080 · accepted</div>
+<div class="meta">ADR-080 · accepted · amended by <a href="#adr-091">ADR-091</a></div>
 <h3>A voice-over is spoken before it is checked</h3>
 <h4>Context</h4>
 <p>The operator arranges a voice-over by each line's length: where it ends, and whether the next cuts it
@@ -2853,6 +2853,35 @@ its own bundle's tools, and every such call is on the transcript. A page that mi
 operator into pressing a button can put words in the conversation; the bundle was installed by
 the operator, and the screen says the page is the bundle's. <code>ask_operator</code> stays until
 its one user has moved to a page of its own, and is then removed.</p>
+</div>
+
+<div class="adr" id="adr-091">
+<div class="meta">ADR-091 · accepted · amends <a href="#adr-075">ADR-075</a> and <a href="#adr-080">ADR-080</a> · builds on <a href="#adr-088">ADR-088</a> and <a href="#adr-090">ADR-090</a></div>
+<h3>Voice-over is a plugin; the skill only says how to start it here</h3>
+<h4>Context</h4>
+<p>The voice-over skill was a page of steps, five Python scripts, a review page shown through
+<code>ask_operator</code>, and the agent's <code>call_model</code>, <code>packages</code> and
+<code>ask_operator</code> tools. The model ran the scripts through <code>bash</code>, spoke each line
+with a <code>call_model</code> call of its own, ten to a response, and carried 36 warnings in the
+skill's text. The skill's tests ran here because its page ran in the <code>ask_operator</code> panel
+(<a href="#adr-075">ADR-075</a>).</p>
+<p>The voice-over bundle in agent-plugins now does the same with its own tools: transcribing,
+placing, speaking every line in one call, and a review page that is an MCP App
+(<a href="#adr-090">ADR-090</a>). It carries its own tests, the skill's page tests among them, and it
+runs in other hosts as well.</p>
+<h4>Decision</h4>
+<p>The agent ships the voice-over bundle from <code>plugins.lock</code> (<a href="#adr-088">ADR-088</a>).
+The skill stays, short. It says what only this host can say, that ffmpeg comes from
+<code>packages</code> because the bundle carries none of its own yet, and the order of the tools:
+the review page last, and none on a scheduled run. Its scripts, page, voice samples and their tests
+leave this repository, and their acceptance criteria are the bundle's.</p>
+<h4>Consequences</h4>
+<p>Speaking a video is one tool call however many lines it has, so a long video no longer runs a turn
+out of rounds, and no line is spoken from words the model copied wrongly. The bundle speaks with its
+own OpenRouter key, set on the Plugins screen, and never with the agent's; until it is set, its tools
+say so. <a href="#adr-080">ADR-080</a> holds as it was: the draft is spoken before the operator checks
+it, now by <code>voiceover_render</code>. Once the bundle carries its own ffmpeg, the skill's first
+step goes, and perhaps the skill with it.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
