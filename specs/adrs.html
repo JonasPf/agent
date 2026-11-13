@@ -2375,7 +2375,7 @@ browser refuses to show one in a sandbox, and does not run it on this origin.</p
 <p>A page opened this way sees what it holds and nothing else, so it cannot load a font, an image, or
 a script from elsewhere, or a file beside it. The interface's own requests read these files as before:
 the policy governs a document, not a fetch. A page that has to give something back goes through
-<a href="tool-ask_operator.html"><code>ask_operator</code></a>.</p>
+<code>ask_operator</code>.</p>
 </div>
 
 <div class="adr" id="adr-074">
@@ -2392,7 +2392,7 @@ client. URL mode is built for the opposite of this case, since here the answer i
 agent. Its Apps extension is the closest relative: a tool's result names HTML that the host runs in a
 sandboxed iframe, talking over <code>postMessage</code>.</p>
 <h4>Decision</h4>
-<p>One tool, <a href="tool-ask_operator.html"><code>ask_operator</code></a>, with a required message
+<p>One tool, <code>ask_operator</code>, with a required message
 saying what is needed and why, and either questions, for a form the panel draws, or a page, for what a
 form cannot do. The name says what the model should use it for. A separate tool for mockups, or a
 voice-over tool, would each have needed this one.</p>
@@ -2719,7 +2719,7 @@ and says so by failing. The agent gains one dependency, the protocol's Go SDK.</
 </div>
 
 <div class="adr" id="adr-086">
-<div class="meta">ADR-086 · accepted · supersedes the tool API of <a href="#adr-051">ADR-051</a> · builds on <a href="#adr-085">ADR-085</a></div>
+<div class="meta">ADR-086 · accepted · supersedes the tool API of <a href="#adr-051">ADR-051</a> · builds on <a href="#adr-085">ADR-085</a> · amended by <a href="#adr-092">ADR-092</a></div>
 <h3>The agent's handles on itself are built in, and the tool API goes</h3>
 <h4>Context</h4>
 <p>Six tools do nothing of their own. <code>schedule</code>, <code>session_search</code>,
@@ -2882,6 +2882,29 @@ own OpenRouter key, set on the Plugins screen, and never with the agent's; until
 say so. <a href="#adr-080">ADR-080</a> holds as it was: the draft is spoken before the operator checks
 it, now by <code>voiceover_render</code>. Once the bundle carries its own ffmpeg, the skill's first
 step goes, and perhaps the skill with it.</p>
+</div>
+
+<div class="adr" id="adr-092">
+<div class="meta">ADR-092 · accepted · amends <a href="#adr-086">ADR-086</a> · builds on <a href="#adr-090">ADR-090</a> and <a href="#adr-091">ADR-091</a></div>
+<h3><code>ask_operator</code> goes: a page reaches the operator only from a plugin</h3>
+<h4>Context</h4>
+<p><code>ask_operator</code> let the model stop and show the operator a form, or a page in a box that
+it wrote itself or a skill built, and carry on with the answer. Its one real user was the voice-over
+skill's review page. A bundle can now bring a page of its own as an MCP App
+(<a href="#adr-090">ADR-090</a>), and voice-over's does (<a href="#adr-091">ADR-091</a>). Two ways for
+a page to reach the operator are two code paths, two boxes to keep shut and two sets of edge cases,
+for one thing.</p>
+<h4>Decision</h4>
+<p><code>ask_operator</code> is removed: the built-in, its panel, the route its panel saved through
+(<code>POST /tools/{name}/call</code>), and its specification. A page reaches the operator only as an
+MCP App a bundle brings. A link to an ask in an old conversation opens one line saying asks of this
+kind are no longer shown, with a link back to the conversation.</p>
+<h4>Consequences</h4>
+<p>Given up, knowingly: the model can no longer show the operator a form or a page it wrote itself.
+It asks in its reply, in words, like any other question; a form that matters enough is a bundle's
+page. Five tools are built in beside <code>reload_tools</code>: <code>schedule</code>,
+<code>session_search</code>, <code>skill_read</code>, <code>call_model</code> and
+<code>packages</code>.</p>
 </div>
 
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>

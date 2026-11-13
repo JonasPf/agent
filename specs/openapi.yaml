@@ -827,29 +827,6 @@ paths:
         "400": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
 
-  /tools/{name}/call:
-    parameters:
-      - $ref: "#/components/parameters/ToolName"
-    post:
-      tags: [tools]
-      summary: Run a tool, for its panel to read and write its own data.
-      parameters:
-        - name: session_id
-          in: query
-          schema: {type: string}
-          description: The session whose working directory the tool runs in.
-      requestBody:
-        content:
-          application/json:
-            schema: {type: object, description: The tool's arguments.}
-      responses:
-        "200":
-          description: What the tool answered.
-          content:
-            application/json:
-              schema: {$ref: "#/components/schemas/ToolResult"}
-        "404": {$ref: "#/components/responses/Error"}
-
   /skills:
     get:
       tags: [skills]
@@ -1272,11 +1249,6 @@ components:
       schema: {type: string}
     JobID:
       name: id
-      in: path
-      required: true
-      schema: {type: string}
-    ToolName:
-      name: name
       in: path
       required: true
       schema: {type: string}

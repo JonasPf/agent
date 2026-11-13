@@ -65,7 +65,6 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("GET /tools", a.hTools)
 	mux.HandleFunc("POST /tools/reload", a.hReload)
-	mux.HandleFunc("POST /tools/{name}/call", a.hCallTool)
 
 	mux.HandleFunc("GET /plugins", a.hPlugins)
 	mux.HandleFunc("POST /plugins", a.hInstallPlugin)
@@ -916,26 +915,6 @@ func (a *App) hReload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"loaded": loaded, "failures": failures})
 }
 
-// hCallTool calls a tool for the operator. The ask_operator panel saves what a
-// page hands it this way.
-func (a *App) hCallTool(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	if a.tools.Get(name) == nil {
-		fail(w, 404, "no such tool")
-		return
-	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
-	if err != nil {
-		fail(w, 400, "%v", err)
-		return
-	}
-	if len(body) == 0 {
-		body = []byte("{}")
-	}
-	res := a.tools.Call(r.Context(), &ToolCtx{App: a, SessionID: r.URL.Query().Get("session_id")}, name, body)
-	writeJSON(w, 200, res)
-}
-
 func (a *App) hSkills(w http.ResponseWriter, r *http.Request) {
 	sess := a.store.Session(r.URL.Query().Get("session_id"))
 	skills := a.skills.All()
@@ -1189,7 +1168,7 @@ func (a *App) hSessionFile(w http.ResponseWriter, r *http.Request) {
 // it. Such a file is whatever the agent wrote or fetched, and it is served from
 // the agent's own address, where the operator's login opens every route, so it
 // runs as nobody: scripts work, and it can see what it holds and reach nothing
-// else. The same policy keeps a page inside ask_operator's box (ADR-073).
+// else.
 const filePolicy = "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; " +
 	"style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; " +
 	"form-action 'none'; base-uri 'none'"

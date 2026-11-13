@@ -35,7 +35,6 @@ func (a *App) builtinRuns() map[string]builtinFn {
 		"skill_read":     a.skillReadTool,
 		"call_model":     a.callModelTool,
 		"packages":       a.packagesTool,
-		"ask_operator":   a.askOperatorTool,
 	}
 }
 

@@ -2,6 +2,11 @@
 
 ## 2026-11-13
 
+- **The agent asks in words.** It no longer shows you forms or pages of its
+  own: when it needs something from you, it says so in its reply, like any
+  other question. A plugin's page, such as the voice-over review page, still
+  opens from its result. A link to an old ask opens a note and a way back to
+  the conversation.
 - **Voice-over is a plugin now.** Making a voice-over takes a few tool calls
   instead of dozens of rounds: one call transcribes, one places your script,
   and one speaks every line and puts it on the video, however many lines
