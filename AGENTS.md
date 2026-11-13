@@ -91,7 +91,7 @@ A tool is either built into the agent or offered by an MCP server in a bundle
 ([ADR-085](specs/adrs.html#adr-085), [ADR-088](specs/adrs.html#adr-088)).
 
 **Built in** are only the agent's handles on itself: `schedule`,
-`session_search`, `skill_read`, `call_model`, `packages`, `ask_operator`,
+`session_search`, `skill_read`, `call_model`, `packages`,
 `reload_tools`. Each has `manifest.json` and `eval.json` under
 `internal/app/builtin/<name>/` and its code in `internal/app`. Add one only for
 something a bundle cannot be handed.

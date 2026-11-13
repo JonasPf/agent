@@ -3079,16 +3079,19 @@ test('a file named by a message that arrives is linked when it is there', async 
   assert.deepStrictEqual(fileLinks(ctx._id('transcript')), ['/sessions/S1/files/out/final.mp4']);
 });
 
-// ---------- the one panel ----------
+// ---------- old panel links ----------
 
-// No tool brings a script into the interface any more (ADR-086): the address
-// that used to load one from a tool's folder opens ask_operator's screen and
-// nothing else. A link naming any other tool says so, and loads nothing.
-test('a panel link that names anything but ask_operator loads nothing', async () => {
+// ask_operator is gone (ADR-092), and no tool brings a script into the
+// interface. A link to its panel in an old conversation loads nothing: it says
+// asks of that kind are no longer shown, and leads back to the conversation.
+test('an old panel link says such asks are no longer shown, and leads back to its conversation', async () => {
   const ctx = load({});
-  vm.runInContext("state.view = 'toolpanel'; state.arg = 'notes';", ctx);
+  vm.runInContext("state.view = 'toolpanel'; state.arg = 'ask_operator'; location.hash = '#toolpanel/ask_operator/S1/20261031-1200-ab';", ctx);
   const v = ctx._id('view');
   await ctx.viewToolPanel(v);
   const said = textOf(v);
-  assert.ok(/no panel named notes/.test(said), 'the screen did not say there is no such panel: ' + said);
+  assert.ok(/no longer shown/.test(said), 'the screen does not say asks are no longer shown: ' + said);
+  const links = [];
+  (function walk(n) { if (n.href) links.push(n.href); for (const c of n.children || []) walk(c); })(v);
+  assert.ok(links.includes('#session/S1'), 'no link back to the conversation: ' + JSON.stringify(links));
 });

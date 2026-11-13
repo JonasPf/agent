@@ -2188,26 +2188,26 @@ async function viewSettings(v) {
   v.append(d);
 }
 
-// ---------- panels ----------
+// ---------- old panel links ----------
 
-// panelLink is the link to a tool's screen in what the tool returned, if any.
+// panelLink is the link to a tool's screen in what the tool returned, if any:
+// ask_operator's, in a conversation from before it went (ADR-092).
 function panelLink(text) {
   const m = /#toolpanel\/[\w-]+\/[\w/-]+/.exec(String(text || ''));
   return m ? m[0] : '';
 }
 
+// viewToolPanel is where such a link leads now: nothing is loaded, and the
+// conversation it came from is one tap away.
 async function viewToolPanel(v) {
-  const gen = drawing;
-  setHeader(state.arg, true);
-  try {
-    // The one panel there is. A link in an old transcript names it by the
-    // tool it belonged to, and anything else names nothing.
-    if (state.arg !== 'ask_operator') throw new Error('there is no panel named ' + state.arg);
-    const mod = await import('/panels/ask_operator.js');
-    if (stale(gen)) return;
-    await mod.default({ root: v, api, el });
-  } catch (e) {
-    v.append(el('div', 'empty', 'Panel failed to load: ' + e.message));
+  setHeader('Ask', true);
+  v.append(el('div', 'empty', 'Asks of this kind are no longer shown. The agent asks in its reply now, ' +
+    'and a plugin\'s page opens from its own result.'));
+  const m = /#toolpanel\/[\w-]+\/([^/]+)/.exec(String(location.hash || ''));
+  if (m) {
+    const back = el('a', 'link', 'Back to the conversation');
+    back.href = '#session/' + m[1];
+    v.append(back);
   }
 }
 

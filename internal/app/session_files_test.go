@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"mime/multipart"
@@ -48,21 +49,11 @@ func catTool(t *testing.T, a *App, file string) {
 	}
 }
 
-// callTool runs a tool through the gateway in a session's context and returns
-// what it printed.
+// callTool runs a tool as the registry runs it for a turn, a real process in
+// a session's context, and returns what it printed.
 func callTool(t *testing.T, a *App, sessionID, name string) toolResult {
 	t.Helper()
-	req := httptest.NewRequest("POST", "/tools/"+name+"/call?session_id="+sessionID, strings.NewReader("{}"))
-	w := httptest.NewRecorder()
-	a.routes().ServeHTTP(w, req)
-	if w.Code != 200 {
-		t.Fatalf("tool call status = %d: %s", w.Code, w.Body.String())
-	}
-	var res toolResult
-	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
-		t.Fatal(err)
-	}
-	return res
+	return a.tools.Call(context.Background(), &ToolCtx{App: a, SessionID: sessionID}, name, json.RawMessage("{}"))
 }
 
 func newSession(t *testing.T, a *App) *Session {

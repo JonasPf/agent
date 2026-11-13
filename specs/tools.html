@@ -29,10 +29,10 @@ restarts nothing: the agent keeps running and picks it up on a reload.</p>
 <h2>The two kinds</h2>
 
 <p><strong>Built in.</strong> <code>schedule</code>, <code>session_search</code>,
-<code>skill_read</code>, <code>call_model</code>, <code>packages</code>, and <code>ask_operator</code>
+<code>skill_read</code>, <code>call_model</code>, and <code>packages</code>
 reach what only the agent holds &mdash; its jobs, its transcripts, its skills, the model key, the
-package store, the operator &mdash; and run inside it, as <code>reload_tools</code> does
-(<a href="adrs.html#adr-086">ADR-086</a>). Each has a manifest and eval cases, compiled in from
+package store &mdash; and run inside it, as <code>reload_tools</code> does
+(<a href="adrs.html#adr-086">ADR-086</a>, <a href="adrs.html#adr-092">ADR-092</a>). Each has a manifest and eval cases, compiled in from
 <code>internal/app/builtin/&lt;name&gt;/</code>. The manifest is exactly a function definition
 &mdash; <code>name</code>, <code>description</code>, <code>parameters</code> &mdash; which is what the
 model is sent.</p>
@@ -56,7 +56,6 @@ What a page carries is everything a definition cannot: the behaviour, the bounda
 
 <table>
 <tr><th>Tool</th><th>For</th></tr>
-<tr><td><a href="tool-ask_operator.html"><code>ask_operator</code></a></td><td>Stop and ask the operator for what a chat reply handles badly: a form, or a page in a box.</td></tr>
 <tr><td><a href="tool-bash.html"><code>bash</code></a></td><td>Run a shell command in the session's working directory.</td></tr>
 <tr><td><a href="tool-call_model.html"><code>call_model</code></a></td><td>One call to another model: text, speech, transcription, or a decision.</td></tr>
 <tr><td><a href="tool-clock.html"><code>clock</code></a></td><td>The current date and time, in UTC and in the operator's zone.</td></tr>
@@ -364,21 +363,20 @@ is refused to a page.</p>
 </ul>
 </div>
 
-<h2>The one panel</h2>
+<h2>Old ask links</h2>
 
-<p>A tool used to be able to ship a screen of its own, a script the interface loaded from the tool's
-folder. Only <code>ask_operator</code> ever had one that shipped, and <code>ask_operator</code> is now
-part of the agent (<a href="adrs.html#adr-086">ADR-086</a>), so its screen is part of the interface
-and no tool brings a script into it. The address is unchanged:
-<code>#toolpanel/ask_operator/&lt;session&gt;/&lt;id&gt;</code> opens it, and a tool's result that holds
-such a link gets an Open button in the transcript, so a link in an old conversation still works.</p>
+<p>A tool used to be able to ship a screen of its own, and the last of them, <code>ask_operator</code>'s,
+went with that tool (<a href="adrs.html#adr-092">ADR-092</a>). A page reaches the operator only from a
+plugin, as an MCP App (<a href="adrs.html#adr-090">ADR-090</a>). A result in an old conversation that
+holds a link to an ask, <code>#toolpanel/ask_operator/&lt;session&gt;/&lt;id&gt;</code>, keeps its Open
+button, and it opens one line saying asks of this kind are no longer shown, with a link back to the
+conversation.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>No tool, built in or from a bundle, can add a script to the interface.</li>
-<li>A link to the <code>ask_operator</code> panel opens it from a tool's result, with the rest of the address left for the panel to read.</li>
-<li>A panel link that names anything else says there is no such panel, and the rest of the interface goes on working.</li>
+<li>A link to an ask in an old conversation loads nothing: it says asks of this kind are no longer shown, and links back to the conversation.</li>
 </ul>
 </div>
 
