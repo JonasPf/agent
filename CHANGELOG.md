@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-15
+
+- **A voice-over starts sooner.** The voice-over plugin carries its own
+  ffmpeg, so a conversation no longer installs it first.
+
 ## 2026-11-13
 
 - **The voice-over plugin has a "Review page" setting.** Leave it on auto:
