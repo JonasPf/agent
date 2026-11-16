@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Direction A: quieter paper</title>
+<style>
+/* Direction A, "quieter paper": the present warm palette, refined. Fewer lines,
+   more air, one type scale, the agent's prose in a book serif, a turn's tool
+   work folded into one line, and views that slide. */
+:root {
+  --paper: #f3efe8; --sheet: #fbf9f5; --ink: #1f1c18; --soft: #6c655d; --hair: #e2dbd0;
+  --copper: #a8542b; --copper-tint: #f1e1d5; --bad: #b3261e;
+  --sans: -apple-system, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --serif: "Iowan Old Style", "Charter", "Bitstream Charter", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* five sizes, nothing between */
+  --t1: 12px; --t2: 14px; --t3: 16px; --t4: 18px; --t5: 24px;
+  --r1: 6px; --r2: 12px; --r3: 20px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --paper: #1a1815; --sheet: #22201c; --ink: #ece6dc; --soft: #a39b90; --hair: #35312b;
+  --copper: #d98a5f; --copper-tint: #3a2a20; --bad: #f2867d; color-scheme: dark } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 var(--t2)/1.5 var(--sans); }
+.page { padding: 28px 16px 48px; max-width: 1320px; margin: 0 auto; }
+.intro { max-width: 62ch; margin: 0 0 28px; }
+.intro h1 { font: 600 var(--t5)/1.2 var(--serif); margin: 0 0 8px; }
+.intro p { margin: 0 0 6px; color: var(--soft); }
+.phones { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.phone { width: 390px; max-width: 100%; height: 780px; background: var(--sheet); border-radius: 36px;
+  box-shadow: 0 0 0 1px var(--hair), 0 24px 48px -28px rgb(60 40 20 / 35%); overflow: hidden; position: relative; }
+.cap { font-size: var(--t1); color: var(--soft); margin: 10px 0 0 4px; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--copper); outline-offset: 2px; }
+
+/* the shell: one bar, one way back */
+.bar { height: 56px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 8px; }
+.bar h2 { flex: 1; min-width: 0; margin: 0; font: 600 var(--t3)/1.2 var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon { width: 40px; height: 40px; border-radius: 20px; display: grid; place-items: center; color: var(--soft); font-size: 20px; }
+.icon:hover { background: var(--paper); }
+
+/* the list */
+.views { position: absolute; inset: 0; }
+.view { position: absolute; inset: 0; background: var(--sheet); display: flex; flex-direction: column;
+  transition: transform .32s var(--ease); }
+.view.off { transform: translateX(100%); }
+.view.behind { transform: translateX(-22%); }
+@media (prefers-reduced-motion: reduce) { .view { transition: none; } }
+.newbtn { margin: 4px 16px 12px; height: 44px; border-radius: 22px; background: var(--copper); color: #fff; font-weight: 600; }
+.rows { overflow: auto; flex: 1; }
+.row { position: relative; display: block; width: 100%; text-align: left; padding: 14px 20px 14px 24px; }
+.row + .row { box-shadow: inset 0 1px 0 var(--hair); }
+.row .t { font: 500 var(--t3)/1.3 var(--sans); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .m { font-size: var(--t1); color: var(--soft); display: flex; gap: 12px; margin-top: 3px; }
+.row.unread::before { content: ""; position: absolute; left: 10px; top: 20px; width: 4px; height: 20px; border-radius: 2px; background: var(--copper); }
+.row.unread .t { font-weight: 650; }
+.tag { color: var(--copper); }
+.swipe { position: relative; overflow: hidden; }
+.swipe .under { position: absolute; inset: 0; display: flex; justify-content: flex-end; align-items: stretch; }
+.swipe .under span { background: var(--bad); color: #fff; display: grid; place-items: center; width: 96px; font-weight: 600; }
+.swipe .row { background: var(--sheet); transform: translateX(-96px); }
+
+/* the conversation */
+.talk { flex: 1; overflow: auto; padding: 8px 20px 16px; }
+.you { margin: 12px 0 18px auto; max-width: 84%; background: var(--copper-tint); padding: 10px 14px; border-radius: var(--r2) var(--r2) 4px var(--r2); }
+.agent { font: 400 var(--t4)/1.6 var(--serif); margin: 0 0 18px; }
+.agent p { margin: 0 0 10px; }
+.agent ul { margin: 0 0 10px; padding-left: 20px; }
+.agent code { font: 400 14px var(--mono); background: var(--paper); padding: 1px 5px; border-radius: 4px; }
+.work { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; font-size: var(--t1); color: var(--soft);
+  margin: 0 0 10px; padding: 6px 0; }
+.work .dot { width: 6px; height: 6px; border-radius: 3px; background: var(--soft); flex: none; }
+.work.failed { color: var(--bad); }
+.work.failed .dot { background: var(--bad); }
+.work .more { margin-left: auto; }
+.steps { margin: -4px 0 12px 14px; border-left: 2px solid var(--hair); padding-left: 12px; font: 400 var(--t1)/1.6 var(--mono); color: var(--soft); }
+.steps .bad { color: var(--bad); }
+.foot { padding: 8px 16px 14px; }
+.meter { display: flex; justify-content: space-between; font-size: var(--t1); color: var(--soft); padding: 0 6px 8px; }
+.compose { display: flex; gap: 8px; align-items: center; }
+.compose .box { flex: 1; height: 44px; border-radius: 22px; border: 1px solid var(--hair); background: var(--paper); padding: 0 16px; display: flex; align-items: center; color: var(--soft); }
+.send { width: 44px; height: 44px; border-radius: 22px; background: var(--copper); color: #fff; font-size: 18px; }
+
+/* a settings screen: groups, not one long column */
+.form { flex: 1; overflow: auto; padding: 4px 16px 24px; }
+.group { background: var(--paper); border-radius: var(--r2); margin: 0 0 20px; }
+.group h3 { font: 600 var(--t2)/1.3 var(--sans); margin: 0; padding: 0 4px 8px; color: var(--soft); background: var(--sheet); }
+.item { display: flex; align-items: center; gap: 12px; padding: 13px 14px; min-height: 52px; }
+.item + .item { box-shadow: inset 0 1px 0 var(--hair); }
+.item .l { flex: 1; min-width: 0; }
+.item .l small { display: block; color: var(--soft); font-size: var(--t1); }
+.item .v { color: var(--soft); }
+.chev { color: var(--soft); }
+.toggle { width: 44px; height: 26px; border-radius: 13px; background: var(--copper); position: relative; flex: none; }
+.toggle::after { content: ""; position: absolute; right: 3px; top: 3px; width: 20px; height: 20px; border-radius: 10px; background: #fff; }
+.toggle.off { background: var(--hair); }
+.toggle.off::after { right: auto; left: 3px; }
+.hint { font-size: var(--t1); color: var(--soft); padding: 0 4px; margin: -12px 0 20px; }
+</style>
+</head>
+<body>
+<main class="page">
+  <section class="intro">
+    <h1>Direction A: quieter paper</h1>
+    <p>The present warm look, with less on every screen. One type scale of five sizes; the agent's replies in a book serif, everything you act on in sans. A turn's tool work is one line you can open. Lists have one line of detail, and delete is behind a swipe. Views slide.</p>
+    <p>Tap a conversation in the first phone: it slides in, and back slides out.</p>
+  </section>
+
+  <div class="phones">
+    <div>
+      <div class="phone">
+        <div class="views">
+          <section class="view" id="list">
+            <header class="bar"><button class="icon" aria-label="Menu">☰</button><h2>Conversations</h2><button class="icon" aria-label="Search">⌕</button></header>
+            <button class="newbtn">New conversation</button>
+            <div class="rows">
+              <button class="row unread" data-open><span class="t">Create Lisbon trip notes</span><span class="m"><span>2 min</span><span>$0.003</span><span class="tag">unread</span></span></button>
+              <button class="row unread"><span class="t">Monday 9:00 weekly notes reminder</span><span class="m"><span>2 min</span><span>$0.002</span><span class="tag">1 job</span></span></button>
+              <div class="swipe"><div class="under"><span>Delete</span></div><button class="row"><span class="t">Pre-release checks and git tagging</span><span class="m"><span>3 min</span><span>$0.003</span><span>fork</span></span></button></div>
+              <button class="row"><span class="t">Bash command on a missing file</span><span class="m"><span>4 min</span><span>$0.002</span></span></button>
+              <button class="row"><span class="t">Pre-release checks and git tagging</span><span class="m"><span>5 min</span><span>$0.003</span></span></button>
+              <button class="row"><span class="t">Voice-over for the onboarding demo</span><span class="m"><span>yesterday</span><span>$0.04</span></span></button>
+              <button class="row"><span class="t">Reading list for December</span><span class="m"><span>3 days</span><span>$0.11</span><span class="tag">2 jobs</span></span></button>
+            </div>
+          </section>
+
+          <section class="view off" id="talk">
+            <header class="bar"><button class="icon" data-back aria-label="Back">‹</button><h2>Create Lisbon trip notes</h2><button class="icon" aria-label="More">⋯</button></header>
+            <div class="talk">
+              <div class="you">Use bash to list your working directory, then create notes.md with a heading “Plan” and two bullet points about a trip to Lisbon, then read it back to me.</div>
+              <button class="work" aria-expanded="true"><span class="dot"></span>Ran 3 tools: bash, write, read<span class="more">Hide</span></button>
+              <div class="steps">ls -la → .home .tmp<br>write notes.md → 158 bytes<br>read notes.md</div>
+              <div class="agent">
+                <p><u>notes.md</u> is written, and reads back as:</p>
+                <p><b>Plan</b></p>
+                <ul><li>Book the flight to Lisbon before prices rise; aim for a Tuesday departure.</li><li>Reserve a hotel in Alfama within walking distance of the tram 28 stop.</li></ul>
+                <p>The folder held only <code>.home</code> and <code>.tmp</code> before this, so notes.md is the first file in it.</p>
+              </div>
+              <div class="you">Run <code>cat does-not-exist.txt</code> and tell me what happened.</div>
+              <button class="work failed"><span class="dot"></span>bash failed: no such file<span class="more">Open</span></button>
+              <div class="agent"><p>The command failed with exit status 1: there is no file called does-not-exist.txt in the folder.</p></div>
+            </div>
+            <footer class="foot">
+              <div class="meter"><span>$0.0031, 39% cached</span><span>482 of 80,000 tokens</span></div>
+              <div class="compose"><button class="icon" aria-label="Attach">＋</button><div class="box">Message the agent</div><button class="send" aria-label="Send">↑</button></div>
+            </footer>
+          </section>
+        </div>
+      </div>
+      <p class="cap">The list, and a conversation sliding over it</p>
+    </div>
+
+    <div>
+      <div class="phone">
+        <section class="view">
+          <header class="bar"><button class="icon" aria-label="Back">‹</button><h2>Monday 9:00 weekly notes reminder</h2><button class="icon" aria-label="More">⋯</button></header>
+          <div class="talk">
+            <div class="you">Remind me every Monday at 9:00 to review the week's notes.</div>
+            <button class="work"><span class="dot"></span>Ran 2 tools: clock, schedule<span class="more">Open</span></button>
+            <div class="agent">
+              <p>Done. Every Monday at 9:00 I'll ask you to review the week's notes. The first one is <b>Monday 23 November</b>.</p>
+              <p>It is a reminder, not a check: it fires whatever the notes say. It costs about $0.002 a month.</p>
+            </div>
+            <div class="you">Make it 8:30.</div>
+            <div class="agent"><p>Moved to 8:30, from next Monday on.</p></div>
+          </div>
+          <footer class="foot">
+            <div class="meter"><span>$0.0018, 33% cached</span><span>443 of 80,000 tokens</span></div>
+            <div class="compose"><button class="icon" aria-label="Attach">＋</button><div class="box">Message the agent</div><button class="send" aria-label="Send">↑</button></div>
+          </footer>
+        </section>
+      </div>
+      <p class="cap">A conversation: the reply reads like a letter, the work is one line</p>
+    </div>
+
+    <div>
+      <div class="phone">
+        <section class="view">
+          <header class="bar"><button class="icon" aria-label="Back">‹</button><h2>Details</h2></header>
+          <div class="form">
+            <div class="group"><h3>This conversation</h3>
+              <div class="item"><div class="l">Title<small>Create Lisbon trip notes</small></div><span class="chev">›</span></div>
+              <div class="item"><div class="l">Model<small>DeepSeek V4.1 Flash, $0.05 in, $0.57 out per million</small></div><span class="chev">›</span></div>
+              <div class="item"><div class="l">Tools</div><span class="v">All 21</span><span class="chev">›</span></div>
+              <div class="item"><div class="l">Skills</div><span class="v">researching</span><span class="chev">›</span></div>
+            </div>
+            <p class="hint">Model, tools and skills are fixed for this conversation. Fork it to change them.</p>
+            <div class="group"><h3>Memory</h3>
+              <div class="item"><div class="l">Fold older turns at<small>80,000 tokens</small></div><span class="chev">›</span></div>
+              <div class="item"><div class="l">Keep word for word<small>the newest 10,000 tokens</small></div><span class="chev">›</span></div>
+            </div>
+            <div class="group"><h3>Variables</h3>
+              <div class="item"><div class="l">GH_TOKEN<small>set, hidden</small></div><span class="chev">›</span></div>
+              <div class="item"><div class="l" style="color:var(--copper)">Add a variable</div></div>
+            </div>
+            <div class="group"><h3>On this device</h3>
+              <div class="item"><div class="l">Notify me of replies</div><span class="toggle"></span></div>
+              <div class="item"><div class="l">Show tool work open</div><span class="toggle off"></span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <p class="cap">A settings screen: grouped, one line each, details one level down</p>
+    </div>
+  </div>
+</main>
+<script>
+// The one moving part: a conversation slides in over the list, and back out.
+const list = document.getElementById('list'), talk = document.getElementById('talk');
+document.querySelector('[data-open]').addEventListener('click', () => { talk.classList.remove('off'); list.classList.add('behind'); });
+document.querySelector('[data-back]').addEventListener('click', () => { talk.classList.add('off'); list.classList.remove('behind'); });
+</script>
+</body>
+</html>

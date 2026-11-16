@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-16
+
+- **Text comes in five sizes.** Every screen now uses the same five text
+  sizes instead of about twenty. The smallest labels, times and counts grew
+  a little, so they are easier to read on a phone. This is the first
+  step of a redesign; the screens change one at a time from here.
+
 ## 2026-11-15
 
 - **A voice-over starts sooner.** The voice-over plugin carries its own

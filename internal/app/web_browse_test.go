@@ -60,7 +60,10 @@ func browseApp(t *testing.T) *App {
 	a := &App{cfg: cfg, sandbox: NewSandbox(cfg), store: st,
 		tools:  NewRegistry(cfg.PluginsDir),
 		skills: NewSkills(cfg.SkillsDir, cfg.UserSkillsDir), hub: NewHub(),
-		queues: map[string]chan func(){}}
+		// The interface asks for these on New and Fork; a test that browses
+		// to either draws what the deployed one does.
+		personas: NewPersonas(filepath.Join(dir, "personas")),
+		queues:   map[string]chan func(){}}
 	a.registerBuiltins()
 	dropSnapshots(t, a)
 	if _, failures := a.tools.Load(a); len(failures) > 0 {

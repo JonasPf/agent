@@ -208,8 +208,10 @@ func TestAnAppsPageRunsInABoxInARealBrowser(t *testing.T) {
 // heldUntil is the real interface with one thing added, for a test's browser:
 // a request kept in flight until the screen says text, so the headless
 // browser, whose clock a frame's scripts do not hold, waits for the page in
-// the box to finish (see heldOpen).
-func heldUntil(t *testing.T, next http.Handler, text string) http.Handler {
+// the box to finish (see heldOpen). extra is script run after the
+// interface's own, before the wait: a probe that writes what it finds onto
+// the screen, where the browser's reading of it carries it back.
+func heldUntil(t *testing.T, next http.Handler, text string, extra ...string) http.Handler {
 	t.Helper()
 	script, err := os.ReadFile("../../web/app.js")
 	if err != nil {
@@ -227,6 +229,9 @@ func heldUntil(t *testing.T, next http.Handler, text string) http.Handler {
 		case "/app.js":
 			w.Header().Set("Content-Type", "text/javascript")
 			_, _ = w.Write(script)
+			for _, x := range extra {
+				_, _ = w.Write([]byte("\n;" + x))
+			}
 			_, _ = w.Write([]byte(hold))
 		default:
 			next.ServeHTTP(w, r)
