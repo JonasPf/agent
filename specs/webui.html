@@ -24,6 +24,35 @@ the laptop pins the same list open beside the same pane.</p>
 
 <p>See the <a href="mock.html">rendered mock</a>.</p>
 
+<h2 id="look">Look</h2>
+
+<p>The interface is drawn with one small system, kept as tokens at the top of
+<code>web/style.css</code>: five text sizes, spacing in steps of four pixels, corners from a small chip
+to a pill, two shadows, and one curve for everything that moves, at three speeds. A value outside the
+system is a decision made once, in the tokens, rather than in whichever rule needed it, so a size
+chosen for one screen cannot drift from the same thing on the next.</p>
+
+<p>The sizes are 12, 14, 16, 18 and 24 pixels. Twelve is for what is glanced at: times, costs, counts,
+labels, the lines under a title. Fourteen is for what is acted on: buttons, rows, chips. Sixteen is for
+what is read: messages, titles, what is typed. Eighteen and twenty-four are for the few things that
+stand alone, such as the send arrow and a metric's figure. Nothing is drawn smaller than twelve, so
+nothing on a phone is too small to read.</p>
+
+<p>Where the screens are going is <a href="mock-direction-a.html">direction A</a>, chosen on
+2026-11-16 over a denser, cooler alternative: warm paper with less on each screen, the agent's replies
+in a book serif shipped with the app, a turn's tool work folded into one line that opens, one line of
+detail per conversation in the list, and screens that slide over one another. The accent colour will
+be the operator's choice among a few that read well in light and dark, copper by default. The screens
+move onto it one at a time; until each does, it keeps its layout and takes only the system's
+sizes.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Every piece of text on the conversation list, a conversation with a tool call and a formatted reply, its details, and a new conversation is drawn at one of five sizes: 12, 14, 16, 18 or 24 pixels.</li>
+</ul>
+</div>
+
 <h2>Shell</h2>
 
 <p>Every screen is the same three parts: a rail of conversations and panels, a header naming where you
