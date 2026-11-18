@@ -33,7 +33,9 @@ function node(tag) {
     appendChild(k) { k.parent = this; this.children.push(k); return k; },
     querySelector(sel) { return find(this, sel.replace(/^\./, '')); },
     insertAdjacentHTML(where, html) { this._html = (this._html == null ? '' : this._html) + String(html); },
-    setAttribute() {}, focus(o) { this._focused = o || {}; }, addEventListener() {},
+    setAttribute(k, v) { (this._attrs = this._attrs || {})[k] = String(v); },
+    getAttribute(k) { return (this._attrs || {})[k] ?? null; },
+    focus(o) { this._focused = o || {}; }, addEventListener() {},
     scrollIntoView(o) { this._scrolledInto = o || {}; },
     remove() {
       if (!this.parent) return;
@@ -92,7 +94,7 @@ function load(routes) {
       createElement: node, createTextNode: t => ({ text: t, textContent: t }),
       createDocumentFragment: () => node('#fragment'),
       getElementById: id => ids[id] || (ids[id] = node('div')),
-      body: node('body'), addEventListener() {}, hidden: false
+      body: node('body'), documentElement: node('html'), addEventListener() {}, hidden: false
     },
     location: {
       hash: '', protocol: 'http:', host: 'x',
@@ -553,6 +555,38 @@ test('a build without a changelog still names itself', async () => {
   await ctx.viewPanels(v);
   assert.match(textOf(v), /7da7e74/, 'the version went missing with the changelog');
   assert.strictEqual(find(v, 'changelog'), null, 'an empty changelog was rendered anyway');
+});
+
+// ---------- accent ----------
+
+// The accent is the operator's to choose (webui.html, "Look"), on the More
+// panel, among the few the agent offers. The choice goes to the agent, which
+// keeps it for every device, and the page is drawn in it at once.
+const ACCENTS = ['copper', 'ink', 'plum', 'graphite'];
+
+test('the More panel offers the accents and keeps the one chosen', async () => {
+  const ctx = load({ '/preferences': { model: 'x/m', accent: 'ink', accents: ACCENTS } });
+  const v = ctx._id('view');
+  await ctx.viewPanels(v);
+  let swatches = findAll(v, 'swatch');
+  assert.deepStrictEqual(swatches.map(b => b.textContent), ['Copper', 'Ink', 'Plum', 'Graphite']);
+  assert.deepStrictEqual(swatches.map(b => b.dataset.accent), ACCENTS, 'a swatch is not drawn in its own accent');
+  assert.deepStrictEqual(swatches.map(b => b.getAttribute('aria-pressed')), ['false', 'true', 'false', 'false']);
+
+  await swatches[2].onclick();
+  const put = (ctx._calls || []).find(c => c.method === 'PUT');
+  assert.ok(put, 'choosing an accent sent nothing to the agent');
+  assert.strictEqual(put.path, '/preferences/accent');
+  assert.deepStrictEqual(JSON.parse(put.body), { accent: 'plum' });
+  assert.strictEqual(ctx.document.documentElement.dataset.accent, 'plum', 'the page is still drawn in the old accent');
+  swatches = findAll(v, 'swatch');
+  assert.deepStrictEqual(swatches.map(b => b.getAttribute('aria-pressed')), ['false', 'false', 'true', 'false']);
+});
+
+test('the interface is drawn in the agent\'s accent when it starts', async () => {
+  const ctx = load({ '/preferences': { model: 'x/m', accent: 'graphite', accents: ACCENTS } });
+  await ctx.readAccent();
+  assert.strictEqual(ctx.document.documentElement.dataset.accent, 'graphite');
 });
 
 // ---------- metrics ----------

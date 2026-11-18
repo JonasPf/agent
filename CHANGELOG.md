@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-18
+
+- **Choose the accent colour.** The More panel offers copper, ink, plum
+  and graphite. The choice is kept by the agent, so every phone and
+  laptop you open shows the same one.
+
 ## 2026-11-16
 
 - **Text comes in five sizes.** Every screen now uses the same five text

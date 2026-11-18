@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 )
 
 // fallbackModel is what a conversation starts on when nothing has been chosen
@@ -19,6 +21,22 @@ type Preferences struct {
 	// Model is the one last chosen for a new conversation, or for a fork onto
 	// a different model.
 	Model string `json:"model"`
+	// Accent is the colour the interface is drawn in, one of accents. Empty
+	// is the first of them.
+	Accent string `json:"accent,omitempty"`
+}
+
+// accents are the colours the operator can draw the interface in, the default
+// first (webui.html, "Look"). Each reads at 4.5:1 or better as text in light
+// and dark, and none is a green, amber or red, which say how something went.
+// web/style.css gives each its colours, in both schemes.
+var accents = []string{"copper", "ink", "plum", "graphite"}
+
+func (p Preferences) accent() string {
+	if slices.Contains(accents, p.Accent) {
+		return p.Accent
+	}
+	return accents[0]
 }
 
 func (s *Store) preferencesPath() string { return filepath.Join(s.dir, "preferences.json") }
@@ -73,9 +91,30 @@ func (a *App) rememberModel(model string) {
 }
 
 // hPreferences says what the next conversation starts on, so the screen that
-// starts one offers what it would get if nothing were changed.
+// starts one offers what it would get if nothing were changed, and which
+// accent the interface is drawn in, among which.
 func (a *App) hPreferences(w http.ResponseWriter, r *http.Request) {
 	compactAt, keep := a.defaultThresholds()
 	writeJSON(w, 200, map[string]any{"model": a.startingModel(),
-		"compact_at_tokens": compactAt, "keep_verbatim_tokens": keep})
+		"compact_at_tokens": compactAt, "keep_verbatim_tokens": keep,
+		"accent": a.store.Preferences().accent(), "accents": accents})
+}
+
+// hSetAccent keeps the accent the operator chose, for every device and across
+// a restart. One not offered is refused by naming those that are.
+func (a *App) hSetAccent(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Accent string `json:"accent"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !slices.Contains(accents, body.Accent) {
+		fail(w, 400, "accent must be one of %s", strings.Join(accents, ", "))
+		return
+	}
+	p := a.store.Preferences()
+	p.Accent = body.Accent
+	if err := a.store.PutPreferences(p); err != nil {
+		fail(w, 500, "the accent was not kept: %v", err)
+		return
+	}
+	a.hPreferences(w, r)
 }

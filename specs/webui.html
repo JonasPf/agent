@@ -41,15 +41,26 @@ nothing on a phone is too small to read.</p>
 <p>Where the screens are going is <a href="mock-direction-a.html">direction A</a>, chosen on
 2026-11-16 over a denser, cooler alternative: warm paper with less on each screen, the agent's replies
 in a book serif shipped with the app, a turn's tool work folded into one line that opens, one line of
-detail per conversation in the list, and screens that slide over one another. The accent colour will
-be the operator's choice among a few that read well in light and dark, copper by default. The screens
-move onto it one at a time; until each does, it keeps its layout and takes only the system's
-sizes.</p>
+detail per conversation in the list, and screens that slide over one another. The screens move onto
+it one at a time; until each does, it keeps its layout and takes only the system's sizes.</p>
+
+<p>The accent is the operator's choice, made on the More panel among four: copper, ink, plum and
+graphite, each offered as a swatch drawn in its own colour. Until one is chosen it is copper. None
+is a green, an amber or a red, because those already say how something went, and each reads at 4.5:1
+or better as text on the page and under a filled button's text, in light and in dark
+(<code>web/style.test.js</code> holds them to it). The agent keeps the choice in
+<code>data/preferences.json</code> beside the model last chosen, so every device that opens the
+interface draws the same accent and a restart does not lose it. The device remembers the last
+accent it was told too, so a page opened again starts in it rather than in copper until the
+agent answers.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every piece of text on the conversation list, a conversation with a tool call and a formatted reply, its details, and a new conversation is drawn at one of five sizes: 12, 14, 16, 18 or 24 pixels.</li>
+<li>The More panel offers the accents copper, ink, plum and graphite, each drawn in its own colour, with the current one marked; until one is chosen it is copper.</li>
+<li>Choosing an accent redraws the interface in it at once, and the agent keeps it: a browser opening the interface afterwards, on any device or after a restart, draws it.</li>
+<li>An accent not offered is refused, and the refusal names those that are.</li>
 </ul>
 </div>
 
@@ -651,7 +662,7 @@ whoever writes it &mdash; how the file is organised, and that a change to behavi
 the same commit &mdash; and that is a rule for working in the repository, not something to read on a
 phone after an upgrade. The rule lives in <code>CLAUDE.md</code>; the file keeps only what it is for.</p>
 
-<p>Both sit at the foot of the More panel, under the device and isolation sections. Nothing about a
+<p>Both sit at the foot of the More panel, under the device, accent and isolation sections. Nothing about a
 version is urgent &mdash; it is read once after an upgrade and never again &mdash; so the changelog
 stays folded until it is asked for, and neither is ever shown over a conversation.</p>
 

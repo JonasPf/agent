@@ -13,23 +13,17 @@
   --muted: #7b766d;
   --line: #e7e1d7;
   --line-2: #d8d1c4;
-  --accent: #a3542a;
-  --accent-2: #8c4622;
-  /* What is legible on top of the accent. White over a light copper in dark
-     mode is not, so the filled controls carry their own foreground. */
-  --on-accent: #ffffff;
-  --soft: #f6ece2;
   --ok: #2c6a45;
   --warn: #866719;
   --bad: #a03429;
   --code-bg: #f4f0e9;
   --sel: #f0e7db;
   /* Chart marks: a grey for what went fine and the status red for what failed,
-     which never sits beside the accent (a deuteranope cannot tell them apart),
-     and the accent on a lighter track of its own for a share. */
+     which never sits beside the accent (a deuteranope cannot tell copper from
+     it), and the accent on a lighter track of its own (--m-track, with the
+     accent's colours below) for a share. */
   --m-fine: #bdb3a2;
   --m-bad: #a03429;
-  --m-track: #efe2d5;
 
   /* The system the interface is drawn with (webui.html, "Look"). Five text
      sizes and nothing between them; corners from a small chip to a pill;
@@ -71,6 +65,26 @@
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
 }
 
+/* The accent, the operator's choice among these (webui.html, "Look"), copper
+   until one is chosen. Each block gives the accent itself, a deeper one for a
+   hovered control, what is legible on top of it (white over a light accent in
+   dark mode is not, so filled controls carry their own foreground), a tint for
+   a soft background, and a chart's track. A block names the accent and not the
+   page, so a swatch that carries the name is drawn in it whichever accent the
+   page is in. web/style.test.js holds each to 4.5:1 in both schemes. */
+:root, [data-accent="copper"] {
+  --accent: #a3542a; --accent-2: #8c4622; --on-accent: #ffffff; --soft: #f6ece2; --m-track: #efe2d5;
+}
+[data-accent="ink"] {
+  --accent: #2d5b9a; --accent-2: #234a80; --on-accent: #ffffff; --soft: #e7edf6; --m-track: #dbe4f0;
+}
+[data-accent="plum"] {
+  --accent: #7e3b79; --accent-2: #6a3066; --on-accent: #ffffff; --soft: #f4e8f2; --m-track: #ecdcea;
+}
+[data-accent="graphite"] {
+  --accent: #444c55; --accent-2: #343a41; --on-accent: #ffffff; --soft: #eceef0; --m-track: #e1e4e8;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
@@ -82,10 +96,6 @@
     --muted: #948e83;
     --line: #2e2a25;
     --line-2: #3d382f;
-    --accent: #e09a63;
-    --accent-2: #f0b483;
-    --on-accent: #1a1611;
-    --soft: #2a211a;
     --ok: #74b48c;
     --warn: #d6b968;
     --bad: #e58a80;
@@ -93,9 +103,20 @@
     --sel: #2a2620;
     --m-fine: #6e675a;
     --m-bad: #d06a5d;
-    --m-track: #3a2c21;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
     --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 12px 34px rgba(0, 0, 0, .45);
+  }
+  :root, [data-accent="copper"] {
+    --accent: #e09a63; --accent-2: #f0b483; --on-accent: #1a1611; --soft: #2a211a; --m-track: #3a2c21;
+  }
+  [data-accent="ink"] {
+    --accent: #8db3ea; --accent-2: #adc9f2; --on-accent: #10161f; --soft: #1b2330; --m-track: #24314a;
+  }
+  [data-accent="plum"] {
+    --accent: #d49bd0; --accent-2: #e4b8e1; --on-accent: #1c121b; --soft: #2a1d29; --m-track: #3b2939;
+  }
+  [data-accent="graphite"] {
+    --accent: #b8c1cb; --accent-2: #d2d9e0; --on-accent: #15181b; --soft: #24282c; --m-track: #31363c;
   }
 }
 
@@ -290,6 +311,18 @@ p.note { color: var(--muted); font-size: var(--t-sm); margin: 0 0 16px; max-widt
   font-size: var(--t-xs); margin: 0 6px 6px 0; color: var(--fg-2); background: var(--card);
 }
 .pill:hover { border-color: var(--accent); }
+
+/* The accents to choose from on the More panel. Each swatch carries its
+   accent's name, so the blocks above draw its dot in that accent. */
+.swatches { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.swatch {
+  display: inline-flex; align-items: center; gap: var(--sp-2); height: var(--control);
+  padding: 0 var(--sp-3) 0 var(--sp-2); border: 1px solid var(--line-2); border-radius: var(--r-pill);
+  background: var(--card); color: var(--fg-2); font-size: var(--t-sm);
+}
+.swatch::before { content: ""; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); }
+.swatch:hover { border-color: var(--accent); }
+.swatch[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--fg); font-weight: 600; }
 .pill.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 
 /* A choice that opens a dialog reads as the value it holds, with the facts

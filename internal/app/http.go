@@ -87,6 +87,7 @@ func (a *App) routes() http.Handler {
 
 	mux.HandleFunc("GET /models", a.hModels)
 	mux.HandleFunc("GET /preferences", a.hPreferences)
+	mux.HandleFunc("PUT /preferences/accent", a.hSetAccent)
 	mux.HandleFunc("GET /metrics", a.hMetrics)
 	mux.HandleFunc("GET /push", a.hPush)
 	mux.HandleFunc("POST /push/devices", a.hRegisterPush)
