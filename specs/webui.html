@@ -71,7 +71,9 @@ are and what can be done here, and one pane between them. The width decides the 
 nothing else &mdash; there is no screen that exists at one size and not at another, and no list drawn
 twice. Below 900&nbsp;pixels the rail is a drawer over the pane, opened from the header and closed by
 going anywhere; at or above it the rail is a column of the layout and the pane loses its back button,
-because the rail is the way back.</p>
+because the rail is the way back. On a phone the drawer's button is on the conversation list alone:
+every screen below the list offers the way back in its place, never both at once, since two ways out
+side by side are one too many.</p>
 
 <p>The rail links the panels used every day &mdash; Jobs, Plugins, Skills &mdash; and More, which leads to
 the rest. Personas are chosen when a conversation starts and written rarely, so they are behind More.</p>
@@ -87,10 +89,18 @@ other can answer in the wrong order. The screen on the address bar is the one on
 is no longer the current one stops where it stands rather than painting its conversation, or a second
 composer, over the screen that replaced it.</p>
 
-<p>A view's own actions &mdash; a conversation's jobs, files, summary, fork, details &mdash; belong to
-the header. They are one list rendered in two shapes: laid along the header where there is room for
-them, folded behind a single button where there is not. Which is on screen is the stylesheet's
-decision, so the two can never offer different things.</p>
+<p>A view's own actions &mdash; a conversation's jobs, files, summary, fork, details &mdash; sit behind
+one button in its header, at every width. Laid along a laptop's header they were seven links of the
+same weight, none ranked above another, and read as none of them.</p>
+
+<p>Screens slide. Going deeper &mdash; the list to a conversation, a conversation to its details or
+files &mdash; brings the new screen in from the right over the one it came from, which drifts a little
+to the left beneath it; going back, by the header's button or the browser's, carries the screen away
+to the right and uncovers the one beneath. Which way a move goes is read from the screens already
+passed through on the page. A screen chosen from the rail or the drawer sits beside the others rather
+than below one, so the move to it does not slide, and neither does drawing again the screen already
+on show. The header stays where it is and takes the new title; what moves is everything below it,
+the screen being left as it was drawn. A request for reduced motion turns sliding off.</p>
 
 <p>A transcript is held to a reading column whatever the screen; a list of jobs, tools, files, or
 skills takes the width the screen actually has, as a grid of cards rather than a strip down the
@@ -111,7 +121,9 @@ middle.</p>
 <li>Saving an edit to a skill or persona returns to it, and saving a new one or deleting one returns to the list, in each case without adding the screen returned to to the history a second time.</li>
 <li>A screen still loading when another is opened paints nothing: the pane shows the conversation the address names, with one composer under it.</li>
 <li>Whatever screen was left before its answers came back &mdash; a new conversation, a fork, a conversation's details, the More panel, a skill or persona &mdash; adds no section, button, or header action to the screen that replaced it.</li>
-<li>A view's actions are one list, whether laid along the header or folded behind one button.</li>
+<li>A view's actions are behind one button in its header, at every width.</li>
+<li>On a phone the conversation list's header offers the drawer and every other screen's offers the way back; no header offers both.</li>
+<li>Opening a screen below the one on show slides it in from the right over it, and going back, by the header or the browser, slides it away to the right; a screen chosen from the rail or the drawer appears without sliding.</li>
 <li>A transcript is held to a reading column; a list of jobs, tools, files, or skills takes the full width available.</li>
 <li>Nothing in the interface is laid out at a fixed page width.</li>
 <li>The interface follows the system's colour scheme, and is legible in both.</li>

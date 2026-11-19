@@ -104,12 +104,91 @@ function route() {
   state.view = name;
   state.arg = arg;
   state.arg2 = arg2;
+  const move = moveOn(state.trail || [], state.here, state.sideways);
+  state.trail = move.trail;
+  state.sideways = false;
   drawer(false);
   closeMenu();
   closeDialog();
-  const drawn = render();
+  let drawn;
+  slide(move.dir, () => { drawn = render(); });
   renderSidebar();
   return drawn;
+}
+
+// sideways sends the page to a screen chosen from the rail or the drawer,
+// which sit beside every screen rather than above or below one: the move does
+// not slide.
+function sideways(hash) {
+  state.sideways = true;
+  location.hash = hash;
+}
+
+// ---------- sliding ----------
+
+// Screens slide (webui.html, "Shell"). Going deeper brings the new screen in
+// from the right over the one it came from, which drifts a little to the left
+// beneath it; going back carries the screen away to the right and uncovers the
+// one beneath. Which way a move goes is read from the screens passed through
+// on this page: one already passed is back, by the header's button or the
+// browser's; anything else is deeper, unless it came from the rail or the
+// drawer, or is the screen already on show, which do not move.
+const TRAIL = 100;
+function moveOn(trail, to, side) {
+  if (!trail.length) return { dir: null, trail: [to] };
+  if (trail[trail.length - 1] === to) return { dir: null, trail };
+  const at = trail.lastIndexOf(to);
+  if (at >= 0) return { dir: 'back', trail: trail.slice(0, at + 1) };
+  return { dir: side ? null : 'forward', trail: trail.concat(to).slice(-TRAIL) };
+}
+
+// slide draws the next screen, and moves it in while the one it replaces moves
+// out. The header stays and takes the new title; what is below it — the view
+// and the foot under it — is moved, as it was drawn, onto a layer of its own
+// for the length of the movement, then dropped. A request for less motion, or
+// a browser that cannot animate, gets the new screen drawn in place.
+let leaving = null;
+function slide(dir, draw) {
+  if (leaving) { leaving.remove(); leaving = null; }
+  const main = $('main'), foot = $('foot');
+  if (!dir || !main.animate || matchMedia('(prefers-reduced-motion: reduce)').matches) return draw();
+  const layer = el('div', 'leaving');
+  layer.setAttribute('aria-hidden', 'true');
+  layer.inert = true;
+  layer.style.top = main.offsetTop + 'px';
+  const copy = el('main');
+  const view = el('div', $('view').className);
+  view.append(...Array.from($('view').childNodes || $('view').children));
+  copy.append(view);
+  const below = el('div', 'foot');
+  below.append(...Array.from(foot.childNodes || foot.children));
+  layer.append(copy, below);
+  // Ids stay with the screen being drawn: a lookup must never find the copy.
+  if (layer.querySelectorAll) for (const n of layer.querySelectorAll('[id]')) n.removeAttribute('id');
+  const scrolled = main.scrollTop;
+  // Whichever screen is on top comes later in the pane.
+  if (dir === 'back') $('pane').append(layer); else main.before(layer);
+  copy.scrollTop = scrolled;
+  draw();
+  const { duration, easing } = motion();
+  const from = dir === 'back' ? 'translateX(-22%)' : 'translateX(100%)';
+  for (const n of [main, foot]) n.animate([{ transform: from }, { transform: 'none' }], { duration, easing });
+  const away = dir === 'back' ? 'translateX(100%)' : 'translateX(-22%)';
+  leaving = layer;
+  const done = () => { if (leaving === layer) leaving = null; layer.remove(); };
+  layer.animate([{ transform: 'none' }, { transform: away }], { duration, easing }).finished.then(done, done);
+}
+
+// motion is the slow movement of the stylesheet's tokens, so a screen slides
+// at the speed and on the curve everything else moves at.
+function motion() {
+  try {
+    const css = getComputedStyle(document.documentElement);
+    return { duration: parseFloat(css.getPropertyValue('--dur-slow')) * 1000 || 280,
+      easing: css.getPropertyValue('--ease').trim() || 'ease-out' };
+  } catch (e) {
+    return { duration: 280, easing: 'ease-out' };
+  }
 }
 window.addEventListener('hashchange', route);
 
@@ -124,12 +203,9 @@ $('side-close').onclick = () => drawer(false);
 $('scrim').onclick = () => drawer(false);
 $('side-new').onclick = () => location.hash = '#new';
 $('side-search').onclick = () => location.hash = '#search';
-$('side-all').onclick = () => location.hash = '#sessions';
+$('side-all').onclick = () => sideways('#sessions');
 $('back').onclick = () => history.length > 1 ? history.back() : (location.hash = '#sessions');
 
-// A view's own actions are one list rendered twice: along the header where
-// there is room for them, and behind a single button where there is not. CSS
-// decides which of the two is on screen, so neither can disagree with the other.
 // Personas are chosen when a conversation starts and written rarely, so they are
 // reached from More rather than from the rail.
 const PANELS = [['jobs', 'Jobs'], ['tools', 'Plugins'], ['skills', 'Skills'], ['panels', 'More']];
@@ -146,7 +222,7 @@ function toggleMenu(wrap, actions) {
   folded = el('div', 'menu');
   for (const a of actions) {
     const b = el('button', a.danger ? 'danger' : '', a.label);
-    b.onclick = () => { closeMenu(); a.fn(); };
+    b.onclick = () => { closeMenu(); return a.fn(); };
     folded.append(b);
   }
   wrap.append(folded);
@@ -347,19 +423,16 @@ function toast(n) {
   setTimeout(() => t.remove(), 8000);
 }
 
+// setHeader names the screen and says how to leave it: the conversation list
+// offers the drawer, and every screen below it the way back instead, never
+// both. A view's own actions sit behind one button at every width.
 function setHeader(title, showBack, actions) {
   $('title').textContent = title;
   $('back').hidden = !showBack;
-  const acts = $('head-acts');
-  acts.innerHTML = '';
+  $('menu').hidden = !!showBack;
   const wrap = $('more-wrap');
   const list = actions || [];
   wrap.hidden = !list.length;
-  for (const a of list) {
-    const b = el('button', a.danger ? 'danger' : '', a.label);
-    b.onclick = a.fn;
-    acts.append(b);
-  }
   $('more').onclick = e => {
     e.stopPropagation();
     toggleMenu(wrap, list);
@@ -378,7 +451,7 @@ async function renderSidebar() {
   nav.innerHTML = '';
   for (const [hash, label] of PANELS) {
     const b = el('button', state.view === hash ? 'on' : '', label);
-    b.onclick = () => location.hash = '#' + hash;
+    b.onclick = () => sideways('#' + hash);
     nav.append(b);
   }
   renderSideFoot();
@@ -414,7 +487,7 @@ function sideItem(s) {
   m.append(el('div', 's', bits.join(' · ')));
   b.append(m);
   if (s.unread) b.append(el('span', 'badge', String(s.unread)));
-  b.onclick = () => location.hash = '#session/' + s.id;
+  b.onclick = () => sideways('#session/' + s.id);
   return b;
 }
 

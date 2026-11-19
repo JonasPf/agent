@@ -143,7 +143,14 @@ a { color: var(--accent); }
 /* The rail is a grid column on a laptop and a fixed overlay on a phone. One
    element either way, so the session list never has to be drawn twice. */
 #shell { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
-#pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
+/* The pane clips what slides through it (app.js, slide). */
+#pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+/* A screen being left, as it was drawn, on a layer of its own below the
+   header while it slides away. Whichever screen comes later in the pane is on
+   top, so each is opaque: nothing of the other shows through it. */
+.leaving { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column;
+  background: var(--bg); pointer-events: none; }
+.leaving > main { overflow: hidden; }
 
 .side {
   background: var(--sunk); border-right: 1px solid var(--line);
@@ -240,11 +247,7 @@ header .title {
 .icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6;
   stroke-linecap: round; stroke-linejoin: round; }
 
-/* The same actions, two shapes: laid out along the header where there is room,
-   folded behind one button where there is not. */
-.head-acts { display: none; gap: 4px; align-items: center; }
-.head-acts button { font-size: var(--t-xs); color: var(--fg-2); padding: 5px 9px; border-radius: var(--r-sm); }
-.head-acts button:hover { background: var(--sunk); color: var(--fg); }
+/* A view's actions, behind one button at every width. */
 .more-wrap { position: relative; }
 .menu {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 180px;
@@ -254,10 +257,6 @@ header .title {
 .menu button { text-align: left; padding: 8px 10px; border-radius: var(--r-sm); font-size: var(--t-sm); }
 .menu button:hover { background: var(--sunk); }
 .menu button.danger { color: var(--bad); }
-@media (min-width: 720px) {
-  .head-acts { display: flex; }
-  .more-wrap { display: none; }
-}
 
 #breaker:empty { display: none; }
 #breaker {
@@ -269,7 +268,7 @@ header .title {
 
 /* ---------- main ---------- */
 
-main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 16px 28px; }
+main { flex: 1; overflow-y: auto; background: var(--bg); -webkit-overflow-scrolling: touch; padding: 16px 16px 28px; }
 .wide { max-width: var(--column); margin: 0 auto; }
 /* Lists and panels earn the extra width a laptop has; a transcript does not. */
 .wide.roomy { max-width: 1180px; }
@@ -877,7 +876,7 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 
 /* ---------- status and composer ---------- */
 
-#foot { background: var(--card); border-top: 1px solid var(--line); }
+#foot, .leaving > .foot { background: var(--card); border-top: 1px solid var(--line); }
 .status {
   padding: 6px 16px; display: flex; gap: 12px; flex-wrap: wrap;
   font-size: var(--t-xs); color: var(--muted); align-items: center;
