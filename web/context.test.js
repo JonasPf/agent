@@ -634,3 +634,103 @@ test('the history dims what a revert took back, and a search hit on it says the 
   assert.match(textOf(row), /reverted/, 'a hit on a reverted entry does not say so');
   assert.match(textOf(row), /no longer sees/);
 });
+
+// ---- a turn's tool work ----
+
+// A turn's tool calls and their results are folded into one line, which opens
+// on a tap to show each call as before (webui.html, "Conversation view").
+const turn = [
+  m(1, 'user', 'list the files'),
+  { seq: 2, type: 'message', role: 'assistant', text: '', tool_calls: [{ id: 'c1', name: 'bash', arguments: '{"command":"ls"}' }], created_at: at },
+  { seq: 3, type: 'message', role: 'tool', tool_name: 'bash', tool_call_id: 'c1', tool_result: { ok: true, content: 'notes.md' }, created_at: at },
+  { seq: 4, type: 'message', role: 'assistant', text: '', tool_calls: [{ id: 'c2', name: 'read', arguments: '{"path":"notes.md"}' }], created_at: at },
+  { seq: 5, type: 'message', role: 'tool', tool_name: 'read', tool_call_id: 'c2', tool_result: { ok: true, content: '# Plan' }, created_at: at },
+  m(6, 'assistant', 'There is one file, notes.md.'),
+];
+
+const sumOf = w => textOf(find(w, 'sum')).trim();
+
+test("a turn's tool calls are folded into one line that opens", async () => {
+  const ctx = conversation(session(), turn);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const works = findAll(t, 'work');
+  assert.strictEqual(works.length, 1, 'one turn\'s calls are ' + works.length + ' lines');
+  const w = works[0];
+  assert.strictEqual(sumOf(w), 'Ran bash, read');
+  const steps = find(w, 'steps');
+  assert.strictEqual(steps.hidden, true, 'the run is open before it was asked for');
+  assert.match(textOf(steps), /→ bash/);
+  assert.match(textOf(steps), /← read/);
+  find(w, 'work-line').onclick();
+  assert.strictEqual(steps.hidden, false, 'tapping the line did not open it');
+  const at = s => t.children.findIndex(k => textOf(k).includes(s));
+  const here = t.children.indexOf(w);
+  assert.ok(at('list the files') < here && here < at('one file'), 'the line is not between the question and the answer');
+});
+
+test('a run with a failed call is open, marked, and says what failed', async () => {
+  const failing = turn.slice(0, 2).concat([
+    { seq: 3, type: 'message', role: 'tool', tool_name: 'bash', tool_call_id: 'c1', tool_result: { ok: false, error: 'ls: x: No such file or directory' }, created_at: at },
+    m(4, 'assistant', 'It is not there.'),
+  ]);
+  const ctx = conversation(session(), failing);
+  await ctx.viewSession(node('div'));
+  const w = find(ctx._id('transcript'), 'work');
+  assert.match(w.className, /\bfailed\b/, 'a run with a failure is not marked');
+  assert.strictEqual(find(w, 'steps').hidden, false, 'a run with a failure is folded away');
+  assert.strictEqual(sumOf(w), 'bash failed: ls: x: No such file or directory');
+});
+
+test('what the agent said before its calls stays prose, with the calls folded after it', async () => {
+  const ctx = conversation(session(), plain);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const said = t.children.findIndex(k => classes(k).includes('msg') && textOf(k).includes('Looking.'));
+  const w = t.children.findIndex(k => classes(k).includes('work'));
+  assert.ok(said >= 0, 'what the agent said before calling is gone');
+  assert.strictEqual(w, said + 1, 'the calls are not folded right after it');
+  assert.doesNotMatch(textOf(t.children[said]), /→ bash/, 'the call is still drawn with the words');
+});
+
+test('a call arriving joins the run on screen, which stays as it was left', async () => {
+  const ctx = conversation(session(), turn.slice(0, 3));
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const w = find(t, 'work');
+  find(w, 'work-line').onclick();
+  ctx.appendEntry(turn[3]);
+  ctx.appendEntry(turn[4]);
+  assert.strictEqual(findAll(t, 'work').length, 1, 'the arriving call started a line of its own');
+  assert.strictEqual(find(t, 'work'), w, 'the run was drawn again');
+  assert.strictEqual(sumOf(w), 'Ran bash, read');
+  assert.strictEqual(find(w, 'steps').hidden, false, 'the run the reader opened closed');
+  ctx.appendEntry(turn[5]);
+  assert.match(textOf(t.children[t.children.length - 1]), /one file/, 'the answer did not follow the run');
+});
+
+test('a run the reader opened stays open when the conversation is drawn again', async () => {
+  const ctx = conversation(session(), turn);
+  await ctx.viewSession(node('div'));
+  find(find(ctx._id('transcript'), 'work'), 'work-line').onclick();
+  ctx.renderTranscript();
+  assert.strictEqual(find(find(ctx._id('transcript'), 'work'), 'steps').hidden, false);
+});
+
+
+// A result whose tool brings a page keeps its Open button in sight however
+// the run it is in is folded (webui.html, "A bundle's page").
+test("a page's Open button stays in sight with its run folded", async () => {
+  const shown = turn.slice(0, 2).concat([
+    { seq: 3, type: 'message', role: 'tool', tool_name: 'bash', tool_call_id: 'c1', tool_app: true, tool_result: { ok: true, content: 'shown' }, created_at: at },
+    m(4, 'assistant', 'It is up.'),
+  ]);
+  const ctx = conversation(session(), shown);
+  await ctx.viewSession(node('div'));
+  const w = find(ctx._id('transcript'), 'work');
+  assert.strictEqual(find(w, 'steps').hidden, true);
+  const links = find(w, 'work-links');
+  assert.ok(links, 'the folded run offers nothing to open');
+  const open = findAll(links, 'btn')[0];
+  assert.ok(open && open.href === '#app/S1/3', 'the Open button left with the folded result: ' + (open && open.href));
+});

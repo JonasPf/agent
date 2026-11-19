@@ -2,6 +2,9 @@
 
 ## 2026-11-19
 
+- **Tool work folds into one line.** A turn's tool calls sit behind one
+  quiet line, such as "Ran bash, write, read"; tap it to see each call.
+  If a call failed, the line is red, says what failed, and is open.
 - **Replies read like a book.** The agent's replies are set in a serif
   that ships with the app, a little larger than before, the same on
   every device. Your own messages stay as they were.

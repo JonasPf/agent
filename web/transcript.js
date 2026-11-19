@@ -126,6 +126,27 @@ function bubbleClass(e) {
   return e.job_id ? 'job' : 'you';
 }
 
+// ---- a run of tool calls ----
+
+// workSummary is the line a run of tool calls is folded behind (webui.html,
+// "Conversation view"): the tools it ran, each once in the order it first
+// ran, with how often where it ran again; past a handful, how many more. A
+// failure takes the place of all of that, since it is what the operator
+// needs to see.
+const WORK_NAMES = 4;
+function workSummary(names, failures) {
+  if (failures && failures.length === 1) return failures[0].name + ' failed: ' + clip(failures[0].error);
+  if (failures && failures.length > 1) {
+    return failures.length + ' calls failed: ' + [...new Set(failures.map(f => f.name))].join(', ');
+  }
+  const count = new Map();
+  for (const n of names || []) count.set(n, (count.get(n) || 0) + 1);
+  const each = [...count].map(([n, c]) => c > 1 ? n + ' ×' + c : n);
+  if (!each.length) return 'Ran tools';
+  if (each.length <= WORK_NAMES + 1) return 'Ran ' + each.join(', ');
+  return 'Ran ' + each.slice(0, WORK_NAMES).join(', ') + ' and ' + (each.length - WORK_NAMES) + ' more';
+}
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -416,7 +437,7 @@ function snippetParts(snippet) {
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { toolResult, resultBody, resultPreview, callBody, callPreview,
     eventLabel, eventDetail, eventTime, isFailure,
-    speaker, bubbleClass, messageTime, runTime, lateBy, jobCost, splitSessionIds, mentionPath,
+    speaker, bubbleClass, workSummary, messageTime, runTime, lateBy, jobCost, splitSessionIds, mentionPath,
     waitingLabel, conversationText, transcriptRows, snippetParts, takenBack, liveEntries,
     cacheState, cacheLabel, nextCall, cacheHit, callLine };
 }
