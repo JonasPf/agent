@@ -616,34 +616,81 @@ async function viewSessions(v) {
   if (!list.length) v.append(el('div', 'empty', 'No conversations yet. Start one to give the agent something to hold.'));
 }
 
+// A conversation in the list (webui.html, "Session management"): its title,
+// and one line under it of when it last moved, what is unread and what jobs it
+// has, what it holds, what it cost, and its model. Three grey lines a row
+// were read as none of them. Deleting is why the size is shown, so the delete
+// sits with the row, under it: a swipe to the left uncovers it on a touch
+// screen, and a pointer finds it on hover or focus. It asks first.
 function sessionRow(s) {
-  const row = el('button', 'row-item');
-  const m = el('div', 'm');
-  m.append(el('div', 'n', s.title || 'Untitled'));
-  // Two lines, because one long grey run of six facts is read as none of them.
-  // What is scanned — when it last moved, what it holds, what it cost — comes
-  // first; what the session is configured as comes second.
-  const sub = el('div', 's');
-  sub.textContent = `${ago(s.last_active_at)} · ${fmtBytes(s.disk_bytes)} · ${fmtMoney(s.cost)}`;
-  const cfg = el('div', 's');
-  cfg.textContent = `${s.model.split('/').pop()} · ${s.entry_count} entries · ${s.context_used.toLocaleString()}/${s.compact_at_tokens.toLocaleString()} tok`;
-  m.append(sub, cfg);
-  if (s.job_count) { const t = el('span', 'tag on', s.job_count + ' job' + (s.job_count > 1 ? 's' : '')); m.append(t); }
-  if (s.forked_from) m.append(el('span', 'tag', 'fork'));
-  row.append(m);
-  if (s.unread) row.append(el('span', 'badge', String(s.unread)));
-  // Deleting is why the size is shown, so it is offered on the same row rather
-  // than inside the session it would remove.
-  const rm = el('span', 'tag danger', 'delete');
+  const wrap = el('div', 'row-wrap');
+  const rm = el('button', 'row-del', 'Delete');
+  rm.type = 'button';
   rm.onclick = async e => {
-    e.stopPropagation();
+    if (e && e.stopPropagation) e.stopPropagation();
     if (!confirm('Delete "' + (s.title || 'Untitled') + '", its transcript, its files, and its jobs?')) return;
     await del('/sessions/' + s.id);
     render();
   };
-  row.append(rm);
-  row.onclick = () => location.hash = '#session/' + s.id;
-  return row;
+  const row = el('button', 'row-item' + (s.unread ? ' unread' : ''));
+  const m = el('div', 'm');
+  m.append(el('div', 'n', s.title || 'Untitled'));
+  const line = el('div', 's');
+  line.append(el('span', null, ago(s.last_active_at)));
+  if (s.unread) line.append(el('span', 'flag', s.unread + ' unread'));
+  if (s.job_count) line.append(el('span', 'flag', s.job_count + ' job' + (s.job_count > 1 ? 's' : '')));
+  if (s.forked_from) line.append(el('span', null, 'fork'));
+  line.append(el('span', null, fmtBytes(s.disk_bytes)), el('span', null, fmtMoney(s.cost)),
+    el('span', null, s.model.split('/').pop()));
+  m.append(line);
+  row.append(m);
+  wrap.append(rm, row);
+  swipeable(wrap, row, () => location.hash = '#session/' + s.id);
+  return wrap;
+}
+
+// swipeable lets a row be slid left, on a touch screen, to uncover what sits
+// under it. A tap opens the row, unless the row is slid open, when it shuts
+// it; the click some browsers send where a swipe ends does neither. Moving
+// more up or down than sideways is a scroll, and is left to the browser.
+const SWIPE = 96;
+let swiped = null;
+function swipeable(wrap, row, open) {
+  let start = null, moved = false;
+  const place = x => { row.style.transform = x ? 'translateX(' + x + 'px)' : ''; };
+  const shut = () => { wrap.className = 'row-wrap'; place(0); if (swiped === wrap) swiped = null; };
+  wrap._shut = shut;
+  row.onpointerdown = e => {
+    moved = false;
+    if (e.pointerType === 'mouse') return;
+    start = { x: e.clientX, y: e.clientY, from: /\bopen\b/.test(wrap.className) ? -SWIPE : 0, sideways: null };
+  };
+  row.onpointermove = e => {
+    if (!start) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y;
+    if (start.sideways == null && Math.max(Math.abs(dx), Math.abs(dy)) > 8) start.sideways = Math.abs(dx) > Math.abs(dy);
+    if (!start.sideways) return;
+    moved = true;
+    place(Math.max(-SWIPE, Math.min(0, start.from + dx)));
+  };
+  row.onpointerup = row.onpointercancel = e => {
+    if (!start) return;
+    if (start.sideways) {
+      if (start.from + (e.clientX - start.x) < -SWIPE / 2) {
+        if (swiped && swiped !== wrap) swiped._shut();
+        wrap.className = 'row-wrap open';
+        place(-SWIPE);
+        swiped = wrap;
+      } else shut();
+    }
+    start = null;
+  };
+  row.onclick = () => {
+    if (moved) { moved = false; return; }
+    if (/\bopen\b/.test(wrap.className)) return shut();
+    if (swiped) swiped._shut();
+    open();
+  };
 }
 
 // ---------- conversation ----------

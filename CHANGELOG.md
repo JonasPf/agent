@@ -2,6 +2,10 @@
 
 ## 2026-11-19
 
+- **A calmer conversation list.** Each conversation is its title and one
+  line under it; unread messages and jobs show in the accent, and an
+  unread conversation is marked at the edge. Delete is behind a swipe
+  to the left on a phone, and appears on hover on a laptop.
 - **A quieter conversation.** The prompt opens folded into one line,
   so a short conversation no longer starts on tool schemas. The status
   line under the conversation is one line: cost, context, the cache's

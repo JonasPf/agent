@@ -234,7 +234,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>An event is laid out as a log line — clock, kind, detail — with no speaker and no bubble, so it cannot be read as a message or a tool result.</li>
 <li>A session identifier appearing in an event or a prompt section is a link to that session.</li>
 <li>The session list is ordered by last activity, and can be reordered by disk used, largest first.</li>
-<li>Each session row shows what it holds on disk and offers a delete that confirms first.</li>
+<li>Each session row shows what it holds on disk and offers a delete that confirms first: behind a swipe on a touch screen, on hover or focus where there is a pointer.</li>
 <li>Copied messages in a fork are marked by their styling; where they came from is said once, in the seeding event, not on each one.</li>
 <li>Colour marks a failure and nothing else; a routine tick that did not fire is not coloured.</li>
 <li>Long transcripts scroll to the newest entry without loading the entire history.</li>
@@ -307,10 +307,21 @@ upload, a delete &mdash; and is never more than a minute old, which covers a pro
 running that goes on writing. A single session asked about on its own, as the files screen asks, is
 always measured on the spot.</p>
 
+<p>A row of the list is a conversation's title and one line under it: when it last moved, how many
+messages are unread and how many jobs it has, both in the accent, what it holds on disk, what it has
+cost, and its model. A conversation with unread messages is marked at the row's edge and its title set
+heavier. Deleting is why the size is shown, so the delete sits with the row rather than on every row
+beside the title: on a touch screen a swipe to the left uncovers it, and a pointer finds it on hover
+or focus, without the row moving. A tap opens the conversation, except the click a browser may send
+where a swipe ends, and a tap on a row slid open, which shuts it. Moving a row more up or down than
+sideways scrolls the list.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>All sessions are listed, newest activity first, with title, model, and unread count.</li>
+<li>Each row is its title and one line of detail: when it last moved, what is unread, its jobs, what it holds on disk, what it cost, and its model.</li>
+<li>On a touch screen a swipe to the left uncovers a row's delete without opening the conversation; a tap on a row slid open shuts it, and a movement more up or down than sideways scrolls instead.</li>
 <li>A session can be created, renamed, and deleted.</li>
 <li>Search finds text across all sessions and opens a result at its position.</li>
 <li>Search opened from a conversation looks in that conversation, and can be widened to every conversation in one tap. It searches as it is typed, each word matching as a prefix, and punctuation is looked for rather than read as syntax.</li>
