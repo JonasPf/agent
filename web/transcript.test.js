@@ -396,3 +396,24 @@ test('a name is read as a path in the working directory, or as none', () => {
   assert.strictEqual(mentionPath('words', id), null, 'a word with no extension');
   assert.strictEqual(mentionPath('1.2.3', id), null, 'a version');
 });
+
+// ---- a run of tool calls ----
+
+// A turn's tool work is one line until it is opened (webui.html, "Conversation
+// view"). The line names what ran, once each in the order it first ran, and a
+// failure in place of all of that: the failure is what the operator needs.
+const { workSummary } = require('./transcript.js');
+
+test('a run of tool calls reads as the tools it ran', () => {
+  assert.strictEqual(workSummary(['bash'], []), 'Ran bash');
+  assert.strictEqual(workSummary(['bash', 'write', 'read'], []), 'Ran bash, write, read');
+  assert.strictEqual(workSummary(['read', 'write', 'read'], []), 'Ran read ×2, write');
+  assert.strictEqual(workSummary(['a', 'b', 'c', 'd', 'e', 'f'], []), 'Ran a, b, c, d and 2 more');
+});
+
+test('a run with a failure says which tool failed and why', () => {
+  assert.strictEqual(workSummary(['bash', 'read'], [{ name: 'bash', error: 'cat: x: No such file or directory\nexit 1' }]),
+    'bash failed: cat: x: No such file or directory');
+  assert.strictEqual(workSummary(['bash', 'read', 'bash'], [{ name: 'bash', error: 'one' }, { name: 'read', error: 'two' }]),
+    '2 calls failed: bash, read');
+});

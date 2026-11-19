@@ -637,6 +637,24 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 
 /* ---------- transcript ---------- */
 
+/* A turn's tool work, folded into one quiet line that opens (app.js,
+   workRun): a dot, what ran, and the word that says what a tap does. A run
+   with a failure is in the status red and opens of itself. Opened, the calls
+   hang from a rule under the line, each as it always was. */
+.work { margin: var(--sp-2) 0 var(--sp-4); }
+.work-line {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--control);
+  text-align: left; font-size: var(--t-sm); color: var(--muted); padding: 0;
+}
+.work-line .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); flex: none; }
+.work-line .sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.work-line .more { margin-left: auto; font-size: var(--t-xs); padding-left: var(--sp-3); }
+.work-line:hover .sum, .work-line:focus-visible .sum { color: var(--fg); }
+.work.failed .work-line { color: var(--bad); }
+.work.failed .dot { background: var(--bad); }
+.work-links { margin: 0 0 var(--sp-2) 14px; }
+.work .steps { margin: 0 0 0 2px; border-left: 2px solid var(--line); padding-left: var(--sp-3); }
+
 .msg { margin: 18px 0; }
 .msg .who { font-size: var(--t-xs); color: var(--muted); margin-bottom: 4px; }
 /* A wake's job is the one speaker named above a message. */

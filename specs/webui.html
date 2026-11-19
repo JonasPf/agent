@@ -164,7 +164,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <table>
 <tr><th>Element</th><th>Shows</th></tr>
 <tr><td>Prompt entry</td><td>Persona, skills index, and full tool definitions, each collapsible with a token count. It sits at position zero and is the prompt for the session's whole life; nothing rewrites it and no section is editable.</td></tr>
-<tr><td>Messages</td><td>User and assistant turns, tool calls with their results. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links &mdash; and set as prose in the shipped serif. What the operator typed is shown as they typed it, in a bubble on the right. The line above a message carries its time; it names no speaker, since the shape already does, except a job's wake, which is neither and is named for its job.</td></tr>
+<tr><td>Messages</td><td>User and assistant turns, tool calls with their results. A turn's tool calls and their results are folded into one quiet line, a dot and the tools run ("Ran bash, write, read"), which opens on a tap to show each call as before; a run with a failed call is in the status red, names the failure on its line, and is open. What the agent said before calling stays prose, ahead of its run. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links &mdash; and set as prose in the shipped serif. What the operator typed is shown as they typed it, in a bubble on the right. The line above a message carries its time; it names no speaker, since the shape already does, except a job's wake, which is neither and is named for its job.</td></tr>
 <tr><td>Events</td><td>Job checks, forks, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
 <tr><td>Compaction</td><td>A banner standing where the agent's reading of the conversation begins, after the prompt. Says how many turns it replaced and the token count before and after, states that the agent reads the summary in place of everything before it, shows the summary, and offers to search what it folded away. The turns it kept word for word follow it, grouped and labelled as carried over; then what came since. What it covers is not drawn. Editable.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
@@ -238,10 +238,11 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>Copied messages in a fork are marked by their styling; where they came from is said once, in the seeding event, not on each one.</li>
 <li>Colour marks a failure and nothing else; a routine tick that did not fire is not coloured.</li>
 <li>Long transcripts scroll to the newest entry without loading the entire history.</li>
-<li>A tool call can be expanded to show its arguments and result.</li>
+<li>A turn's tool calls and their results are folded into one line naming the tools run, which opens on a tap; within it a call can be expanded to show its arguments and result.</li>
+<li>What the agent said before its tool calls stays in the column as prose, with the calls folded after it.</li>
 <li>A collapsed tool result previews its first line, and a call that returned nothing says so, so an empty result is never mistaken for a missing one.</li>
 <li>A collapsed tool call previews its arguments the same way, and a call made without arguments says so.</li>
-<li>A failed tool call is expanded by default and marked as an error.</li>
+<li>A run with a failed call is open by default and marked as an error, its line naming the tool that failed and why; the failed call within it is expanded.</li>
 <li>A tool call that wrote to standard error offers those logs behind a toggle of their own, closed by default &mdash; including on a call that failed, where the error is already open: the error is the answer and the logs are the evidence.</li>
 <li>A tool call that wrote nothing to standard error offers no logs toggle, so a toggle never promises detail that is not there.</li>
 <li>Scrolling to the top of any conversation reaches the prompt entry it opened with.</li>
@@ -278,7 +279,7 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>While a conversation is working, the status line offers a way to stop the turn, and the offer goes when the turn does.</li>
 <li>While a conversation is working and nothing of the answer has arrived yet, the transcript shows the agent thinking where the answer will appear; the first word of the answer replaces it, and it goes when the turn ends.</li>
 <li>When a turn ends, the conversation scrolls to its answer, even if the reader had scrolled away while it worked.</li>
-<li>An entry arriving is added without drawing again what is already on screen; a tool result the reader opened stays open.</li>
+<li>An entry arriving is added without drawing again what is already on screen; a tool result the reader opened stays open, and a call arriving joins the run on screen, which stays open or folded as the reader left it.</li>
 <li>A conversation opened while it is working shows every entry, each once: what the socket delivers while the transcript is on its way is kept beside it, and an entry heard twice is drawn once.</li>
 <li>An answer arriving reads exactly as the finished answer will, is drawn at most once a frame, and draws again only the block still growing; a reader who has scrolled up is left where they are.</li>
 <li>The whole conversation copies to the clipboard as Markdown from its header: the title, every message with its speaker and time, each tool call with its arguments, each tool result clipped to a readable length that says how much it left out, the logs of any call that wrote some, and each compaction's summary &mdash; and not the prompt or the event log.</li>
@@ -528,8 +529,8 @@ its own instead.</p>
 <h2>A bundle's page</h2>
 
 <p>A tool result whose tool brings a page (<a href="tools.html">Tools</a>,
-<a href="adrs.html#adr-090">ADR-090</a>) has an Open button, which stays in sight when the result
-is folded. It opens <code>#app/&lt;session&gt;/&lt;seq&gt;</code>: a line saying which bundle the
+<a href="adrs.html#adr-090">ADR-090</a>) has an Open button, which stays in sight when the result,
+or the run of calls it is in, is folded. It opens <code>#app/&lt;session&gt;/&lt;seq&gt;</code>: a line saying which bundle the
 page is from and what it can and cannot do, with a link back to the conversation; the page in its
 box; and under it, each message the page sent to the conversation.</p>
 

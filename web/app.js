@@ -89,7 +89,7 @@ const until = t => {
 
 // working holds, per session, when this page learned the agent started on it,
 // in this browser's clock.
-const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, sort: 'recent', working: {}, push: { device: '', error: '', test: null } };
+const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, workOpen: {}, sort: 'recent', working: {}, push: { device: '', error: '', test: null } };
 
 // ---------- routing ----------
 
@@ -1000,6 +1000,7 @@ function renderTranscript() {
   const rows = transcriptRows(state.entries);
   const carried = rows.filter(r => r.part === 'carried');
   let group = null;
+  let run = null;
   let marked = state.readFrom == null;
   for (const { entry: e, part } of rows) {
     let into = t;
@@ -1018,10 +1019,14 @@ function renderTranscript() {
     if (!marked && part !== 'summary' && e.seq > state.readFrom) {
       into.append(el('div', 'unread-mark', 'unread'));
       marked = true;
+      run = null;
     }
-    into.append(part === 'summary'
-      ? compactionEntry(e, { carried: carried.length, files })
-      : renderEntry(e, { revert: true, files }));
+    if (part === 'summary') {
+      into.append(compactionEntry(e, { carried: carried.length, files }));
+      run = null;
+      continue;
+    }
+    run = place(into, e, run, { revert: true, files }).run;
   }
   addTail(t);
   if (atBottom) scrollDown();
@@ -1103,14 +1108,102 @@ function appendEntry(e) {
     t.append(el('div', 'unread-mark', 'unread'));
   }
   const pending = new Set();
-  const n = renderEntry(e, { revert: true, files: mentions(pending) });
-  t.append(n);
+  // A run of tool work is continued only while it is the last thing on screen.
+  const last = t.children[t.children.length - 1];
+  const { drawn } = place(t, e, last && last._entries ? last : null, { revert: true, files: mentions(pending) });
   addTail(t);
   if (atBottom) scrollDown();
   renderStatus();
   // Asked again even about a name asked before: an entry that arrives is often
   // the one saying the file it names has just been written.
-  return linkLater([...pending], () => n.replaceWith(renderEntry(e, { revert: true, files: mentions() })));
+  return linkLater([...pending], () => {
+    const again = entryParts(e, { revert: true, files: mentions() });
+    if (drawn.read && again.read) drawn.read.replaceWith(again.read);
+    drawn.work.forEach((n, i) => { if (again.work[i]) n.replaceWith(again.work[i]); });
+  });
+}
+
+// ---- a turn's tool work ----
+
+// A turn's tool calls and their results are folded into one line that names
+// what ran and opens on a tap (webui.html, "Conversation view"). A run is
+// everything between the things that are read: a message, an event, a
+// summary. What the agent said before calling stays prose, ahead of its run.
+
+// entryParts splits an entry into what is read, drawn in the column, and its
+// tool work, drawn into a run.
+function entryParts(e, o) {
+  if (e.type === 'message' && e.role === 'tool') return { read: null, work: [renderEntry(e, o)] };
+  if (e.type === 'message' && e.role === 'assistant' && (e.tool_calls || []).length) {
+    return { read: e.text ? renderEntry(e, Object.assign({}, o, { calls: false })) : null, work: callNodes(e, o) };
+  }
+  return { read: renderEntry(e, o), work: [] };
+}
+
+// place draws an entry into the column, its tool work into the run it
+// continues or a run it starts, and says which run the next entry continues.
+function place(into, e, run, o) {
+  const drawn = entryParts(e, o);
+  if (drawn.read) { into.append(drawn.read); run = null; }
+  if (!drawn.work.length) return { run: null, drawn };
+  if (!run || run._into !== into) {
+    run = workRun((state.session ? state.session.id : state.arg) + ':' + e.seq);
+    run._into = into;
+    into.append(run);
+  }
+  addToRun(run, e, drawn.work);
+  return { run, drawn };
+}
+
+function workRun(key) {
+  const g = el('div', 'work');
+  const line = el('button', 'work-line');
+  line.type = 'button';
+  g._sum = el('span', 'sum');
+  g._more = el('span', 'more');
+  line.append(el('span', 'dot'), g._sum, g._more);
+  g._line = line;
+  // A page a result opened stays in reach whether the run is open or not.
+  g._links = el('div', 'work-links');
+  g._links.hidden = true;
+  g._steps = el('div', 'steps');
+  g.append(line, g._links, g._steps);
+  g._entries = [];
+  g._key = key;
+  line.onclick = () => { state.workOpen[key] = g._steps.hidden; showRun(g); };
+  return g;
+}
+
+function addToRun(g, e, nodes) {
+  g._entries.push(e);
+  g._steps.append(...nodes);
+  for (const n of nodes) {
+    if (!n._screen) continue;
+    const open = el('a', 'btn', 'Open');
+    open.href = n._screen;
+    g._links.append(open);
+    g._links.hidden = false;
+  }
+  showRun(g);
+}
+
+// showRun says again what a run holds, and folds or opens it: as the reader
+// left it, or, until they touch it, open only when a call in it failed.
+function showRun(g) {
+  const names = [], results = [], failures = [];
+  for (const e of g._entries) {
+    for (const c of e.tool_calls || []) names.push(c.name);
+    if (e.role !== 'tool') continue;
+    results.push(e.tool_name);
+    const res = toolResult(e.tool_result);
+    if (res.ok === false) failures.push({ name: e.tool_name, error: resultBody(res) });
+  }
+  const open = g._key in state.workOpen ? state.workOpen[g._key] : failures.length > 0;
+  g._sum.textContent = workSummary(names.length ? names : results, failures);
+  g._steps.hidden = !open;
+  g._line.setAttribute('aria-expanded', String(open));
+  g._more.textContent = open ? 'Hide' : 'Show';
+  g.className = 'work' + (failures.length ? ' failed' : '') + (open ? ' open' : '');
 }
 
 // The tail of the conversation is what stands after its last entry: the answer
@@ -1323,6 +1416,7 @@ function renderEntry(e, opts) {
     // So does a tool whose bundle gives its result a page (ADR-090): the page
     // opens from here, in the conversation the call was made in.
     const screen = !failed && (panelLink(body) || (e.tool_app && o.revert ? '#app/' + state.arg + '/' + e.seq : ''));
+    n._screen = screen || '';
     if (screen) {
       const open = el('a', 'btn', 'Open');
       open.href = screen;
@@ -1350,7 +1444,6 @@ function renderEntry(e, opts) {
   // is said once, in the seeding event at the top, rather than on every bubble.
   const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
   const who = whoLine(e);
-  const hit = e.role === 'assistant' ? callLine(e.usage) : '';
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
   who.append(el('span', 'at', messageTime(e.created_at)));
@@ -1365,6 +1458,14 @@ function renderEntry(e, opts) {
   }
   w.append(who);
   if (e.text) w.append(bubble(e, o.files));
+  if (o.calls !== false) w.append(...callNodes(e, o));
+  return w;
+}
+
+// callNodes are a message's tool calls, each previewing what it asked for,
+// and what the call to the model that made them hit in the provider's cache.
+function callNodes(e, o) {
+  const out = [];
   for (const c of (e.tool_calls || [])) {
     // A call previews what it asked for exactly as its result previews what came
     // back: half an exchange is not readable on its own.
@@ -1379,10 +1480,11 @@ function renderEntry(e, opts) {
     head.onclick = () => show(pre.hidden);
     if (peek) head.append(peek);
     n.append(head, pre);
-    w.append(n);
+    out.push(n);
   }
-  if (hit) w.append(el('div', 'cachehit', hit));
-  return w;
+  const hit = e.role === 'assistant' ? callLine(e.usage) : '';
+  if (hit) out.push(el('div', 'cachehit', hit));
+  return out;
 }
 
 // whoLine is the line above a message. The shape of a message already says
