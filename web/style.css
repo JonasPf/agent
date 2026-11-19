@@ -613,12 +613,17 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 
 /* ---------- prompt entry ---------- */
 
-.prompt { border: 1px solid var(--line); border-radius: var(--r); background: var(--card); margin-bottom: 20px; overflow: hidden; }
-.prompt > .head {
-  display: flex; align-items: center; gap: 8px; padding: 10px 13px; font-size: var(--t-xs);
-  text-transform: uppercase; letter-spacing: .07em; color: var(--accent); background: var(--soft);
+/* The prompt, folded into one quiet line like a run of tool work, and opened
+   into a card of its sections. */
+.prompt { margin-bottom: var(--sp-5); }
+.prompt-line {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--control);
+  text-align: left; font-size: var(--t-sm); color: var(--muted); padding: 0;
 }
-.prompt > .head .sp { flex: 1; }
+.prompt-line .more { margin-left: auto; font-size: var(--t-xs); padding-left: var(--sp-3); }
+.prompt-line:hover .sum, .prompt-line:focus-visible .sum { color: var(--fg); }
+.prompt .secs { border: 1px solid var(--line); border-radius: var(--r); background: var(--card); overflow: hidden; }
+.prompt .secs > .sec:first-child { border-top: 0; }
 .sec { border-top: 1px solid var(--line); }
 .sec .row { display: flex; align-items: center; gap: 10px; padding: 8px 13px; font-size: var(--t-sm); }
 .sec .row .n { flex: 1; }
@@ -916,11 +921,21 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 /* ---------- status and composer ---------- */
 
 #foot, .leaving > .foot { background: var(--card); border-top: 1px solid var(--line); }
+/* One line of what moves while the operator watches (app.js, renderStatus),
+   and under it, on a tap, the rest as labelled rows. */
 .status {
-  padding: 6px 16px; display: flex; gap: 12px; flex-wrap: wrap;
-  font-size: var(--t-xs); color: var(--muted); align-items: center;
+  padding: var(--sp-1) var(--sp-4); font-size: var(--t-xs); color: var(--muted);
   max-width: var(--column); margin: 0 auto;
 }
+.status-now { display: flex; align-items: center; gap: var(--sp-3); min-height: 28px; white-space: nowrap; overflow: hidden; }
+.status-now .ctx { display: inline-flex; align-items: center; gap: var(--sp-2); font-variant-numeric: tabular-nums; }
+.status-now .cache, .status-now .speed { font-variant-numeric: tabular-nums; }
+.status-toggle { margin-left: auto; color: var(--muted); min-width: 28px; min-height: 28px; font-size: var(--t-sm); }
+.status-toggle[aria-expanded="true"] { transform: rotate(180deg); }
+.status-more { display: grid; gap: var(--sp-1); padding: var(--sp-1) 0 var(--sp-2); }
+.status-more .row { display: flex; gap: var(--sp-3); }
+.status-more .k { width: 72px; flex: none; }
+.status-more .v { color: var(--fg-2); min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 .status b { color: var(--fg-2); font-weight: 600; font-variant-numeric: tabular-nums; }
 .status .gen { color: var(--accent); }
 /* The count changes every second; fixed-width digits keep the line from
@@ -1202,6 +1217,9 @@ label.field .s { display: block; margin-bottom: 4px; }
 /* What one call read from the cache, under the answer it produced: a figure to
    check, not part of what was said. */
 .cachehit { font-size: var(--t-xs); color: var(--muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+/* Beside an answer's time, the same figures as a phrase of the line. */
+.msg .who .cachehit { margin-top: 0; }
+.msg .who .cachehit::before { content: "·"; margin: 0 6px; }
 
 /* A bundle's page (ADR-090): the box, what it is, and what it sent. */
 .app-note { color: var(--muted); font-size: var(--t-sm); margin: 0 0 8px; }
