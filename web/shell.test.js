@@ -42,6 +42,12 @@ function node(tag) {
       this.parent.children = this.parent.children.filter(c => c !== this);
       this.parent = null;
     },
+    before(x) {
+      if (!this.parent) return;
+      const kids = this.parent.children;
+      x.parent = this.parent;
+      kids.splice(kids.indexOf(this), 0, x);
+    },
     replaceWith(x) {
       if (!this.parent) return;
       const kids = this.parent.children;
@@ -277,30 +283,139 @@ test('going somewhere closes the drawer', () => {
 
 // ---------- the header ----------
 
-test("a view's actions are in the header and behind the fold, from one list", () => {
+// The actions the header offers, as its one button lists them: the menu is
+// opened and its buttons returned; pressing one closes it and acts.
+function headerActions(ctx) {
+  ctx.closeMenu();
+  if (ctx._id('more-wrap').hidden) return [];
+  ctx._id('more').onclick({ stopPropagation() {} });
+  const menu = find(ctx._id('more-wrap'), 'menu');
+  return menu ? menu.children : [];
+}
+
+// A view's actions sit behind one button at every width: seven links along a
+// laptop's header, none ranked above another, were read as none of them.
+test("a view's actions are behind one button in the header", () => {
   const ctx = load({});
   let opened = '';
   ctx.setHeader('Greenhouse sensors', true, [
     { label: 'Jobs', fn: () => opened = 'jobs' },
     { label: 'Files', fn: () => opened = 'files' },
   ]);
-  const inline = ctx._id('head-acts').children.map(b => b.textContent);
-  assert.deepStrictEqual(inline, ['Jobs', 'Files']);
-
-  ctx._id('more').onclick({ stopPropagation() {} });
-  const menu = find(ctx._id('more-wrap'), 'menu');
-  assert.ok(menu, 'the folded actions opened no menu');
-  assert.deepStrictEqual(menu.children.map(b => b.textContent), inline, 'the two shapes disagree');
-  menu.children[0].onclick();
+  assert.strictEqual(ctx._id('more-wrap').hidden, false, 'a view with actions offers no button for them');
+  const menu = headerActions(ctx);
+  assert.deepStrictEqual(menu.map(b => b.textContent), ['Jobs', 'Files']);
+  menu[0].onclick();
   assert.strictEqual(opened, 'jobs');
   assert.strictEqual(find(ctx._id('more-wrap'), 'menu'), null, 'the menu stayed open after acting');
+  const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
+  assert.doesNotMatch(html, /head-acts/, 'the header still has a row of its own for actions');
 });
 
 test('a view with no actions offers no fold', () => {
   const ctx = load({});
   ctx.setHeader('Tools', true);
   assert.strictEqual(ctx._id('more-wrap').hidden, true);
-  assert.strictEqual(ctx._id('head-acts').children.length, 0);
+  assert.deepStrictEqual(headerActions(ctx), []);
+});
+
+// On a phone the conversation list is the way into everything, so it alone
+// offers the drawer; every screen below it offers the way back instead. Both
+// at once were two ways out of one screen, side by side.
+test('the header offers the drawer or the way back, never both', () => {
+  const ctx = load({});
+  ctx.setHeader('Conversations', false);
+  assert.strictEqual(ctx._id('menu').hidden, false, 'the list offers no drawer');
+  assert.strictEqual(ctx._id('back').hidden, true);
+  ctx.setHeader('Files', true);
+  assert.strictEqual(ctx._id('back').hidden, false, 'a screen below the list offers no way back');
+  assert.strictEqual(ctx._id('menu').hidden, true, 'a screen with a way back still offers the drawer');
+  ctx.setHeader('Conversations', false);
+  assert.strictEqual(ctx._id('menu').hidden, false, 'the drawer did not come back with the list');
+});
+
+// ---------- sliding ----------
+
+// Going deeper slides the new screen in; going back, by the header or the
+// browser, slides it away; moving sideways, from the rail or the drawer, and
+// drawing the same screen again, do not move at all (webui.html, "Shell").
+test('which way a move slides follows the screens already passed through', () => {
+  const ctx = load({});
+  let trail = [];
+  const go = (to, sideways) => { const m = ctx.moveOn(trail, to, sideways); trail = m.trail; return m.dir; };
+  assert.strictEqual(go('#sessions'), null, 'the first screen slid in');
+  assert.strictEqual(go('#session/A'), 'forward', 'the list to a conversation');
+  assert.strictEqual(go('#settings/A'), 'forward', 'a conversation to its details');
+  assert.strictEqual(go('#settings/A'), null, 'drawing the same screen again');
+  assert.strictEqual(go('#session/A'), 'back', 'back from the details');
+  assert.strictEqual(go('#session/B', true), null, 'a conversation chosen from the rail');
+  assert.strictEqual(go('#session/A'), 'back', 'the browser back to the conversation before it');
+  assert.strictEqual(go('#sessions'), 'back', 'back to the list');
+  assert.strictEqual(go('#jobs', true), null, 'a panel opened from the drawer');
+  for (let i = 0; i < 200; i++) go('#session/' + i);
+  assert.ok(trail.length <= 100, 'the trail grows without end: ' + trail.length);
+});
+
+// A pane whose parts can move: every node made from here on records the
+// movement it is given, and the pane's own main and foot report theirs.
+function slidingPane(ctx) {
+  const runs = [];
+  const moving = (n, id) => {
+    n.animate = (frames, opts) => {
+      n._animated = { frames, opts };
+      if (id) runs.push({ id, frames, opts });
+      return { finished: Promise.resolve(), finish() {} };
+    };
+    return n;
+  };
+  const make = ctx.document.createElement;
+  ctx.document.createElement = tag => moving(make(tag));
+  moving(ctx._id('main'), 'main');
+  moving(ctx._id('foot'), 'foot');
+  ctx._id('pane').append(ctx._id('main'), ctx._id('foot'));
+  ctx._id('main').offsetTop = 52;
+  return runs;
+}
+
+function para(text) { const p = node('p'); p.textContent = text; return p; }
+
+test('a screen left behind slides out as it was drawn, under the one sliding in', () => {
+  const ctx = load({});
+  const runs = slidingPane(ctx);
+  const left = ctx._id('view');
+  left.append(para('the list as it was'));
+  ctx._id('foot').append(para('composer'));
+  ctx.slide('forward', () => { left.innerHTML = ''; ctx._id('foot').innerHTML = ''; });
+  const layer = find(ctx._id('pane'), 'leaving');
+  assert.ok(layer, 'the screen left behind was not kept to slide away');
+  assert.match(textOf(layer), /the list as it was/);
+  assert.match(textOf(layer), /composer/);
+  const by = id => runs.find(r => r.id === id);
+  assert.ok(by('main') && by('foot'), 'the new screen did not move: ' + JSON.stringify(runs.map(r => r.id)));
+  assert.match(by('main').frames[0].transform, /translateX\(100%\)/, 'going deeper did not come in from the right');
+});
+
+test('a screen gone back from slides away to the right, over the one beneath', () => {
+  const ctx = load({});
+  const runs = slidingPane(ctx);
+  ctx._id('view').append(para('details'));
+  ctx.slide('back', () => {});
+  const layer = find(ctx._id('pane'), 'leaving');
+  assert.ok(layer && layer._animated, 'the screen gone back from did not move');
+  assert.match(layer._animated.frames[layer._animated.frames.length - 1].transform, /translateX\(100%\)/);
+  assert.match(runs.find(r => r.id === 'main').frames[0].transform, /translateX\(-/, 'the screen beneath did not come from the left');
+});
+
+test('with less motion asked for, screens change without sliding', () => {
+  const ctx = load({});
+  const runs = slidingPane(ctx);
+  ctx.matchMedia = q => ({ matches: /reduced-motion/.test(q) });
+  ctx._id('view').append(para('the list'));
+  let drawn = false;
+  ctx.slide('forward', () => { drawn = true; });
+  assert.ok(drawn, 'the new screen was not drawn');
+  assert.deepStrictEqual(runs, [], 'something moved');
+  assert.strictEqual(find(ctx._id('pane'), 'leaving'), null);
 });
 
 test('the header says whether there is a way back', () => {
@@ -1095,7 +1210,7 @@ test('a conversation that no longer exists says so, under a header of its own', 
   ctx.location.hash = '#session/GONE';
   await ctx.route();
   assert.notStrictEqual(ctx._id('title').textContent, 'Kiln firing log', 'the header still names the conversation left');
-  assert.deepStrictEqual(ctx._id('head-acts').children.map(b => b.textContent), [], 'the header still offers the last conversation\'s actions');
+  assert.deepStrictEqual(headerActions(ctx).map(b => b.textContent), [], 'the header still offers the last conversation\'s actions');
   assert.match(textOf(ctx._id('view')), /no longer exists|does not exist/i, 'the pane does not say what happened');
   assert.strictEqual(vm.runInContext('state.session', ctx), null, 'the page still holds the conversation it left');
 });
@@ -1577,7 +1692,7 @@ test('the whole conversation copies to the clipboard from its header', async () 
   let copied = null;
   ctx.navigator.clipboard = { writeText: async t => { copied = t; } };
   await ctx.viewSession(node('div'));
-  const copy = ctx._id('head-acts').children.find(b => /copy/i.test(b.textContent));
+  const copy = headerActions(ctx).find(b => /copy/i.test(b.textContent));
   assert.ok(copy, 'the conversation header offers no copy');
   await copy.onclick();
   assert.ok(copied && copied.includes('How warm is it?') && copied.includes('21.5 degrees.'),
@@ -2576,7 +2691,7 @@ test('a skill you wrote can be turned off by default, and deleted', async () => 
 
   await ctx.editAuthored('skills', 'watering');
   // A view's own actions are put in the header, which is where the delete is.
-  const remove = ctx._id('head-acts').children.find(b => /Delete/.test(b.textContent));
+  const remove = headerActions(ctx).find(b => /Delete/.test(b.textContent));
   assert.ok(remove, 'no way to delete the skill');
   await remove.onclick();
   assert.ok(ctx._calls.some(c => c.method === 'DELETE' && c.path === '/skills/watering'),
@@ -2592,7 +2707,7 @@ test('opening a skill, or starting one, changes the address', async () => {
   await ctx.viewAuthored(v, 'skills');
   findAll(v, 'row-item').find(r => find(r, 'n').textContent === 'watering').onclick();
   assert.strictEqual(ctx.location.hash, '#skills/watering');
-  ctx._id('head-acts').children.find(b => /New skill/.test(b.textContent)).onclick();
+  headerActions(ctx).find(b => /New skill/.test(b.textContent)).onclick();
   assert.strictEqual(ctx.location.hash, '#skills/+new');
 });
 
@@ -2605,7 +2720,7 @@ test('the address of a skill, or of a new persona, opens it', async () => {
   vm.runInContext("state.view = 'skills'; state.arg = 'watering'; state.arg2 = undefined;", ctx);
   await ctx.viewAuthored(ctx._id('view'), 'skills');
   assert.match(textOf(find(ctx._id('view'), 'file')), /Twice a week/, 'the address of a skill did not open it');
-  assert.ok(ctx._id('head-acts').children.some(b => /Edit/.test(b.textContent)), 'a skill you wrote offers no edit');
+  assert.ok(headerActions(ctx).some(b => /Edit/.test(b.textContent)), 'a skill you wrote offers no edit');
 
   vm.runInContext("state.arg2 = 'edit';", ctx);
   await ctx.viewAuthored(ctx._id('view'), 'skills');
@@ -2836,7 +2951,7 @@ test('a screen still loading paints nothing over the one that replaced it', asyn
     assert.match(pane, /No jobs scheduled/, `the jobs screen is not on screen after leaving ${view}`);
     assert.doesNotMatch(pane, marker, `leaving ${view} early still painted it over the jobs screen`);
     assert.strictEqual(ctx._id('title').textContent, 'Jobs', `leaving ${view} early took over the header`);
-    const acts = ctx._id('head-acts').children.map(b => b.textContent);
+    const acts = headerActions(ctx).map(b => b.textContent);
     assert.ok(!acts.includes('Delete'), `leaving ${view} early left its Delete in the header`);
   }
 });

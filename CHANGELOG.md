@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-19
+
+- **Screens slide.** Opening a conversation slides it in over the list,
+  and going back slides it away again, as do a conversation's details
+  and files. A phone set to reduce motion keeps the old instant change.
+- **One button for a screen's actions.** A conversation's Jobs, Files,
+  Fork, Details and the rest are behind the ⋯ button in its header, on
+  a laptop too. On a phone the list alone has the ☰ button; every other
+  screen has the back arrow instead, never both.
+
 ## 2026-11-18
 
 - **Choose the accent colour.** The More panel offers copper, ink, plum

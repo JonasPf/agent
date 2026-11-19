@@ -77,6 +77,14 @@ function textOf(n) {
 }
 
 // buttons returns every button under a node, by its label.
+// The header's one button for a view's actions, pressed: the menu it opens
+// holds them at every width.
+function actionsMenu(ctx) {
+  ctx.closeMenu();
+  ctx._id('more').onclick({ stopPropagation() {} });
+  return ctx._id('more-wrap');
+}
+
 function button(n, label) {
   const all = [];
   (function walk(x) {
@@ -270,7 +278,7 @@ test('the compaction banner explains compacting behind a ?', async () => {
 test('the conversation header compacts now', async () => {
   const ctx = conversation(session(), compacted, { 'POST /sessions/S1/compact': { session: session() } });
   await ctx.viewSession(node('div'));
-  const compact = button(ctx._id('head-acts'), 'Compact');
+  const compact = button(actionsMenu(ctx), 'Compact');
   assert.ok(compact, 'the header offers no compaction');
   ctx._confirm = true;
   await compact.onclick();
@@ -288,7 +296,7 @@ test('a compaction refused says why', async () => {
   const ctx = conversation(session(), compacted, {
     'POST /sessions/S1/compact': { status: 409, body: { error: 'nothing to compact: the whole conversation fits' } } });
   await ctx.viewSession(node('div'));
-  await button(ctx._id('head-acts'), 'Compact').onclick();
+  await button(actionsMenu(ctx), 'Compact').onclick();
   assert.match(textOf(ctx.document.body), /nothing to compact/);
 });
 
