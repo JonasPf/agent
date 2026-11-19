@@ -245,7 +245,7 @@ test('the summary stands ahead of the turns it carried over, and those are marke
   assert.match(textOf(group), /word for word/i, 'the carried-over turns do not say what they are');
   assert.match(textOf(kids[banner]), /NEWEST SUMMARY/);
   assert.match(textOf(kids[banner]), /41,000 → 9,000/);
-  assert.match(textOf(kids[0]), /prompt[\s\S]*persona/, 'the prompt is no longer at the top');
+  assert.match(textOf(kids[0]), /prompt[\s\S]*persona/i, 'the prompt is no longer at the top');
 });
 
 test('the summary offers a search of what it folded away', async () => {

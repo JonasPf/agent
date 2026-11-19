@@ -89,7 +89,7 @@ const until = t => {
 
 // working holds, per session, when this page learned the agent started on it,
 // in this browser's clock.
-const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, workOpen: {}, sort: 'recent', working: {}, push: { device: '', error: '', test: null } };
+const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, workOpen: {}, promptOpen: {}, statusOpen: false, sort: 'recent', working: {}, push: { device: '', error: '', test: null } };
 
 // ---------- routing ----------
 
@@ -859,16 +859,18 @@ function renderStatus() {
   const line = $('statusline');
   if (!line || !s) return;
   line.innerHTML = '';
-  const pct = Math.min(100, 100 * s.context_used / s.compact_at_tokens);
-  // The bar changes colour where rotation stops being far off, because that is
-  // the point at which the number is worth reading.
-  const bar = el('span', 'bar' + (pct >= 80 ? ' hot' : '')); const fill = el('i'); fill.style.width = pct + '%'; bar.append(fill);
-  const add = (label, val) => { const w = el('span'); if (label) w.append(document.createTextNode(label + ' ')); w.append(el('b', null, val)); line.append(w); };
+  // One line of what moves while the operator watches, and the rest behind a
+  // tap (webui.html, "Conversation view"): four lines of figures under every
+  // conversation were read as none of them.
+  const now = el('div', 'status-now');
+  const more = el('div', 'status-more');
+  more.hidden = !state.statusOpen;
+  const detail = (label, val) => { const r = el('div', 'row'); r.append(el('span', 'k', label), el('span', 'v', val)); more.append(r); };
   // First on the line, because while it is there it is the only thing on the
   // line worth reading.
   const since = state.working[s.id];
   if (since != null) {
-    line.append(el('span', 'gen working', 'working ' + waitingLabel((Date.now() - since) / 1000)));
+    now.append(el('span', 'gen working', 'working ' + waitingLabel((Date.now() - since) / 1000)));
     // A turn runs for as long as its work takes, so while one is running the
     // way to end it belongs next to the count of how long it has been.
     const stop = el('button', 'stop', 'stop');
@@ -879,26 +881,50 @@ function renderStatus() {
       try { await post('/sessions/' + s.id + '/cancel'); }
       catch (err) { toast({ title: 'Nothing to stop', body: String(err.message) }); }
     };
-    line.append(stop);
+    now.append(stop);
     tickWorking();
   }
-  add('', s.model.split('/').pop());
-  line.append(bar);
-  add('', `${s.context_used.toLocaleString()} / ${s.compact_at_tokens.toLocaleString()} tok`);
-  add('cost', fmtMoney(s.cost));
-  if (s.cache_hit_rate) add('cached', Math.round(s.cache_hit_rate * 100) + '%');
-  // The cache is what makes the next call cheap or not, so the line says
-  // what is held, how long it has left, and what the next call should cost.
+  now.append(el('b', null, fmtMoney(s.cost)));
+  // The bar changes colour where rotation stops being far off, because that is
+  // the point at which the number is worth reading.
+  const pct = Math.min(100, 100 * s.context_used / s.compact_at_tokens);
+  const bar = el('span', 'bar' + (pct >= 80 ? ' hot' : '')); const fill = el('i'); fill.style.width = pct + '%'; bar.append(fill);
+  const context = el('span', 'ctx');
+  context.append(bar, el('span', null, `${s.context_used.toLocaleString()} / ${s.compact_at_tokens.toLocaleString()}`));
+  now.append(context);
+  // The cache is what makes the next call cheap or not: the line counts down
+  // to it lapsing, and the details say what it holds and what the next call
+  // should cost.
   const cache = cacheState(s.cache, Date.now());
-  if (cache) line.append(el('span', 'cache', cacheLabel(cache)));
+  if (cache && cache.by === 'agent') {
+    const secs = Math.ceil(cache.left || 0);
+    now.append(el('span', 'cache', cache.live ? 'cache ' + Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0') : 'cache expired'));
+  }
+  if (cache && cache.by === 'agent' && cache.live) tickWorking();
+  const last = [...state.entries].reverse().find(e => e.usage && e.usage.tokens_per_second);
+  if (last) now.append(el('span', 'speed', last.usage.tokens_per_second.toFixed(1) + ' tok/s'));
+  if (state.streaming && since == null) now.append(el('span', 'gen', 'generating'));
+  const toggle = el('button', 'status-toggle', '⌄');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-label', 'Details');
+  toggle.setAttribute('aria-expanded', String(!more.hidden));
+  toggle.onclick = () => {
+    state.statusOpen = !state.statusOpen;
+    more.hidden = !state.statusOpen;
+    toggle.setAttribute('aria-expanded', String(state.statusOpen));
+  };
+  now.append(toggle);
+
+  detail('model', s.model);
+  detail('context', `${s.context_used.toLocaleString()} of ${s.compact_at_tokens.toLocaleString()} tokens before it compacts`);
+  detail('cost', fmtMoney(s.cost) + (s.cache_hit_rate ? ' · ' + Math.round(s.cache_hit_rate * 100) + '% of input cached' : ''));
+  if (cache) detail('cache', cacheLabel(cache).replace(/^cache /, ''));
   const prompt = [...state.entries].reverse().find(e => e.type === 'prompt');
   const promptTokens = prompt ? (prompt.sections || []).reduce((a, x) => a + (x.tokens || 0), 0) : 0;
   const next = nextCall(promptTokens, s.context_used, cache, (state.models || []).find(m => m.id === s.model));
-  if (next.cost != null) add('next', '~' + fmtMoney(next.cost) + (next.cached ? ' · cached' : ' · not cached'));
-  if (cache && cache.by === 'agent' && cache.live) tickWorking();
-  const last = [...state.entries].reverse().find(e => e.usage && e.usage.tokens_per_second);
-  if (last) add('', last.usage.tokens_per_second.toFixed(1) + ' tok/s');
-  if (state.streaming && since == null) line.append(el('span', 'gen', 'generating'));
+  if (next.cost != null) detail('next call', '~' + fmtMoney(next.cost) + (next.cached ? ' · cached' : ' · not cached'));
+  if (last) detail('speed', last.usage.tokens_per_second.toFixed(1) + ' tok/s, the last answer');
+  line.append(now, more);
 }
 
 // tickWorking redraws the status line once a second while the conversation on
@@ -1447,6 +1473,10 @@ function renderEntry(e, opts) {
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
   who.append(el('span', 'at', messageTime(e.created_at)));
+  // What the call behind an answer read from the cache, and who served it,
+  // sits with the answer's time; a call that only ran tools says it in its run.
+  const hit = e.role === 'assistant' && e.text ? callLine(e.usage) : '';
+  if (hit) who.append(el('span', 'cachehit', hit));
   if (o.revert && e.role === 'user') {
     const back = el('button', 'revert', '↩️');
     back.type = 'button';
@@ -1482,7 +1512,7 @@ function callNodes(e, o) {
     n.append(head, pre);
     out.push(n);
   }
-  const hit = e.role === 'assistant' ? callLine(e.usage) : '';
+  const hit = e.role === 'assistant' && !e.text ? callLine(e.usage) : '';
   if (hit) out.push(el('div', 'cachehit', hit));
   return out;
 }
@@ -1498,12 +1528,27 @@ function whoLine(e) {
   return who;
 }
 
+// promptEntry is the conversation's first entry and its largest: folded into
+// one line saying how large it is, so a short conversation does not open on
+// tool schemas, and open on a tap to its sections, each opening on its own.
 function promptEntry(e) {
   const box = el('div', 'prompt');
-  const head = el('div', 'head');
   const total = (e.sections || []).reduce((a, s) => a + s.tokens, 0);
-  head.append(el('span', null, 'prompt'), el('span', 'sp', ''), el('span', null, total.toLocaleString() + ' tokens'));
-  box.append(head);
+  const fold = (state.session ? state.session.id : state.arg) + ':' + e.seq;
+  const head = el('button', 'prompt-line');
+  head.type = 'button';
+  const word = el('span', 'more');
+  head.append(el('span', 'sum', 'Prompt · ' + total.toLocaleString() + ' tokens'), word);
+  const secs = el('div', 'secs');
+  const unfold = open => {
+    secs.hidden = !open;
+    word.textContent = open ? 'Hide' : 'Show';
+    head.setAttribute('aria-expanded', String(open));
+    box.className = 'prompt' + (open ? ' open' : '');
+  };
+  head.onclick = () => { const open = secs.hidden; state.promptOpen[fold] = open; unfold(open); };
+  box.append(head, secs);
+  unfold(!!state.promptOpen[fold]);
   for (const s of (e.sections || [])) {
     const sec = el('div', 'sec');
     const row = el('div', 'row');
@@ -1524,7 +1569,7 @@ function promptEntry(e) {
     row.append(toggle);
     sec.append(row);
     show(!!state.collapsed[key]);
-    box.append(sec);
+    secs.append(sec);
   }
   return box;
 }

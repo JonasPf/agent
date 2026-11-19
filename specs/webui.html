@@ -163,12 +163,12 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 
 <table>
 <tr><th>Element</th><th>Shows</th></tr>
-<tr><td>Prompt entry</td><td>Persona, skills index, and full tool definitions, each collapsible with a token count. It sits at position zero and is the prompt for the session's whole life; nothing rewrites it and no section is editable.</td></tr>
-<tr><td>Messages</td><td>User and assistant turns, tool calls with their results. A turn's tool calls and their results are folded into one quiet line, a dot and the tools run ("Ran bash, write, read"), which opens on a tap to show each call as before; a run with a failed call is in the status red, names the failure on its line, and is open. What the agent said before calling stays prose, ahead of its run. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links &mdash; and set as prose in the shipped serif. What the operator typed is shown as they typed it, in a bubble on the right. The line above a message carries its time; it names no speaker, since the shape already does, except a job's wake, which is neither and is named for its job.</td></tr>
+<tr><td>Prompt entry</td><td>Folded into one quiet line saying how many tokens it holds, so a short conversation does not open on tool schemas; a tap opens it to the persona, skills index, and full tool definitions, each collapsible with a token count. It sits at position zero and is the prompt for the session's whole life; nothing rewrites it and no section is editable.</td></tr>
+<tr><td>Messages</td><td>User and assistant turns, tool calls with their results. A turn's tool calls and their results are folded into one quiet line, a dot and the tools run ("Ran bash, write, read"), which opens on a tap to show each call as before; a run with a failed call is in the status red, names the failure on its line, and is open. What the agent said before calling stays prose, ahead of its run. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links &mdash; and set as prose in the shipped serif. What the operator typed is shown as they typed it, in a bubble on the right. The line above a message carries its time; it names no speaker, since the shape already does, except a job's wake, which is neither and is named for its job. Above an answer the same line says what its call read from the cache and which provider served it.</td></tr>
 <tr><td>Events</td><td>Job checks, forks, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
 <tr><td>Compaction</td><td>A banner standing where the agent's reading of the conversation begins, after the prompt. Says how many turns it replaced and the token count before and after, states that the agent reads the summary in place of everything before it, shows the summary, and offers to search what it folded away. The turns it kept word for word follow it, grouped and labelled as carried over; then what came since. What it covers is not drawn. Editable.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>
-<tr><td>Status line</td><td>While the agent is working, how long it has been working, counting, and the way to stop it. Model, context used against the compaction threshold, live cache size and its countdown, tokens per second while streaming, session cost.</td></tr>
+<tr><td>Status line</td><td>One line of what moves while the operator watches: while the agent is working, how long it has been working, counting, and the way to stop it; then the session's cost, context used against the compaction threshold, the countdown to the cache lapsing, and tokens per second. A tap opens the rest under it as labelled rows: the model, how much of the input was cached, what the cache holds, and what the next call should cost.</td></tr>
 <tr><td>Revert</td><td>Beside each message that started a turn, a control that takes the conversation back to before it. It asks first, in a dialog that says what goes and what stays.</td></tr>
 <tr><td>Fork from here</td><td>Beside the revert control, and on the line that records a revert, a control that forks the conversation from before that point, when its files are still kept. It opens the fork screen.</td></tr>
 <tr><td>Copy</td><td>A header action that puts the whole conversation on the clipboard as Markdown.</td></tr>
@@ -227,10 +227,10 @@ the page was first opened. A check already under way is shared, not sent again.<
 <ul>
 <li>Assistant output streams token by token.</li>
 <li>Tokens per second is shown during generation and the final figure remains after it completes.</li>
-<li>Each answer names the provider that served the call producing it, beside what that call read from the cache (<a href="architecture.html">Architecture</a>).</li>
+<li>Each answer names the provider that served the call producing it, beside what that call read from the cache, in the line with the answer's time (<a href="architecture.html">Architecture</a>).</li>
 <li>Context usage is shown against the session's compaction threshold, not the model's window.</li>
 <li>The header's title and the status line's figures follow the conversation while it is open: the title its first answer gives it, and the cost and context each turn moves, show without opening it again.</li>
-<li>The estimated cost of the next call is shown, and whether it will be cached: the prompt and the conversation as they would be sent now, at the model's prices, with what a live cache holds priced as a read.</li>
+<li>The status line's details show the estimated cost of the next call, and whether it will be cached: the prompt and the conversation as they would be sent now, at the model's prices, with what a live cache holds priced as a read.</li>
 <li>An event is laid out as a log line — clock, kind, detail — with no speaker and no bubble, so it cannot be read as a message or a tool result.</li>
 <li>A session identifier appearing in an event or a prompt section is a link to that session.</li>
 <li>The session list is ordered by last activity, and can be reordered by disk used, largest first.</li>
@@ -258,7 +258,9 @@ the page was first opened. A check already under way is shared, not sent again.<
 <li>The compaction summary is editable, and an edit changes what the next turn sends.</li>
 <li>A compaction says that it reset the cache.</li>
 <li>A <strong>?</strong> beside the banner's heading says, on hover and on tap, what a compaction does: when it happens, what is folded and by whom, what is kept word for word, that nothing is deleted, and that the working directory is untouched.</li>
-<li>The status line shows the live cache size and counts down to its expiry, and shows it as expired when it is.</li>
+<li>The status line counts down to the live cache's expiry, and shows it as expired when it is; its details say how much the cache holds.</li>
+<li>The status line is one line; a tap opens its details under it, and they stay open as the line updates until a second tap closes them.</li>
+<li>The prompt entry opens folded into one line that says how many tokens it holds, and a tap opens its sections.</li>
 <li>A provider that caches on its own, without the agent's marker, reports no lifetime; its cache is shown as held by the provider, and no countdown is invented for it.</li>
 <li>Each assistant message shows the cached proportion of the call that produced it, from what the provider reported, and says so plainly when there was no hit.</li>
 <li>No cache lifetime is shown per message.</li>

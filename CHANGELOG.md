@@ -2,6 +2,12 @@
 
 ## 2026-11-19
 
+- **A quieter conversation.** The prompt opens folded into one line,
+  so a short conversation no longer starts on tool schemas. The status
+  line under the conversation is one line: cost, context, the cache's
+  countdown and speed; tap ⌄ for the model, the cache and the next
+  call's price. What an answer's call read from the cache now sits
+  beside its time.
 - **Tool work folds into one line.** A turn's tool calls sit behind one
   quiet line, such as "Ran bash, write, read"; tap it to see each call.
   If a call failed, the line is red, says what failed, and is open.

@@ -3162,6 +3162,65 @@ test('each answer names the provider that served its call', async () => {
   assert.strictEqual(find(answers[1], 'cachehit').textContent, 'no cache hit', 'an answer with no recorded provider names one, or says it has none');
 });
 
+// The status line is one line: what moves while the operator watches, and a
+// tap for the rest (webui.html, "Conversation view"). Four lines of figures
+// under every conversation were read as none of them.
+test('the status line is one line, with the rest a tap away', async () => {
+  const expires = new Date(Date.now() + (4 * 60 + 12) * 1000).toISOString();
+  const ctx = cachedScreen({ tokens: 6716, expires_at: expires, kept_by: 'agent' });
+  await ctx.viewSession(node('div'));
+  await new Promise(r => setImmediate(r));
+  const line = ctx._id('statusline');
+  const now = find(line, 'status-now');
+  const more = find(line, 'status-more');
+  assert.ok(now && more, 'the status line is not one line and its details');
+  assert.match(textOf(now), /\$\d/, 'the line does not carry the cost');
+  assert.match(textOf(now), /2,000 \/ /, 'the line does not carry the context against the threshold');
+  assert.match(textOf(now), /cache 4:1\d/, 'the line does not count down to the cache');
+  assert.doesNotMatch(textOf(now), /claude-test|~\$/, 'the line still carries what belongs in its details');
+  assert.strictEqual(more.hidden, true, 'the details are open before they were asked for');
+  for (const [what, re] of [['the model', /claude-test/], ['what the cache holds', /6,716 tok/], ['the next call', /~\$0\.0018 · cached/]]) {
+    assert.match(textOf(more), re, 'the details do not say ' + what);
+  }
+  const toggle = find(line, 'status-toggle');
+  toggle.onclick();
+  assert.strictEqual(find(ctx._id('statusline'), 'status-more').hidden, false, 'a tap did not open the details');
+  ctx.renderStatus();
+  assert.strictEqual(find(ctx._id('statusline'), 'status-more').hidden, false, 'the details closed when the line was drawn again');
+  find(ctx._id('statusline'), 'status-toggle').onclick();
+  assert.strictEqual(find(ctx._id('statusline'), 'status-more').hidden, true, 'a second tap did not close them');
+});
+
+// What an answer's call read from the cache, and who served it, sits in the
+// line above the answer with its time, rather than in a line of its own below.
+test("an answer's cache hit sits with its time, above it", async () => {
+  const ctx = cachedScreen(null);
+  await ctx.viewSession(node('div'));
+  const t = ctx._id('transcript');
+  const answer = t.children.find(c => /It reads/.test(textOf(c)));
+  const who = find(answer, 'who');
+  assert.ok(who && find(who, 'cachehit'), 'the cache hit is not in the line above the answer');
+  assert.match(textOf(find(who, 'cachehit')), /90% cached/);
+});
+
+// The prompt is the conversation's first entry and the largest; it opens
+// folded into one line saying how large it is, so a short conversation does
+// not open on tool schemas.
+test('the prompt opens folded into one line, and a tap opens its sections', async () => {
+  const ctx = cachedScreen(null);
+  await ctx.viewSession(node('div'));
+  const p = find(ctx._id('transcript'), 'prompt');
+  assert.ok(p, 'no prompt entry');
+  const head = find(p, 'prompt-line');
+  assert.match(textOf(head), /Prompt/);
+  assert.match(textOf(head), /\d tokens/, 'the folded prompt does not say how large it is');
+  assert.strictEqual(find(p, 'secs').hidden, true, 'the prompt opens unfolded');
+  head.onclick();
+  assert.strictEqual(find(p, 'secs').hidden, false, 'a tap did not open the prompt');
+  ctx.renderTranscript();
+  assert.strictEqual(find(find(ctx._id('transcript'), 'prompt'), 'secs').hidden, false, 'the opened prompt folded when drawn again');
+});
+
 // ---------- files a conversation names ----------
 
 // filesThere answers the page's questions about which paths are files, from
