@@ -154,6 +154,13 @@ test('a streaming turn renders as markdown while it arrives', () => {
 });
 
 // findAll returns every descendant carrying the given class.
+// Everything a node and its descendants would put on screen, as one string.
+function textOf(n) {
+  let out = String(n._text || '');
+  for (const c of n.children || []) out += ' ' + textOf(c);
+  return out;
+}
+
 function findAll(n, cls, out) {
   out = out || [];
   for (const c of n.children || []) {
@@ -248,7 +255,7 @@ test('a session with no recorded size sorts as empty rather than vanishing', () 
 test('a session row offers a delete that asks first', async () => {
   const ctx = load();
   const row = ctx.sessionRow(session({ id: '2C41F09B7DA35E86104B7', disk_bytes: 2048 }));
-  const rm = findAll(row, 'tag').find(t => t.textContent === 'delete');
+  const rm = find(row, 'row-del');
   assert.ok(rm, 'the row offers no delete');
   ctx._confirm = true;
   await rm.onclick({ stopPropagation() {} });
@@ -259,7 +266,7 @@ test('a session row offers a delete that asks first', async () => {
 test('a declined confirmation deletes nothing', async () => {
   const ctx = load();
   const row = ctx.sessionRow(session({ id: '2C41F09B7DA35E86104B7' }));
-  const rm = findAll(row, 'tag').find(t => t.textContent === 'delete');
+  const rm = find(row, 'row-del');
   ctx._confirm = false;
   await rm.onclick({ stopPropagation() {} });
   assert.ok(!(ctx._calls || []).some(c => c.method === 'DELETE'),
@@ -269,7 +276,62 @@ test('a declined confirmation deletes nothing', async () => {
 test('the row still shows how much disk the session holds', () => {
   const ctx = load();
   const row = ctx.sessionRow(session({ disk_bytes: 2048 }));
-  assert.match(find(row, 's').textContent, /2\.0 kB/);
+  assert.match(textOf(find(row, 's')), /2\.0 kB/);
+});
+
+// A row is a title and one line under it (webui.html, "Session management"):
+// when it last moved, what it holds, what it cost, and its model, with jobs and
+// what is unread said in the accent. Three grey lines a row were read as none.
+test('a list row says what matters in one line', () => {
+  const ctx = load();
+  const row = ctx.sessionRow(session({ disk_bytes: 2048, cost: 0.0032, model: 'deepseek/deepseek-v4.1-flash',
+    job_count: 1, unread: 2, entry_count: 7, context_used: 443, compact_at_tokens: 80000 }));
+  const lines = findAll(row, 's');
+  assert.strictEqual(lines.length, 1, 'a row has ' + lines.length + ' lines under its title');
+  const line = textOf(lines[0]);
+  for (const re of [/2\.0 kB/, /\$0\.0032/, /deepseek-v4\.1-flash/, /1 job/, /2 unread/]) assert.match(line, re);
+  assert.doesNotMatch(line, /entries|tok\b/, 'the row still carries what belongs in its details');
+  assert.match(find(row, 'row-item').className, /\bunread\b/, 'a row with unread messages is not marked');
+});
+
+// Delete is behind a swipe to the left on a touch screen, so it does not sit on
+// every row competing with the title, and a tap that ends a swipe does not
+// also open the conversation.
+test('a row swiped left offers its delete, and the tap ending the swipe opens nothing', () => {
+  const ctx = load();
+  const wrap = ctx.sessionRow(session({ id: 'S7' }));
+  const row = find(wrap, 'row-item');
+  const at = (x, y) => ({ clientX: x, clientY: y || 10, pointerId: 1, pointerType: 'touch', preventDefault() {} });
+  row.onpointerdown(at(300));
+  row.onpointermove(at(250));
+  row.onpointermove(at(180));
+  row.onpointerup(at(180));
+  assert.match(wrap.className, /\bopen\b/, 'a swipe to the left did not uncover the delete');
+  // Some browsers send a click where a swipe ends; it neither opens the
+  // conversation nor shuts what the swipe uncovered.
+  row.onclick();
+  assert.notStrictEqual(ctx.location.hash, '#session/S7', 'the click ending a swipe opened the conversation');
+  assert.match(wrap.className, /\bopen\b/, 'the click ending a swipe shut the row again');
+  row.onpointerdown(at(200));
+  row.onpointerup(at(200));
+  row.onclick();
+  assert.notStrictEqual(ctx.location.hash, '#session/S7', 'a tap on the slid row opened the conversation');
+  assert.doesNotMatch(wrap.className, /\bopen\b/, 'a tap on the slid row did not shut it');
+  row.onpointerdown(at(200));
+  row.onpointerup(at(200));
+  row.onclick();
+  assert.strictEqual(ctx.location.hash, '#session/S7', 'a plain tap does not open the conversation');
+});
+
+test('a row moved up or down is scrolled, not swiped', () => {
+  const ctx = load();
+  const wrap = ctx.sessionRow(session({ id: 'S7' }));
+  const row = find(wrap, 'row-item');
+  const at = (x, y) => ({ clientX: x, clientY: y, pointerId: 1, pointerType: 'touch', preventDefault() {} });
+  row.onpointerdown(at(300, 100));
+  row.onpointermove(at(280, 180));
+  row.onpointerup(at(280, 180));
+  assert.doesNotMatch(wrap.className, /\bopen\b/, 'a scroll uncovered the delete');
 });
 
 // ---- tool logs ----

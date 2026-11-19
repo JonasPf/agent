@@ -1017,6 +1017,38 @@ form.composer .attach:hover { border-color: var(--accent); color: var(--accent);
 .row-item .s { font-size: var(--t-xs); color: var(--muted); margin-top: 3px; line-height: 1.5; }
 .row-item .s .sep { opacity: .45; margin: 0 6px; }
 .row-item .s + .s { font-size: var(--t-xs); opacity: .8; margin-top: 1px; }
+
+/* A conversation in the list (app.js, sessionRow): its line of figures wraps
+   between figures rather than inside one; unread work is a mark in the accent
+   at the row's edge and a heavier title. */
+.row-wrap .row-item .s { display: flex; flex-wrap: wrap; column-gap: var(--sp-3); }
+.row-item .s .flag { color: var(--accent); }
+.row-item.unread { position: relative; }
+.row-item.unread::before {
+  content: ""; position: absolute; left: 0; top: 16px; width: 3px; height: 18px;
+  border-radius: var(--r-pill); background: var(--accent);
+}
+.row-wrap .row-item { padding-left: var(--sp-3); }
+.row-item.unread .n { font-weight: 700; }
+/* The delete sits under the row. A swipe slides the row left to uncover it;
+   a pointer finds it on hover or focus, on the row's right, without moving
+   the row. */
+.row-wrap { position: relative; overflow: hidden; }
+.row-wrap .row-item { position: relative; z-index: 1; background: var(--bg); touch-action: pan-y;
+  transition: transform var(--dur-fast) var(--ease); }
+.row-wrap .row-item:hover { background: var(--card); }
+.row-del {
+  position: absolute; top: 0; right: 0; bottom: 1px; width: 96px;
+  background: var(--bad); color: var(--card); font-weight: 600; font-size: var(--t-sm);
+}
+@media (hover: hover) and (pointer: fine) {
+  .row-del {
+    top: 50%; bottom: auto; width: auto; right: var(--sp-3); transform: translateY(-50%); z-index: 2;
+    background: var(--card); color: var(--bad); border: 1px solid var(--line-2); border-radius: var(--r-pill);
+    padding: var(--sp-1) var(--sp-3); font-size: var(--t-xs); opacity: 0;
+  }
+  .row-wrap:hover .row-del, .row-wrap:focus-within .row-del { opacity: 1; }
+}
 /* A directory in a session's file tree: the twisty says whether it is open. */
 .tree .twisty { width: 1em; flex: none; color: var(--muted); line-height: 1.45; }
 .tree .row-item:not(.dir) .m { margin-left: calc(1em + 12px); }
