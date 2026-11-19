@@ -44,6 +44,14 @@ in a book serif shipped with the app, a turn's tool work folded into one line th
 detail per conversation in the list, and screens that slide over one another. The screens move onto
 it one at a time; until each does, it keeps its layout and takes only the system's sizes.</p>
 
+<p>The agent's replies are set in a serif shipped with the interface, Agent Serif, at eighteen
+pixels: Charis SIL cut to Latin and renamed, as its licence asks of a modified version
+(<a href="adrs.html#adr-093">ADR-093</a>). Shipping it means a reply is set alike on every device,
+rather than in Iowan Old Style on an iPhone and Georgia elsewhere. Everything acted on stays in the
+system's sans: what the operator typed, buttons, rows, labels, the status line. In a reply a heading
+is set larger than the prose and code in a line a size below it, in the monospace; a code block keeps
+the small monospace, so more of each line fits on a phone.</p>
+
 <p>The accent is the operator's choice, made on the More panel among four: copper, ink, plum and
 graphite, each offered as a swatch drawn in its own colour. Until one is chosen it is copper. None
 is a green, an amber or a red, because those already say how something went, and each reads at 4.5:1
@@ -58,6 +66,8 @@ agent answers.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Every piece of text on the conversation list, a conversation with a tool call and a formatted reply, its details, and a new conversation is drawn at one of five sizes: 12, 14, 16, 18 or 24 pixels.</li>
+<li>The agent's replies are set at 18 pixels in the serif the interface ships, which a browser loads from the agent itself; what the operator typed is set in the system's sans.</li>
+<li>The line above a message shows its time and no speaker, except a job's wake, which names its job.</li>
 <li>The More panel offers the accents copper, ink, plum and graphite, each drawn in its own colour, with the current one marked; until one is chosen it is copper.</li>
 <li>Choosing an accent redraws the interface in it at once, and the agent keeps it: a browser opening the interface afterwards, on any device or after a restart, draws it.</li>
 <li>An accent not offered is refused, and the refusal names those that are.</li>
@@ -154,7 +164,7 @@ than optional: an installed web app gets the full screen and its own icon.</p>
 <table>
 <tr><th>Element</th><th>Shows</th></tr>
 <tr><td>Prompt entry</td><td>Persona, skills index, and full tool definitions, each collapsible with a token count. It sits at position zero and is the prompt for the session's whole life; nothing rewrites it and no section is editable.</td></tr>
-<tr><td>Messages</td><td>User and assistant turns, tool calls with their results. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links. What the operator typed is shown as they typed it.</td></tr>
+<tr><td>Messages</td><td>User and assistant turns, tool calls with their results. What the agent says is rendered markdown &mdash; headings, lists, tables, code blocks, links &mdash; and set as prose in the shipped serif. What the operator typed is shown as they typed it, in a bubble on the right. The line above a message carries its time; it names no speaker, since the shape already does, except a job's wake, which is neither and is named for its job.</td></tr>
 <tr><td>Events</td><td>Job checks, forks, failures. A log line each — clock, kind, detail — quieter than messages and shaped unlike them. Only what nothing else records.</td></tr>
 <tr><td>Compaction</td><td>A banner standing where the agent's reading of the conversation begins, after the prompt. Says how many turns it replaced and the token count before and after, states that the agent reads the summary in place of everything before it, shows the summary, and offers to search what it folded away. The turns it kept word for word follow it, grouped and labelled as carried over; then what came since. What it covers is not drawn. Editable.</td></tr>
 <tr><td>Attribution</td><td>Any message produced by a job names the job and links to it.</td></tr>

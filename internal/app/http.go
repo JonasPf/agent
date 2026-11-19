@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"path"
@@ -112,6 +113,11 @@ func revalidated(h http.Handler) http.Handler {
 		h.ServeHTTP(w, r)
 	})
 }
+
+// The interface ships its serif as woff2, which the standard library's table
+// of types does not name; served without a type, a browser that checks would
+// refuse it.
+func init() { _ = mime.AddExtensionType(".woff2", "font/woff2") }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

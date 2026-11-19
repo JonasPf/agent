@@ -62,6 +62,9 @@
   --column: 780px;
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  /* The agent's prose, in the serif shipped with the interface (ADR-093), so
+     every device sets a reply alike; what is acted on stays in the sans. */
+  --serif: "Agent Serif", Charter, "Iowan Old Style", Georgia, serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
 }
 
@@ -119,6 +122,15 @@
     --accent: #b8c1cb; --accent-2: #d2d9e0; --on-accent: #15181b; --soft: #24282c; --m-track: #31363c;
   }
 }
+
+/* Agent Serif is Charis SIL cut to Latin and renamed, as its licence asks
+   (web/fonts/OFL.txt). A face is fetched only once a reply needs it. */
+@font-face { font-family: "Agent Serif"; src: url("/fonts/agent-serif-regular.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Agent Serif"; src: url("/fonts/agent-serif-italic.woff2") format("woff2");
+  font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "Agent Serif"; src: url("/fonts/agent-serif-bold.woff2") format("woff2");
+  font-weight: 700; font-style: normal; font-display: swap; }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; }
@@ -626,10 +638,11 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 /* ---------- transcript ---------- */
 
 .msg { margin: 18px 0; }
-.msg .who {
-  font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
-  margin-bottom: 4px;
-}
+.msg .who { font-size: var(--t-xs); color: var(--muted); margin-bottom: 4px; }
+/* A wake's job is the one speaker named above a message. */
+.msg .who .name { text-transform: uppercase; letter-spacing: .07em; margin-right: 8px; }
+/* Heard, not seen. */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .msg .bub { line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
 /* What the operator said is the one thing in the column with a ground of its
    own, and it sits to the right so a scan finds the turns without reading. */
@@ -649,6 +662,14 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 .unread-mark::before, .unread-mark::after { content: ''; flex: 1; border-top: 1px solid var(--accent); opacity: .5; }
 
 .msg .bub.md { white-space: normal; }
+/* The agent's reply is read, so it is set as prose: the shipped serif, at the
+   larger reading size, with headings above it and code in a line a size below
+   it. A code block keeps the small monospace, so more of a line fits a phone. */
+.msg.agent .bub { font: 400 var(--t-lg)/1.6 var(--serif); }
+.msg.agent .md h1 { font-size: var(--t-xl); }
+.msg.agent .md h2, .msg.agent .md h3, .msg.agent .md h4, .msg.agent .md h5, .msg.agent .md h6 { font-size: var(--t-lg); font-weight: 700; }
+.msg.agent .md :not(pre) > code { font-size: var(--t-sm); }
+.msg.agent .md table { font-family: var(--sans); }
 /* Where the answer will appear, until its first word does. A highlight slides
    across the word so the row reads as live without a spinner's noise. */
 .msg.thinking .bub {
@@ -807,7 +828,7 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 .msg.job .bub { border-left: 2px solid var(--line-2); padding-left: 11px; color: var(--muted); }
 /* The stamp sits with the speaker, quieter than it, so a scan down the column
    reads the speakers and the times stay available without being read. */
-.msg .who .at { margin-left: 8px; text-transform: none; letter-spacing: 0; opacity: .7; font-variant-numeric: tabular-nums; }
+.msg .who .at { font-variant-numeric: tabular-nums; }
 /* The way back to before a turn sits with its time. It was a grey arrow at
    reduced strength, and an operator looking for it could not find it; it is
    the undo emoji in colour now, on a button with an edge of its own, so it

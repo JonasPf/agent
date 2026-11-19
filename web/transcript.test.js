@@ -200,11 +200,12 @@ test('the agent is the agent, wake or not', () => {
   assert.strictEqual(speaker({ role: 'assistant', job_id: 'J1' }), 'agent');
 });
 
-// The grey bubble means "you said this". A wake is not the operator speaking.
+// The bubble means "you said this". A wake is not the operator speaking, and
+// the agent's own words are set as prose rather than in a bubble.
 test('a wake does not get the operator bubble', () => {
   assert.strictEqual(bubbleClass({ role: 'user' }), 'you');
   assert.strictEqual(bubbleClass({ role: 'user', job_id: 'J1' }), 'job');
-  assert.strictEqual(bubbleClass({ role: 'assistant' }), '');
+  assert.strictEqual(bubbleClass({ role: 'assistant' }), 'agent');
 });
 
 // Every message carries when it was said. A time alone is ambiguous once a
