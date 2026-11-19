@@ -341,6 +341,18 @@ sideways scrolls the list.</p>
 
 <h2>Per-session details</h2>
 
+<p>Starting a conversation, forking one, and its details are one kind of screen: a few groups of
+one-line rows, each group headed in a few plain words and explained in a line under it, rather than
+one long column of labelled fields. The first group is what the conversation is &mdash; its title,
+model, tools, skills, and persona &mdash; then its variables and when it compacts, and on the details
+screen its export and deletion. A row says what it holds. Where it is a choice, on the screens that
+make a conversation, it carries a chevron and opens one level down, in a sheet that slides over the
+screen: the model in its dialog, the tools and skills each a list of ticks, the persona a list to pick
+one from. The tools and skills are summed up on their rows &mdash; all of them, all but one or two,
+the few chosen, or how many of how many &mdash; so the screen opens on what was chosen rather than a
+wall of selected chips. On the details screen, where nothing about them can change, the rows name
+every tool and skill the conversation runs with, and nothing opens.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -348,7 +360,8 @@ sideways scrolls the list.</p>
 <li>The details screen offers only what a conversation can still be given or denied once it exists: a new title, when it compacts, its variables, its export, and deletion. It does not repeat an action the conversation's header already carries.</li>
 <li>The details screen sets the size at which this conversation compacts and how much it keeps word for word, says the second can be at most half the first, and says why when a pair is refused (<a href="adrs.html#adr-060">ADR-060</a>).</li>
 <li>The details screen renames the conversation in place, because nothing in the prompt reads the title. A blank is not a rename.</li>
-<li>The persona is chosen from the personas on disk, the built-in one among them, and the screen says that choosing one replaces the built-in persona entirely.</li>
+<li>Starting, forking, and the details screen are grouped one-line rows. The tools, skills, and persona are each one row saying what is chosen, which opens a sheet to choose them in when they can still be chosen; the screen itself shows no tool or skill as a chip.</li>
+<li>The persona is chosen in a sheet from the personas on disk, the built-in one among them, and the sheet says that choosing one replaces the built-in persona entirely.</li>
 <li>The model is chosen in a dialog that slides over the screen. Each model in it shows its price per million input and output tokens, its context window, and its intelligence, coding, and agentic indices where the gateway reports them, and links to its page on OpenRouter. An index the gateway did not report is absent, never zero.</li>
 <li>A model's figures &mdash; prices, context, indices &mdash; are one wrapping row of small figures under its name, wherever a model is named: never a card each.</li>
 <li>Wherever a screen names a model, its figures come from the catalogue as the agent currently holds it, fetched when the screen is drawn, so the configuration and the model dialog never show one model at two prices.</li>
@@ -364,7 +377,7 @@ sideways scrolls the list.</p>
 <li>Starting a conversation reaches the same screen, prefilled with the most recent session's tools and the skills that are on by default, on the model last chosen (<a href="adrs.html#adr-049">ADR-049</a>), with no variables, the default thresholds, and a title left to be generated.</li>
 <li>Starting a conversation and creating a fork are each one action: the button stops offering while its request is out, so a press that lands twice creates one, and a refusal says why and offers it again.</li>
 <li>No screen offers to edit the configuration of a session that already exists.</li>
-<li>Enable-all and disable-all act on the whole list in one tap.</li>
+<li>Enable-all and disable-all act on the whole list in one tap, at the top of the sheet the tools or skills are ticked in.</li>
 </ul>
 </div>
 

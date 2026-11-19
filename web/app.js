@@ -1734,11 +1734,6 @@ async function confirmRevert(e) {
   d.foot.append(cancel, el('span', 'sp'), go);
 }
 
-// ---------- session configuration ----------
-
-// What a set nobody chose means depends on the set — every tool, but only the
-// skills that are on by default — so the caller says it.
-const describeSet = (set, noun, unchosen) => set == null ? unchosen : (set.length ? set.length + ' ' + noun : 'no ' + noun);
 
 // ---------- dialogs ----------
 
@@ -1973,23 +1968,97 @@ function envEditor(names, apply) {
   return box;
 }
 
-const VARIABLES_NOTE = 'What this conversation’s tools and checks receive as environment variables: a token for one ' +
-  'repository, a key for one service. A value is hidden once it is entered and reaches no other conversation; a fork ' +
-  'starts with a copy. Exports carry the names, never the values.';
-const CONTEXT_NOTE = 'When what the agent is sent grows past the first number, the older turns are folded into a summary ' +
-  'and the newest are kept word for word, up to the second. The second can be at most half the first.';
+// ---------- session configuration ----------
 
-// contextFields are the two numbers that say when a conversation compacts.
-function contextFields(v, compactAt, keep) {
+const VARIABLES_NOTE = 'What this conversation’s tools and checks receive as environment variables, such as a token ' +
+  'for one repository. A value is hidden once it is entered and reaches no other conversation; a fork starts with a copy.';
+const CONTEXT_NOTE = 'Past the first number, older turns are folded into a summary and the newest are kept word for ' +
+  'word, up to the second. The second can be at most half the first.';
+const PERSONA_NOTE = 'Who the agent is. Choosing one replaces the built-in persona entirely, working rules included. ' +
+  'Write and edit them under More → Personas.';
+
+// A screen that makes or describes a conversation is a few groups of one-line
+// rows (webui.html, "Per-session details"). formGroup draws a group's heading
+// and the line under it that says what its rows mean, and returns the box the
+// rows go in.
+function formGroup(v, heading, note) {
+  const g = el('section', 'group');
+  const rows = el('div', 'rows');
+  g.append(el('h2', null, heading), rows);
+  if (note) g.append(el('p', 'note group-note', note));
+  v.append(g);
+  return rows;
+}
+
+// formRow is one row of a group: its label, then whatever it holds. A row that
+// opens a choice is a button with a chevron at its end.
+function formRow(rows, tag, cls, label) {
+  const r = el(tag, 'item ' + cls);
+  if (tag === 'button') r.type = 'button';
+  r.append(el('span', 'l', label));
+  rows.append(r);
+  return r;
+}
+function chevron() {
+  const c = el('span', 'chev', '›');
+  c.setAttribute('aria-hidden', 'true');
+  return c;
+}
+
+// describeChoice sums up a chosen set in the few words its row has room for:
+// all of them, all but one or two, the few chosen, or how many of how many.
+function describeChoice(on, names) {
+  if (!names.length) return 'None available';
+  const chosen = names.filter(n => on.includes(n));
+  if (!chosen.length) return 'None';
+  if (chosen.length === names.length) return 'All ' + names.length;
+  const off = names.filter(n => !chosen.includes(n));
+  if (off.length <= 2) return 'All but ' + off.join(', ');
+  if (chosen.length <= 3) return chosen.join(', ');
+  return chosen.length + ' of ' + names.length;
+}
+
+// pickRow is one tick or one choice in a sheet: its name, the first line of
+// what it is, and whether it is chosen, which a screen reader hears as a box
+// ticked or a choice made.
+function pickRow(name, about, on, role, extra) {
+  const p = el('button', 'pick' + (on ? ' on' : ''));
+  p.type = 'button';
+  p.dataset.name = name;
+  p.setAttribute('role', role);
+  p.setAttribute('aria-checked', String(on));
+  const mark = el('span', 'mark', on ? '✓' : '');
+  mark.setAttribute('aria-hidden', 'true');
+  const t = el('span', 'pt');
+  t.append(el('span', 'n', name));
+  if (extra) t.append(el('span', 'off', extra));
+  if (about) t.append(el('span', 'about', String(about).split('\n')[0]));
+  p.append(mark, t);
+  return p;
+}
+
+// contextFields are the two numbers that say when a conversation compacts,
+// as two rows of the group they are drawn in.
+function contextFields(rows, compactAt, keep) {
   const num = (cls, label, value) => {
-    const w = el('label', 'field');
+    const r = formRow(rows, 'label', 'row-number', label);
     const i = el('input', 'text ' + cls);
     i.type = 'number'; i.min = '0'; i.step = '1000'; i.value = value == null ? '' : String(value);
-    w.append(el('span', 's', label), i);
-    v.append(w);
+    i.setAttribute('inputmode', 'numeric');
+    r.append(i, el('span', 'unit', 'tokens'));
     return i;
   };
-  return [num('compact-at', 'compact at, in tokens', compactAt), num('keep-verbatim', 'keep word for word, in tokens', keep)];
+  return [num('compact-at', 'Fold older turns at', compactAt), num('keep-verbatim', 'Keep word for word', keep)];
+}
+
+// modelValue is what a row naming a model holds: its name, its identifier,
+// and its figures as one wrapping row under them.
+function modelValue(m) {
+  const text = el('span', 'v');
+  text.append(el('span', 'n', m.name ? modelName(m) : (m.id || 'Choose a model')));
+  if (m.name) text.append(el('span', 's ident', m.id));
+  text.append(factList(m));
+  return text;
 }
 
 // configEditor renders a configuration and returns a reader for it. It does not
@@ -2009,26 +2078,22 @@ async function configEditor(v, current, gen = drawing, opts = {}) {
   // nothing has to be set from its details afterwards. A fork starts from its
   // origin's; a new conversation from what /preferences says it would get, and
   // never from another conversation's variables.
-  v.append(el('h2', null, 'title'));
+  const rows = formGroup(v, 'This conversation',
+    'The model, tools, skills and persona are fixed once it starts. Fork it later to change them.');
   const title = el('input', 'text start-title');
   title.value = opts.fork ? current.title || '' : '';
   title.placeholder = opts.fork ? 'The origin’s title' : 'Named from the first message';
-  v.append(title);
+  formRow(rows, 'label', 'row-title', 'Title').append(title);
 
-  // The model is one line on the screen and a dialog to change it: the facts
+  // The model is one row on the screen and a dialog to change it: the facts
   // that choose between hundreds of models do not fit in a select.
-  v.append(el('h2', null, 'model'));
-  const choice = el('button', 'choice model-choice');
+  const choice = formRow(rows, 'button', 'row-model model-choice stack', 'Model');
   const drawChoice = () => {
     choice.innerHTML = '';
-    const m = (state.models || []).find(x => x.id === cfg.model) || { id: cfg.model || '' };
-    const text = el('div', 'm');
-    text.append(el('div', 'n', m.id ? modelName(m) : 'Choose a model'));
-    if (m.name) text.append(el('div', 's ident', m.id));
-    choice.append(text, el('span', 'go', 'Change'), factList(m));
+    choice.append(el('span', 'l', 'Model'),
+      modelValue((state.models || []).find(x => x.id === cfg.model) || { id: cfg.model || '' }), chevron());
   };
   choice.onclick = () => chooseModel(cfg.model, id => { cfg.model = id; drawChoice(); });
-  v.append(choice);
   await loadModels();
   if (stale(gen)) return null;
   drawChoice();
@@ -2036,6 +2101,7 @@ async function configEditor(v, current, gen = drawing, opts = {}) {
   // A set nobody chose is the defaults: every tool, and every skill but those
   // that ship off. It stays unchosen (null) for as long as it matches them, so
   // a skill added to disk later still reaches conversations that never chose.
+  // The row sums the set up; the ticks are a sheet below it.
   const picker = async (label, path, key) => {
     const data = await api(path);
     if (stale(gen)) return;
@@ -2043,73 +2109,85 @@ async function configEditor(v, current, gen = drawing, opts = {}) {
     const names = items.map(x => x.name);
     const defaults = items.filter(x => x.default_enabled !== false).map(x => x.name);
     const settle = set => set.length === defaults.length && set.every(x => defaults.includes(x)) ? null : set;
-    v.append(el('h2', null, label));
-    const wrap = el('div');
-    const draw = () => {
-      wrap.innerHTML = '';
-      for (const n of names) {
-        const on = cfg[key] === null ? defaults.includes(n) : cfg[key].includes(n);
-        const p = el('button', 'pill' + (on ? ' on' : ''), n);
-        if (!defaults.includes(n)) p.title = 'Off unless a conversation chooses it';
-        p.onclick = () => {
-          const cur = cfg[key] === null ? defaults.slice() : cfg[key].slice();
-          cfg[key] = settle(on ? cur.filter(x => x !== n) : cur.concat(n));
-          draw();
-        };
-        wrap.append(p);
-      }
+    const chosen = () => (cfg[key] === null ? defaults : cfg[key]).slice();
+    const row = formRow(rows, names.length ? 'button' : 'div', 'row-' + label.toLowerCase(), label);
+    const value = el('span', 'v');
+    row.append(value);
+    const say = () => { value.textContent = describeChoice(chosen(), names); };
+    say();
+    if (!names.length) return;
+    row.append(chevron());
+    row.onclick = () => {
+      const d = openDialog(label);
+      const bar = el('div', 'sheet-bar');
+      const all = el('button', 'act', 'All');
+      const none = el('button', 'act', 'None');
+      const list = el('div', 'picks');
+      const draw = () => {
+        list.innerHTML = '';
+        for (const x of items) {
+          const on = chosen().includes(x.name);
+          const p = pickRow(x.name, x.description, on, 'checkbox',
+            defaults.includes(x.name) ? '' : 'off unless chosen');
+          p.onclick = () => {
+            const cur = chosen();
+            cfg[key] = settle(on ? cur.filter(n => n !== x.name) : cur.concat(x.name));
+            draw(); say();
+          };
+          list.append(p);
+        }
+      };
+      all.onclick = () => { cfg[key] = settle(names.slice()); draw(); say(); };
+      none.onclick = () => { cfg[key] = settle([]); draw(); say(); };
+      bar.append(all, none);
+      d.body.append(bar, list);
+      draw();
     };
-    const bar = el('div');
-    const all = el('button', 'act', 'all');
-    const none = el('button', 'act', 'none');
-    all.onclick = () => { cfg[key] = settle(names.slice()); draw(); };
-    none.onclick = () => { cfg[key] = settle([]); draw(); };
-    bar.append(all, none);
-    v.append(bar, wrap);
-    draw();
   };
-  await picker('tools', '/tools', 'enabled_tools');
+  await picker('Tools', '/tools', 'enabled_tools');
   if (stale(gen)) return null;
-  await picker('skills', '/skills', 'enabled_skills');
+  await picker('Skills', '/skills', 'enabled_skills');
   if (stale(gen)) return null;
 
   // The persona is the opening section of the prompt, and choosing one replaces
-  // the built-in whole. That is said here rather than discovered later, because
-  // a persona that leaves out the working rules is a different agent and nothing
-  // downstream says why.
+  // the built-in whole. That is said where it is chosen rather than discovered
+  // later, because a persona that leaves out the working rules is a different
+  // agent and nothing downstream says why.
   const personas = ((await api('/personas').catch(() => null)) || {}).personas || [];
   if (stale(gen)) return null;
-  v.append(el('h2', null, 'persona'));
-  v.append(el('p', 'note', 'Who the agent is. Choosing one replaces the built-in persona entirely, ' +
-    'working rules included. Write and edit them under More → Personas.'));
-  const pwrap = el('div');
-  const drawPersonas = () => {
-    pwrap.innerHTML = '';
-    for (const p of personas) {
-      const on = (cfg.persona || 'default') === p.name;
-      const b = el('button', 'pill' + (on ? ' on' : ''), p.name);
-      b.title = p.description;
-      b.onclick = () => { cfg.persona = p.name === 'default' ? '' : p.name; drawPersonas(); };
-      pwrap.append(b);
-    }
-  };
-  v.append(pwrap);
-  drawPersonas();
+  const prow = formRow(rows, personas.length ? 'button' : 'div', 'row-persona', 'Persona');
+  const pvalue = el('span', 'v', cfg.persona || 'default');
+  prow.append(pvalue);
+  if (personas.length) {
+    prow.append(chevron());
+    prow.onclick = () => {
+      const d = openDialog('Persona');
+      d.body.append(el('p', 'note', PERSONA_NOTE));
+      const list = el('div', 'picks');
+      for (const p of personas) {
+        const b = pickRow(p.name, p.description, (cfg.persona || 'default') === p.name, 'radio');
+        b.onclick = () => {
+          cfg.persona = p.name === 'default' ? '' : p.name;
+          pvalue.textContent = p.name;
+          closeDialog();
+        };
+        list.append(b);
+      }
+      d.body.append(list);
+    };
+  }
 
   const envStart = opts.fork ? (current.env || []) : [];
   const envChange = {};
-  v.append(el('h2', null, 'variables'));
-  v.append(el('p', 'note', VARIABLES_NOTE));
-  v.append(envEditor(envStart, async change => {
+  formGroup(v, 'Variables', VARIABLES_NOTE).append(envEditor(envStart, async change => {
     for (const [k, val] of Object.entries(change)) {
       if (val === null && !envStart.includes(k)) delete envChange[k]; else envChange[k] = val;
     }
   }));
 
   const at = opts.fork ? current : (opts.defaults || {});
-  v.append(el('h2', null, 'context'));
-  v.append(el('p', 'note', CONTEXT_NOTE));
-  const [compactAt, keep] = contextFields(v, at.compact_at_tokens, at.keep_verbatim_tokens);
+  const [compactAt, keep] = contextFields(formGroup(v, 'Compaction', CONTEXT_NOTE),
+    at.compact_at_tokens, at.keep_verbatim_tokens);
   const n = i => String(i.value || '').trim() === '' ? undefined : Number(i.value);
 
   return () => Object.assign({}, cfg, {
@@ -2120,45 +2198,37 @@ async function configEditor(v, current, gen = drawing, opts = {}) {
   });
 }
 
-// configFacts renders a configuration that cannot be changed. A conversation's
-// is fixed for its life, so the screen that describes one states it: the same
-// five headings the editor uses, so the two read alike, with nothing to press.
-// A different configuration is a different conversation, reached from Fork.
-async function configFacts(v, s, gen = drawing) {
+// configFacts draws a configuration that cannot be changed, as rows of the
+// group it is given. A conversation's is fixed for its life, so the screen
+// that describes one names it in full, every tool and skill, with nothing to
+// press: a different configuration is a different conversation, reached from
+// Fork.
+async function configFacts(rows, s, gen = drawing) {
   await loadModels();
   if (stale(gen)) return false;
-  v.append(el('h2', null, 'model'));
-  const m = (state.models || []).find(x => x.id === s.model) || { id: s.model || '' };
-  const line = el('div', 'choice-fixed');
-  const text = el('div', 'm');
-  text.append(el('div', 'n', m.name ? modelName(m) : (m.id || 'none')));
-  if (m.name) text.append(el('div', 's ident', m.id));
-  line.append(text, factList(m));
-  v.append(line);
+  formRow(rows, 'div', 'row-model stack', 'Model')
+    .append(modelValue((state.models || []).find(x => x.id === s.model) || { id: s.model || 'none' }));
 
   // A set nobody chose is the defaults, and the defaults live on disk rather
   // than on the session, so what the conversation actually runs with is only
   // known once they are fetched.
+  const named = (label, list, cls = '') => {
+    const value = el('span', 'v names');
+    if (!list.length) value.append(el('span', 'none', 'None'));
+    list.forEach((n, i) => value.append(i ? document.createTextNode(', ') : '', el('span', 'nm', n)));
+    formRow(rows, 'div', 'row-' + label.toLowerCase() + cls, label).append(value);
+  };
   const shown = async (label, path, chosen) => {
     const data = await api(path).catch(() => null) || {};
     if (stale(gen)) return;
     const items = data.tools || data.skills || [];
-    const names = chosen == null
-      ? items.filter(x => x.default_enabled !== false).map(x => x.name)
-      : chosen;
-    v.append(el('h2', null, label));
-    if (!names.length) { v.append(el('div', 's', 'None.')); return; }
-    const wrap = el('div');
-    for (const n of names) wrap.append(el('span', 'pill fixed', n));
-    v.append(wrap);
+    named(label, chosen == null ? items.filter(x => x.default_enabled !== false).map(x => x.name) : chosen, ' stack');
   };
-  await shown('tools', '/tools', s.enabled_tools);
+  await shown('Tools', '/tools', s.enabled_tools);
   if (stale(gen)) return false;
-  await shown('skills', '/skills', s.enabled_skills);
+  await shown('Skills', '/skills', s.enabled_skills);
   if (stale(gen)) return false;
-
-  v.append(el('h2', null, 'persona'));
-  v.append(el('span', 'pill fixed', s.persona || 'default'));
+  named('Persona', [s.persona || 'default']);
   return true;
 }
 
@@ -2398,18 +2468,17 @@ async function viewSettings(v) {
   const s = res.session;
   setHeader('Details', true);
 
-  const runs = `${s.model} with ${describeSet(s.enabled_tools, 'tools', 'all tools')} and ${describeSet(s.enabled_skills, 'skills', 'the default skills')}`;
-  v.append(el('p', 'note',
-    `This conversation runs on ${runs}, fixed for its life. None of it can be changed here: ` +
-    `a different configuration is a different conversation, which Fork makes, leaving this one as it is.`));
+  // What the conversation is comes first, and all of it but the title is
+  // fixed for its life: a different configuration is a different
+  // conversation, which Fork makes, leaving this one as it is.
+  const about = formGroup(v, 'This conversation', 'The model, tools, skills and persona are fixed for its life. ' +
+    'A different configuration is a different conversation, which Fork makes, leaving this one as it is.');
 
-  // The title is the exception to the paragraph above: nothing in the prompt
-  // reads it, so it can be changed in place instead of by forking.
-  v.append(el('h2', null, 'title'));
+  // The title is the exception: nothing in the prompt reads it, so it can be
+  // changed in place instead of by forking.
   const name = el('input', 'text');
   name.value = s.title || '';
   name.placeholder = 'What this conversation is about';
-  v.append(name);
   const rename = el('button', 'btn', 'Rename');
   rename.onclick = async () => {
     const chosen = name.value.trim();
@@ -2423,13 +2492,13 @@ async function viewSettings(v) {
     renderSidebar();
     toast({ title: 'Renamed', body: chosen });
   };
-  v.append(rename);
+  formRow(about, 'div', 'row-title', 'Title').append(name, rename);
+  if (!await configFacts(about, s, gen) || stale(gen)) return;
 
   // How the conversation is kept is not what it is: no prompt reads either
   // number, so they change here, for this conversation alone, at any time.
-  v.append(el('h2', null, 'context'));
-  v.append(el('p', 'note', CONTEXT_NOTE));
-  const [compactAt, keep] = contextFields(v, s.compact_at_tokens || 0, s.keep_verbatim_tokens || 0);
+  const kept = formGroup(v, 'Compaction', CONTEXT_NOTE);
+  const [compactAt, keep] = contextFields(kept, s.compact_at_tokens || 0, s.keep_verbatim_tokens || 0);
   const save = el('button', 'btn', 'Save');
   save.onclick = async () => {
     const chosen = { compact_at_tokens: Number(compactAt.value), keep_verbatim_tokens: Number(keep.value) };
@@ -2440,30 +2509,24 @@ async function viewSettings(v) {
     toast({ title: 'Saved', body: `compacts at ${chosen.compact_at_tokens.toLocaleString()} tokens, ` +
       `keeping ${chosen.keep_verbatim_tokens.toLocaleString()} word for word` });
   };
-  v.append(save);
+  const end = el('div', 'item row-save');
+  end.append(save);
+  kept.append(end);
 
   // Nor does any prompt read the variables: each change reaches the next tool
   // call, and the conversation records it by name.
-  v.append(el('h2', null, 'variables'));
-  v.append(el('p', 'note', VARIABLES_NOTE));
-  v.append(envEditor(s.env, async change => {
+  formGroup(v, 'Variables', VARIABLES_NOTE).append(envEditor(s.env, async change => {
     const r = await patch('/sessions/' + id, { env: change });
     return (r && r.env) || [];
   }));
 
-  v.append(el('h2', null, 'export'));
-  v.append(el('p', 'note', 'The whole conversation as a zip: its transcript, its jobs and their logs, and its working ' +
-    'directory, to keep or to import into another agent. Variables go by name; their values stay here.'));
-  const exp = el('button', 'btn', 'Export conversation');
+  const keepOr = formGroup(v, 'Export or delete', 'The export is a zip of its transcript, its jobs and their logs, ' +
+    'and its working directory, to keep or to import into another agent. Variables go by name; their values stay here.');
+  const exp = formRow(keepOr, 'button', 'row-export', 'Export conversation');
+  exp.append(el('span', 'v', 'zip'));
   exp.onclick = () => location.href = '/sessions/' + id + '/export';
-  v.append(exp);
-
-  if (!await configFacts(v, s, gen) || stale(gen)) return;
-
-  v.append(el('h2', null, 'danger'));
-  const d = el('button', 'btn danger', 'Delete conversation');
+  const d = formRow(keepOr, 'button', 'row-delete', 'Delete conversation');
   d.onclick = async () => { if (confirm('Delete this conversation, its transcript, and its jobs?')) { await del('/sessions/' + id); location.hash = '#sessions'; } };
-  v.append(d);
 }
 
 // ---------- old panel links ----------

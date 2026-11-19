@@ -62,7 +62,7 @@ func TestEveryTextOnTheMainScreensIsOneOfTheFiveSizes(t *testing.T) {
 	for _, screen := range []struct{ name, hash, ready string }{
 		{"the list", "", "A title"},
 		{"a conversation", "#session/" + s.ID, "Here is"},
-		{"its details", "#settings/" + s.ID, "fixed for its life"},
+		{"its details", "#settings/" + s.ID, "Delete conversation"},
 		{"a new conversation", "#new", "Start conversation"},
 	} {
 		page := srv.URL + "/?" + url.Values{"ready": {screen.ready}}.Encode() + screen.hash

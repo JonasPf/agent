@@ -336,29 +336,72 @@ p.note { color: var(--muted); font-size: var(--t-sm); margin: 0 0 16px; max-widt
 .swatch[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--fg); font-weight: 600; }
 .pill.on { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
 
-/* A choice that opens a dialog reads as the value it holds, with the facts
-   that chose it underneath, rather than as a button. */
-.choice {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; width: 100%; text-align: left;
-  background: var(--card); border: 1px solid var(--line-2); border-radius: var(--r); padding: 10px 14px;
+/* A screen that makes or describes a conversation: a few groups of one-line
+   rows, each headed in plain words and explained in a quiet line under it. A
+   row is its label, what it holds and, where it opens a choice, a chevron. A
+   row that holds a list or a model's figures sets them under its label. */
+.group { margin: 0 0 var(--sp-7); }
+.group > h2 {
+  margin: 0 0 var(--sp-2); padding: 0 var(--sp-1); font-size: var(--t-sm); font-weight: 600;
+  text-transform: none; letter-spacing: 0; color: var(--fg-2);
 }
-.choice:hover { border-color: var(--accent); }
-.choice .m { flex: 1; min-width: 0; }
-.choice .n, .model-row .n { font-weight: 600; }
-.choice .go { color: var(--accent); font-size: var(--t-sm); }
-.choice .facts { flex-basis: 100%; }
-/* A configuration that is fixed reads as the choice screens do, one shade
-   back, and never lights up under the pointer: there is nothing to press. */
-.choice-fixed {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; width: 100%; text-align: left;
-  background: var(--sunk); border: 1px dashed var(--line-2); border-radius: var(--r);
-  padding: 10px 14px; color: var(--fg-2);
+.rows { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.rows > * + * { border-top: 1px solid var(--line); }
+.item {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3);
+  width: 100%; min-height: 52px; padding: var(--sp-2) var(--sp-4); text-align: left;
+  font-size: var(--t-md); color: var(--fg); background: none;
 }
-.choice-fixed .m { flex: 1; min-width: 0; }
-.choice-fixed .n { font-weight: 600; }
-.choice-fixed .facts { flex-basis: 100%; }
-.pill.fixed { border-style: dashed; background: var(--sunk); color: var(--muted); }
-.pill.fixed:hover { border-color: var(--line-2); }
+button.item { cursor: pointer; transition: background var(--dur-fast) var(--ease); }
+button.item:hover { background: var(--sunk); }
+.item .l { min-width: 0; }
+.item .v { min-width: 0; text-align: right; font-size: var(--t-sm); color: var(--muted); overflow-wrap: anywhere; }
+.item .v .n { color: var(--fg); font-weight: 550; }
+.item .v .ident { display: block; }
+.group .chev { color: var(--muted); font-size: var(--t-lg); line-height: 1; }
+.item.stack { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--sp-1); padding-top: var(--sp-3); padding-bottom: var(--sp-3); }
+.item.stack .v { grid-column: 1; grid-row: 2; text-align: left; }
+.item.stack .chev { grid-column: 2; grid-row: 1 / span 2; }
+.item input.text {
+  margin: 0; min-width: 0; border-color: transparent; background: var(--sunk); font-size: var(--t-md);
+}
+.item input.text:focus { border-color: var(--accent); background: var(--card); }
+.row-number input.text { justify-self: end; width: 6.5em; text-align: right; font-variant-numeric: tabular-nums; }
+.row-number { grid-template-columns: minmax(0, 1fr) auto auto; }
+.item .unit { font-size: var(--t-sm); color: var(--muted); }
+.item .btn { margin: 0; }
+.row-save { display: flex; justify-content: flex-end; min-height: 0; }
+.row-export .l { color: var(--accent); }
+.row-delete .l { color: var(--bad); }
+p.group-note { font-size: var(--t-xs); margin: var(--sp-2) var(--sp-1) 0; }
+/* Variables are rows of their group too. The add row says there are none,
+   so the list's own "None." is not repeated in it. */
+.rows .envs { border-top: 0; }
+.rows .envs > .env-var, .rows .envs > .env-add { padding: var(--sp-2) var(--sp-4); min-height: 52px; border-bottom: 0; }
+.rows .envs > .env-var + * { border-top: 1px solid var(--line); }
+.rows .envs > .s { display: none; }
+
+/* The sheet a row opens: all or none at its top, then one row to tick for
+   each. What is ticked is marked in the accent, not filled with it, so a list
+   where everything is on still reads as a list. */
+.sheet-bar { display: flex; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+.sheet-bar .act { margin: 0; }
+.picks { border-top: 1px solid var(--line); }
+.pick {
+  display: flex; align-items: flex-start; gap: var(--sp-3); width: 100%; text-align: left;
+  padding: var(--sp-3) var(--sp-1); border-bottom: 1px solid var(--line); background: none; color: var(--fg);
+}
+.pick:hover { background: var(--sunk); }
+.pick .mark {
+  flex: none; width: 22px; height: 22px; display: grid; place-items: center; margin-top: 1px;
+  border: 1.5px solid var(--line-2); border-radius: var(--r-xs); color: var(--accent); font-size: var(--t-sm); font-weight: 700;
+}
+.pick[role="radio"] .mark { border-radius: 50%; }
+.pick.on .mark { border-color: var(--accent); }
+.pick .pt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-0); }
+.pick .n { font-size: var(--t-md); font-weight: 550; overflow-wrap: anywhere; }
+.pick .off { font-size: var(--t-xs); color: var(--warn); }
+.pick .about { font-size: var(--t-xs); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .ident { font-family: var(--mono); font-size: var(--t-xs); overflow-wrap: anywhere; }
 .facts { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: var(--t-xs); color: var(--muted); margin-top: 4px; }
@@ -579,6 +622,7 @@ p.note { color: var(--muted); font-size: var(--t-sm); margin: 0 0 16px; max-widt
   padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
   transition: border-color var(--dur-fast), transform var(--dur-fast);
 }
+.model-row .n { font-weight: 600; }
 .model-row:hover { border-color: var(--accent); transform: translateX(-2px); }
 .model-row.on { border-color: var(--accent); background: var(--soft); }
 .model-row .top { display: flex; align-items: center; gap: 8px; }
@@ -1243,8 +1287,6 @@ pre.src .fence { color: var(--muted); }
 .hit-row mark.match { background: var(--soft); color: var(--accent-2); padding: 0 1px; border-radius: var(--r-xs); }
 .hit-row .tag { margin-top: 6px; }
 .history .hit { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: var(--r-xs); opacity: 1; }
-label.field { display: block; margin: 0 0 10px; }
-label.field .s { display: block; margin-bottom: 4px; }
 
 /* What one call read from the cache, under the answer it produced: a figure to
    check, not part of what was said. */
