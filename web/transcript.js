@@ -118,10 +118,11 @@ function speaker(e) {
   return 'job (' + e.job_id.slice(-6) + ')';
 }
 
-// The grey bubble reads as "you said this", so only what the operator typed
-// gets it. A wake is set apart instead of dressed up as them.
+// The bubble reads as "you said this", so only what the operator typed gets
+// it. A wake is set apart instead of dressed up as them, and the agent's own
+// words are set as prose.
 function bubbleClass(e) {
-  if (!e || e.role !== 'user') return '';
+  if (!e || e.role !== 'user') return 'agent';
   return e.job_id ? 'job' : 'you';
 }
 

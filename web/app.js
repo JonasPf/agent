@@ -1168,8 +1168,8 @@ function renderStreaming() {
 // thinkingNode stands where the agent's answer will appear, from the moment it
 // is asked until its first word arrives, and between the steps of a turn.
 function thinkingNode() {
-  const w = el('div', 'msg thinking');
-  w.append(el('div', 'who', 'agent'), el('div', 'bub', 'thinking'));
+  const w = el('div', 'msg agent thinking');
+  w.append(whoLine({ role: 'assistant' }), el('div', 'bub', 'thinking'));
   return w;
 }
 
@@ -1184,12 +1184,12 @@ function streamNode() {
 // and the block still arriving, drawn again as it grows. Drawing the whole
 // answer for every token cost the square of its length.
 function streamMessage(text) {
-  const w = el('div', 'msg stream');
+  const w = el('div', 'msg agent stream');
   const b = el('div', 'bub md');
   const settled = el('div', 'settled');
   const tail = el('div', 'tail');
   b.append(settled, tail);
-  w.append(el('div', 'who', 'agent'), b);
+  w.append(whoLine({ role: 'assistant' }), b);
   w._stream = { settled, tail, upTo: 0 };
   paintStream(w._stream, text);
   return w;
@@ -1349,7 +1349,7 @@ function renderEntry(e, opts) {
   // Carried messages are marked by the style alone. Which session they came from
   // is said once, in the seeding event at the top, rather than on every bubble.
   const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
-  const who = el('div', 'who', speaker(e));
+  const who = whoLine(e);
   const hit = e.role === 'assistant' ? callLine(e.usage) : '';
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
@@ -1383,6 +1383,17 @@ function renderEntry(e, opts) {
   }
   if (hit) w.append(el('div', 'cachehit', hit));
   return w;
+}
+
+// whoLine is the line above a message. The shape of a message already says
+// who spoke, the operator's in a bubble and the agent's as prose, so the line
+// names only a job's wake, which is neither; the others' names are kept for
+// whoever hears the page rather than sees it.
+function whoLine(e) {
+  const who = el('div', 'who');
+  const name = speaker(e);
+  who.append(el('span', bubbleClass(e) === 'job' ? 'name' : 'sr', name));
+  return who;
 }
 
 function promptEntry(e) {

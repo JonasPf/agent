@@ -2907,6 +2907,30 @@ page. Five tools are built in beside <code>reload_tools</code>: <code>schedule</
 <code>packages</code>.</p>
 </div>
 
+<div class="adr" id="adr-093">
+<div class="meta">ADR-093 · accepted</div>
+<h3>The agent's replies are set in a serif the interface ships: Charis SIL, cut and renamed</h3>
+<h4>Context</h4>
+<p>The redesign chosen on 2026-11-16 sets the agent's prose in a book serif and everything acted on
+in sans. The mock named Iowan Old Style, which only Apple's systems have; elsewhere a reply would fall
+back to Georgia, and the same conversation would read differently on a phone and a laptop. The
+interface loads nothing from anywhere but the agent, so the face has to ship with it.</p>
+<h4>Decision</h4>
+<p>The interface ships three faces of Charis SIL 6.101 (SIL International, SIL Open Font License),
+regular, italic and bold, as woff2 in <code>web/fonts/</code>. Charis is the open descendant of
+Charter, the closest open face to the mock. Each is cut to Latin, Latin Extended-A and common
+punctuation, with its hinting dropped, about 54&nbsp;KB a face; a browser fetches a face only when a
+reply uses it. The licence reserves the names "Charis" and "SIL" and treats a subset as a modified
+version, so the cut faces are renamed <em>Agent Serif</em>; the copyright notice and the licence,
+<code>web/fonts/OFL.txt</code>, ship beside them. <code>web/fonts/subset.py</code> makes them again
+from the published faces and is not shipped. The agent serves <code>.woff2</code> as
+<code>font/woff2</code>.</p>
+<h4>Consequences</h4>
+<p>A reply is set alike everywhere, at the cost of 160&nbsp;KB fetched once. A character outside the
+cut, Greek or Cyrillic say, is drawn in the next face of the stack. A newer Charis is taken by running
+the script again; the faces are not edited by hand.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

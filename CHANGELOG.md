@@ -2,6 +2,12 @@
 
 ## 2026-11-19
 
+- **Replies read like a book.** The agent's replies are set in a serif
+  that ships with the app, a little larger than before, the same on
+  every device. Your own messages stay as they were.
+- **Less above each message.** The line over a message shows its time;
+  "AGENT" and "YOU" are gone, since the bubble already says who spoke.
+  A job's wake still names its job.
 - **Screens slide.** Opening a conversation slides it in over the list,
   and going back slides it away again, as do a conversation's details
   and files. A phone set to reduce motion keeps the old instant change.

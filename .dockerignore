@@ -14,3 +14,5 @@ workspace
 plugins/
 specs
 node_modules
+# The script that makes the shipped serif; the fonts ship, it does not.
+web/fonts/*.py

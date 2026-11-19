@@ -623,7 +623,7 @@ test('the interface is legible in both colour schemes', () => {
   const dark = block('(prefers-color-scheme: dark)');
   // Sizes, spacing, timing and typefaces are the same in either scheme; every
   // colour and shadow has a dark value of its own.
-  const tokens = (rule(CSS, ':root').match(/--[a-z0-9-]+:/g) || []).filter(t => !/--(r|r-sm|r-lg|rail|column|mono|sans|t-[a-z]+|sp-\d|dur|ease|control)\b/.test(t));
+  const tokens = (rule(CSS, ':root').match(/--[a-z0-9-]+:/g) || []).filter(t => !/--(r|r-sm|r-lg|rail|column|mono|sans|serif|t-[a-z]+|sp-\d|dur|ease|control)\b/.test(t));
   for (const t of tokens) assert.ok(dark.includes(t), 'dark mode never redefines ' + t);
 });
 
