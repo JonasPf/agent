@@ -30,3 +30,53 @@ test('every corner, shadow and transition comes from its tokens', () => {
   assert.deepStrictEqual(found(/transition:\s*[^;]*\b[0-9.]+m?s\b/), [], 'a transition with a time of its own');
   assert.deepStrictEqual(found(/cubic-bezier\(/), [], 'a curve of its own');
 });
+
+// Each accent the operator can choose is legible in both schemes: as text on
+// the page and on a card, and under the text a filled button puts on it,
+// hovered or not, at 4.5:1 or better (WCAG AA for body text).
+function luminance(hex) {
+  const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function contrast(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function colours(text) {
+  return Object.fromEntries([...text.matchAll(/--([a-z0-9-]+):\s*(#[0-9a-f]{6})\b/gi)].map(m => [m[1], m[2].toLowerCase()]));
+}
+function darkScheme() {
+  const at = css.indexOf('@media (prefers-color-scheme: dark)');
+  let depth = 0;
+  for (let i = css.indexOf('{', at); i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) return [at, css.slice(at, i + 1)];
+  }
+  throw new Error('the dark scheme never closes');
+}
+
+test('every accent reads at 4.5:1 or better in light and dark', () => {
+  const [at, dark] = darkScheme();
+  const light = css.slice(0, at);
+  const names = [...new Set([...css.matchAll(/\[data-accent="([a-z]+)"\]/g)].map(m => m[1]))];
+  assert.deepStrictEqual(names, ['copper', 'ink', 'plum', 'graphite']);
+  for (const [scheme, text] of [['light', light], ['dark', dark]]) {
+    const page = colours(text.match(/:root\s*\{([^}]*)\}/)[1]);
+    for (const name of names) {
+      const m = text.match(new RegExp('\\[data-accent="' + name + '"\\]\\s*\\{([^}]*)\\}'));
+      assert.ok(m, name + ' has no colours in the ' + scheme + ' scheme');
+      const t = colours(m[1]);
+      for (const [fg, bg, where] of [
+        [t.accent, page.bg, 'as text on the page'],
+        [t.accent, page.card, 'as text on a card'],
+        [t['on-accent'], t.accent, 'under a filled button\'s text'],
+        [t['on-accent'], t['accent-2'], 'under a hovered button\'s text'],
+      ]) {
+        assert.ok(fg && bg, `${name} in ${scheme}: a colour is missing for ${where}`);
+        const r = contrast(fg, bg);
+        assert.ok(r >= 4.5, `${name} in ${scheme} reads at ${r.toFixed(2)}:1 ${where}`);
+      }
+    }
+  }
+});

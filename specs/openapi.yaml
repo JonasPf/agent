@@ -1045,18 +1045,37 @@ paths:
   /preferences:
     get:
       tags: [system]
-      summary: What the next conversation starts on.
+      summary: What the next conversation starts on, and the accent the interface is drawn in.
       responses:
         "200":
-          description: The model last chosen, and when a conversation compacts unless it says.
+          description: The model last chosen, when a conversation compacts unless it says, and the accent chosen among those offered.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  model: {type: string}
-                  compact_at_tokens: {type: integer}
-                  keep_verbatim_tokens: {type: integer}
+                $ref: "#/components/schemas/Preferences"
+
+  /preferences/accent:
+    put:
+      tags: [system]
+      summary: Choose the accent the interface is drawn in, on every device.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accent]
+              properties:
+                accent: {type: string, enum: [copper, ink, plum, graphite]}
+      responses:
+        "200":
+          description: Kept. The preferences as they now are.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Preferences"
+        "400":
+          description: Not an accent offered; the error names those that are.
 
   /metrics:
     get:
@@ -1271,6 +1290,18 @@ components:
           schema: {$ref: "#/components/schemas/Error"}
 
   schemas:
+    Preferences:
+      type: object
+      properties:
+        model: {type: string, description: The model a new conversation starts on.}
+        compact_at_tokens: {type: integer}
+        keep_verbatim_tokens: {type: integer}
+        accent: {type: string, description: "The accent the interface is drawn in; copper until one is chosen."}
+        accents:
+          type: array
+          items: {type: string}
+          description: The accents offered, the default first.
+
     Error:
       type: object
       properties:

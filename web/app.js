@@ -2267,6 +2267,7 @@ async function viewApp(v) {
 async function viewPanels(v) {
   const gen = drawing;
   setHeader('Panels', true);
+  const prefs = api('/preferences').catch(() => null);
   const items = [
     ['jobs', 'Jobs', 'Schedules attached to conversations'],
     ['tools', 'Plugins', 'Bundles, the tools they bring, and what is built in'],
@@ -2286,6 +2287,9 @@ async function viewPanels(v) {
   }
   v.append(grid);
   v.append(el('h2', null, 'device'), notifyControl());
+  const chosen = await prefs;
+  if (stale(gen)) return;
+  if (chosen && chosen.accents) v.append(el('h2', null, 'accent'), accentControl(chosen));
   // A sandbox that quietly does nothing is worse than none, so this says which.
   const sb = state.status && state.status.sandbox;
   if (sb) {
@@ -3744,6 +3748,55 @@ function pushDevices() {
   return box;
 }
 
+// ---------- accent ----------
+
+// The accent is the operator's choice, kept by the agent so every device draws
+// the same one (webui.html, "Look"). The last one seen is kept on this device
+// too, so a page opened again starts in it rather than in copper until the
+// agent answers.
+const ACCENT_NAMES = { copper: 'Copper', ink: 'Ink', plum: 'Plum', graphite: 'Graphite' };
+
+function putAccent(name) {
+  if (!name) return;
+  document.documentElement.dataset.accent = name;
+  try { localStorage.setItem('accent', name); } catch (e) {}
+}
+try { putAccent(localStorage.getItem('accent')); } catch (e) {}
+
+async function readAccent() {
+  try {
+    const p = await api('/preferences');
+    if (p && p.accent) putAccent(p.accent);
+  } catch (e) {}
+}
+
+// accentControl offers the accents as a row of swatches, each drawn in its
+// own, the current one pressed. Choosing one keeps it in the agent first, so
+// what the page shows is what the next device will.
+function accentControl(prefs) {
+  const box = el('div', 'swatches');
+  box.setAttribute('role', 'group');
+  box.setAttribute('aria-label', 'Accent colour');
+  const draw = current => {
+    box.textContent = '';
+    for (const name of prefs.accents) {
+      const b = el('button', 'swatch', ACCENT_NAMES[name] || name);
+      b.dataset.accent = name;
+      b.setAttribute('aria-pressed', String(name === current));
+      b.onclick = async () => {
+        if (name === current) return;
+        try { await put('/preferences/accent', { accent: name }); }
+        catch (e) { toast({ title: 'Accent not changed', body: String(e.message) }); return; }
+        putAccent(name);
+        draw(name);
+      };
+      box.append(b);
+    }
+  };
+  draw(prefs.accent);
+  return box;
+}
+
 // ---------- boot ----------
 
 async function boot() {
@@ -3751,6 +3804,7 @@ async function boot() {
   connect();
   route();
   readStatus();
+  readAccent();
   startPush();
 }
 
