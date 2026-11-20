@@ -472,14 +472,19 @@ p.group-note { font-size: var(--t-xs); margin: var(--sp-2) var(--sp-1) 0; }
 .tbox > .lede + .kv, .tbox > .twarn + .kv { border-top: 0; }
 .kv > .k { font-size: var(--t-xs); color: var(--muted); display: flex; gap: 5px; align-items: center; }
 .kv > .v { font-size: var(--t-sm); min-width: 0; }
-.kv .paths, .kv .ports { display: flex; flex-wrap: wrap; gap: 4px 6px; }
-.tools .path { font: var(--t-xs)/1.6 var(--mono); background: var(--code-bg); border-radius: var(--r-xs); padding: 0 6px; display: inline-flex; align-items: center; gap: 5px; overflow-wrap: anywhere; }
-.tools .path.plain { font-family: var(--sans); font-size: var(--t-xs); }
-.tools .port { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 1px 7px 1px 8px; font-size: var(--t-xs); }
-.tools .port .l { color: var(--muted); white-space: nowrap; }
-.tools .port .n { font-family: var(--mono); font-size: var(--t-xs); }
-.tools .port.never { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: var(--bad); }
-.tools .port.never .l { color: var(--bad); }
+/* What the sandbox lets through is read, not pressed: paths as one run of
+   text with its commas, ports a line per purpose, never a chip each. */
+.kv .paths { line-height: 1.6; overflow-wrap: anywhere; }
+.kv .ports { display: flex; flex-direction: column; gap: 2px; }
+.tools .path { font: var(--t-xs)/1.6 var(--mono); color: var(--fg-2); }
+.tools .path.plain { font-family: var(--sans); font-size: var(--t-sm); color: var(--fg); }
+.tools .path .help { margin-left: 4px; }
+.tools .port { display: flex; align-items: baseline; gap: var(--sp-3); font-size: var(--t-sm); }
+.tools .port .l { color: var(--muted); min-width: 7.5em; }
+.tools .port .n { font-family: var(--mono); font-size: var(--t-xs); color: var(--fg-2); }
+.tools .port.never .l, .tools .port.never .n { color: var(--bad); }
+.tools .sandbox { margin-top: var(--sp-2); }
+.sandbox > summary .tpill { margin-left: 0; }
 .tbox .refused { font-size: var(--t-xs); color: var(--muted); border-top: 1px solid var(--line); padding-top: 9px; }
 
 /* A bundle is a card holding what it is, what it asks for, and its tools as
