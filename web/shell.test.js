@@ -2390,15 +2390,23 @@ test('a fork carries its origin\'s variables and thresholds, and can change them
 // ---------- skills that ship off ----------
 
 const SKILLS = { skills: [{ name: 'changing-yourself', default_enabled: false }, { name: 'scheduling', default_enabled: true }] };
-const pills = v => findAll(v, 'pill').filter(p => ['changing-yourself', 'scheduling'].includes(p.textContent));
 const isOn = p => String(p.className).split(/\s+/).includes('on');
+
+// The ticks a row of the configuration opens: the skills row opens a sheet
+// with one row to tick for each skill, read here by name.
+const sheetPicks = (ctx, v, row) => {
+  if (!openDialog(ctx)) find(v, row).onclick();
+  return findAll(openDialog(ctx), 'pick');
+};
+const pills = (ctx, v) => sheetPicks(ctx, v, 'row-skills').filter(p => ['changing-yourself', 'scheduling'].includes(p.dataset.name));
+const byName = picks => Object.fromEntries(picks.map(p => [p.dataset.name, isOn(p)]));
+const pick = (picks, name) => picks.find(p => p.dataset.name === name);
 
 test('a skill that ships off starts unticked in a configuration that did not choose skills', async () => {
   const ctx = newScreen({ '/skills': SKILLS, '/sessions': [session({ enabled_skills: null })] });
   const v = node('div');
   await ctx.viewNew(v);
-  const byName = Object.fromEntries(pills(v).map(p => [p.textContent, isOn(p)]));
-  assert.deepStrictEqual(byName, { 'changing-yourself': false, scheduling: true });
+  assert.deepStrictEqual(byName(pills(ctx, v)), { 'changing-yourself': false, scheduling: true });
   assert.strictEqual((await startConversation(ctx, v)).enabled_skills, null,
     'an untouched configuration should leave the skills to their defaults');
 });
@@ -2407,8 +2415,7 @@ test('a new conversation starts from the default skills, whatever the last one t
   const ctx = newScreen({ '/skills': SKILLS, '/sessions': [session({ enabled_skills: ['changing-yourself', 'scheduling'] })] });
   const v = node('div');
   await ctx.viewNew(v);
-  const byName = Object.fromEntries(pills(v).map(p => [p.textContent, isOn(p)]));
-  assert.deepStrictEqual(byName, { 'changing-yourself': false, scheduling: true }, 'a skill ticked for the last conversation carried over');
+  assert.deepStrictEqual(byName(pills(ctx, v)), { 'changing-yourself': false, scheduling: true }, 'a skill ticked for the last conversation carried over');
   assert.strictEqual((await startConversation(ctx, v)).enabled_skills, null, 'the skills should be left to their defaults');
 });
 
@@ -2416,10 +2423,10 @@ test('ticking a skill that ships off chooses the skills, and unticking it goes b
   const ctx = newScreen({ '/skills': SKILLS, '/sessions': [session({ enabled_skills: null })] });
   const v = node('div');
   await ctx.viewNew(v);
-  pills(v).find(p => p.textContent === 'changing-yourself').onclick();
-  assert.ok(isOn(pills(v).find(p => p.textContent === 'changing-yourself')), 'the pill did not turn on');
-  pills(v).find(p => p.textContent === 'changing-yourself').onclick();
-  pills(v).find(p => p.textContent === 'changing-yourself').onclick();
+  pick(pills(ctx, v), 'changing-yourself').onclick();
+  assert.ok(isOn(pick(pills(ctx, v), 'changing-yourself')), 'the tick did not turn on');
+  pick(pills(ctx, v), 'changing-yourself').onclick();
+  pick(pills(ctx, v), 'changing-yourself').onclick();
   const body = await startConversation(ctx, v);
   assert.deepStrictEqual(Array.from(body.enabled_skills).sort(), ['changing-yourself', 'scheduling']);
 });
@@ -2428,11 +2435,80 @@ test('all turns on the skills that ship off as well', async () => {
   const ctx = newScreen({ '/skills': SKILLS });
   const v = node('div');
   await ctx.viewNew(v);
-  const skillsBar = findAll(v, 'act').filter(b => b.textContent === 'all')[1];
-  skillsBar.onclick();
-  assert.ok(pills(v).every(isOn), 'all left a skill off');
+  find(v, 'row-skills').onclick();
+  const all = findAll(openDialog(ctx), 'act').find(b => /^all$/i.test(b.textContent));
+  assert.ok(all, 'the skills sheet offers no way to tick them all');
+  all.onclick();
+  assert.ok(pills(ctx, v).every(isOn), 'all left a skill off');
   assert.deepStrictEqual(Array.from((await startConversation(ctx, v)).enabled_skills).sort(), ['changing-yourself', 'scheduling']);
 });
+
+// ---------- the configuration as rows ----------
+
+// A row sums a set up in the few words it has room for, so the screen opens on
+// what was chosen rather than on every name ticked.
+test('a chosen set is summed up in a few words', () => {
+  const ctx = load({});
+  const names = ['bash', 'read', 'write', 'edit', 'clock'];
+  assert.strictEqual(ctx.describeChoice(names, names), 'All 5');
+  assert.strictEqual(ctx.describeChoice(['bash', 'read', 'write', 'edit'], names), 'All but clock');
+  assert.strictEqual(ctx.describeChoice(['bash', 'read', 'write'], names), 'All but edit, clock');
+  assert.strictEqual(ctx.describeChoice(['bash', 'read'], names), 'bash, read');
+  assert.strictEqual(ctx.describeChoice([], names), 'None');
+  assert.strictEqual(ctx.describeChoice(['gone'], names), 'None', 'a name the agent no longer has counted as chosen');
+  assert.strictEqual(ctx.describeChoice([], []), 'None available');
+  const many = 'abcdefghij'.split('');
+  assert.strictEqual(ctx.describeChoice(many.slice(0, 5), many), '5 of 10');
+});
+
+const TOOLS = { tools: [{ name: 'bash', description: 'Runs a command.\nMore.' }, { name: 'read' }, { name: 'clock' }] };
+
+// The tools were a wall of chips, every one filled in the accent: the default
+// was the heaviest thing on the screen. They are one row now, and the ticks a
+// sheet below it.
+test('the tools are one row that opens a sheet of ticks', async () => {
+  const ctx = newScreen({ '/tools': TOOLS, '/skills': SKILLS });
+  const v = node('div');
+  await ctx.viewNew(v);
+  assert.strictEqual(findAll(v, 'pill').length, 0, 'the screen still shows tools or skills as chips');
+  const say = () => find(find(v, 'row-tools'), 'v').textContent;
+  assert.strictEqual(say(), 'All 3');
+  assert.strictEqual(find(v, 'row-skills') && find(find(v, 'row-skills'), 'v').textContent, 'All but changing-yourself');
+  assert.ok(find(find(v, 'row-tools'), 'chev'), 'the tools row does not say it opens');
+
+  const picks = sheetPicks(ctx, v, 'row-tools');
+  assert.deepStrictEqual(picks.map(p => p.dataset.name), ['bash', 'read', 'clock']);
+  assert.ok(picks.every(isOn), 'a tool nobody unticked is shown off');
+  assert.strictEqual(picks[0].getAttribute('role'), 'checkbox');
+  assert.strictEqual(picks[0].getAttribute('aria-checked'), 'true');
+  assert.strictEqual(find(picks[0], 'about').textContent, 'Runs a command.', 'the sheet does not say what a tool is in a line');
+  pick(picks, 'clock').onclick();
+  assert.strictEqual(say(), 'All but clock', 'the row does not follow the ticks');
+  assert.strictEqual(pick(sheetPicks(ctx, v, 'row-tools'), 'clock').getAttribute('aria-checked'), 'false');
+  find(openDialog(ctx), 'dialog-close').onclick();
+  assert.strictEqual(say(), 'All but clock', 'closing the sheet undid a tick');
+  assert.deepStrictEqual(Array.from((await startConversation(ctx, v)).enabled_tools), ['bash', 'read']);
+});
+
+test('none in the tools sheet unticks every tool in one tap', async () => {
+  const ctx = newScreen({ '/tools': TOOLS });
+  const v = node('div');
+  await ctx.viewNew(v);
+  find(v, 'row-tools').onclick();
+  findAll(openDialog(ctx), 'act').find(b => /^none$/i.test(b.textContent)).onclick();
+  assert.ok(!sheetPicks(ctx, v, 'row-tools').some(isOn), 'none left a tool ticked');
+  assert.strictEqual(find(find(v, 'row-tools'), 'v').textContent, 'None');
+  assert.deepStrictEqual(Array.from((await startConversation(ctx, v)).enabled_tools), []);
+});
+
+// Every button on a screen, whatever it is drawn as: a pill, a row, a link.
+function buttonsIn(n, out = []) {
+  for (const c of n.children || []) {
+    if (c.tagName === 'button') out.push(c);
+    buttonsIn(c, out);
+  }
+  return out;
+}
 
 function detailsScreen(sess, extra) {
   const ctx = load(Object.assign({
@@ -2468,7 +2544,7 @@ test('a conversation is exported from its details, not its files', async () => {
   const ctx = detailsScreen(session({ id: 'S1' }));
   const v = node('div');
   await ctx.viewSettings(v);
-  const exp = findAll(v, 'btn').find(b => /export/i.test(b.textContent));
+  const exp = buttonsIn(v).find(b => /export/i.test(textOf(b)));
   assert.ok(exp, 'the details screen offers no export');
   exp.onclick();
   assert.strictEqual(ctx.location.href, '/sessions/S1/export');
@@ -2477,7 +2553,7 @@ test('a conversation is exported from its details, not its files', async () => {
   vm.runInContext("state.view = 'files'; state.arg = 'S1';", files);
   const fv = node('div');
   await files.viewFiles(fv);
-  assert.ok(!findAll(fv, 'btn').some(b => /export/i.test(b.textContent)), 'the files screen still exports');
+  assert.ok(!buttonsIn(fv).some(b => /export/i.test(textOf(b))), 'the files screen still exports');
 });
 
 // The title is the one thing about a conversation that is not fixed once it
@@ -2536,12 +2612,17 @@ test('the details screen offers no way to change the configuration', async () =>
   ctx.route();
   const v = node('div');
   await ctx.viewSettings(v);
-  assert.equal(findAll(v, 'choice').length, 0,
+  assert.equal(findAll(v, 'model-choice').length, 0,
     'the details screen still opens the model dialog');
-  const clickable = findAll(v, 'pill').filter(p => p.onclick);
+  const clickable = findAll(v, 'pill').concat(findAll(v, 'pick')).filter(p => p.onclick);
   assert.deepEqual(clickable.map(p => p.textContent), [],
     'the details screen still offers the configuration for editing');
-  const buttons = findAll(v, 'btn').map(b => b.textContent);
+  assert.equal(findAll(v, 'chev').length, 0, 'a row of the details screen opens a choice');
+  for (const row of ['row-model', 'row-tools', 'row-skills', 'row-persona']) {
+    assert.ok(find(v, row), 'the details screen has no ' + row);
+    assert.notEqual(find(v, row).tagName, 'button', row + ' is something to press');
+  }
+  const buttons = buttonsIn(v).map(b => textOf(b));
   assert.ok(!buttons.some(t => /fork/i.test(t)),
     'the details screen still forks; that belongs to the fork screen: ' + buttons.join(', '));
 });
@@ -2557,7 +2638,7 @@ test('the details screen does not repeat the files link', async () => {
   ctx.route();
   const v = node('div');
   await ctx.viewSettings(v);
-  const buttons = findAll(v, 'btn').map(b => b.textContent);
+  const buttons = buttonsIn(v).map(b => textOf(b));
   assert.ok(!buttons.some(t => /files/i.test(t)),
     'the details screen repeats the header\'s files link: ' + buttons.join(', '));
 });
@@ -2581,7 +2662,7 @@ test('the details screen names the configuration the conversation is fixed on', 
   ctx.route();
   const v = node('div');
   await ctx.viewSettings(v);
-  const shown = findAll(v, 'pill').map(p => p.textContent);
+  const shown = findAll(v, 'nm').map(p => p.textContent);
   assert.ok(shown.includes('shell') && !shown.includes('browse'),
     'the tools the conversation runs with are not the ones shown: ' + shown.join(', '));
   assert.ok(shown.includes('research') && !shown.includes('write'),
@@ -2600,29 +2681,32 @@ const PERSONAS = {
   ]
 };
 
-// A pill carrying one of these names is the persona chooser; the tool and skill
-// pickers above it draw pills of their own.
-const personaPills = v => findAll(v, 'pill').filter(p => ['default', 'terse'].includes(p.textContent));
+// The persona row opens a sheet with one row to pick for each persona.
+const personaPicks = (ctx, v) => sheetPicks(ctx, v, 'row-persona');
 
 test('a new conversation starts on the built-in persona', async () => {
   const ctx = newScreen({ '/personas': PERSONAS });
   const v = node('div');
   await ctx.viewNew(v);
-  const chosen = personaPills(v).filter(isOn).map(p => p.textContent);
+  assert.strictEqual(find(find(v, 'row-persona'), 'v').textContent, 'default', 'the persona row does not say the built-in one');
+  const chosen = personaPicks(ctx, v).filter(isOn).map(p => p.dataset.name);
   assert.deepStrictEqual(chosen, ['default'], 'the built-in persona is not the one preselected');
   const body = await startConversation(ctx, v);
   assert.strictEqual(body.persona, '', 'an unchosen persona should be the built-in one');
 });
 
-test('choosing a persona sends it, and the screen says it replaces the built-in one', async () => {
+test('choosing a persona sends it, and the sheet says it replaces the built-in one', async () => {
   const ctx = newScreen({ '/personas': PERSONAS });
   const v = node('div');
   await ctx.viewNew(v);
-  const said = findAll(v, 'note').map(n => n.textContent).join(' ');
+  find(v, 'row-persona').onclick();
+  const said = findAll(openDialog(ctx), 'note').map(n => n.textContent).join(' ');
   assert.ok(/replaces the built-in persona entirely/.test(said),
-    'the screen does not say that choosing a persona replaces the built-in one: ' + said);
-  personaPills(v).find(p => p.textContent === 'terse').onclick();
-  assert.ok(isOn(personaPills(v).find(p => p.textContent === 'terse')), 'the persona pill did not turn on');
+    'the sheet does not say that choosing a persona replaces the built-in one: ' + said);
+  pick(personaPicks(ctx, v), 'terse').onclick();
+  assert.strictEqual(openDialog(ctx), null, 'picking a persona left its sheet open');
+  assert.strictEqual(find(find(v, 'row-persona'), 'v').textContent, 'terse', 'the persona row does not say the one picked');
+  assert.ok(isOn(pick(personaPicks(ctx, v), 'terse')), 'the persona picked is not the one marked');
   assert.strictEqual((await startConversation(ctx, v)).persona, 'terse');
 });
 

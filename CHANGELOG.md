@@ -2,6 +2,12 @@
 
 ## 2026-11-19
 
+- **New, Fork and Details read as short groups.** Each is a few groups of
+  one-line rows (the conversation, its variables, when it compacts) instead
+  of one long column of labels. Tools, skills and persona are one row each
+  saying what is chosen, such as "All 21" or "All but clock"; tap it to tick
+  them in a sheet. Details names every tool and skill the conversation runs
+  with, and keeps Export and Delete in a group of their own.
 - **A calmer conversation list.** Each conversation is its title and one
   line under it; unread messages and jobs show in the accent, and an
   unread conversation is marked at the edge. Delete is behind a swipe
