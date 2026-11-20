@@ -1264,6 +1264,166 @@ test('a conversation that no longer exists says so, under a header of its own', 
   assert.strictEqual(vm.runInContext('state.session', ctx), null, 'the page still holds the conversation it left');
 });
 
+// ---------- states ----------
+
+// blankOf reads what a screen shows in place of what it would hold: its
+// heading, all it says, and the buttons it offers.
+const blankOf = v => {
+  const b = find(v, 'blank');
+  if (!b) return null;
+  const h = b.children.find(c => c.tagName === 'h2');
+  const buttons = findAll(b, 'btn');
+  return { title: h && h.textContent, says: textOf(b), actions: buttons.map(x => x.textContent), buttons };
+};
+
+// A list with nothing in it used to be a grey sentence in a dashed box. It
+// says what would be there and how it gets there, and offers the one thing to
+// do about it where there is one.
+test('an empty list says what fills it, and offers to start it where it can', async () => {
+  const ctx = load({ '/sessions': [], '/jobs': [], '/skills': { skills: [] } });
+  const v = node('div');
+  await ctx.viewSessions(v);
+  let b = blankOf(v);
+  assert.ok(b, 'an empty conversation list is not a designed state');
+  assert.strictEqual(b.title, 'No conversations yet');
+  assert.deepStrictEqual(b.actions, ['New conversation', 'Import'], 'the empty list does not offer to start one');
+  assert.ok(!find(v, 'toolbar'), 'an empty list still offers to sort and search nothing');
+  b.buttons[0].onclick();
+  assert.strictEqual(ctx.location.hash, '#new');
+
+  const j = node('div');
+  await ctx.viewJobs(j);
+  b = blankOf(j);
+  assert.strictEqual(b && b.title, 'No jobs scheduled');
+  assert.match(b.says, /in a conversation/, 'the empty jobs screen does not say where a job comes from');
+
+  const s = node('div');
+  vm.runInContext("state.arg = undefined;", ctx);
+  await ctx.viewSkills(s);
+  b = blankOf(s);
+  assert.strictEqual(b && b.title, 'No skills yet');
+  assert.deepStrictEqual(b.actions, ['New skill']);
+  b.buttons[0].onclick();
+  assert.strictEqual(ctx.location.hash, '#skills/+new');
+
+  for (const [name, n] of [['conversations', v], ['jobs', j], ['skills', s]]) {
+    assert.ok(!find(n, 'empty'), `the empty ${name} screen is still a bare sentence in a box`);
+  }
+});
+
+test('search says what it looks for before anything is typed, and when nothing matches', async () => {
+  const ctx = load({ '/search?q=kiln': [] });
+  vm.runInContext("state.arg = undefined;", ctx);
+  const v = node('div');
+  await ctx.viewSearch(v);
+  let b = blankOf(v);
+  assert.strictEqual(b && b.title, 'Search every conversation', 'the search screen is a bare input');
+  assert.match(b.says, /start/, 'it does not say a word matches as a prefix');
+  const inp = v.children.find(c => c.tagName === 'input');
+  inp.value = 'kiln';
+  await inp.onchange();
+  b = blankOf(v);
+  assert.strictEqual(b && b.title, 'No matches for “kiln”');
+});
+
+// A screen is drawn from requests that take their time. While they do, the
+// view says it is busy, and a line under the header moves once the wait is
+// long enough to notice; only the newest draw clears it.
+test('a screen is marked busy until its answers arrive', async () => {
+  const ctx = load({ '/jobs': [] });
+  const fetch = ctx.fetch;
+  const held = [];
+  ctx.fetch = (p, o) => new Promise(r => held.push(() => r(fetch(p, o))));
+  const busy = () => [ctx._id('view').getAttribute('aria-busy'), ctx._id('busy').hidden];
+  const tick = () => new Promise(r => setImmediate(r));
+
+  vm.runInContext("state.view = 'jobs';", ctx);
+  const first = ctx.render();
+  assert.deepStrictEqual(busy(), ['true', false], 'a screen waiting on the agent is not marked busy');
+  const second = ctx.render();
+  held.shift()();
+  await first;
+  assert.deepStrictEqual(busy(), ['true', false], 'a draw already replaced cleared the mark of the one on screen');
+  held.shift()();
+  await second;
+  await tick();
+  assert.deepStrictEqual(busy(), ['false', true], 'a screen drawn is still marked busy');
+
+  ctx.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+  await ctx.render();
+  assert.deepStrictEqual(busy(), ['false', true], 'a screen that failed is still marked busy');
+});
+
+// A screen whose answers did not come says which of the ways that happens it
+// was, in words, and offers the way on.
+test('a screen the agent cannot be reached for says so, and tries again', async () => {
+  const ctx = load({ '/jobs': [] });
+  const fetch = ctx.fetch;
+  let down = true;
+  ctx.fetch = (p, o) => down ? Promise.reject(new TypeError('Failed to fetch')) : fetch(p, o);
+  ctx.location.hash = '#jobs';
+  await ctx.route();
+  const v = ctx._id('view');
+  let b = blankOf(v);
+  assert.strictEqual(b && b.title, 'The agent cannot be reached');
+  assert.doesNotMatch(b.says, /Failed to fetch/, 'the browser\'s words for it are shown');
+  assert.deepStrictEqual(b.actions, ['Try again']);
+  down = false;
+  await b.buttons[0].onclick();
+  assert.strictEqual(blankOf(v).title, 'No jobs scheduled', 'trying again did not draw the screen');
+});
+
+test('a screen the agent refused says what it answered, and offers to try again', async () => {
+  const ctx = load({ '/jobs': [] });
+  ctx.fetch = async () => ({ ok: false, status: 500, text: async () => '{"error":"the scheduler is busy"}' });
+  ctx.location.hash = '#jobs';
+  await ctx.route();
+  const b = blankOf(ctx._id('view'));
+  assert.strictEqual(b && b.title, 'This screen did not load');
+  assert.match(b.says, /the scheduler is busy/, 'what the agent answered is not shown');
+  assert.deepStrictEqual(b.actions, ['Try again']);
+});
+
+// A proxy in front of an agent that is down answers for it, in a page of its
+// own: that is the agent not answering, not a message to show.
+test('a proxy answering for an agent that is down is read as the agent not answering', async () => {
+  const ctx = load({ '/jobs': [] });
+  ctx.fetch = async () => ({ ok: false, status: 502, text: async () => '<html><body><h1>502 Bad Gateway</h1></body></html>' });
+  ctx.location.hash = '#jobs';
+  await ctx.route();
+  const b = blankOf(ctx._id('view'));
+  assert.strictEqual(b && b.title, 'The agent is not answering');
+  assert.doesNotMatch(b.says, /<html|Bad Gateway/, 'the proxy\'s page is shown as the message');
+});
+
+test('a conversation that no longer exists offers the way back to the list', async () => {
+  const ctx = load({});
+  ctx.fetch = async () => ({ ok: false, status: 404, text: async () => '{"error":"no such session"}' });
+  ctx.location.hash = '#session/GONE';
+  await ctx.route();
+  const b = blankOf(ctx._id('view'));
+  assert.strictEqual(b && b.title, 'This conversation no longer exists');
+  assert.deepStrictEqual(b.actions, ['Back to conversations']);
+  b.buttons[0].onclick();
+  assert.strictEqual(ctx.location.hash, '#sessions');
+});
+
+// The connection coming back is when a screen that could not reach the agent
+// can: the socket opening draws it again without being asked.
+test('a screen that could not reach the agent is drawn again when the socket opens', async () => {
+  const ctx = load({ '/jobs': [] });
+  const fetch = ctx.fetch;
+  let down = true;
+  ctx.fetch = (p, o) => down ? Promise.reject(new TypeError('Failed to fetch')) : fetch(p, o);
+  ctx.location.hash = '#jobs';
+  await ctx.route();
+  assert.strictEqual(blankOf(ctx._id('view')).title, 'The agent cannot be reached');
+  down = false;
+  await ctx.catchUp();
+  await new Promise(r => setImmediate(r));
+  assert.strictEqual(blankOf(ctx._id('view')).title, 'No jobs scheduled', 'the socket opening left the failure on screen');
+});
+
 // Opening a section of the prompt opens that section. It used to draw the
 // whole conversation again to do it, closing every tool result the reader had
 // opened further down.
@@ -1945,7 +2105,7 @@ test('the tools\' own folders are left out while empty and listed last when not'
   const only = filesScreen([DIR('.home'), DIR('.tmp')]);
   const o = node('div');
   await only.viewFiles(o);
-  assert.ok(find(o, 'empty'), 'a directory holding only the tools\' empty folders does not say it has no files');
+  assert.strictEqual((blankOf(o) || {}).title, 'No files yet', 'a directory holding only the tools\' empty folders does not say it has no files');
 });
 
 // A file's delete sits under its row, as a conversation's does in the list.

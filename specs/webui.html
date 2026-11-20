@@ -134,7 +134,6 @@ middle.</p>
 <li>The page's first request on coming back is answered without waiting on OpenRouter; the credit shown is the last figure the agent heard, and the rail updates when a fresher one arrives.</li>
 <li>The rail links the conversation list, Jobs, Plugins, Skills, and More, and marks the one on show; personas and metrics are reached from More, which links nothing the rail does.</li>
 <li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
-<li>An address naming a conversation that no longer exists opens a screen saying so, under a header of its own that offers nothing acting on another conversation; a screen whose answers are refused for any other reason says that instead of staying blank.</li>
 <li>Saving an edit to a skill or persona returns to it, and saving a new one or deleting one returns to the list, in each case without adding the screen returned to to the history a second time.</li>
 <li>A screen still loading when another is opened paints nothing: the pane shows the conversation the address names, with one composer under it.</li>
 <li>Whatever screen was left before its answers came back &mdash; a new conversation, a fork, a conversation's details, the More panel, a skill or persona &mdash; adds no section, button, or header action to the screen that replaced it.</li>
@@ -146,6 +145,40 @@ middle.</p>
 <li>The interface follows the system's colour scheme, and is legible in both.</li>
 <li>A request for reduced motion is honoured.</li>
 <li>A control that is hidden is not on screen, whatever else the stylesheet says of it.</li>
+</ul>
+</div>
+
+<h2 id="states">States</h2>
+
+<p>A screen spends some of its life without what it is for: before its answers arrive, when they do
+not, and when there is nothing yet to show. Each of these is a state drawn for it, set where the first
+row would be &mdash; a heading, a line, and what to do &mdash; rather than a blank pane or a grey
+sentence in a dashed box.</p>
+
+<p>A screen waiting on the agent is marked busy, for a screen reader at once, and for the eye by a
+stroke of the accent crossing under the header once the wait is long enough to notice, so a quick
+answer draws nothing. A request for less motion gets the line standing still.</p>
+
+<p>A screen whose answers did not come says which of the ways that happens it was. A link outlives what
+it names, so the commonest is a conversation deleted since, which is said plainly with the way back to
+the list. The agent out of reach and the agent restarting behind its proxy are each said in words,
+never the browser's or the proxy's, and the screen loads by itself once the agent answers again: when
+the page's connection to it opens again, or when the page checks in a few seconds later. Anything else
+the agent refused is shown as it answered. Each offers to try again.</p>
+
+<p>An empty list says what would be in it and how it gets there, and offers the one thing to do about
+it where there is one: the conversation list starting a conversation or importing one, the skills and
+personas writing one. Search says what it looks for before anything is typed, and what to try when
+nothing matches. A section with nothing in it on a page that holds more is one quiet line.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A screen waiting on the agent is marked busy until the newest draw's answers arrive or fail, and shows a moving line under its header only once the wait has lasted a moment.</li>
+<li>An address naming a conversation that no longer exists opens a screen saying so, under a header of its own that offers nothing acting on another conversation, with the way back to the list.</li>
+<li>A screen that could not reach the agent, or that a proxy answered for, says so in words of the interface's own, offers to try again, and loads by itself once the agent answers.</li>
+<li>A screen whose answers are refused for any other reason says what the agent answered and offers to try again, instead of staying blank.</li>
+<li>An empty list of conversations, jobs, files, skills, or personas says what would fill it, and offers the action that does where there is one; an empty search says what it looks for.</li>
 </ul>
 </div>
 
