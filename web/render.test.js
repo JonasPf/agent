@@ -35,6 +35,8 @@ function node(tag) {
     appendChild(k) { this.children.push(k); return k; },
     querySelector(sel) { return find(this, sel.replace(/^\./, '')); },
     insertAdjacentHTML(where, html) { this._html = (this._html == null ? '' : this._html) + String(html); },
+    setAttribute(k, v) { (this._attrs = this._attrs || {})[k] = String(v); },
+    getAttribute(k) { return (this._attrs || {})[k] ?? null; },
     remove() {}, addEventListener() {},
     scrollHeight: 0, scrollTop: 0, clientHeight: 0
   };
