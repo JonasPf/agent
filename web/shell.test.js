@@ -172,6 +172,7 @@ test('the rail lists every conversation, newest activity first', async () => {
       session({ id: 'C', title: 'Newer', last_active_at: '2026-09-05T00:00:00Z' }),
     ].map(s => { delete s.status; return s; })
   });
+  vm.runInContext("state.view = 'jobs';", ctx);
   await ctx.renderSidebar();
   const rows = findAll(ctx._id('side-list'), 'side-item');
   assert.deepStrictEqual(rows.map(r => find(r, 'n').textContent), ['Newest', 'Newer', 'Old']);
@@ -211,21 +212,43 @@ test('a rail row carries the unread count and opens its conversation', async () 
   assert.strictEqual(ctx.location.hash, '#session/S9');
 });
 
-// The rail carries the panels opened every day. Personas are chosen when a
-// conversation starts and written rarely, so they sit behind More.
-test('the rail links the daily panels, and personas are behind More', async () => {
+// The rail carries the list and the panels opened every day. Personas are
+// chosen when a conversation starts and written rarely, so they sit behind
+// More, which leads only to what the rail does not.
+test('the rail links the list and the daily panels, and More the rest', async () => {
   const ctx = load({ '/sessions': [] });
+  vm.runInContext("state.view = 'sessions';", ctx);
   await ctx.renderSidebar();
-  const links = ctx._id('side-nav').children.map(b => b.textContent);
-  assert.deepStrictEqual(links, ['Jobs', 'Plugins', 'Skills', 'More']);
+  const links = ctx._id('side-nav').children;
+  assert.deepStrictEqual(links.map(b => b.textContent), ['Conversations', 'Jobs', 'Plugins', 'Skills', 'More']);
+  assert.deepStrictEqual(links.map(b => b.getAttribute('aria-current')), ['page', null, null, null, null],
+    'the rail does not say the list is the screen on show');
+  links[0].onclick();
+  assert.strictEqual(ctx.location.hash, '#sessions');
   const v = ctx._id('view');
   await ctx.viewPanels(v);
-  const panels = findAll(v, 'row-item').map(r => find(r, 'n').textContent);
-  assert.ok(panels.includes('Personas'), 'More does not lead to personas: ' + panels.join(', '));
+  assert.deepStrictEqual(moreLinks(v), ['Personas', 'Metrics'], 'More repeats the rail, or leaves something out');
+});
+
+// The list is drawn once. On the list screen the pane holds it, so the rail
+// beside it, or the drawer over it on a phone, holds only the way elsewhere;
+// beside any other screen the rail lists the conversations to switch to.
+test('the rail lists the conversations only while the pane does not', async () => {
+  const ctx = load({ '/sessions': [session({ id: 'A', title: 'One' }), session({ id: 'B', title: 'Two' })] });
+  vm.runInContext("state.view = 'sessions';", ctx);
+  await ctx.renderSidebar();
+  const list = ctx._id('side-list');
+  assert.strictEqual(findAll(list, 'side-item').length, 0, 'the rail lists the conversations beside the list');
+  assert.strictEqual(list.hidden, true, 'the rail keeps an empty list on screen beside the list');
+  vm.runInContext("state.view = 'jobs';", ctx);
+  await ctx.renderSidebar();
+  assert.strictEqual(list.hidden, false);
+  assert.deepStrictEqual(findAll(list, 'side-item').map(r => find(r, 'n').textContent).sort(), ['One', 'Two']);
 });
 
 test('the rail says so when there is nothing to list', async () => {
   const ctx = load({ '/sessions': [] });
+  vm.runInContext("state.view = 'jobs';", ctx);
   await ctx.renderSidebar();
   assert.match(find(ctx._id('side-list'), 's').textContent, /No conversations/);
 });
@@ -639,26 +662,29 @@ function textOf(n) {
 }
 
 // Which build is answering is a question asked once, after an upgrade. It sits
-// at the foot of the More panel, and the changelog stays folded until it is
-// asked for, so neither is ever in the way of a conversation.
+// at the foot of the More panel, and the changelog opens in a sheet only when
+// it is asked for, so neither is ever in the way of a conversation.
 test('the More panel names the running build', async () => {
   const ctx = load({ '/version': { version: '7da7e74', built_at: '2026-09-11T10:00:00Z', changelog: '## 2026-09-11\n\n- Compact in place.\n' } });
   const v = ctx._id('view');
   await ctx.viewPanels(v);
-  assert.match(textOf(v), /7da7e74/, 'the panel does not say which build it is');
+  const row = findAll(v, 'item').find(r => find(r, 'l').textContent === 'Version');
+  assert.ok(row, 'the panel has no Version row');
+  assert.match(find(row, 'v').textContent, /^7da7e74, built /, 'the row does not say which build it is');
 });
 
-test('the changelog is folded away until it is opened', async () => {
+test('the changelog opens in a sheet, and only when asked for', async () => {
   const ctx = load({ '/version': { version: '7da7e74', built_at: '2026-09-11T10:00:00Z', changelog: '## 2026-09-11\n\n- Compact in place.\n' } });
   const v = ctx._id('view');
   await ctx.viewPanels(v);
-  const log = find(v, 'changelog');
-  assert.ok(log, 'no changelog on the panel');
-  assert.strictEqual(log.hidden, true, 'the changelog is open before it was asked for');
-  const toggle = findAll(v, 'btn').find(b => /changed/i.test(b.textContent || ''));
-  assert.ok(toggle, 'nothing offers to show what changed');
-  toggle.onclick();
-  assert.strictEqual(log.hidden, false, 'asking for the changelog did not open it');
+  assert.strictEqual(find(v, 'changelog'), null, 'the changelog is on the panel before it was asked for');
+  const row = findAll(v, 'item').find(r => find(r, 'l').textContent === 'What changed');
+  assert.ok(row, 'nothing offers to show what changed');
+  assert.ok(find(row, 'chev'), 'the row does not say it opens something');
+  row.onclick();
+  const sheet = openDialog(ctx);
+  assert.ok(sheet, 'asking for the changelog opened no sheet');
+  const log = find(sheet, 'changelog');
   assert.match(String(log.innerHTML), /Compact in place\./, 'the changelog is not rendered markdown');
 });
 
@@ -669,7 +695,27 @@ test('a build without a changelog still names itself', async () => {
   const v = ctx._id('view');
   await ctx.viewPanels(v);
   assert.match(textOf(v), /7da7e74/, 'the version went missing with the changelog');
-  assert.strictEqual(find(v, 'changelog'), null, 'an empty changelog was rendered anyway');
+  assert.ok(!findAll(v, 'item').some(r => /What changed/.test(textOf(r))), 'an empty changelog is offered anyway');
+  assert.match(textOf(v), /No changelog shipped with this build/);
+});
+
+// More is a few groups of one-line rows, as a conversation's details are: the
+// screens the rail has no room for, what this device does, and which build
+// this is. The credit and the sandbox are on the rail beside every screen, so
+// they are not said again here.
+test('More is grouped rows, and does not repeat the rail', async () => {
+  const ctx = load({ '/preferences': { model: 'x/m', accent: 'ink', accents: ACCENTS },
+    '/version': { version: '7da7e74', built_at: '', changelog: '## x\n' } });
+  vm.runInContext("state.status = { key: { usage: 2, remaining: 8 }, sandbox: { mechanism: 'landlock' } };", ctx);
+  const v = ctx._id('view');
+  await ctx.viewPanels(v);
+  const groups = findAll(v, 'group');
+  assert.deepStrictEqual(groups.map(g => { const h = g.children.find(c => String(c.tagName).toLowerCase() === 'h2'); return h ? h.textContent : ''; }),
+    ['', 'This device', 'This agent']);
+  assert.deepStrictEqual(groups.map(g => findAll(g, 'item').map(r => find(r, 'l').textContent)),
+    [['Personas', 'Metrics'], ['Notifications', 'Accent'], ['Version', 'What changed']]);
+  assert.strictEqual(findAll(v, 'tag').length, 0, 'More still draws its states as pills');
+  assert.doesNotMatch(textOf(v), /landlock|remaining|usage/, 'More repeats what the rail says');
 });
 
 // ---------- accent ----------
@@ -684,7 +730,7 @@ test('the More panel offers the accents and keeps the one chosen', async () => {
   const v = ctx._id('view');
   await ctx.viewPanels(v);
   let swatches = findAll(v, 'swatch');
-  assert.deepStrictEqual(swatches.map(b => b.textContent), ['Copper', 'Ink', 'Plum', 'Graphite']);
+  assert.deepStrictEqual(swatches.map(b => b.getAttribute('aria-label')), ['Copper', 'Ink', 'Plum', 'Graphite']);
   assert.deepStrictEqual(swatches.map(b => b.dataset.accent), ACCENTS, 'a swatch is not drawn in its own accent');
   assert.deepStrictEqual(swatches.map(b => b.getAttribute('aria-pressed')), ['false', 'true', 'false', 'false']);
 
@@ -735,7 +781,7 @@ test('More leads to the metrics screen', async () => {
   const ctx = load({});
   const v = ctx._id('view');
   await ctx.viewPanels(v);
-  const row = findAll(v, 'row-item').find(r => find(r, 'n').textContent === 'Metrics');
+  const row = findAll(v, 'item').find(r => find(r, 'l').textContent === 'Metrics');
   assert.ok(row, 'More does not lead to metrics');
   row.onclick();
   assert.strictEqual(ctx.location.hash, '#metrics');
@@ -887,6 +933,9 @@ test('the metrics window is chosen on the screen and kept in the address', async
 });
 
 // ---------- the configuration screen ----------
+
+// moreLinks names the rows on the More panel that lead to another screen.
+const moreLinks = v => findAll(v, 'item').filter(r => r.dataset && r.dataset.go).map(r => find(r, 'l').textContent);
 
 // The dialog a control opens is appended to the page, not to the view, so that
 // it can cover the whole screen and slide in over it.
@@ -1377,6 +1426,7 @@ test('a message arriving while the page is hidden stays unread until it is shown
 // one for the list moving. Whichever answers last must not be the older one.
 test('an older answer does not overwrite a newer one on the rail', async () => {
   const ctx = load({});
+  vm.runInContext("state.view = 'jobs';", ctx);
   const pending = [];
   ctx.fetch = (p, opts) => new Promise(res => pending.push({ p, res }));
   const first = ctx.renderSidebar();
@@ -1392,16 +1442,21 @@ test('an older answer does not overwrite a newer one on the rail', async () => {
 });
 
 // A socket that dropped missed every change to the list while it was down.
-test('the rail is redrawn when the socket connects', async () => {
-  const ctx = load({ '/sessions': [] });
-  let sock;
-  ctx.WebSocket = function () { sock = this; };
-  ctx.connect();
-  const before = (ctx._calls || []).filter(c => c.path === '/sessions').length;
-  sock.onopen();
-  await new Promise(r => setImmediate(r));
-  const after = ctx._calls.filter(c => c.path === '/sessions').length;
-  assert.strictEqual(after, before + 1, 'connecting did not refresh the rail');
+// It is read again wherever it is drawn: in the rail beside another screen, or
+// in the pane on the list screen.
+test('the list is read again when the socket connects', async () => {
+  for (const view of ['jobs', 'sessions']) {
+    const ctx = load({ '/sessions': [], '/jobs': [] });
+    vm.runInContext(`state.view = '${view}';`, ctx);
+    let sock;
+    ctx.WebSocket = function () { sock = this; };
+    ctx.connect();
+    const before = (ctx._calls || []).filter(c => c.path === '/sessions').length;
+    sock.onopen();
+    await new Promise(r => setImmediate(r));
+    const after = ctx._calls.filter(c => c.path === '/sessions').length;
+    assert.strictEqual(after, before + 1, `connecting did not read the list again beside ${view}`);
+  }
 });
 
 // ---------- another device ----------

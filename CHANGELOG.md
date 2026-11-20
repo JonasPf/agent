@@ -2,6 +2,17 @@
 
 ## 2026-11-20
 
+- **The conversation list shows once.** On a laptop the sidebar no longer
+  repeats the list while the list is on screen; it lists your
+  conversations beside every other screen. The sidebar (the ☰ menu on a
+  phone) now leads to Conversations, Jobs, Plugins, Skills and More, one
+  under another, with the screen you are on marked.
+- **More is a short page of rows.** Personas and Metrics, then this
+  device's notifications and accent, then the version. Notifications say
+  their state in a word; the accent is four round swatches. What changed
+  opens in a sheet. Jobs, Plugins, Skills and Search are no longer
+  repeated here, and the credit and sandbox stay at the foot of the
+  sidebar. Section headings are in sentence case instead of capitals.
 - **Files leaves out the tools' empty folders.** `.home` and `.tmp`, the
   folders a conversation's tools are given, are no longer listed while
   they are empty. When they hold something they come last, each saying
