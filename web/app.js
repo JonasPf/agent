@@ -203,12 +203,12 @@ $('side-close').onclick = () => drawer(false);
 $('scrim').onclick = () => drawer(false);
 $('side-new').onclick = () => location.hash = '#new';
 $('side-search').onclick = () => location.hash = '#search';
-$('side-all').onclick = () => sideways('#sessions');
 $('back').onclick = () => history.length > 1 ? history.back() : (location.hash = '#sessions');
 
-// Personas are chosen when a conversation starts and written rarely, so they are
-// reached from More rather than from the rail.
-const PANELS = [['jobs', 'Jobs'], ['tools', 'Plugins'], ['skills', 'Skills'], ['panels', 'More']];
+// The rail leads to the list and to the panels used every day. Personas are
+// chosen when a conversation starts and written rarely, so they are reached
+// from More rather than from the rail.
+const PANELS = [['sessions', 'Conversations'], ['jobs', 'Jobs'], ['tools', 'Plugins'], ['skills', 'Skills'], ['panels', 'More']];
 
 let folded = null;
 function closeMenu() {
@@ -282,6 +282,8 @@ function checkIn() {
 // a gap where the socket dropped an entry — reads the whole.
 async function catchUp() {
   renderSidebar();
+  // On the list screen the list is the pane's, not the rail's.
+  if ((state.view || 'sessions') === 'sessions') { render(); return; }
   if (state.view !== 'session' || !state.session) return;
   const id = state.session.id;
   const held = state.entries || [];
@@ -441,21 +443,30 @@ function setHeader(title, showBack, actions) {
 
 // ---------- rail ----------
 
-// The rail carries the way to everything: a conversation to switch to, a panel
-// to open, and what the gateway costs. It is redrawn on every route change and
-// whenever the agent says a session or the status moved.
+// The rail carries the way to everything: a screen to open, a conversation to
+// switch to, and what the gateway costs. It is redrawn on every route change
+// and whenever the agent says a session or the status moved.
+//
+// The list is drawn once (webui.html, "Shell"). On the list screen the pane
+// holds it, so the rail beside it, and the drawer over it on a phone, hold
+// only the way elsewhere; beside any other screen the rail lists the
+// conversations to switch to.
 let sideDrawing = 0;
 async function renderSidebar() {
   const mine = ++sideDrawing;
+  const here = state.view || 'sessions';
   const nav = $('side-nav');
   nav.innerHTML = '';
   for (const [hash, label] of PANELS) {
-    const b = el('button', state.view === hash ? 'on' : '', label);
+    const b = el('button', here === hash ? 'on' : '', label);
+    if (here === hash) b.setAttribute('aria-current', 'page');
     b.onclick = () => sideways('#' + hash);
     nav.append(b);
   }
   renderSideFoot();
   const list = $('side-list');
+  list.hidden = here === 'sessions';
+  if (list.hidden) { list.innerHTML = ''; return; }
   let sessions = state.sessions;
   try { sessions = await api('/sessions'); } catch (e) {}
   // Two redraws can be in flight; the older answer arriving last must not win.
@@ -1984,7 +1995,8 @@ const PERSONA_NOTE = 'Who the agent is. Choosing one replaces the built-in perso
 function formGroup(v, heading, note) {
   const g = el('section', 'group');
   const rows = el('div', 'rows');
-  g.append(el('h2', null, heading), rows);
+  if (heading) g.append(el('h2', null, heading));
+  g.append(rows);
   if (note) g.append(el('p', 'note group-note', note));
   v.append(g);
   return rows;
@@ -2620,71 +2632,54 @@ async function viewApp(v) {
   v.append(note, frame, sent);
 }
 
+// More (webui.html, "Panels") is a few groups of one-line rows, as a
+// conversation's details are: the screens the rail has no room for, what this
+// device does, and which build this is. The credit and the sandbox are on the
+// rail beside every screen, so they are not said again here.
+const MORE_LINKS = [
+  ['personas', 'Personas', 'who the agent starts as'],
+  ['metrics', 'Metrics', 'what gets used'],
+];
+
 async function viewPanels(v) {
   const gen = drawing;
-  setHeader('Panels', true);
+  setHeader('More', true);
   const prefs = api('/preferences').catch(() => null);
-  const items = [
-    ['jobs', 'Jobs', 'Schedules attached to conversations'],
-    ['tools', 'Plugins', 'Bundles, the tools they bring, and what is built in'],
-    ['skills', 'Skills', 'What the agent knows how to do'],
-    ['personas', 'Personas', 'Who the agent is when a conversation starts'],
-    ['metrics', 'Metrics', 'How often each skill, tool, and job is used'],
-    ['search', 'Search', 'Full text across every transcript'],
-  ];
-  const grid = el('div', 'cards');
-  for (const [hash, name, sub] of items) {
-    const row = el('button', 'row-item');
-    const m = el('div', 'm');
-    m.append(el('div', 'n', name), el('div', 's', sub));
-    row.append(m);
-    row.onclick = () => location.hash = '#' + hash;
-    grid.append(row);
+  const version = api('/version').catch(() => null);
+  const links = formGroup(v);
+  for (const [hash, label, about] of MORE_LINKS) {
+    const r = formRow(links, 'button', 'row-' + hash, label);
+    r.dataset.go = hash;
+    r.append(el('span', 'v', about), chevron());
+    r.onclick = () => location.hash = '#' + hash;
   }
-  v.append(grid);
-  v.append(el('h2', null, 'device'), notifyControl());
+  const device = formGroup(v, 'This device');
+  device.append(notifyControl());
   const chosen = await prefs;
   if (stale(gen)) return;
-  if (chosen && chosen.accents) v.append(el('h2', null, 'accent'), accentControl(chosen));
-  // A sandbox that quietly does nothing is worse than none, so this says which.
-  const sb = state.status && state.status.sandbox;
-  if (sb) {
-    v.append(el('h2', null, 'isolation'));
-    const on = sb.mechanism && sb.mechanism !== 'none';
-    v.append(el('span', 'tag ' + (on ? 'on' : 'bad'), 'sandbox · ' + (sb.mechanism || 'none')));
-    v.append(el('div', 's', on
-      ? "A tool reaches this session's working directory and no other."
-      : 'NOT ENFORCED: ' + (sb.reason || '') + ' — a tool can read any session\'s files and the agent\'s own.'));
-  }
-  if (state.status && state.status.key) {
-    v.append(el('h2', null, 'openrouter'));
-    const k = state.status.key;
-    v.append(el('div', 's', `usage ${fmtMoney(k.usage)}${k.remaining != null ? ' · remaining ' + fmtMoney(k.remaining) : ''}`));
-  }
-  await versionSection(v, gen);
+  if (chosen && chosen.accents) formRow(device, 'div', 'row-accent', 'Accent').append(accentControl(chosen));
+  await versionSection(v, gen, version);
 }
 
 // Which build is answering, and what changed in it. The version is the commit
 // the image was built from, so what is on screen is what a rollback names. Both
 // are read once after an upgrade and never again, so they sit at the foot of
-// this panel and the changelog stays folded until it is asked for.
-async function versionSection(v, gen = drawing) {
-  let info;
-  try { info = await api('/version'); } catch (e) { return; }
+// More, and the changelog opens in a sheet only when it is asked for.
+async function versionSection(v, gen = drawing, asked) {
+  const info = await (asked || api('/version').catch(() => null));
   if (!info || stale(gen)) return;
-  v.append(el('h2', null, 'version'));
-  const built = info.built_at ? ' · built ' + ago(info.built_at) : '';
-  v.append(el('div', 's', (info.version || 'unknown') + built));
-  if (!info.changelog) {
-    v.append(el('div', 's', 'No changelog shipped with this build.'));
-    return;
-  }
-  const log = el('div', 'changelog md');
-  log.hidden = true;
-  log.innerHTML = renderMarkdown(info.changelog);
-  const toggle = el('button', 'btn', 'What changed');
-  toggle.onclick = () => { log.hidden = !log.hidden; };
-  v.append(toggle, log);
+  const rows = formGroup(v, 'This agent', info.changelog ? '' : 'No changelog shipped with this build.');
+  const built = info.built_at ? ', built ' + ago(info.built_at) : '';
+  formRow(rows, 'div', 'row-version', 'Version').append(el('span', 'v', (info.version || 'unknown') + built));
+  if (!info.changelog) return;
+  const newest = /^##\s+(.+)$/m.exec(info.changelog);
+  const log = formRow(rows, 'button', 'row-changes', 'What changed');
+  log.append(el('span', 'v', newest ? newest[1].trim() : ''), chevron());
+  log.onclick = () => {
+    const md = el('div', 'changelog md');
+    md.innerHTML = renderMarkdown(info.changelog);
+    openDialog('What changed').body.append(md);
+  };
 }
 
 async function viewJobs(v) {
@@ -3950,47 +3945,49 @@ async function viewHistory(v) {
 
 // ---------- notifications ----------
 
-// notifyControl states what this browser will do with a new message, and asks
-// for permission when it can. A device that will never show one has to say so:
-// silence and "working, nothing to report" look identical otherwise.
+// notifyControl is the row that states what this browser will do with a new
+// message, and asks for permission when it can. A device that will never show
+// one has to say so: silence and "working, nothing to report" look identical
+// otherwise. Its state is one word beside its label; what that means, and
+// what can be done about it, sit under them.
 function notifyControl() {
-  const box = el('div');
+  const row = el('div', 'item notify');
   const has = 'Notification' in window;
   const perm = has ? Notification.permission : '';
   const support = pushSupport(pushEnv());
-  const line = (cls, text) => box.append(el('span', cls, text));
-  const say = (text, cls) => box.append(el('div', 's' + (cls ? ' ' + cls : ''), text));
+  const head = (tone, word) => row.append(el('span', 'l', 'Notifications'), el('span', 'v ' + tone, word));
+  const say = (text, cls) => row.append(el('p', 'about' + (cls ? ' ' + cls : ''), text));
   if (support === 'home-screen') {
-    line('tag warn', 'notifications · home screen only');
+    head('warn', 'Home screen only');
     say('On an iPhone or iPad, notifications work only in the home-screen app. Tap Share, then Add to Home Screen, open the agent from there, and turn them on here.');
-    return box;
+    return row;
   }
   if (!has) {
-    line('tag bad', 'notifications · unavailable');
+    head('bad', 'Unavailable');
     say('This browser has no notification API here. It needs a secure origin — https, or localhost. The unread count on the session list is the only signal.');
-    return box;
+    return row;
   }
   if (perm === 'denied') {
-    line('tag bad', 'notifications · blocked');
+    head('bad', 'Blocked');
     say('Blocked for this site in the browser\'s own settings. Allow it there to turn notifications back on.');
-    return box;
+    return row;
   }
   if (support === 'push' && state.push.device) {
-    line('tag on', 'notifications · push');
+    head('ok', 'Push');
     say('A message you have not read reaches this device ten seconds after it was written, even with the browser closed. One you read in that time, on any device, is not sent.');
-    box.append(pushActions(), pushDevices());
-    return box;
+    row.append(pushActions(), pushDevices());
+    return row;
   }
   if (support !== 'push' && perm === 'granted') {
-    line('tag on', 'notifications · while open');
+    head('ok', 'While open');
     say('This browser cannot be pushed to, so a banner shows only while it is open and you are not reading that conversation. Nothing reaches you once it is closed.');
-    return box;
+    return row;
   }
   if (support === 'push' && perm === 'granted') {
-    line('tag warn', 'notifications · while open');
+    head('warn', 'While open');
     say('A banner shows while this browser is open. Turn on push to be told with it closed too.');
   } else {
-    line('tag warn', 'notifications · off');
+    head('warn', 'Off');
     say('Not turned on for this device. Until they are, a new message only changes the unread count.');
   }
   if (state.push.error) say('Push could not be turned on: ' + state.push.error, 'bad');
@@ -4005,8 +4002,10 @@ function notifyControl() {
     } catch (e) { state.push.error = e.message || String(e); }
     render();
   };
-  box.append(b);
-  return box;
+  const acts = el('div', 'acts');
+  acts.append(b);
+  row.append(acts);
+  return row;
 }
 
 // ---------- push ----------
@@ -4059,7 +4058,7 @@ async function subscribePush() {
 // pushActions are the test and the way out. The test reports what each push
 // service answered, because a push that fails looks exactly like a quiet agent.
 function pushActions() {
-  const row = el('div', 'env-line');
+  const row = el('div', 'acts');
   const test = el('button', 'btn', 'Send a test');
   test.onclick = async () => {
     test.disabled = true;
@@ -4087,14 +4086,14 @@ function pushActions() {
 // pushDevices lists every registered device with what its push service last
 // answered. One this device does not recognise can be forgotten from here.
 function pushDevices() {
-  const box = el('div');
+  const box = el('div', 'devices');
   const draw = list => {
     box.innerHTML = '';
     if (state.push.test) box.append(el('div', 's', 'Test sent to ' + state.push.test.length + (state.push.test.length === 1 ? ' device.' : ' devices.')));
     for (const d of list) {
       const mine = d.id === state.push.device;
       const l = deviceLine(d, mine);
-      const row = el('div', 'env-line');
+      const row = el('div', 'device');
       const m = el('div');
       m.append(el('div', null, l.who), el('div', 's' + (l.bad ? ' bad' : ''), l.said));
       row.append(m);
@@ -4132,17 +4131,21 @@ async function readAccent() {
   } catch (e) {}
 }
 
-// accentControl offers the accents as a row of swatches, each drawn in its
-// own, the current one pressed. Choosing one keeps it in the agent first, so
-// what the page shows is what the next device will.
+// accentControl offers the accents as a row of round swatches, each drawn in
+// its own and named to a screen reader, the current one pressed and its name
+// beside them. Choosing one keeps it in the agent first, so what the page
+// shows is what the next device will.
 function accentControl(prefs) {
   const box = el('div', 'swatches');
   box.setAttribute('role', 'group');
   box.setAttribute('aria-label', 'Accent colour');
   const draw = current => {
     box.textContent = '';
+    box.append(el('span', 'v', ACCENT_NAMES[current] || current || ''));
     for (const name of prefs.accents) {
-      const b = el('button', 'swatch', ACCENT_NAMES[name] || name);
+      const b = el('button', 'swatch');
+      b.setAttribute('aria-label', ACCENT_NAMES[name] || name);
+      b.title = ACCENT_NAMES[name] || name;
       b.dataset.accent = name;
       b.setAttribute('aria-pressed', String(name === current));
       b.onclick = async () => {

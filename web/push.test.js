@@ -127,7 +127,7 @@ const posted = (calls, p) => calls.filter(c => c.method === 'POST' && c.path ===
 test('turning push on asks permission, subscribes under the agent key, and registers the device', async () => {
   const { ctx, calls, sw } = load();
   const box = ctx.notifyControl();
-  assert.match(textOf(box), /notifications · off/);
+  assert.match(textOf(box), /Notifications\s+Off\b/);
   button(box, 'Turn on push notifications').onclick();
   await settle();
   assert.strictEqual(ctx.Notification.permission, 'granted');
@@ -144,7 +144,7 @@ test('a subscribed device says it is pushed to, and its test reports each answer
   const { ctx, calls } = load({ permission: 'granted', has: subscription(KEY) });
   vm.runInContext("state.push.device = 'D1';", ctx);
   const box = ctx.notifyControl();
-  assert.match(textOf(box), /notifications · push/);
+  assert.match(textOf(box), /Notifications\s+Push\b/);
   assert.match(textOf(box), /even with the browser closed/);
   button(box, 'Send a test').onclick();
   await settle();
@@ -224,6 +224,6 @@ test('an iPhone outside the home-screen app is told to add it, and offered no bu
 test('a browser that cannot be pushed to keeps banners while it is open', () => {
   const { ctx } = load({ browser: 'banners', permission: 'granted' });
   const box = ctx.notifyControl();
-  assert.match(textOf(box), /notifications · while open/);
+  assert.match(textOf(box), /Notifications\s+While open\b/);
   assert.match(textOf(box), /cannot be pushed to/);
 });

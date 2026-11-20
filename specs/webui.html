@@ -85,8 +85,15 @@ because the rail is the way back. On a phone the drawer's button is on the conve
 every screen below the list offers the way back in its place, never both at once, since two ways out
 side by side are one too many.</p>
 
-<p>The rail links the panels used every day &mdash; Jobs, Plugins, Skills &mdash; and More, which leads to
-the rest. Personas are chosen when a conversation starts and written rarely, so they are behind More.</p>
+<p>The list of conversations is drawn once. On the list screen the pane holds it, so the rail beside
+it on a laptop, and the drawer over it on a phone, hold only the way to the other screens; beside any
+other screen the rail lists the conversations to switch to. Drawn in both places, the laptop showed
+the same titles twice side by side, and the phone's drawer, opened only from the list, repeated the
+list it covered.</p>
+
+<p>The rail links the conversation list, the panels used every day &mdash; Jobs, Plugins, Skills
+&mdash; and More, which leads to the rest, one under another, the one on show marked. Personas are
+chosen when a conversation starts and written rarely, so they are behind More.</p>
 
 <p>Every screen has an address of its own, and reaching a screen changes it. A skill or persona being
 read is a screen, and being written is another, so the browser's back button leaves the editor for the
@@ -119,13 +126,13 @@ middle.</p>
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
-<li>The conversation list is a rail beside the pane where there is room for one, and a drawer behind a single button where there is not &mdash; the same list either way, never two.</li>
+<li>The conversation list is drawn once on any screen: in the pane on the list screen, where the rail or drawer beside it holds only the way to the other screens, and in the rail beside any other screen.</li>
 <li>Opening the drawer, dismissing it, and going anywhere from it each leave exactly one thing on screen.</li>
 <li>With the rail pinned open the pane offers no back button and the drawer no handle.</li>
-<li>The rail names every conversation, newest activity first, marks the one being read, and carries its unread count. A conversation is kept or deleted; nothing sets one apart as archived.</li>
+<li>Beside any screen but the list, the rail names every conversation, newest activity first, marks the one being read, and carries its unread count. A conversation is kept or deleted; nothing sets one apart as archived.</li>
 <li>The rail states the credit remaining and whether tools are sandboxed, without opening a screen to ask.</li>
 <li>The page's first request on coming back is answered without waiting on OpenRouter; the credit shown is the last figure the agent heard, and the rail updates when a fresher one arrives.</li>
-<li>The rail links Jobs, Plugins, Skills, and More; personas are reached from More.</li>
+<li>The rail links the conversation list, Jobs, Plugins, Skills, and More, and marks the one on show; personas and metrics are reached from More, which links nothing the rail does.</li>
 <li>Opening a skill or persona, or starting a new one, changes the address, and the address alone opens it again.</li>
 <li>An address naming a conversation that no longer exists opens a screen saying so, under a header of its own that offers nothing acting on another conversation; a screen whose answers are refused for any other reason says that instead of staying blank.</li>
 <li>Saving an edit to a skill or persona returns to it, and saving a new one or deleting one returns to the list, in each case without adding the screen returned to to the history a second time.</li>
@@ -497,8 +504,8 @@ delivered. Opening it goes to that session, in a window already open if there is
 encrypted to the device and signed with the agent's key, so the push service relays it without
 reading it.</p>
 
-<p>A device subscribes from the settings screen. Permission is asked for there, once, by a tap, and
-the screen states what this device will actually do: pushed to, banners only while open, blocked
+<p>A device subscribes from the Notifications row on the More panel. Permission is asked for there, once, by a tap, and
+the row states in a word what this device will actually do: pushed to, banners only while open, blocked
 for the site, or an origin without the API at all. An iPhone or iPad offers push only from the home
 screen, and outside it the screen says that rather than offering a button that cannot work. The
 screen lists every registered device, with what its push service last answered, and offers a test
@@ -536,7 +543,7 @@ its own instead.</p>
 <li>The session list shows the unread assistant message count for each session, and clears it when the session is read.</li>
 <li>A message a job's wake produced counts as unread exactly as a reply to a typed message does.</li>
 <li>A read clears only what it names: a message written after the point read through stays unread, and a late read for an earlier point does not make anything unread again.</li>
-<li>Opening a conversation clears its count on the rail without waiting for the socket, and the rail refreshes whenever the socket connects.</li>
+<li>Opening a conversation clears its count on the rail without waiting for the socket, and the conversation list, in the rail or in the pane, is read again whenever the socket connects.</li>
 <li>A page catching up fetches only the entries written after the last one it holds and adds only those; with nothing new, nothing on screen changes.</li>
 <li>A read that clears no count sends no page, on this device or another, to read the session list again.</li>
 <li>A message arriving in the conversation on screen is read at once; while the page is hidden it stays unread until the page is shown.</li>
@@ -579,6 +586,13 @@ box; and under it, each message the page sent to the conversation.</p>
 
 <p>Jobs, tools, skills, and personas each have a management panel. More also leads to <a href="#metrics">Metrics</a>.</p>
 
+<p>More is a few groups of one-line rows, as a conversation's details are: the screens the rail has no
+room for, personas and metrics; this device's notifications and accent; and which build is running.
+It links nothing the rail does, and does not repeat what the rail's foot says &mdash; the credit and
+whether tools are sandboxed &mdash; since that is beside every screen already, and the sandbox is on
+the Plugins panel in full. Its states are words on their rows, not pills: notifications are on,
+off, or blocked; the accent in use is named beside its swatches.</p>
+
 <p>The Plugins panel answers what a tool is to the model and what it is to the agent: how a call
 works, the sandbox every tool program runs in, and for each tool, what the model is sent and what the
 agent uses to run it. It is drawn in <a href="mock-tools.html">the Plugins mock</a>.</p>
@@ -618,6 +632,7 @@ a tab to write or preview, with files added, renamed, and removed there. It is d
 <li>The jobs panel offers to delete the finished jobs it is showing, only while it is showing some, saying how many and asking first; a scheduled job is never among them.</li>
 <li>A job is shown as its own settings, not as a category the interface worked out for it.</li>
 <li>Panels contributed by tools are listed with built-in panels and are visually consistent with them.</li>
+<li>More is grouped one-line rows: the screens the rail does not link, this device's notifications and accent, and the version; it repeats nothing the rail shows.</li>
 <li>The Plugins panel lists each bundle with its version, whether it ships with the agent or was installed, what it reads beyond the sandbox, its timeout, and the tools it brings; what is built in, and a tool with a program of its own, are listed apart from any bundle.</li>
 <li>A bundle that did not load says why on its own card, and is not listed again among the tools that failed. One that needs a value says which, and that its tools are not offered until it is set.</li>
 <li>What a bundle asks for is typed and saved on its card: a sensitive value is typed hidden, the panel says only whether each is set, an empty box leaves a value as it is, and a set value can be cleared.</li>
@@ -717,9 +732,10 @@ whoever writes it &mdash; how the file is organised, and that a change to behavi
 the same commit &mdash; and that is a rule for working in the repository, not something to read on a
 phone after an upgrade. The rule lives in <code>CLAUDE.md</code>; the file keeps only what it is for.</p>
 
-<p>Both sit at the foot of the More panel, under the device, accent and isolation sections. Nothing about a
-version is urgent &mdash; it is read once after an upgrade and never again &mdash; so the changelog
-stays folded until it is asked for, and neither is ever shown over a conversation.</p>
+<p>Both sit at the foot of the More panel, under this device's settings. Nothing about a version is
+urgent &mdash; it is read once after an upgrade and never again &mdash; so the changelog is a row
+naming the date of its newest entry, and opens in a sheet only when it is asked for; neither is ever
+shown over a conversation.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -727,7 +743,7 @@ stays folded until it is asked for, and neither is ever shown over a conversatio
 <li>The interface names the version it is running and when that build was made, from the More panel, without interrupting anything.</li>
 <li>The version is the commit the running image was built from; a build with no stamp says so rather than showing a number it invented.</li>
 <li>The changelog ships with the app, is read from disk rather than derived from a repository, and is rendered as markdown newest first.</li>
-<li>The changelog is folded away until it is opened.</li>
+<li>The changelog is out of sight until it is asked for, and then opens in a sheet over the More panel.</li>
 <li>The changelog reaches the screen from its first dated section on, so a note addressed to whoever writes the file is never shown to whoever reads it.</li>
 <li>A missing changelog file leaves the version readable and says the changelog is unavailable.</li>
 </ul>
