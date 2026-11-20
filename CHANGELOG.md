@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-20
+
+- **Files leaves out the tools' empty folders.** `.home` and `.tmp`, the
+  folders a conversation's tools are given, are no longer listed while
+  they are empty. When they hold something they come last, each saying
+  what it is. A file's delete is under its row, as in the conversation
+  list: swipe left on a phone, hover on a laptop.
+- **The sandbox is one line on Plugins.** It says what enforces it and
+  opens to the paths and ports as plain text instead of a page of chips.
+  When something is not enforced it opens by itself.
+
 ## 2026-11-19
 
 - **New, Fork and Details read as short groups.** Each is a few groups of

@@ -387,6 +387,12 @@ every tool and skill the conversation runs with, and nothing opens.</p>
 unpacked archive &mdash; with directories first and each one folding in a tap. A tree of more than a
 hundred entries opens folded, so one large directory does not bury everything beside it.</p>
 
+<p>Two folders are the agent's rather than the conversation's: <code>.home</code> and <code>.tmp</code>,
+the home and scratch folders its tools are given. While they are empty they are left out, since there
+is nothing in them to see; once anything is in them they are listed after everything else, each saying
+what it is. A file's delete sits with its row as a conversation's does in the list: a swipe to the left
+uncovers it on a touch screen, and a pointer finds it on hover or focus.</p>
+
 <p>A file is also attached from the composer. It uploads the moment it is picked and waits above the
 message as a chip that shows its progress, until the message is sent. An upload writes nothing into
 the conversation, so the message names the files it carries, and that line is how the agent learns
@@ -412,7 +418,7 @@ agent nor the network.</p>
 <li>A file can be uploaded from a phone, including from the camera and the photo library.</li>
 <li>An uploaded file is written to the session's working directory and appears in its file list.</li>
 <li>An upload never replaces a file already there: a name already taken gets a number &mdash; <code>image.jpg</code>, then <code>image-2.jpg</code> &mdash; and the message names each file where it landed. Two photos from a phone's camera, both called <code>image.jpg</code>, are two files.</li>
-<li>The file list shows every file and directory the session holds as a tree, empty directories included. A file shows its size and age and can be downloaded or deleted; a directory shows what it holds and folds and unfolds when tapped.</li>
+<li>The file list shows every file and directory the session holds as a tree, empty directories included, except the tools' home and scratch folders while they are empty; when they hold something they are listed last, each saying what it is. A file shows its size and age and can be downloaded or deleted, its delete uncovered by a swipe to the left on a touch screen and shown on hover with a pointer; a directory shows what it holds and folds and unfolds when tapped.</li>
 <li>A tree of more than a hundred entries opens with its directories folded; a smaller one opens in full.</li>
 <li>A file attached from the composer shows as a chip with its upload progress, and stays until the message is sent or it is taken off.</li>
 <li>A message sent with attachments names each one, as a path in the working directory; a message may be only its attachments.</li>
@@ -617,7 +623,7 @@ a tab to write or preview, with files added, renamed, and removed there. It is d
 <li>What a bundle asks for is typed and saved on its card: a sensitive value is typed hidden, the panel says only whether each is set, an empty box leaves a value as it is, and a set value can be cleared.</li>
 <li>Installing a bundle, from a file or an <code>https</code> address, first shows what it is, the tools it brings, what it asks for, what it reads and its timeout, and installs nothing; Install then sends that same archive with the sum the inspection answered. A bundle that could not be installed says why and offers no Install.</li>
 <li>A bundle the operator installed can be removed, after asking; one that ships with the agent offers no Remove.</li>
-<li>The Plugins panel shows the sandbox once, from the policy it applies to every tool program: the paths a tool may read and write, the device files, and the ports it may connect to, grouped by what they are for, and that it can never reach the operator's port. It says when either half is not enforced.</li>
+<li>The Plugins panel shows the sandbox once, from the policy it applies to every tool program: the paths a tool may read and write, the device files, and the ports it may connect to, grouped by what they are for, and that it can never reach the operator's port. It says when either half is not enforced. It is one folded line saying what enforces it, which opens to the paths and ports as rows of plain text; it opens unfolded when either half is not enforced.</li>
 <li>Each tool shows what the model is sent apart from what only the agent reads (<a href="adrs.html#adr-067">ADR-067</a>). The first is its description and each parameter, with its type, whether it is required, and its own description. The second is its timeout, its table prefix, the names of the variables it is given, and the paths it may read beyond the sandbox.</li>
 <li>A parameter without a description is flagged, on the parameter and on the tool's summary line, because the model sees only its type.</li>
 <li>Each tool shows its manifest, with the <code>agent</code> block set apart, and the entry the model is sent, exactly as sent. A builtin says it runs inside the agent, with no sandbox and no manifest.</li>

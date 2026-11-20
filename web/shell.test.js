@@ -1873,6 +1873,41 @@ test('a large tree opens folded', async () => {
   assert.deepStrictEqual(rowsOf(v), ['repo/', 'notes.txt']);
 });
 
+// The home and scratch folders are the tools', not the conversation's: they
+// say nothing while empty, and come last once they hold something.
+test('the tools\' own folders are left out while empty and listed last when not', async () => {
+  const empty = filesScreen([DIR('.home'), DIR('.tmp'), FILE('notes.txt'), DIR('src'), DIR('src/.tmp')]);
+  const v = node('div');
+  await empty.viewFiles(v);
+  assert.deepStrictEqual(rowsOf(v), ['src/', '.tmp/', 'notes.txt'], 'an empty tools\' folder is listed, or a nested .tmp is not');
+
+  const used = filesScreen([DIR('.home'), DIR('.tmp'), FILE('.tmp/x.txt'), FILE('notes.txt'), DIR('src')]);
+  const u = node('div');
+  await used.viewFiles(u);
+  assert.deepStrictEqual(rowsOf(u), ['src/', 'notes.txt', '.tmp/', 'x.txt']);
+  assert.match(textOf(findAll(u, 'row-item')[2]), /scratch/, 'the scratch folder does not say what it is');
+
+  const only = filesScreen([DIR('.home'), DIR('.tmp')]);
+  const o = node('div');
+  await only.viewFiles(o);
+  assert.ok(find(o, 'empty'), 'a directory holding only the tools\' empty folders does not say it has no files');
+});
+
+// A file's delete sits under its row, as a conversation's does in the list.
+test('a file is deleted from under its row, after asking', async () => {
+  const ctx = filesScreen([FILE('notes.txt')]);
+  const asked = [];
+  ctx.confirm = q => { asked.push(q); return true; };
+  const v = node('div');
+  await ctx.viewFiles(v);
+  assert.ok(!findAll(v, 'tag').some(t => t.textContent === 'delete'), 'a file row still carries a delete pill');
+  const wrap = find(v, 'row-wrap');
+  assert.ok(wrap && find(wrap, 'row-item'), 'the file row has nothing under it');
+  await find(wrap, 'row-del').onclick({ stopPropagation() {} });
+  assert.match(asked[0] || '', /notes\.txt/, 'the delete did not ask, naming the file');
+  assert.ok(ctx._calls.some(c => c.method === 'DELETE' && /notes\.txt/.test(c.path)), 'the file was not deleted');
+});
+
 // A skill the agent drafted is a folder holding SKILL.md, and it is installed
 // from where it is: the folder offers it, and installing over one of the
 // operator's skills asks first, naming the skill it would replace (ADR-071).
@@ -1986,11 +2021,23 @@ test('a boundary that is not enforced says so', async () => {
     network_enforced: false, network_reason: 'Landlock is a Linux facility' });
   const { v } = await toolsScreen({ sandbox: off });
   assert.match(textOf(find(v, 'sandbox')), /not enforced/i, 'an unenforced boundary is presented as though it holds');
+  assert.strictEqual(find(v, 'sandbox').open, true, 'an unenforced boundary is folded away');
   const net = Object.assign({}, SANDBOX, { network_enforced: false, network_reason: 'this kernel predates Landlock ABI 4' });
   const second = await toolsScreen({ sandbox: net });
   const row = findAll(second.v, 'kv').find(r => textOf(r).includes('Network'));
   assert.match(textOf(row), /not enforced/i, 'an unenforced network is presented as though it holds');
   assert.match(textOf(row), /ABI 4/);
+  assert.strictEqual(find(second.v, 'sandbox').open, true, 'an unenforced network is folded away');
+  assert.match(textOf(find(find(second.v, 'sandbox'), 'tpill')), /network not enforced/, 'the folded line says it holds');
+});
+
+// The sandbox is said once, as one line that opens; enforced, it opens folded.
+test('an enforced sandbox is one folded line saying what enforces it', async () => {
+  const { v } = await toolsScreen();
+  const box = find(v, 'sandbox');
+  assert.strictEqual(box.tagName, 'details');
+  assert.strictEqual(box.open, false, 'an enforced sandbox opens unfolded');
+  assert.match(textOf(find(box, 'tpill')), /landlock · enforced/);
 });
 
 // The question the screen has to answer: which part of a tool does the model

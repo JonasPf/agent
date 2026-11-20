@@ -2307,7 +2307,8 @@ async function viewFiles(v) {
   const total = (await api('/sessions/' + id)).session.disk_bytes;
   if (stale(gen)) return;
   v.append(el('div', 'status', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
-  if (!entries.length) { v.append(el('div', 'empty', 'No files yet.')); return; }
+  const root = fileTree(entries);
+  if (!root.children.length) { v.append(el('div', 'empty', 'No files yet.')); return; }
 
   // Which directories are folded outlives a redraw — an upload, a delete — so
   // it is kept per session. A large tree starts folded and a small one open;
@@ -2329,8 +2330,9 @@ async function viewFiles(v) {
         if (n.dir) {
           const folded = isFolded(n.path);
           row.append(el('span', 'twisty', folded ? '▸' : '▾'));
-          m.append(el('div', 'n', n.name + '/'), el('div', 's', !n.children.length ? 'empty'
-            : `${n.children.length} item${n.children.length === 1 ? '' : 's'} · ${fmtBytes(n.bytes)}`));
+          const holds = !n.children.length ? 'empty'
+            : `${n.children.length} item${n.children.length === 1 ? '' : 's'} · ${fmtBytes(n.bytes)}`;
+          m.append(el('div', 'n', n.name + '/'), el('div', 's', TOOL_FOLDERS[n.path] ? TOOL_FOLDERS[n.path] + ' · ' + holds : holds));
           row.append(m);
           // A folder holding SKILL.md is a skill the agent drafted, and is
           // installed from where it is.
@@ -2349,19 +2351,23 @@ async function viewFiles(v) {
         }
         m.append(el('div', 'n', n.name), el('div', 's', `${fmtBytes(n.bytes)} · ${ago(n.modified_at)}`));
         row.append(m);
-        const rm = el('span', 'tag', 'delete');
+        // A file's delete sits under its row, as a conversation's does in
+        // the list: a swipe uncovers it, a pointer finds it on hover.
+        const wrap = el('div', 'row-wrap');
+        const rm = el('button', 'row-del', 'Delete');
+        rm.type = 'button';
         rm.onclick = async e => {
-          e.stopPropagation();
+          if (e && e.stopPropagation) e.stopPropagation();
           if (!confirm('Delete ' + n.path + '?')) return;
           await del(fileURL(n.path));
           render();
         };
-        row.append(rm);
-        row.onclick = () => window.open(fileURL(n.path), '_blank');
-        tree.append(row);
+        wrap.append(rm, row);
+        swipeable(wrap, row, () => window.open(fileURL(n.path), '_blank'));
+        tree.append(wrap);
       }
     };
-    walk(fileTree(entries), 0);
+    walk(root, 0);
   };
   draw();
   v.append(tree);
@@ -2388,6 +2394,11 @@ async function installSkill(sessionId, path) {
 // A tree with more entries than this opens with its directories folded, so a
 // cloned repository does not bury everything beside it.
 const OPEN_TREE_MAX = 100;
+
+// TOOL_FOLDERS are the folders in a working directory that are the agent's
+// rather than the conversation's: the home and the scratch space its tools are
+// given (sandbox.go), each said for what it is.
+const TOOL_FOLDERS = { '.home': 'the tools’ home folder', '.tmp': 'the tools’ scratch space' };
 
 // fileTree turns the flat listing into nested directories. Within each one,
 // directories come first by name, then files newest first, as the flat list
@@ -2416,6 +2427,10 @@ function fileTree(entries) {
     return d.bytes;
   };
   settle(root);
+  // The tools' own folders say nothing while they are empty, and come after
+  // the conversation's own files once they hold something.
+  const own = root.children.filter(c => c.dir && TOOL_FOLDERS[c.path]);
+  root.children = root.children.filter(c => !own.includes(c)).concat(own.filter(c => c.children.length));
   return root;
 }
 
@@ -3230,15 +3245,20 @@ function toolsHow() {
   return d;
 }
 
-// toolSandbox is the boundary every tool program runs in, said once. Where it is
-// not enforced it says so first, and then what it would be where it is.
+// toolSandbox is the boundary every tool program runs in, said once: one
+// folded line saying what enforces it, which opens to what a tool may read,
+// write and connect to, as rows of plain text. Where either half is not
+// enforced it opens unfolded and says so first, and then what it would be
+// where it is.
 function toolSandbox(s) {
-  const box = el('section', 'sandbox');
-  const h = el('h2', 'tsec', 'The sandbox');
-  h.append(help(TOOL_TIPS.sandbox), el('span', 'tpill ' + (s.enforced ? 'ok' : 'bad'),
-    s.enforced ? `${s.mechanism} · enforced` : 'not enforced'));
-  const card = el('div', 'tcard tbox');
-  box.append(h, card);
+  const box = el('details', 'tcard how sandbox');
+  const whole = s.enforced && s.network_enforced;
+  box.open = !whole;
+  const line = el('summary');
+  line.append(el('span', 'chev', '›'), el('span', 't', 'The sandbox'), el('span', 'tpill ' + (whole ? 'ok' : 'bad'),
+    !s.enforced ? 'not enforced' : whole ? `${s.mechanism} · enforced` : `${s.mechanism} · network not enforced`));
+  const card = el('div', 'tbox');
+  box.append(line, card);
   card.append(s.enforced ? el('div', 'lede', 'Every tool program runs inside this. A tool’s card says what it adds.')
     : el('div', 'twarn', `Not enforced here (${s.reason || 'no sandbox'}): a tool can read and write anything the agent can. Where it is enforced, this applies:`));
   const row = (label, tip, cls) => {
@@ -3250,26 +3270,27 @@ function toolSandbox(s) {
     card.append(r);
     return v;
   };
-  const path = (p, tip) => {
+  // A list of paths is text, its commas included, so it reads and copies as
+  // one; a path is set in code and a description in the screen's own type.
+  const paths = (v, list, tip) => list.forEach((p, i) => {
     const c = el('span', p.startsWith('/') ? 'path' : 'path plain', p);
     if (tip) c.append(help(tip));
-    return c;
-  };
-  row('Read & write', TOOL_TIPS.readWrite, 'paths').append(...(s.read_write || []).map(p =>
-    path(p, TOOL_TIPS.folder)));
-  row('Read only', TOOL_TIPS.read, 'paths').append(...(s.read || []).map(p => path(p)));
-  row('Devices', TOOL_TIPS.devices, 'paths').append(...(s.files || []).map(p => path(p)));
+    v.append(i ? document.createTextNode(', ') : '', c);
+  });
+  paths(row('Read & write', TOOL_TIPS.readWrite, 'paths'), s.read_write || [], TOOL_TIPS.folder);
+  paths(row('Read only', TOOL_TIPS.read, 'paths'), s.read || []);
+  paths(row('Devices', TOOL_TIPS.devices, 'paths'), s.files || []);
   const net = row('Network', TOOL_TIPS.network, 'ports');
   if (s.enforced && !s.network_enforced) {
     net.append(el('div', 'twarn', `Not enforced here (${s.network_reason || 'no network rules'}): a tool can connect to any port, yours included. Where it is enforced, this applies:`));
   }
   const port = (label, n, cls, tip) => {
-    const c = el('span', 'port ' + (cls || ''));
+    const c = el('div', 'port ' + (cls || ''));
     c.append(el('span', 'l', label), el('span', 'n', String(n)));
     if (tip) c.append(help(tip));
     net.append(c);
   };
-  for (const [label, ports] of portGroups(s.ports || [])) port(label, ports.join(' '));
+  for (const [label, ports] of portGroups(s.ports || [])) port(label, ports.join(', '));
   if (s.operator_port) port('never your API', s.operator_port, 'never', TOOL_TIPS.never);
   card.append(el('div', 'refused', 'Anything not listed is refused by the kernel: other conversations’ folders, the transcripts, the skills, and the home folder.'));
   return box;
