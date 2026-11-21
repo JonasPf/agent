@@ -2,6 +2,14 @@
 
 ## 2026-11-20
 
+- **Screens say why they are empty.** A screen that is still loading
+  shows a thin line moving under its header, after a moment's wait. One
+  that could not load says why: the agent cannot be reached, it is
+  restarting, the conversation was deleted, or what the agent answered.
+  Each offers Try again or the way back, and a screen that lost the
+  agent loads again by itself once it is back. Empty lists say what would
+  fill them; the conversation list offers New conversation and Import,
+  and Search says how it matches before you type.
 - **The conversation list shows once.** On a laptop the sidebar no longer
   repeats the list while the list is on screen; it lists your
   conversations beside every other screen. The sidebar (the ☰ menu on a

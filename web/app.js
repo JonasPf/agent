@@ -3,13 +3,22 @@
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 const api = async (path, opts) => {
-  const r = await fetch(path, opts);
+  let r;
+  // A request that never reached the agent is said in the interface's words,
+  // not the browser's ("Failed to fetch", "Load failed"), and marked so a
+  // screen can say so (webui.html, "States").
+  try { r = await fetch(path, opts); }
+  catch (e) { throw unanswered('the agent cannot be reached', 'offline'); }
   if (r.status === 204) return null;
   const body = await r.text();
   let json = null; try { json = body ? JSON.parse(body) : null; } catch (e) {}
+  // A proxy in front of an agent that is down or restarting answers for it,
+  // in a page of its own: that is the agent not answering, not a message.
+  if (!r.ok && !json && r.status >= 502 && r.status <= 504) throw unanswered('the agent is not answering', 'down');
   if (!r.ok) throw new Error((json && json.error) || body || r.status);
   return json;
 };
+const unanswered = (msg, how) => Object.assign(new Error(msg), { unanswered: how });
 const post = (p, b) => api(p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b || {}) });
 const put = (p, b) => api(p, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
 const patch = (p, b) => api(p, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b) });
@@ -282,8 +291,9 @@ function checkIn() {
 // a gap where the socket dropped an entry — reads the whole.
 async function catchUp() {
   renderSidebar();
-  // On the list screen the list is the pane's, not the rail's.
-  if ((state.view || 'sessions') === 'sessions') { render(); return; }
+  // A screen that could not reach the agent can now; and on the list screen
+  // the list is the pane's, not the rail's.
+  if (state.failed || (state.view || 'sessions') === 'sessions') { render(); return; }
   if (state.view !== 'session' || !state.session) return;
   const id = state.session.id;
   const held = state.entries || [];
@@ -537,27 +547,91 @@ function render() {
   const gen = ++drawing;
   $('foot').innerHTML = '';
   closeMenu();
+  state.failed = false;
   const v = $('view');
   v.className = 'wide' + (ROOMY.includes(state.view || 'sessions') ? ' roomy' : '');
   v.innerHTML = '';
+  busy(true);
   // A screen whose answers were refused says so in its own place, rather
   // than leaving the pane empty under the header of the screen before it.
-  return Promise.resolve(draw(v)).catch(err => { if (!stale(gen)) unreachable(v, err); });
+  return Promise.resolve(draw(v))
+    .catch(err => { if (!stale(gen)) unreachable(v, err); })
+    .finally(() => { if (!stale(gen)) busy(false); });
+}
+
+// busy marks the screen as waiting on the agent (webui.html, "States"): for a
+// screen reader, and for the eye by a line under the header, which the
+// stylesheet shows only once the wait is long enough to notice. Only the
+// newest draw clears it.
+function busy(on) {
+  $('view').setAttribute('aria-busy', String(on));
+  $('busy').hidden = !on;
+}
+
+// blank is what a screen shows in place of what it would hold (webui.html,
+// "States"): what would be here and how it gets here, in a heading and a line,
+// and the one or two things to do about it, the first of them the one to do.
+function blank(title, body, actions) {
+  const b = el('div', 'blank');
+  b.append(el('h2', null, title));
+  if (body) b.append(el('p', null, body));
+  if (actions && actions.length) {
+    const acts = el('div', 'acts');
+    actions.forEach((a, i) => {
+      const btn = el('button', 'btn' + (i ? '' : ' primary'), a.label);
+      btn.type = 'button';
+      btn.onclick = a.fn;
+      acts.append(btn);
+    });
+    b.append(acts);
+  }
+  return b;
+}
+
+// failure says which way a request went unanswered — the agent out of reach,
+// something in front of it answering for it, or the agent refusing — and
+// offers to try again. What the agent said is shown; what a browser or a
+// proxy said is not, being no help.
+function failure(err, again, refused) {
+  const act = [{ label: 'Try again', fn: again }];
+  const how = err && err.unanswered;
+  if (how === 'offline') return blank('The agent cannot be reached',
+    'This device has no connection to it. The screen loads by itself once it has one.', act);
+  if (how === 'down') return blank('The agent is not answering',
+    'Something in front of it answered instead, as happens while it restarts. The screen loads by itself once it answers.', act);
+  return blank(refused || 'This screen did not load', 'The agent answered: ' + String((err && err.message) || err || ''), act);
 }
 
 // unreachable is what a screen shows when what it was asked to draw cannot be
 // read. A link outlives what it names, so the commonest case — a conversation
-// deleted since — is said plainly.
+// deleted since — is said plainly, with the way back to the list.
 function unreachable(v, err) {
   const msg = String((err && err.message) || err || '');
   if (state.view === 'session') state.session = null;
   $('foot').innerHTML = '';
   v.innerHTML = '';
-  const gone = /no such session/i.test(msg);
-  setHeader(gone ? 'Not found' : 'Not loaded', true);
-  v.append(el('div', 'empty', gone
-    ? 'This conversation no longer exists. It may have been deleted, here or on another device.'
-    : 'This screen could not be loaded: ' + msg));
+  state.failed = true;
+  if (/no such session/i.test(msg)) {
+    setHeader('Not found', true);
+    v.append(blank('This conversation no longer exists', 'It may have been deleted, here or on another device.',
+      [{ label: 'Back to conversations', fn: () => location.hash = '#sessions' }]));
+    return;
+  }
+  setHeader('Not loaded', true);
+  v.append(failure(err, () => render()));
+  if (err && err.unanswered) retryWhenBack(drawing);
+}
+
+// retryWhenBack draws a screen that could not reach the agent again once it
+// can. The socket opening again does that (catchUp); a socket that never
+// noticed the agent was gone does not, so the page also checks in every few
+// seconds while the screen says so.
+function retryWhenBack(gen) {
+  setTimeout(async () => {
+    if (stale(gen)) return;
+    if (await checkIn() !== 'ok') return retryWhenBack(gen);
+    if (!stale(gen)) render();
+  }, 5000);
 }
 
 function draw(v) {
@@ -617,14 +691,22 @@ async function viewSessions(v) {
   const order = el('button', 'btn', 'Sort: ' + (state.sort === 'size' ? 'size' : 'recent'));
   order.title = 'order by last activity or by disk used';
   order.onclick = () => { state.sort = state.sort === 'size' ? 'recent' : 'size'; render(); };
-  bar.append(nw, search, imp, order, impFile);
-  v.append(bar);
+  bar.append(nw, search, imp, order);
 
   const list = await api('/sessions');
   if (stale(gen)) return;
   state.sessions = list;
+  // With nothing to sort or search, the list offers only the ways to have
+  // something in it.
+  if (!list.length) {
+    v.append(blank('No conversations yet', 'A conversation keeps what you tell the agent, and the jobs it runs for you.', [
+      { label: 'New conversation', fn: () => location.hash = '#new' },
+      { label: 'Import', fn: () => impFile.click() }
+    ]), impFile);
+    return;
+  }
+  v.append(bar, impFile);
   sortSessions(list, state.sort).forEach(s => v.append(sessionRow(s)));
-  if (!list.length) v.append(el('div', 'empty', 'No conversations yet. Start one to give the agent something to hold.'));
 }
 
 // A conversation in the list (webui.html, "Session management"): its title,
@@ -2320,7 +2402,10 @@ async function viewFiles(v) {
   if (stale(gen)) return;
   v.append(el('div', 'status', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
   const root = fileTree(entries);
-  if (!root.children.length) { v.append(el('div', 'empty', 'No files yet.')); return; }
+  if (!root.children.length) {
+    v.append(blank('No files yet', 'What you upload here or attach to a message, and what the agent writes, is kept in this conversation’s folder and listed here.'));
+    return;
+  }
 
   // Which directories are folded outlives a redraw — an upload, a delete — so
   // it is kept per session. A large tree starts folded and a small one open;
@@ -2596,14 +2681,7 @@ async function viewApp(v) {
   const gen = drawing;
   const sid = state.arg, seq = state.arg2;
   setHeader('Page', true);
-  let app;
-  try {
-    app = await api('/sessions/' + sid + '/apps/' + seq);
-  } catch (e) {
-    if (stale(gen)) return;
-    v.append(el('div', 'empty', 'This page could not be opened: ' + e.message));
-    return;
-  }
+  const app = await api('/sessions/' + sid + '/apps/' + seq);
   if (stale(gen)) return;
   setHeader(app.tool.name, true);
   const note = el('div', 'app-note');
@@ -2689,7 +2767,8 @@ async function viewJobs(v) {
   const jobs = await api('/jobs' + (state.arg ? '?session_id=' + state.arg : ''));
   if (stale(gen)) return;
   if (!jobs || !jobs.length) {
-    v.append(el('div', 'empty', 'No jobs scheduled. The agent schedules its own from inside a conversation.'));
+    v.append(blank('No jobs scheduled', 'Ask the agent ' + (state.arg ? 'here' : 'in a conversation') +
+      ' to do something later, or again and again, and the job it schedules is listed here.'));
     return;
   }
   // A finished job is kept for its log, and a session that reminds every ten
@@ -3005,7 +3084,7 @@ async function viewTools(v) {
   if (data.sandbox) page.append(toolSandbox(data.sandbox));
   const mine = p => tools.filter(t => t.bundle === `${p.name} ${p.version}`);
   page.append(el('h2', 'tsec', 'Bundles'));
-  if (!plugins.length) page.append(el('div', 'empty', 'No bundles. A bundle is a set of tools, installed from a file or an address.'));
+  if (!plugins.length) page.append(el('div', 'empty', 'None installed. A bundle is a set of tools, installed from a file or an address.'));
   for (const p of plugins) page.append(pluginCard(p, mine(p)));
   const rest = tools.filter(t => !t.bundle);
   for (const [title, list] of [['Built in', rest.filter(t => t.builtin)], ['Tools on disk', rest.filter(t => !t.builtin)]]) {
@@ -3462,7 +3541,9 @@ async function viewAuthored(v, kind) {
     row.append(m); grid.append(row);
   }
   const items = data[spec.list] || [];
-  if (!items.length && !(data.failures || []).length) v.append(el('div', 'empty', 'Nothing on disk.'));
+  if (!items.length && !(data.failures || []).length) {
+    v.append(blank('No ' + kind + ' yet', null, [{ label: 'New ' + spec.one, fn: () => location.hash = '#' + kind + '/+new' }]));
+  }
   for (const s of items) {
     const row = el('button', 'row-item');
     const m = el('div', 'm');
@@ -3491,8 +3572,10 @@ async function loadAuthored(kind, name, gen) {
   try { doc = await api(spec.path + '/' + encodeURIComponent(name)); }
   catch (e) {
     if (stale(gen)) return null;
+    if (e.unanswered) throw e;
     setHeader(name, true);
-    $('view').append(el('div', 'empty', 'There is no ' + spec.one + ' called ' + name + '.'));
+    $('view').append(blank('There is no ' + spec.one + ' called ' + name, 'It may have been renamed or deleted.',
+      [{ label: 'Back to ' + kind, fn: () => location.hash = '#' + kind }]));
     return null;
   }
   return stale(gen) ? null : doc;
@@ -3856,12 +3939,16 @@ async function viewSearch(v) {
     const q = inp.value.trim();
     const mine = ++asked;
     out.innerHTML = '';
-    if (!q) return;
+    if (!q) { out.append(hint()); return; }
     let hits;
     try { hits = await api('/search?q=' + encodeURIComponent(q) + (scope ? '&session=' + encodeURIComponent(scope) : '')) || []; }
-    catch (e) { if (mine === asked) out.append(el('div', 'empty', String(e.message))); return; }
+    catch (e) { if (mine === asked) out.append(failure(e, run, 'The search did not run')); return; }
     if (mine !== asked) return;
-    if (!hits.length) { out.append(el('div', 'empty', 'No matches.')); return; }
+    if (!hits.length) {
+      out.append(blank('No matches for “' + q + '”', 'Every word has to start a word in the same entry. Try fewer words' +
+        (scope ? ', or search every conversation.' : '.')));
+      return;
+    }
     const grid = el('div', 'cards');
     for (const h of hits) grid.append(hitRow(h, !scope));
     out.append(grid);
@@ -3881,6 +3968,10 @@ async function viewSearch(v) {
   }
   const placeholder = () => scope ? 'Search this conversation…' : 'Search every transcript…';
   inp.placeholder = placeholder();
+  // Before anything is typed the screen says what a search looks for.
+  const hint = () => blank(scope ? 'Search this conversation' : 'Search every conversation',
+    'Each word you type finds the words that start with it, wherever they all stand in one entry.');
+  out.append(hint());
   // Typing searches as it goes; Enter searches at once.
   let debounce = null;
   inp.oninput = () => { clearTimeout(debounce); debounce = setTimeout(run, 250); };
@@ -4166,6 +4257,8 @@ function accentControl(prefs) {
 
 async function boot() {
   document.addEventListener('visibilitychange', onVisible);
+  // The device's connection coming back is a page coming back.
+  window.addEventListener('online', onVisible);
   connect();
   route();
   readStatus();
