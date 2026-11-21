@@ -171,6 +171,11 @@ it where there is one: the conversation list starting a conversation or importin
 personas writing one. Search says what it looks for before anything is typed, and what to try when
 nothing matches. A section with nothing in it on a page that holds more is one quiet line.</p>
 
+<p>The page's line to the agent is its socket, over which everything live arrives. A phone woken from a
+pocket takes a moment to open it again, which is not worth a word; down for longer than four seconds, a
+line across the top of every screen says the page is not connected and is reconnecting, and goes when
+the socket opens; whatever moved meanwhile is read afresh then. A device that says it went offline is told so at once, in those words.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -179,6 +184,7 @@ nothing matches. A section with nothing in it on a page that holds more is one q
 <li>A screen that could not reach the agent, or that a proxy answered for, says so in words of the interface's own, offers to try again, and loads by itself once the agent answers.</li>
 <li>A screen whose answers are refused for any other reason says what the agent answered and offers to try again, instead of staying blank.</li>
 <li>An empty list of conversations, jobs, files, skills, or personas says what would fill it, and offers the action that does where there is one; an empty search says what it looks for.</li>
+<li>A connection to the agent down for longer than a moment says so in a line across the top of every screen, which goes once it is back; a dropped connection back within the moment says nothing.</li>
 </ul>
 </div>
 

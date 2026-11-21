@@ -250,9 +250,33 @@ function connect() {
   sock.onmessage = ev => handle(JSON.parse(ev.data));
   // Whatever moved while there was no socket was not heard — on this device or
   // any other — so the page reads it afresh each time one opens.
-  sock.onopen = () => catchUp();
+  sock.onopen = () => { linked(true); catchUp(); };
   // A socket already replaced, by a page shown again, does not reconnect too.
-  sock.onclose = () => { if (ws === sock && !reconnecting) reconnecting = setTimeout(retry, 2000); };
+  sock.onclose = () => {
+    if (ws !== sock) return;
+    if (!reconnecting) reconnecting = setTimeout(retry, 2000);
+    linked(false);
+  };
+}
+
+// The socket is the page's line to the agent (webui.html, "States"). A phone
+// woken from a pocket takes a moment to open it again, which is not worth a
+// word; down for longer than this, a line across the top of every screen says
+// so, and goes when it opens. A device that says it went offline is told so at
+// once.
+const LINK_GRACE = 4000;
+let linkTimer = null;
+function linked(up, now) {
+  clearTimeout(linkTimer);
+  linkTimer = null;
+  const line = $('conn');
+  if (up) { line.hidden = true; return; }
+  const say = () => {
+    line.textContent = navigator.onLine === false ? 'This device is offline. The page reconnects once it is back.'
+      : 'Not connected to the agent. Reconnecting…';
+    line.hidden = false;
+  };
+  if (now) say(); else linkTimer = setTimeout(say, LINK_GRACE);
 }
 
 // retry opens a dropped socket again once the agent is known to answer. A socket
@@ -4257,8 +4281,10 @@ function accentControl(prefs) {
 
 async function boot() {
   document.addEventListener('visibilitychange', onVisible);
-  // The device's connection coming back is a page coming back.
-  window.addEventListener('online', onVisible);
+  // The device's connection going is said at once; coming back, it is a page
+  // coming back, over a socket that may never have noticed it was gone.
+  window.addEventListener('offline', () => linked(false, true));
+  window.addEventListener('online', () => { if (ws && ws.readyState === 1) linked(true); onVisible(); });
   connect();
   route();
   readStatus();
@@ -4267,15 +4293,47 @@ async function boot() {
 }
 
 // readStatus reads the agent's status — the breaker, the credit, the sandbox —
-// into the banner and the foot of the rail.
+// into the banner and the foot of the rail. Not read, it leaves them as they
+// were: the line across the top says the agent cannot be reached.
 async function readStatus() {
   try {
     state.status = await api('/status');
-    const b = state.status.breaker;
-    $('breaker').textContent = b && b.open ? 'Scheduler paused: ' + b.reason : '';
-  } catch (e) {
-    $('breaker').textContent = 'Cannot reach the gateway. Are you on the tailnet?';
-  }
+    drawBreaker(state.status.breaker);
+  } catch (e) {}
   renderSideFoot();
+}
+
+// drawBreaker puts a paused scheduler across the top of every screen
+// (jobs.html, "Circuit breaker"): one line saying jobs are paused and why,
+// which opens to the whole of it and what happens next. Told again, as on
+// every status event, it stays as open as it was.
+function drawBreaker(b) {
+  const box = $('breaker');
+  box.innerHTML = '';
+  box.hidden = !(b && b.open);
+  if (box.hidden) { state.breakerOpen = false; box.className = ''; return; }
+  const head = el('button', 'why');
+  head.type = 'button';
+  head.append(el('b', null, 'Jobs are paused'), el('span', 'cause', breakerCause(b.reason)), chevron());
+  const more = el('p', 'more', 'Paused ' + ago(b.opened_at) + '. One job is tried again every five minutes, ' +
+    'and all of them resume when it succeeds.');
+  const show = () => {
+    head.setAttribute('aria-expanded', String(!!state.breakerOpen));
+    more.hidden = !state.breakerOpen;
+    box.className = state.breakerOpen ? 'open' : '';
+  };
+  head.onclick = () => { state.breakerOpen = !state.breakerOpen; show(); };
+  show();
+  box.append(head, more);
+}
+
+// breakerCause is what paused the scheduler, in words: the gateway's own
+// message taken out of the JSON it came in, after who said it.
+function breakerCause(reason) {
+  const m = /^openrouter (\d{3}): ([\s\S]*)$/.exec(reason || '');
+  if (!m) return reason || 'Jobs failed one after another.';
+  let said = m[2].trim();
+  try { const j = JSON.parse(said); said = (j.error && j.error.message) || j.message || said; } catch (e) {}
+  return 'OpenRouter ' + m[1] + ': ' + said;
 }
 boot();

@@ -16,6 +16,7 @@
   --ok: #2c6a45;
   --warn: #866719;
   --bad: #a03429;
+  --bad-soft: #f8e8e4;
   --code-bg: #f4f0e9;
   --sel: #f0e7db;
   /* Chart marks: a grey for what went fine and the status red for what failed,
@@ -102,6 +103,7 @@
     --ok: #74b48c;
     --warn: #d6b968;
     --bad: #e58a80;
+    --bad-soft: #2c1a17;
     --code-bg: #24211c;
     --sel: #2a2620;
     --m-fine: #6e675a;
@@ -280,13 +282,34 @@ header .title {
 @keyframes busy-show { to { opacity: 1; } }
 @keyframes busy-cross { to { left: 100%; } }
 
-#breaker:empty { display: none; }
-#breaker {
-  /* The ground the page is written on, inverted onto the alarm colour: white
-     over the lighter red of dark mode is not legible. */
-  background: var(--bad); color: var(--card); font-size: var(--t-xs); font-weight: 500;
+/* Across the top of every screen: the connection while it is down
+   (webui.html, "States"), and a paused scheduler (jobs.html, "Circuit
+   breaker"). Whichever comes first takes the phone's status bar. */
+#conn, #breaker {
   padding: 7px 16px; padding-top: max(env(safe-area-inset-top), 7px);
+  font-size: var(--t-xs); border-bottom: 1px solid var(--line);
 }
+#conn:not([hidden]) + #breaker { padding-top: 7px; }
+#conn { background: var(--sunk); color: var(--fg-2); }
+#conn::before {
+  content: ''; display: inline-block; width: 7px; height: 7px; margin-right: 8px; vertical-align: 1px;
+  border-radius: var(--r-pill); background: var(--muted); animation: pulse 1.1s ease-in-out infinite;
+}
+/* The alarm's colour in a mark and a word, on a tint of it: the line has to
+   be read on every screen, not shouted over them. */
+#breaker { background: var(--bad-soft); color: var(--fg); box-shadow: inset 3px 0 0 var(--bad); }
+#breaker .why {
+  display: flex; align-items: baseline; gap: var(--sp-2); width: 100%; min-width: 0;
+  text-align: left; font-size: var(--t-sm); color: var(--fg); padding: var(--sp-0) 0;
+}
+#breaker .why b { flex: none; color: var(--bad); font-weight: 600; }
+#breaker .cause { flex: 1; min-width: 0; color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Open, the cause takes a line of its own under the heading, whole. */
+#breaker.open .why { flex-wrap: wrap; row-gap: var(--sp-1); }
+#breaker.open .cause { order: 3; flex-basis: 100%; white-space: normal; overflow-wrap: break-word; }
+#breaker .chev { flex: none; margin-left: auto; color: var(--muted); font-size: var(--t-md); line-height: 1; transition: transform var(--dur-fast); }
+#breaker.open .chev { transform: rotate(90deg); }
+#breaker .more { margin: var(--sp-1) 0 var(--sp-0); color: var(--fg-2); max-width: 70ch; }
 
 /* ---------- main ---------- */
 
@@ -1272,8 +1295,10 @@ pre.src .fence { color: var(--muted); }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
-  /* A pseudo-element is not one of *; the busy line stands still, whole and lighter. */
+  /* A pseudo-element is not one of *; the busy line stands still, whole and
+     lighter, and the connection's dot is still. */
   .busy::before { animation: none; left: 0; width: 100%; opacity: .45; }
+  #conn::before { animation: none; }
 }
 
 /* A compaction stands where the folded turns were. It names itself, says what

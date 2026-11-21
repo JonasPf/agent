@@ -1264,6 +1264,77 @@ test('a conversation that no longer exists says so, under a header of its own', 
   assert.strictEqual(vm.runInContext('state.session', ctx), null, 'the page still holds the conversation it left');
 });
 
+// ---------- banners ----------
+
+// A paused scheduler is one banner across every screen (jobs.html, "Circuit
+// breaker"). It names the cause in a line, in words: what the gateway said,
+// not the JSON it said it in. Tapped, it opens to the whole cause and what
+// happens next.
+test('a paused scheduler is one banner naming its cause, opening to the rest', async () => {
+  const reason = 'openrouter 402: {"error":{"message":"Insufficient credits. Add more at the credits page.","code":402}}';
+  const ctx = load({ '/status': { breaker: { open: true, reason, opened_at: new Date(Date.now() - 12 * 60000).toISOString() } } });
+  await ctx.readStatus();
+  const b = ctx._id('breaker');
+  assert.strictEqual(b.hidden, false, 'a paused scheduler shows no banner');
+  const head = find(b, 'why');
+  assert.ok(head, 'the banner has no line to open it by');
+  assert.match(textOf(head), /Jobs are paused/);
+  assert.match(textOf(head), /Insufficient credits/, 'the banner does not name the cause');
+  assert.doesNotMatch(textOf(b), /\{"error"/, 'the gateway\'s JSON is shown as the cause');
+  const more = find(b, 'more');
+  assert.strictEqual(more.hidden, true, 'the banner opens on its own');
+  head.onclick();
+  assert.strictEqual(more.hidden, false, 'tapping the banner does not open it');
+  assert.strictEqual(head.getAttribute('aria-expanded'), 'true');
+  assert.match(textOf(more), /every five minutes/, 'the banner does not say what happens next');
+  assert.match(textOf(more), /12m ago/, 'the banner does not say since when');
+
+  // Told again by the agent, as it is on every status event, it stays open.
+  await ctx.readStatus();
+  assert.strictEqual(find(ctx._id('breaker'), 'more').hidden, false, 'reading the status again closed the banner');
+});
+
+test('a running scheduler shows no banner', async () => {
+  const ctx = load({ '/status': { breaker: { open: false, reason: '' } } });
+  await ctx.readStatus();
+  assert.strictEqual(ctx._id('breaker').hidden, true);
+});
+
+// The socket is the page's line to the agent. A phone woken from its pocket
+// takes a moment to open it again, which says nothing; down for longer, a line
+// across the top says so, and goes when it opens again.
+test('a connection down for longer than a moment says so, and goes when it is back', async () => {
+  const ctx = load({ '/sessions': [] });
+  const timers = [];
+  ctx.setTimeout = (f, ms) => timers.push({ f, ms });
+  ctx.clearTimeout = id => { if (timers[id - 1]) timers[id - 1].f = null; };
+  const grace = vm.runInContext('LINK_GRACE', ctx);
+  const elapse = ms => timers.filter(t => t.f && t.ms === ms).forEach(t => { const f = t.f; t.f = null; f(); });
+  const conn = ctx._id('conn');
+
+  ctx.connect();
+  vm.runInContext('ws', ctx).onopen();
+  assert.strictEqual(conn.hidden, true, 'an open connection says it is down');
+  vm.runInContext('ws', ctx).onclose();
+  assert.strictEqual(conn.hidden, true, 'a connection down for a moment already says so');
+  elapse(grace);
+  assert.strictEqual(conn.hidden, false, 'a connection down for longer does not say so');
+  assert.match(textOf(conn), /Not connected to the agent/);
+
+  ctx.connect();
+  vm.runInContext('ws', ctx).onopen();
+  assert.strictEqual(conn.hidden, true, 'the line stays once the connection is back');
+});
+
+test('a device that goes offline says so at once', async () => {
+  const ctx = load({});
+  ctx.navigator.onLine = false;
+  ctx.linked(false, true);
+  const conn = ctx._id('conn');
+  assert.strictEqual(conn.hidden, false);
+  assert.match(textOf(conn), /This device is offline/);
+});
+
 // ---------- states ----------
 
 // blankOf reads what a screen shows in place of what it would hold: its

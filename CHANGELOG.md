@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-21
+
+- **Paused jobs are a quieter banner.** When jobs pause, the banner
+  across the top is a tinted line instead of a red bar: "Jobs are
+  paused" and the cause in words, such as "OpenRouter 402: Insufficient
+  credits" instead of the gateway's raw reply. Tap it for since when and
+  what happens next.
+- **A lost connection says so.** If the page loses its connection to the
+  agent for more than a few seconds, a line across the top says so, and
+  goes once it is back. A phone that goes offline is told at once.
+
 ## 2026-11-20
 
 - **Screens say why they are empty.** A screen that is still loading
