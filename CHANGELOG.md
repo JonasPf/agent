@@ -10,6 +10,11 @@
 - **A lost connection says so.** If the page loses its connection to the
   agent for more than a few seconds, a line across the top says so, and
   goes once it is back. A phone that goes offline is told at once.
+- **The app says when the phone is offline.** Opening the home-screen
+  app with no connection at all shows a page saying the device is
+  offline instead of the browser's error, and opens the app once the
+  connection is back. With a connection nothing changes, including the
+  password prompt.
 
 ## 2026-11-20
 

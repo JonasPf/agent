@@ -1335,6 +1335,18 @@ test('a device that goes offline says so at once', async () => {
   assert.match(textOf(conn), /This device is offline/);
 });
 
+// The worker carries pushes where a device takes them, and the page saying a
+// device is offline everywhere (webui.html, "Installation"), so it is
+// registered wherever a browser has one, push or no push.
+test('the worker is registered on a device that takes no pushes', async () => {
+  const ctx = load({});
+  const registered = [];
+  ctx.navigator.serviceWorker = { register: async p => { registered.push(p); return {}; } };
+  assert.notStrictEqual(vm.runInContext('pushSupport(pushEnv())', ctx), 'push', 'the device takes pushes after all');
+  await ctx.registerWorker();
+  assert.deepStrictEqual(registered, ['/sw.js']);
+});
+
 // ---------- states ----------
 
 // blankOf reads what a screen shows in place of what it would hold: its

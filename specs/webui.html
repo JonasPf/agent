@@ -193,12 +193,22 @@ the socket opens; whatever moved meanwhile is read afresh then. A device that sa
 <p>The interface is a progressive web app installed to the home screen. Installation is required rather
 than optional: an installed web app gets the full screen and its own icon.</p>
 
+<p>Its service worker is registered on every device that has one, whether or not the device takes
+pushes. Opened on a device with no connection at all, the app is answered by the worker with a page of
+its own saying the device is offline, which opens the app once the connection is back, rather than the
+browser's error. With a connection, opening the app goes to the agent as if there were no worker. The
+password in front of the agent is asked for by the browser on a refusal, a phone forgets it daily, and
+a worker passing a refusal on can leave it unasked; so the worker answers nothing a connected device
+opens, and a device that is online while the agent is down sees whatever stands in front of the agent.
+Once a page is open, its own screens say what could not be reached (<a href="#states">States</a>).</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>The app is installable to the home screen on iOS and Android.</li>
 <li>It launches without browser chrome once installed.</li>
-<li>Opening it while off the tailnet shows a clear connectivity message, not a browser error.</li>
+<li>Opening it on a device with no connection shows a page of its own saying the device is offline, which opens the app once the connection is back, not a browser error.</li>
+<li>With a connection, opening it reaches the agent as if there were no worker, so a password in front of the agent is asked for by the browser.</li>
 <li>Every control is operable one-handed on a phone.</li>
 </ul>
 </div>

@@ -4135,6 +4135,14 @@ function pushEnv() {
   };
 }
 
+// registerWorker installs the service worker wherever a browser has one, push
+// or no push: it also answers the app opened on a device with no connection
+// (webui.html, "Installation").
+async function registerWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try { await navigator.serviceWorker.register('/sw.js'); } catch (e) {}
+}
+
 // startPush installs the service worker and listens for it, and registers a
 // device that is already subscribed with the agent again: an agent whose
 // state was reset learns of it, and a subscription made under a key the agent
@@ -4289,6 +4297,7 @@ async function boot() {
   route();
   readStatus();
   readAccent();
+  registerWorker();
   startPush();
 }
 
