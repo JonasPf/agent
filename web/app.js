@@ -205,11 +205,20 @@ window.addEventListener('hashchange', route);
 
 // The rail is a column of the grid on a laptop and an overlay on a phone. Only
 // the phone can open and close it, and one class on the body says which it is.
-function drawer(open) { document.body.className = open ? 'drawer' : ''; }
+// drawer opens or closes the conversation list over the screen on a phone.
+// Open, it holds the focus and the screen behind it is out of reach; shut by
+// the operator rather than by going somewhere, it gives the focus back to the
+// button that opened it (webui.html, "Keyboard and screen reader").
+function drawer(open, back) {
+  document.body.className = open ? 'drawer' : '';
+  $('pane').inert = !!open;
+  if (open) $('side-close').focus();
+  else if (back) $('menu').focus();
+}
 
 $('menu').onclick = () => drawer(true);
-$('side-close').onclick = () => drawer(false);
-$('scrim').onclick = () => drawer(false);
+$('side-close').onclick = () => drawer(false, true);
+$('scrim').onclick = () => drawer(false, true);
 $('side-new').onclick = () => location.hash = '#new';
 $('side-search').onclick = () => location.hash = '#search';
 $('back').onclick = () => history.length > 1 ? history.back() : (location.hash = '#sessions');
@@ -743,6 +752,7 @@ function sessionRow(s) {
   const wrap = el('div', 'row-wrap');
   const rm = el('button', 'row-del', 'Delete');
   rm.type = 'button';
+  rm.setAttribute('aria-label', 'Delete ' + (s.title || 'Untitled'));
   rm.onclick = async e => {
     if (e && e.stopPropagation) e.stopPropagation();
     if (!confirm('Delete "' + (s.title || 'Untitled') + '", its transcript, its files, and its jobs?')) return;
@@ -761,7 +771,9 @@ function sessionRow(s) {
     el('span', null, s.model.split('/').pop()));
   m.append(line);
   row.append(m);
-  wrap.append(rm, row);
+  // The row comes first and its delete after it, as they are read and
+  // tabbed through; the row is drawn over it all the same.
+  wrap.append(row, rm);
   swipeable(wrap, row, () => location.hash = '#session/' + s.id);
   return wrap;
 }
@@ -858,6 +870,7 @@ async function viewSession(v) {
   const status = el('div', 'status'); status.id = 'statusline';
   const form = el('form', 'composer');
   const ta = el('textarea'); ta.rows = 1; ta.placeholder = 'Message the agent';
+  ta.setAttribute('aria-label', 'Message the agent');
   // A revert puts the message it took back here, and a fork from before a
   // message puts that message in the fork's.
   state.composer = ta;
@@ -1633,10 +1646,9 @@ function renderEntry(e, opts) {
   // Carried messages are marked by the style alone. Which session they came from
   // is said once, in the seeding event at the top, rather than on every bubble.
   const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
-  const who = whoLine(e);
+  const who = whoLine(e, messageTime(e.created_at));
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
-  who.append(el('span', 'at', messageTime(e.created_at)));
   // What the call behind an answer read from the cache, and who served it,
   // sits with the answer's time; a call that only ran tools says it in its run.
   const hit = e.role === 'assistant' && e.text ? callLine(e.usage) : '';
@@ -1684,11 +1696,17 @@ function callNodes(e, o) {
 // whoLine is the line above a message. The shape of a message already says
 // who spoke, the operator's in a bubble and the agent's as prose, so the line
 // names only a job's wake, which is neither; the others' names are kept for
-// whoever hears the page rather than sees it.
-function whoLine(e) {
+// whoever hears the page rather than sees it. The name and the time are the
+// message's heading, so a screen reader's headings step from one message to
+// the next (webui.html, "Keyboard and screen reader"); what else the line
+// carries is not part of it.
+function whoLine(e, at) {
   const who = el('div', 'who');
+  const said = el('h2', 'said');
   const name = speaker(e);
-  who.append(el('span', bubbleClass(e) === 'job' ? 'name' : 'sr', name));
+  said.append(el('span', bubbleClass(e) === 'job' ? 'name' : 'sr', name.charAt(0).toUpperCase() + name.slice(1)));
+  if (at) said.append(el('span', 'sr', ', '), el('span', 'at', at));
+  who.append(said);
   return who;
 }
 
@@ -1896,7 +1914,11 @@ function closeDialog() {
   // Left in place long enough to slide back out.
   setTimeout(() => back.remove(), 300);
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (document.body.className === 'drawer') drawer(false, true);
+  closeDialog();
+});
 
 function factList(m) {
   const w = el('div', 'facts');
@@ -2014,11 +2036,12 @@ async function chooseModel(current, pick) {
 // change as {NAME: value, or null to remove}; it answers with the names now set,
 // or nothing to have them worked out here, and throws to refuse.
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-function secretInput(placeholder) {
+function secretInput(placeholder, said) {
   const i = el('input', 'text secret');
   i.type = 'password';
   i.autocomplete = 'off';
   i.placeholder = placeholder;
+  i.setAttribute('aria-label', said);
   return i;
 }
 function envEditor(names, apply) {
@@ -2047,7 +2070,7 @@ function envEditor(names, apply) {
         const remove = el('button', 'act', 'remove');
         replace.onclick = () => {
           row.innerHTML = '';
-          const value = secretInput('new value');
+          const value = secretInput('new value', 'New value for ' + name);
           const save = el('button', 'btn', 'Save');
           const cancel = el('button', 'act', 'cancel');
           save.onclick = () => change({ [name]: value.value });
@@ -2065,10 +2088,11 @@ function envEditor(names, apply) {
     const add = el('div', 'env-add');
     const name = el('input', 'text env-new-name');
     name.placeholder = 'NAME';
+    name.setAttribute('aria-label', 'Variable name');
     name.autocomplete = 'off';
     name.spellcheck = false;
     name.setAttribute('autocapitalize', 'characters');
-    const value = secretInput('value');
+    const value = secretInput('value', 'Variable value');
     const go = el('button', 'btn', 'Add');
     go.onclick = () => {
       const n = String(name.value || '').trim();
@@ -2477,13 +2501,14 @@ async function viewFiles(v) {
         const wrap = el('div', 'row-wrap');
         const rm = el('button', 'row-del', 'Delete');
         rm.type = 'button';
+        rm.setAttribute('aria-label', 'Delete ' + n.path);
         rm.onclick = async e => {
           if (e && e.stopPropagation) e.stopPropagation();
           if (!confirm('Delete ' + n.path + '?')) return;
           await del(fileURL(n.path));
           render();
         };
-        wrap.append(rm, row);
+        wrap.append(row, rm);
         swipeable(wrap, row, () => window.open(fileURL(n.path), '_blank'));
         tree.append(wrap);
       }
@@ -2615,6 +2640,7 @@ async function viewSettings(v) {
   const name = el('input', 'text');
   name.value = s.title || '';
   name.placeholder = 'What this conversation is about';
+  name.setAttribute('aria-label', 'Title');
   const rename = el('button', 'btn', 'Rename');
   rename.onclick = async () => {
     const chosen = name.value.trim();
@@ -2957,8 +2983,11 @@ function metricTile(label, value, sub, tip) {
   return t;
 }
 
+// metricHead is a section's heading, with its explanation and its key beside
+// the title; a screen reader's list of headings names only the title.
 function metricHead(title, tip, right) {
   const h = el('h2', 'msec');
+  h.setAttribute('aria-label', title);
   h.append(el('span', null, title), help(tip), right);
   return h;
 }
@@ -3165,6 +3194,8 @@ function pluginCard(p, tools) {
       const label = el('label', 'pl');
       label.append(el('span', 'k', settingName(c)), el('span', 'state ' + (c.set ? 'on' : ''), c.set ? 'set' : c.required ? 'not set · required' : 'not set'));
       const input = el('input', 'text pin');
+      input.id = 'pset-' + p.name + '-' + c.key;
+      label.htmlFor = input.id;
       input.type = c.sensitive ? 'password' : 'text';
       input.placeholder = c.set ? 'Type to replace it' : '';
       input.autocomplete = 'off';
@@ -3983,7 +4014,7 @@ async function viewSearch(v) {
     if (stale(gen)) return;
     const mine = el('button', 'pill on', title);
     const all = el('button', 'pill', 'All conversations');
-    const pick = (to, on, off) => { scope = to; on.className = 'pill on'; off.className = 'pill'; inp.placeholder = placeholder(); run(); };
+    const pick = (to, on, off) => { scope = to; on.className = 'pill on'; off.className = 'pill'; named(); run(); };
     mine.onclick = () => pick(here, mine, all);
     all.onclick = () => pick('', all, mine);
     const scopes = el('div', 'scopes');
@@ -3991,7 +4022,10 @@ async function viewSearch(v) {
     v.append(scopes);
   }
   const placeholder = () => scope ? 'Search this conversation…' : 'Search every transcript…';
-  inp.placeholder = placeholder();
+  // What the field searches is its name as well as its placeholder, since a
+  // placeholder is gone once something is typed.
+  const named = () => { inp.placeholder = placeholder(); inp.setAttribute('aria-label', scope ? 'Search this conversation' : 'Search every conversation'); };
+  named();
   // Before anything is typed the screen says what a search looks for.
   const hint = () => blank(scope ? 'Search this conversation' : 'Search every conversation',
     'Each word you type finds the words that start with it, wherever they all stand in one entry.');

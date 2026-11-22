@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-22
+
+- **The app works with a screen reader and a keyboard.** Each screen's
+  title is a heading, and so is each message in a conversation, naming
+  who spoke and when, so VoiceOver's rotor jumps from message to
+  message. Every field says what it is for, and a row's Delete says
+  which conversation or file it deletes. On a phone the closed menu can
+  no longer be reached by mistake; opened, it takes the focus, and
+  Escape closes it.
+
 ## 2026-11-21
 
 - **Paused jobs are a quieter banner.** When jobs pause, the banner

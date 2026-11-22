@@ -172,10 +172,13 @@ a { color: var(--accent); }
   position: fixed; z-index: 60; top: 0; bottom: 0; left: 0;
   width: min(86vw, 320px);
   transform: translateX(-101%);
-  transition: transform var(--dur) var(--ease);
+  /* Closed, the drawer is out of the keyboard's and a screen reader's reach
+     as well as out of sight; it goes once it has slid away. */
+  visibility: hidden;
+  transition: transform var(--dur) var(--ease), visibility var(--dur);
   padding-top: env(safe-area-inset-top);
 }
-body.drawer .side { transform: none; box-shadow: var(--shadow); }
+body.drawer .side { transform: none; box-shadow: var(--shadow); visibility: visible; transition: transform var(--dur) var(--ease); }
 #scrim {
   position: fixed; inset: 0; z-index: 50; background: rgba(20, 16, 10, .38);
   opacity: 0; pointer-events: none; transition: opacity var(--dur);
@@ -184,7 +187,7 @@ body.drawer #scrim { opacity: 1; pointer-events: auto; }
 
 @media (min-width: 900px) {
   #shell { grid-template-columns: var(--rail) minmax(0, 1fr); }
-  .side { position: static; width: auto; transform: none; box-shadow: none; }
+  .side { position: static; width: auto; transform: none; box-shadow: none; visibility: visible; transition: none; }
   #scrim { display: none; }
   #menu, #side-close { display: none; }
   /* The rail is the way back, so the pane never needs its own. */
@@ -244,7 +247,7 @@ header {
   position: sticky; top: 0; z-index: 20;
 }
 header .title {
-  flex: 1; min-width: 0; font-weight: 600; font-size: var(--t-md); letter-spacing: -.01em;
+  flex: 1; min-width: 0; margin: 0; font-weight: 600; font-size: var(--t-md); letter-spacing: -.01em;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .icon {
@@ -765,6 +768,9 @@ label.f { font-size: var(--t-xs); color: var(--muted); text-transform: uppercase
 .msg { margin: 18px 0; }
 .msg .who { font-size: var(--t-xs); color: var(--muted); margin-bottom: 4px; }
 /* A wake's job is the one speaker named above a message. */
+/* The name and time are the message's heading for a screen reader, and look
+   like the rest of the line. */
+.msg .who .said { display: inline; margin: 0; font: inherit; color: inherit; letter-spacing: inherit; }
 .msg .who .name { text-transform: uppercase; letter-spacing: .07em; margin-right: 8px; }
 /* Heard, not seen. */
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

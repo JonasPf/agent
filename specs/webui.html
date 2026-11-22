@@ -188,6 +188,32 @@ the socket opens; whatever moved meanwhile is read afresh then. A device that sa
 </ul>
 </div>
 
+<h2 id="access">Keyboard and screen reader</h2>
+
+<p>Everything on a screen can be reached and used from a keyboard, and is heard as well as seen. A
+screen's title in its header is the one top-level heading. In a conversation each message is a heading
+below it, naming who spoke and when: the shape that tells the eye who spoke says nothing to the ear,
+so a screen reader is told in words, and its headings step from one message to the next. The rest of
+the line above a message, what the call read from the cache and the ways back and forward, is not part
+of the heading.</p>
+
+<p>Every field says what it is for: its label where the screen shows one, otherwise what it holds,
+since a placeholder is gone once something is typed. A row's delete is heard as deleting that row, and
+comes after it as the keyboard moves through the list.</p>
+
+<p>On a phone the conversation list is a drawer. Closed, it is out of reach as well as out of sight;
+opened, it takes the focus and the screen behind it waits, and closing it by hand, by its button, by
+the scrim, or by Escape, gives the focus back to the button that opened it.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Each screen's title is its one top-level heading, and in a conversation each message is a heading below it naming who spoke and when.</li>
+<li>Every field is named for a screen reader by its label, or where the screen shows none, by what it holds; a row's delete names the row it deletes and comes after it.</li>
+<li>On a phone the closed drawer can be neither reached with the keyboard nor read; opened, it takes the focus and the screen behind it is out of reach, and Escape closes it and puts the focus back on the button that opened it.</li>
+</ul>
+</div>
+
 <h2>Installation</h2>
 
 <p>The interface is a progressive web app installed to the home screen. Installation is required rather
