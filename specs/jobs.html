@@ -327,7 +327,7 @@ log with the same failure and spends the retry budget on each.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>Failures across three or more distinct jobs within one tick window pause the scheduler.</li>
-<li>A paused scheduler shows one banner across every screen, naming the cause.</li>
+<li>A paused scheduler shows one banner across every screen, naming the cause in a line in words (what the gateway said, not the form it said it in), which opens to the whole of it, since when, and what happens next.</li>
 <li>A job failing while the breaker is open waits for the probe rather than counting the outage against itself.</li>
 <li>While the breaker is open, one held job is retried every five minutes as a probe.</li>
 <li>A successful probe closes the breaker, resumes the schedule, and says so.</li>

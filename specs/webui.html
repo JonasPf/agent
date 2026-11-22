@@ -52,6 +52,10 @@ system's sans: what the operator typed, buttons, rows, labels, the status line. 
 is set larger than the prose and code in a line a size below it, in the monospace; a code block keeps
 the small monospace, so more of each line fits on a phone.</p>
 
+<p>A label reads as it is written, in sentence case. Nothing is set in capitals by the stylesheet:
+capitals shout, are slower to read, and a label spaced out in them is the commonest mark of a
+template.</p>
+
 <p>The accent is the operator's choice, made on the More panel among four: copper, ink, plum and
 graphite, each offered as a swatch drawn in its own colour. Until one is chosen it is copper. None
 is a green, an amber or a red, because those already say how something went, and each reads at 4.5:1
@@ -68,6 +72,7 @@ agent answers.</p>
 <li>Every piece of text on the conversation list, a conversation with a tool call and a formatted reply, its details, and a new conversation is drawn at one of five sizes: 12, 14, 16, 18 or 24 pixels.</li>
 <li>The agent's replies are set at 18 pixels in the serif the interface ships, which a browser loads from the agent itself; what the operator typed is set in the system's sans.</li>
 <li>The line above a message shows its time and no speaker, except a job's wake, which names its job.</li>
+<li>No text on any screen is set in capitals by the stylesheet.</li>
 <li>The More panel offers the accents copper, ink, plum and graphite, each drawn in its own colour, with the current one marked; until one is chosen it is copper.</li>
 <li>Choosing an accent redraws the interface in it at once, and the agent keeps it: a browser opening the interface afterwards, on any device or after a restart, draws it.</li>
 <li>An accent not offered is refused, and the refusal names those that are.</li>
@@ -119,9 +124,15 @@ than below one, so the move to it does not slide, and neither does drawing again
 on show. The header stays where it is and takes the new title; what moves is everything below it,
 the screen being left as it was drawn. A request for reduced motion turns sliding off.</p>
 
-<p>A transcript is held to a reading column whatever the screen; a list of jobs, tools, files, or
-skills takes the width the screen actually has, as a grid of cards rather than a strip down the
-middle.</p>
+<p>A transcript is held to a reading column whatever the screen, and so is a screen read from top to
+bottom: a form, the Plugins screen, which is mostly explanation, one tool under another, and the More
+panel, whose rows are each read from a label across to its value. A list of conversations, jobs,
+files, or skills takes the width the screen actually has, as a grid of cards rather than a strip down
+the middle.</p>
+
+<p>On a laptop the rail beside every screen offers a new conversation and a search, so the
+conversation list's own toolbar leaves them out; on a phone, where the rail is a drawer, the toolbar
+offers them.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -140,7 +151,8 @@ middle.</p>
 <li>A view's actions are behind one button in its header, at every width.</li>
 <li>On a phone the conversation list's header offers the drawer and every other screen's offers the way back; no header offers both.</li>
 <li>Opening a screen below the one on show slides it in from the right over it, and going back, by the header or the browser, slides it away to the right; a screen chosen from the rail or the drawer appears without sliding.</li>
-<li>A transcript is held to a reading column; a list of jobs, tools, files, or skills takes the full width available.</li>
+<li>A transcript, a form, the Plugins screen and the More panel are held to a reading column; a list of conversations, jobs, files, or skills takes the full width available.</li>
+<li>On a laptop no screen's toolbar repeats what the rail beside it offers; on a phone the conversation list's toolbar offers a new conversation and a search.</li>
 <li>Nothing in the interface is laid out at a fixed page width.</li>
 <li>The interface follows the system's colour scheme, and is legible in both.</li>
 <li>A request for reduced motion is honoured.</li>
@@ -171,6 +183,11 @@ it where there is one: the conversation list starting a conversation or importin
 personas writing one. Search says what it looks for before anything is typed, and what to try when
 nothing matches. A section with nothing in it on a page that holds more is one quiet line.</p>
 
+<p>The page's line to the agent is its socket, over which everything live arrives. A phone woken from a
+pocket takes a moment to open it again, which is not worth a word; down for longer than four seconds, a
+line across the top of every screen says the page is not connected and is reconnecting, and goes when
+the socket opens; whatever moved meanwhile is read afresh then. A device that says it went offline is told so at once, in those words.</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
@@ -179,6 +196,33 @@ nothing matches. A section with nothing in it on a page that holds more is one q
 <li>A screen that could not reach the agent, or that a proxy answered for, says so in words of the interface's own, offers to try again, and loads by itself once the agent answers.</li>
 <li>A screen whose answers are refused for any other reason says what the agent answered and offers to try again, instead of staying blank.</li>
 <li>An empty list of conversations, jobs, files, skills, or personas says what would fill it, and offers the action that does where there is one; an empty search says what it looks for.</li>
+<li>A connection to the agent down for longer than a moment says so in a line across the top of every screen, which goes once it is back; a dropped connection back within the moment says nothing.</li>
+</ul>
+</div>
+
+<h2 id="access">Keyboard and screen reader</h2>
+
+<p>Everything on a screen can be reached and used from a keyboard, and is heard as well as seen. A
+screen's title in its header is the one top-level heading. In a conversation each message is a heading
+below it, naming who spoke and when: the shape that tells the eye who spoke says nothing to the ear,
+so a screen reader is told in words, and its headings step from one message to the next. The rest of
+the line above a message, what the call read from the cache and the ways back and forward, is not part
+of the heading.</p>
+
+<p>Every field says what it is for: its label where the screen shows one, otherwise what it holds,
+since a placeholder is gone once something is typed. A row's delete is heard as deleting that row, and
+comes after it as the keyboard moves through the list.</p>
+
+<p>On a phone the conversation list is a drawer. Closed, it is out of reach as well as out of sight;
+opened, it takes the focus and the screen behind it waits, and closing it by hand, by its button, by
+the scrim, or by Escape, gives the focus back to the button that opened it.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>Each screen's title is its one top-level heading, and in a conversation each message is a heading below it naming who spoke and when.</li>
+<li>Every field is named for a screen reader by its label, or where the screen shows none, by what it holds; a row's delete names the row it deletes and comes after it.</li>
+<li>On a phone the closed drawer can be neither reached with the keyboard nor read; opened, it takes the focus and the screen behind it is out of reach, and Escape closes it and puts the focus back on the button that opened it.</li>
 </ul>
 </div>
 
@@ -187,12 +231,22 @@ nothing matches. A section with nothing in it on a page that holds more is one q
 <p>The interface is a progressive web app installed to the home screen. Installation is required rather
 than optional: an installed web app gets the full screen and its own icon.</p>
 
+<p>Its service worker is registered on every device that has one, whether or not the device takes
+pushes. Opened on a device with no connection at all, the app is answered by the worker with a page of
+its own saying the device is offline, which opens the app once the connection is back, rather than the
+browser's error. With a connection, opening the app goes to the agent as if there were no worker. The
+password in front of the agent is asked for by the browser on a refusal, a phone forgets it daily, and
+a worker passing a refusal on can leave it unasked; so the worker answers nothing a connected device
+opens, and a device that is online while the agent is down sees whatever stands in front of the agent.
+Once a page is open, its own screens say what could not be reached (<a href="#states">States</a>).</p>
+
 <div class="ac">
 <h4>Acceptance criteria</h4>
 <ul>
 <li>The app is installable to the home screen on iOS and Android.</li>
 <li>It launches without browser chrome once installed.</li>
-<li>Opening it while off the tailnet shows a clear connectivity message, not a browser error.</li>
+<li>Opening it on a device with no connection shows a page of its own saying the device is offline, which opens the app once the connection is back, not a browser error.</li>
+<li>With a connection, opening it reaches the agent as if there were no worker, so a password in front of the agent is asked for by the browser.</li>
 <li>Every control is operable one-handed on a phone.</li>
 </ul>
 </div>

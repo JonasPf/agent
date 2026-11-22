@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-11-22
+
+- **The app works with a screen reader and a keyboard.** Each screen's
+  title is a heading, and so is each message in a conversation, naming
+  who spoke and when, so VoiceOver's rotor jumps from message to
+  message. Every field says what it is for, and a row's Delete says
+  which conversation or file it deletes. On a phone the closed menu can
+  no longer be reached by mistake; opened, it takes the focus, and
+  Escape closes it.
+- **The last capitals are gone.** Labels such as "What the model sees"
+  on Plugins and a job's name above its wake read as written. Each
+  job's settings are in the same type as the rest of the app, with only
+  its schedule set as code.
+- **A laptop no longer shows things twice.** The conversation list
+  leaves New conversation and Search to the rail beside it, and More is
+  a reading column like Plugins instead of stretching across the
+  window. On a phone the title on a conversation's details gets the
+  full width, and a banner at the top no longer leaves an extra gap
+  above the header.
+
+## 2026-11-21
+
+- **Paused jobs are a quieter banner.** When jobs pause, the banner
+  across the top is a tinted line instead of a red bar: "Jobs are
+  paused" and the cause in words, such as "OpenRouter 402: Insufficient
+  credits" instead of the gateway's raw reply. Tap it for since when and
+  what happens next.
+- **A lost connection says so.** If the page loses its connection to the
+  agent for more than a few seconds, a line across the top says so, and
+  goes once it is back. A phone that goes offline is told at once.
+- **The app says when the phone is offline.** Opening the home-screen
+  app with no connection at all shows a page saying the device is
+  offline instead of the browser's error, and opens the app once the
+  connection is back. With a connection nothing changes, including the
+  password prompt.
+
 ## 2026-11-20
 
 - **Screens say why they are empty.** A screen that is still loading

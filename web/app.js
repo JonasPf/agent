@@ -205,11 +205,20 @@ window.addEventListener('hashchange', route);
 
 // The rail is a column of the grid on a laptop and an overlay on a phone. Only
 // the phone can open and close it, and one class on the body says which it is.
-function drawer(open) { document.body.className = open ? 'drawer' : ''; }
+// drawer opens or closes the conversation list over the screen on a phone.
+// Open, it holds the focus and the screen behind it is out of reach; shut by
+// the operator rather than by going somewhere, it gives the focus back to the
+// button that opened it (webui.html, "Keyboard and screen reader").
+function drawer(open, back) {
+  document.body.className = open ? 'drawer' : '';
+  $('pane').inert = !!open;
+  if (open) $('side-close').focus();
+  else if (back) $('menu').focus();
+}
 
 $('menu').onclick = () => drawer(true);
-$('side-close').onclick = () => drawer(false);
-$('scrim').onclick = () => drawer(false);
+$('side-close').onclick = () => drawer(false, true);
+$('scrim').onclick = () => drawer(false, true);
 $('side-new').onclick = () => location.hash = '#new';
 $('side-search').onclick = () => location.hash = '#search';
 $('back').onclick = () => history.length > 1 ? history.back() : (location.hash = '#sessions');
@@ -250,9 +259,33 @@ function connect() {
   sock.onmessage = ev => handle(JSON.parse(ev.data));
   // Whatever moved while there was no socket was not heard — on this device or
   // any other — so the page reads it afresh each time one opens.
-  sock.onopen = () => catchUp();
+  sock.onopen = () => { linked(true); catchUp(); };
   // A socket already replaced, by a page shown again, does not reconnect too.
-  sock.onclose = () => { if (ws === sock && !reconnecting) reconnecting = setTimeout(retry, 2000); };
+  sock.onclose = () => {
+    if (ws !== sock) return;
+    if (!reconnecting) reconnecting = setTimeout(retry, 2000);
+    linked(false);
+  };
+}
+
+// The socket is the page's line to the agent (webui.html, "States"). A phone
+// woken from a pocket takes a moment to open it again, which is not worth a
+// word; down for longer than this, a line across the top of every screen says
+// so, and goes when it opens. A device that says it went offline is told so at
+// once.
+const LINK_GRACE = 4000;
+let linkTimer = null;
+function linked(up, now) {
+  clearTimeout(linkTimer);
+  linkTimer = null;
+  const line = $('conn');
+  if (up) { line.hidden = true; return; }
+  const say = () => {
+    line.textContent = navigator.onLine === false ? 'This device is offline. The page reconnects once it is back.'
+      : 'Not connected to the agent. Reconnecting…';
+    line.hidden = false;
+  };
+  if (now) say(); else linkTimer = setTimeout(say, LINK_GRACE);
 }
 
 // retry opens a dropped socket again once the agent is known to answer. A socket
@@ -532,9 +565,10 @@ function renderSideFoot() {
 // ---------- views ----------
 
 // A transcript is read in a column; a list of jobs or files is read across the
-// room a laptop actually has. The Plugins screen is read in a column too: it is
-// mostly explanation, one tool under another.
-const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel', 'app'];
+// room a laptop actually has. The Plugins screen and More are read in a column
+// too: one is mostly explanation, one tool under another, and the other is
+// rows of settings, each read from its label across to its value.
+const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'search', 'toolpanel', 'app'];
 
 // A screen is drawn from requests that answer in their own time, so two screens
 // asked for in quick succession can answer in the wrong order. Each draw keeps
@@ -719,6 +753,7 @@ function sessionRow(s) {
   const wrap = el('div', 'row-wrap');
   const rm = el('button', 'row-del', 'Delete');
   rm.type = 'button';
+  rm.setAttribute('aria-label', 'Delete ' + (s.title || 'Untitled'));
   rm.onclick = async e => {
     if (e && e.stopPropagation) e.stopPropagation();
     if (!confirm('Delete "' + (s.title || 'Untitled') + '", its transcript, its files, and its jobs?')) return;
@@ -737,7 +772,9 @@ function sessionRow(s) {
     el('span', null, s.model.split('/').pop()));
   m.append(line);
   row.append(m);
-  wrap.append(rm, row);
+  // The row comes first and its delete after it, as they are read and
+  // tabbed through; the row is drawn over it all the same.
+  wrap.append(row, rm);
   swipeable(wrap, row, () => location.hash = '#session/' + s.id);
   return wrap;
 }
@@ -834,6 +871,7 @@ async function viewSession(v) {
   const status = el('div', 'status'); status.id = 'statusline';
   const form = el('form', 'composer');
   const ta = el('textarea'); ta.rows = 1; ta.placeholder = 'Message the agent';
+  ta.setAttribute('aria-label', 'Message the agent');
   // A revert puts the message it took back here, and a fork from before a
   // message puts that message in the fork's.
   state.composer = ta;
@@ -1183,7 +1221,7 @@ function renderTranscript() {
     // The summary is not something to read as new: it stands for what came
     // before it, so where reading stopped is placed by the turns around it.
     if (!marked && part !== 'summary' && e.seq > state.readFrom) {
-      into.append(el('div', 'unread-mark', 'unread'));
+      into.append(el('div', 'unread-mark', 'Unread'));
       marked = true;
       run = null;
     }
@@ -1271,7 +1309,7 @@ function appendEntry(e) {
   const atBottom = atEnd();
   dropTail(t);
   if (state.readFrom != null && e.seq > state.readFrom && !t.querySelector('.unread-mark')) {
-    t.append(el('div', 'unread-mark', 'unread'));
+    t.append(el('div', 'unread-mark', 'Unread'));
   }
   const pending = new Set();
   // A run of tool work is continued only while it is the last thing on screen.
@@ -1609,10 +1647,9 @@ function renderEntry(e, opts) {
   // Carried messages are marked by the style alone. Which session they came from
   // is said once, in the seeding event at the top, rather than on every bubble.
   const w = el('div', 'msg ' + bubbleClass(e) + (e.carried_from ? ' carried' : ''));
-  const who = whoLine(e);
+  const who = whoLine(e, messageTime(e.created_at));
   // The job's name is the only way back to the row that scheduled it.
   if (e.job_id && e.role === 'user') { who.style.cursor = 'pointer'; who.onclick = () => location.hash = '#jobs'; }
-  who.append(el('span', 'at', messageTime(e.created_at)));
   // What the call behind an answer read from the cache, and who served it,
   // sits with the answer's time; a call that only ran tools says it in its run.
   const hit = e.role === 'assistant' && e.text ? callLine(e.usage) : '';
@@ -1660,11 +1697,17 @@ function callNodes(e, o) {
 // whoLine is the line above a message. The shape of a message already says
 // who spoke, the operator's in a bubble and the agent's as prose, so the line
 // names only a job's wake, which is neither; the others' names are kept for
-// whoever hears the page rather than sees it.
-function whoLine(e) {
+// whoever hears the page rather than sees it. The name and the time are the
+// message's heading, so a screen reader's headings step from one message to
+// the next (webui.html, "Keyboard and screen reader"); what else the line
+// carries is not part of it.
+function whoLine(e, at) {
   const who = el('div', 'who');
+  const said = el('h2', 'said');
   const name = speaker(e);
-  who.append(el('span', bubbleClass(e) === 'job' ? 'name' : 'sr', name));
+  said.append(el('span', bubbleClass(e) === 'job' ? 'name' : 'sr', name.charAt(0).toUpperCase() + name.slice(1)));
+  if (at) said.append(el('span', 'sr', ', '), el('span', 'at', at));
+  who.append(said);
   return who;
 }
 
@@ -1872,7 +1915,11 @@ function closeDialog() {
   // Left in place long enough to slide back out.
   setTimeout(() => back.remove(), 300);
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDialog(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (document.body.className === 'drawer') drawer(false, true);
+  closeDialog();
+});
 
 function factList(m) {
   const w = el('div', 'facts');
@@ -1990,11 +2037,12 @@ async function chooseModel(current, pick) {
 // change as {NAME: value, or null to remove}; it answers with the names now set,
 // or nothing to have them worked out here, and throws to refuse.
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-function secretInput(placeholder) {
+function secretInput(placeholder, said) {
   const i = el('input', 'text secret');
   i.type = 'password';
   i.autocomplete = 'off';
   i.placeholder = placeholder;
+  i.setAttribute('aria-label', said);
   return i;
 }
 function envEditor(names, apply) {
@@ -2023,7 +2071,7 @@ function envEditor(names, apply) {
         const remove = el('button', 'act', 'remove');
         replace.onclick = () => {
           row.innerHTML = '';
-          const value = secretInput('new value');
+          const value = secretInput('new value', 'New value for ' + name);
           const save = el('button', 'btn', 'Save');
           const cancel = el('button', 'act', 'cancel');
           save.onclick = () => change({ [name]: value.value });
@@ -2041,10 +2089,11 @@ function envEditor(names, apply) {
     const add = el('div', 'env-add');
     const name = el('input', 'text env-new-name');
     name.placeholder = 'NAME';
+    name.setAttribute('aria-label', 'Variable name');
     name.autocomplete = 'off';
     name.spellcheck = false;
     name.setAttribute('autocapitalize', 'characters');
-    const value = secretInput('value');
+    const value = secretInput('value', 'Variable value');
     const go = el('button', 'btn', 'Add');
     go.onclick = () => {
       const n = String(name.value || '').trim();
@@ -2400,7 +2449,7 @@ async function viewFiles(v) {
   const inFiles = files.reduce((n, f) => n + f.bytes, 0);
   const total = (await api('/sessions/' + id)).session.disk_bytes;
   if (stale(gen)) return;
-  v.append(el('div', 'status', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
+  v.append(el('div', 'disk', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
   const root = fileTree(entries);
   if (!root.children.length) {
     v.append(blank('No files yet', 'What you upload here or attach to a message, and what the agent writes, is kept in this conversation’s folder and listed here.'));
@@ -2453,13 +2502,14 @@ async function viewFiles(v) {
         const wrap = el('div', 'row-wrap');
         const rm = el('button', 'row-del', 'Delete');
         rm.type = 'button';
+        rm.setAttribute('aria-label', 'Delete ' + n.path);
         rm.onclick = async e => {
           if (e && e.stopPropagation) e.stopPropagation();
           if (!confirm('Delete ' + n.path + '?')) return;
           await del(fileURL(n.path));
           render();
         };
-        wrap.append(rm, row);
+        wrap.append(row, rm);
         swipeable(wrap, row, () => window.open(fileURL(n.path), '_blank'));
         tree.append(wrap);
       }
@@ -2591,6 +2641,7 @@ async function viewSettings(v) {
   const name = el('input', 'text');
   name.value = s.title || '';
   name.placeholder = 'What this conversation is about';
+  name.setAttribute('aria-label', 'Title');
   const rename = el('button', 'btn', 'Rename');
   rename.onclick = async () => {
     const chosen = name.value.trim();
@@ -2800,11 +2851,11 @@ async function viewJobs(v) {
     // The job's own settings, as set. Nothing is derived and no category is
     // inferred — what you see is what the job is.
     const settings = el('dl', 'settings');
-    const field = (k, val) => { settings.append(el('dt', null, k), el('dd', null, val)); };
-    field('schedule', j.schedule);
-    field('check', j.check || '—');
-    field('after acting', j.after_acting);
-    field('next wake', j.status === 'done' ? '—' : until(j.next_run_at));
+    const field = (k, val, cls) => { settings.append(el('dt', null, k), el('dd', cls || null, val)); };
+    field('Schedule', j.schedule, 'code');
+    field('Check', j.check || '—', j.check ? 'code' : null);
+    field('After acting', j.after_acting);
+    field('Next wake', j.status === 'done' ? '—' : until(j.next_run_at));
     m.append(settings);
     m.append(el('div', 's', `${j.run_count} runs` + (j.last_status ? ` · last ${j.last_status.replace(/_/g, ' ')}` : '')));
     // Nothing refuses a cadence, so the price sits on the row that sets one.
@@ -2933,8 +2984,11 @@ function metricTile(label, value, sub, tip) {
   return t;
 }
 
+// metricHead is a section's heading, with its explanation and its key beside
+// the title; a screen reader's list of headings names only the title.
 function metricHead(title, tip, right) {
   const h = el('h2', 'msec');
+  h.setAttribute('aria-label', title);
   h.append(el('span', null, title), help(tip), right);
   return h;
 }
@@ -3141,6 +3195,8 @@ function pluginCard(p, tools) {
       const label = el('label', 'pl');
       label.append(el('span', 'k', settingName(c)), el('span', 'state ' + (c.set ? 'on' : ''), c.set ? 'set' : c.required ? 'not set · required' : 'not set'));
       const input = el('input', 'text pin');
+      input.id = 'pset-' + p.name + '-' + c.key;
+      label.htmlFor = input.id;
       input.type = c.sensitive ? 'password' : 'text';
       input.placeholder = c.set ? 'Type to replace it' : '';
       input.autocomplete = 'off';
@@ -3959,7 +4015,7 @@ async function viewSearch(v) {
     if (stale(gen)) return;
     const mine = el('button', 'pill on', title);
     const all = el('button', 'pill', 'All conversations');
-    const pick = (to, on, off) => { scope = to; on.className = 'pill on'; off.className = 'pill'; inp.placeholder = placeholder(); run(); };
+    const pick = (to, on, off) => { scope = to; on.className = 'pill on'; off.className = 'pill'; named(); run(); };
     mine.onclick = () => pick(here, mine, all);
     all.onclick = () => pick('', all, mine);
     const scopes = el('div', 'scopes');
@@ -3967,7 +4023,10 @@ async function viewSearch(v) {
     v.append(scopes);
   }
   const placeholder = () => scope ? 'Search this conversation…' : 'Search every transcript…';
-  inp.placeholder = placeholder();
+  // What the field searches is its name as well as its placeholder, since a
+  // placeholder is gone once something is typed.
+  const named = () => { inp.placeholder = placeholder(); inp.setAttribute('aria-label', scope ? 'Search this conversation' : 'Search every conversation'); };
+  named();
   // Before anything is typed the screen says what a search looks for.
   const hint = () => blank(scope ? 'Search this conversation' : 'Search every conversation',
     'Each word you type finds the words that start with it, wherever they all stand in one entry.');
@@ -4109,6 +4168,14 @@ function pushEnv() {
     hasNotification: 'Notification' in window,
     standalone: navigator.standalone
   };
+}
+
+// registerWorker installs the service worker wherever a browser has one, push
+// or no push: it also answers the app opened on a device with no connection
+// (webui.html, "Installation").
+async function registerWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try { await navigator.serviceWorker.register('/sw.js'); } catch (e) {}
 }
 
 // startPush installs the service worker and listens for it, and registers a
@@ -4257,25 +4324,60 @@ function accentControl(prefs) {
 
 async function boot() {
   document.addEventListener('visibilitychange', onVisible);
-  // The device's connection coming back is a page coming back.
-  window.addEventListener('online', onVisible);
+  // The device's connection going is said at once; coming back, it is a page
+  // coming back, over a socket that may never have noticed it was gone.
+  window.addEventListener('offline', () => linked(false, true));
+  window.addEventListener('online', () => { if (ws && ws.readyState === 1) linked(true); onVisible(); });
   connect();
   route();
   readStatus();
   readAccent();
+  registerWorker();
   startPush();
 }
 
 // readStatus reads the agent's status — the breaker, the credit, the sandbox —
-// into the banner and the foot of the rail.
+// into the banner and the foot of the rail. Not read, it leaves them as they
+// were: the line across the top says the agent cannot be reached.
 async function readStatus() {
   try {
     state.status = await api('/status');
-    const b = state.status.breaker;
-    $('breaker').textContent = b && b.open ? 'Scheduler paused: ' + b.reason : '';
-  } catch (e) {
-    $('breaker').textContent = 'Cannot reach the gateway. Are you on the tailnet?';
-  }
+    drawBreaker(state.status.breaker);
+  } catch (e) {}
   renderSideFoot();
+}
+
+// drawBreaker puts a paused scheduler across the top of every screen
+// (jobs.html, "Circuit breaker"): one line saying jobs are paused and why,
+// which opens to the whole of it and what happens next. Told again, as on
+// every status event, it stays as open as it was.
+function drawBreaker(b) {
+  const box = $('breaker');
+  box.innerHTML = '';
+  box.hidden = !(b && b.open);
+  if (box.hidden) { state.breakerOpen = false; box.className = ''; return; }
+  const head = el('button', 'why');
+  head.type = 'button';
+  head.append(el('b', null, 'Jobs are paused'), el('span', 'cause', breakerCause(b.reason)), chevron());
+  const more = el('p', 'more', 'Paused ' + ago(b.opened_at) + '. One job is tried again every five minutes, ' +
+    'and all of them resume when it succeeds.');
+  const show = () => {
+    head.setAttribute('aria-expanded', String(!!state.breakerOpen));
+    more.hidden = !state.breakerOpen;
+    box.className = state.breakerOpen ? 'open' : '';
+  };
+  head.onclick = () => { state.breakerOpen = !state.breakerOpen; show(); };
+  show();
+  box.append(head, more);
+}
+
+// breakerCause is what paused the scheduler, in words: the gateway's own
+// message taken out of the JSON it came in, after who said it.
+function breakerCause(reason) {
+  const m = /^openrouter (\d{3}): ([\s\S]*)$/.exec(reason || '');
+  if (!m) return reason || 'Jobs failed one after another.';
+  let said = m[2].trim();
+  try { const j = JSON.parse(said); said = (j.error && j.error.message) || j.message || said; } catch (e) {}
+  return 'OpenRouter ' + m[1] + ': ' + said;
 }
 boot();
