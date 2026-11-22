@@ -9,7 +9,7 @@ const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
 
-function load() {
+function load(online) {
   const handlers = {};
   const shown = [];
   const opened = [];
@@ -24,7 +24,8 @@ function load() {
       claim: async () => {}
     }
   };
-  const ctx = { self, console };
+  self.navigator = { onLine: online !== false };
+  const ctx = { self, console, Response };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'sw.js'), 'utf8'), ctx, { filename: 'sw.js' });
   return { handlers, shown, opened, w };
@@ -89,4 +90,37 @@ test('a test push, which names no session, opens the app', async () => {
   const sw = load();
   await fire(sw.handlers.notificationclick, { notification: notification('') });
   assert.deepStrictEqual(sw.opened, ['/']);
+});
+
+// ---------- a page opened offline ----------
+
+// open hands the worker a request as a browser does, and says what it
+// answered with, or null when it left the request to the browser.
+function open(sw, mode) {
+  let answered = null;
+  sw.handlers.fetch({ request: { mode, url: 'https://agent.example/' }, respondWith: r => { answered = r; } });
+  return answered;
+}
+
+// Opened with no connection at all, the app is a page of its own saying so
+// rather than the browser's error (webui.html, "Installation").
+test('a page opened while the device is offline is answered by a page saying so', async () => {
+  const sw = load(false);
+  const r = await open(sw, 'navigate');
+  assert.ok(r, 'the worker left an offline page to the browser\'s error');
+  assert.match(r.headers.get('content-type'), /text\/html/);
+  const page = await r.text();
+  assert.match(page, /This device is offline/);
+  assert.match(page, /Try again/);
+  assert.match(page, /addEventListener\('online'/, 'the page does not open the app once the connection is back');
+});
+
+// With a connection the browser asks the agent itself, as it would with no
+// worker: the password in front of the agent is asked for by the browser, and
+// a worker passing a refusal on can leave it unasked. What a page asks for,
+// once opened, is left alone either way; its own screens say what failed.
+test('a page opened with a connection, and every other request, is left to the browser', () => {
+  assert.strictEqual(open(load(true), 'navigate'), null, 'a page opened online went through the worker');
+  assert.strictEqual(open(load(false), 'cors'), null, 'a request a page made went through the worker');
+  assert.strictEqual(open(load(true), 'cors'), null);
 });

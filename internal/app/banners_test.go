@@ -164,3 +164,68 @@ func TestALostConnectionSaysSoUntilItIsBack(t *testing.T) {
 		}
 	}
 }
+
+// workerProbe waits for the service worker to be ready, then opens the app
+// again in a frame, which the worker now stands in front of, and writes
+// whether the worker controls it and whether it is the app, as it must be
+// for a device with a connection, rather than the page saying it is offline.
+//
+// The frame's app runs this probe too, being the same script; only the page
+// on top opens a frame, or each frame would open another. It is held open
+// like the page, so it is told it is done as well.
+const workerProbe = `(function probe() {
+  if (window !== window.top) return;
+  const out = document.createElement('pre');
+  const write = s => { out.textContent = 'worker: ' + s + ' |'; document.body.prepend(out); };
+  if (!navigator.serviceWorker) return write('none');
+  navigator.serviceWorker.ready.then(reg => {
+    const f = document.createElement('iframe');
+    f.src = '/#jobs';
+    f.onload = () => (function wait(left) {
+      const d = f.contentDocument;
+      if (left && !(d && d.getElementById('side-nav') && d.getElementById('side-nav').children.length)) {
+        fetch('/held').then(() => wait(left - 1));
+        return;
+      }
+      write('active=' + !!reg.active + ' script=' + new URL(reg.active.scriptURL).pathname +
+        ' controlled=' + !!f.contentWindow.navigator.serviceWorker.controller +
+        ' app=' + !!d.getElementById('side-nav').children.length +
+        ' offline=' + /This device is offline/.test(d.body.textContent));
+      // The frame is held open as the page is, until it too says it is done.
+      d.body.append(d.createTextNode('worker: done'));
+    })(200);
+    document.body.append(f);
+  }, e => write('failed ' + e));
+})();`
+
+// The service worker is installed as the page boots, and a page opened with a
+// connection through it is the app as ever: it answers only a device with no
+// connection at all (webui.html, "Installation"). In a real browser against
+// the interface as shipped. A browser emulating no connection does not tell
+// the worker, so the page it answers offline is held to in web/sw.test.js,
+// against the real worker.
+func TestTheWorkerLeavesAConnectedDeviceToTheApp(t *testing.T) {
+	browserOrSkip(t)
+	a := browseApp(t)
+	a.cfg.WebDir = "../../web"
+	a.sched = NewScheduler(a)
+	srv := httptest.NewServer(heldUntil(t, a.routes(), "worker:", workerProbe))
+	t.Cleanup(srv.Close)
+	allowServer(t, a, srv.URL)
+	a.or = NewOpenRouter("test-key")
+	a.or.base = scriptedModel(t, toolStep{text: "Noted."}).URL
+	s := newSession(t, a)
+
+	args, _ := json.Marshal(map[string]string{"url": srv.URL + "/#sessions"})
+	seen := a.tools.Call(t.Context(), &ToolCtx{App: a, SessionID: s.ID}, "web_browse", args)
+	if !seen.OK {
+		t.Fatalf("web_browse: %s", seen.Error)
+	}
+	m := regexp.MustCompile(`worker: ([^\n]*)`).FindStringSubmatch(seen.Content)
+	if m == nil {
+		t.Fatalf("the probe wrote nothing; the browser read:\n%s", seen.Content)
+	}
+	if want := "active=true script=/sw.js controlled=true app=true offline=false |"; m[1] != want {
+		t.Errorf("got %q, want %q", m[1], want)
+	}
+}
