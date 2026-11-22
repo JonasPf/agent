@@ -9,6 +9,16 @@
   which conversation or file it deletes. On a phone the closed menu can
   no longer be reached by mistake; opened, it takes the focus, and
   Escape closes it.
+- **The last capitals are gone.** Labels such as "What the model sees"
+  on Plugins and a job's name above its wake read as written. Each
+  job's settings are in the same type as the rest of the app, with only
+  its schedule set as code.
+- **A laptop no longer shows things twice.** The conversation list
+  leaves New conversation and Search to the rail beside it, and More is
+  a reading column like Plugins instead of stretching across the
+  window. On a phone the title on a conversation's details gets the
+  full width, and a banner at the top no longer leaves an extra gap
+  above the header.
 
 ## 2026-11-21
 

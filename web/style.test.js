@@ -24,6 +24,12 @@ test('every text size comes from the five of the scale', () => {
   assert.deepStrictEqual(sizes, [12, 14, 16, 18, 24]);
 });
 
+// A label reads as it is written, in sentence case (webui.html, "Look"):
+// capitals set by the stylesheet shout, and are slower to read.
+test('nothing is set in capitals by the stylesheet', () => {
+  assert.deepStrictEqual(found(/text-transform:\s*uppercase/), []);
+});
+
 test('every corner, shadow and transition comes from its tokens', () => {
   assert.deepStrictEqual(found(/border-radius:\s*[^;]*\b\d+px/), [], 'a corner in pixels');
   assert.deepStrictEqual(found(/box-shadow:\s*[^;]*rgba?\(/), [], 'a shadow of its own');

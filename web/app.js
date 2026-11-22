@@ -565,9 +565,10 @@ function renderSideFoot() {
 // ---------- views ----------
 
 // A transcript is read in a column; a list of jobs or files is read across the
-// room a laptop actually has. The Plugins screen is read in a column too: it is
-// mostly explanation, one tool under another.
-const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'panels', 'search', 'toolpanel', 'app'];
+// room a laptop actually has. The Plugins screen and More are read in a column
+// too: one is mostly explanation, one tool under another, and the other is
+// rows of settings, each read from its label across to its value.
+const ROOMY = ['sessions', 'jobs', 'skills', 'personas', 'files', 'search', 'toolpanel', 'app'];
 
 // A screen is drawn from requests that answer in their own time, so two screens
 // asked for in quick succession can answer in the wrong order. Each draw keeps
@@ -1220,7 +1221,7 @@ function renderTranscript() {
     // The summary is not something to read as new: it stands for what came
     // before it, so where reading stopped is placed by the turns around it.
     if (!marked && part !== 'summary' && e.seq > state.readFrom) {
-      into.append(el('div', 'unread-mark', 'unread'));
+      into.append(el('div', 'unread-mark', 'Unread'));
       marked = true;
       run = null;
     }
@@ -1308,7 +1309,7 @@ function appendEntry(e) {
   const atBottom = atEnd();
   dropTail(t);
   if (state.readFrom != null && e.seq > state.readFrom && !t.querySelector('.unread-mark')) {
-    t.append(el('div', 'unread-mark', 'unread'));
+    t.append(el('div', 'unread-mark', 'Unread'));
   }
   const pending = new Set();
   // A run of tool work is continued only while it is the last thing on screen.
@@ -2448,7 +2449,7 @@ async function viewFiles(v) {
   const inFiles = files.reduce((n, f) => n + f.bytes, 0);
   const total = (await api('/sessions/' + id)).session.disk_bytes;
   if (stale(gen)) return;
-  v.append(el('div', 'status', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
+  v.append(el('div', 'disk', `${fmtBytes(total)} on disk · ${files.length} file${files.length === 1 ? '' : 's'} of ${fmtBytes(inFiles)} · transcript ${fmtBytes(total - inFiles)}`));
   const root = fileTree(entries);
   if (!root.children.length) {
     v.append(blank('No files yet', 'What you upload here or attach to a message, and what the agent writes, is kept in this conversation’s folder and listed here.'));
@@ -2850,11 +2851,11 @@ async function viewJobs(v) {
     // The job's own settings, as set. Nothing is derived and no category is
     // inferred — what you see is what the job is.
     const settings = el('dl', 'settings');
-    const field = (k, val) => { settings.append(el('dt', null, k), el('dd', null, val)); };
-    field('schedule', j.schedule);
-    field('check', j.check || '—');
-    field('after acting', j.after_acting);
-    field('next wake', j.status === 'done' ? '—' : until(j.next_run_at));
+    const field = (k, val, cls) => { settings.append(el('dt', null, k), el('dd', cls || null, val)); };
+    field('Schedule', j.schedule, 'code');
+    field('Check', j.check || '—', j.check ? 'code' : null);
+    field('After acting', j.after_acting);
+    field('Next wake', j.status === 'done' ? '—' : until(j.next_run_at));
     m.append(settings);
     m.append(el('div', 's', `${j.run_count} runs` + (j.last_status ? ` · last ${j.last_status.replace(/_/g, ' ')}` : '')));
     // Nothing refuses a cadence, so the price sits on the row that sets one.

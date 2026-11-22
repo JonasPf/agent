@@ -52,6 +52,10 @@ system's sans: what the operator typed, buttons, rows, labels, the status line. 
 is set larger than the prose and code in a line a size below it, in the monospace; a code block keeps
 the small monospace, so more of each line fits on a phone.</p>
 
+<p>A label reads as it is written, in sentence case. Nothing is set in capitals by the stylesheet:
+capitals shout, are slower to read, and a label spaced out in them is the commonest mark of a
+template.</p>
+
 <p>The accent is the operator's choice, made on the More panel among four: copper, ink, plum and
 graphite, each offered as a swatch drawn in its own colour. Until one is chosen it is copper. None
 is a green, an amber or a red, because those already say how something went, and each reads at 4.5:1
@@ -68,6 +72,7 @@ agent answers.</p>
 <li>Every piece of text on the conversation list, a conversation with a tool call and a formatted reply, its details, and a new conversation is drawn at one of five sizes: 12, 14, 16, 18 or 24 pixels.</li>
 <li>The agent's replies are set at 18 pixels in the serif the interface ships, which a browser loads from the agent itself; what the operator typed is set in the system's sans.</li>
 <li>The line above a message shows its time and no speaker, except a job's wake, which names its job.</li>
+<li>No text on any screen is set in capitals by the stylesheet.</li>
 <li>The More panel offers the accents copper, ink, plum and graphite, each drawn in its own colour, with the current one marked; until one is chosen it is copper.</li>
 <li>Choosing an accent redraws the interface in it at once, and the agent keeps it: a browser opening the interface afterwards, on any device or after a restart, draws it.</li>
 <li>An accent not offered is refused, and the refusal names those that are.</li>
@@ -119,9 +124,15 @@ than below one, so the move to it does not slide, and neither does drawing again
 on show. The header stays where it is and takes the new title; what moves is everything below it,
 the screen being left as it was drawn. A request for reduced motion turns sliding off.</p>
 
-<p>A transcript is held to a reading column whatever the screen; a list of jobs, tools, files, or
-skills takes the width the screen actually has, as a grid of cards rather than a strip down the
-middle.</p>
+<p>A transcript is held to a reading column whatever the screen, and so is a screen read from top to
+bottom: a form, the Plugins screen, which is mostly explanation, one tool under another, and the More
+panel, whose rows are each read from a label across to its value. A list of conversations, jobs,
+files, or skills takes the width the screen actually has, as a grid of cards rather than a strip down
+the middle.</p>
+
+<p>On a laptop the rail beside every screen offers a new conversation and a search, so the
+conversation list's own toolbar leaves them out; on a phone, where the rail is a drawer, the toolbar
+offers them.</p>
 
 <div class="ac">
 <h4>Acceptance criteria</h4>
@@ -140,7 +151,8 @@ middle.</p>
 <li>A view's actions are behind one button in its header, at every width.</li>
 <li>On a phone the conversation list's header offers the drawer and every other screen's offers the way back; no header offers both.</li>
 <li>Opening a screen below the one on show slides it in from the right over it, and going back, by the header or the browser, slides it away to the right; a screen chosen from the rail or the drawer appears without sliding.</li>
-<li>A transcript is held to a reading column; a list of jobs, tools, files, or skills takes the full width available.</li>
+<li>A transcript, a form, the Plugins screen and the More panel are held to a reading column; a list of conversations, jobs, files, or skills takes the full width available.</li>
+<li>On a laptop no screen's toolbar repeats what the rail beside it offers; on a phone the conversation list's toolbar offers a new conversation and a search.</li>
 <li>Nothing in the interface is laid out at a fixed page width.</li>
 <li>The interface follows the system's colour scheme, and is legible in both.</li>
 <li>A request for reduced motion is honoured.</li>
