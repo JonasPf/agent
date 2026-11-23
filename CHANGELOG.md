@@ -9,6 +9,9 @@
   out of memory. Under Plugins → voice-over, set Backend to
   openrouter, so a missing key is reported instead. With the key set,
   nothing changes: it still uses OpenRouter.
+- **The voice-over plugin is updated again.** Where it speaks with its
+  own voices, on a laptop, the review page now plays a sample of each
+  one, as it already did for OpenRouter's voices. Here nothing changes.
 
 ## 2026-11-22
 
