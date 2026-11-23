@@ -18,5 +18,8 @@ The voice-over plugin does this with its tools, and each tool's description says
    `voiceover_script`, before `voiceover_render`.
 4. **A scheduled run, or told to go ahead without asking:** no page. Render, and report what was
    made, what it cost, and every line cut short.
-5. **No key:** a tool that says the plugin has no OpenRouter key is waiting for the operator, who
-   sets it on the Plugins screen. Say so and stop; nothing else fixes it.
+5. **No key:** here the plugin speaks only through OpenRouter. Without a key it would download its
+   own models into the conversation and run them, and this container has too little memory for
+   them. A tool that says the plugin has no OpenRouter key, or that it downloaded or ran a model
+   on this machine, is waiting for the operator. The operator sets the key, and Backend to
+   `openrouter`, on the Plugins screen. Say so and stop; nothing else fixes it.

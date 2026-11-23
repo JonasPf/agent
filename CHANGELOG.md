@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-23
+
+- **Set the voice-over plugin's Backend to openrouter.** The plugin's
+  new version can transcribe and speak without a key, on the machine
+  it runs on, in English. That is meant for a laptop. Here, without a
+  key, it would download about 640 MB into the conversation and run
+  out of memory. Under Plugins → voice-over, set Backend to
+  openrouter, so a missing key is reported instead. With the key set,
+  nothing changes: it still uses OpenRouter.
+
 ## 2026-11-22
 
 - **The app works with a screen reader and a keyboard.** Each screen's
