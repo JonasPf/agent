@@ -85,15 +85,15 @@
   },
   {
     "name": "voice-over",
-    "version": "0.0.9",
+    "version": "0.0.10",
     "files": {
       "amd64": {
-        "url": "https://github.com/JonasPf/agent-plugins/releases/download/voice-over-v0.0.9/voice-over-0.0.9-linux-amd64.mcpb",
-        "sha256": "dd285abfe7d9e558d1633a845d03adbfe4c788bf70ebd891bd39618f009ba935"
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/voice-over-v0.0.10/voice-over-0.0.10-linux-amd64.mcpb",
+        "sha256": "b7ab924530a795c4043976ddf50dff0d60da2f991c4891fba756929fd51861cc"
       },
       "arm64": {
-        "url": "https://github.com/JonasPf/agent-plugins/releases/download/voice-over-v0.0.9/voice-over-0.0.9-linux-arm64.mcpb",
-        "sha256": "b8b9adf6ca3f18ec9b1fbaf6c98e2b5ef370dad9acf0a62199642e4c41cd1f0a"
+        "url": "https://github.com/JonasPf/agent-plugins/releases/download/voice-over-v0.0.10/voice-over-0.0.10-linux-arm64.mcpb",
+        "sha256": "df2041a0164c0ed893d2cf85996890edff2f7c5e587481c5cb18780685b42b1c"
       }
     }
   },
