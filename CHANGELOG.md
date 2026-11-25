@@ -2,6 +2,11 @@
 
 ## 2026-11-25
 
+- **Without an OpenRouter key, the voice-over plugin now says at once
+  that this server is too small for its own models.** Before, it
+  downloaded about 640 MB first and then stopped partway. The fix is
+  the same as before: set the key, and Backend to `openrouter`, under
+  Plugins → voice-over.
 - **The voice-over plugin speaks four more languages on a laptop.**
   Where it speaks with its own voices, it now has Spanish, French,
   Italian and Brazilian Portuguese voices as well as English. The
