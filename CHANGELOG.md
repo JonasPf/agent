@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-25
+
+- **The voice-over plugin speaks four more languages on a laptop.**
+  Where it speaks with its own voices, it now has Spanish, French,
+  Italian and Brazilian Portuguese voices as well as English. The
+  review page offers only the voices that speak the language a script
+  is translated into. Here, with OpenRouter, nothing changes.
+
 ## 2026-11-23
 
 - **Set the voice-over plugin's Backend to openrouter.** The plugin's
