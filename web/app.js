@@ -1305,7 +1305,8 @@ function linkedText(n, text, file) {
 function appendEntry(e) {
   const t = $('transcript');
   if (!t) return;
-  if (e.type === 'compaction' || e.type === 'prompt' || (e.type === 'event' && e.event_kind === 'revert')) return renderTranscript();
+  // An answer changes the question card above it, so it redraws the whole too.
+  if (e.type === 'compaction' || e.type === 'prompt' || (e.type === 'event' && (e.event_kind === 'revert' || e.event_kind === 'question_answered'))) return renderTranscript();
   const atBottom = atEnd();
   dropTail(t);
   if (state.readFrom != null && e.seq > state.readFrom && !t.querySelector('.unread-mark')) {
@@ -1337,6 +1338,10 @@ function appendEntry(e) {
 // entryParts splits an entry into what is read, drawn in the column, and its
 // tool work, drawn into a run.
 function entryParts(e, o) {
+  // A call whose server waits on the operator is folded into its run like
+  // any other, and its question stands after the run, in the column, where it
+  // cannot be folded away.
+  if (e.type === 'message' && e.role === 'tool' && e.question) return { read: null, work: [renderEntry(e, o)], after: questionCard(e) };
   if (e.type === 'message' && e.role === 'tool') return { read: null, work: [renderEntry(e, o)] };
   if (e.type === 'message' && e.role === 'assistant' && (e.tool_calls || []).length) {
     return { read: e.text ? renderEntry(e, Object.assign({}, o, { calls: false })) : null, work: callNodes(e, o) };
@@ -1356,7 +1361,143 @@ function place(into, e, run, o) {
     into.append(run);
   }
   addToRun(run, e, drawn.work);
+  if (drawn.after) { into.append(drawn.after); return { run: null, drawn }; }
   return { run, drawn };
+}
+
+// ---- a tool's question ----
+
+// questionCard is what a bundle's server asked the operator before its tool
+// could answer (ADR-094): a form drawn from what it asked, or an address to go
+// to. Sending it is the answer; the agent then tries the call again with it.
+function questionCard(e) {
+  const q = e.question || {};
+  const card = el('section', 'question');
+  card.append(el('div', 'qhead', `${q.bundle || e.tool_name} asks, before ${e.tool_name} can go on`));
+  const answered = (state.entries || []).find(x => x.event_kind === 'question_answered' && x.tool_call_id === e.tool_call_id);
+  const ids = Object.keys(q.requests || {}).sort();
+  const read = [];
+  let forms = 0;
+  for (const id of ids) {
+    const r = q.requests[id] || {};
+    card.append(el('p', 'qmsg', r.message || ''));
+    if (r.mode === 'url') {
+      let host = r.url;
+      try { host = new URL(r.url).host; } catch (_) { /* shown whole */ }
+      const where = el('div', 'qwhere', 'Goes to ');
+      where.append(el('b', '', host));
+      const go = el('a', 'btn qopen', 'Open ' + host);
+      go.href = r.url; go.target = '_blank'; go.rel = 'noopener noreferrer';
+      card.append(where, go);
+      continue;
+    }
+    forms++;
+    const fields = questionFields(id, r.requestedSchema || {}, !!answered);
+    card.append(fields.node);
+    read.push([id, fields.read]);
+  }
+  if (forms) card.append(el('div', 'qnote', 'What you enter goes to the plugin and into this conversation, where the agent reads it. Never enter a password or a key here.'));
+  if (answered) {
+    const how = { accept: 'Answered', decline: 'Declined', cancel: 'Dismissed' }[answered.text] || 'Answered';
+    card.append(el('div', 'qdone', how));
+    card.className = 'question done';
+    return card;
+  }
+  const sid = state.session ? state.session.id : state.arg;
+  const send = async (action, content) => {
+    try { await post(`/sessions/${sid}/questions/${e.tool_call_id}`, content ? { action, content } : { action }); }
+    catch (err) { toast({ title: 'Not sent', body: String(err.message) }); }
+  };
+  const bar = el('div', 'qbar');
+  const ok = el('button', 'btn primary qsend', forms ? 'Send' : 'Done');
+  ok.type = 'button';
+  ok.onclick = () => {
+    const content = {};
+    for (const [id, get] of read) content[id] = get();
+    return send('accept', content);
+  };
+  const no = el('button', 'btn qdecline', 'Decline');
+  no.type = 'button';
+  no.onclick = () => send('decline');
+  const later = el('button', 'btn qcancel', 'Dismiss');
+  later.type = 'button';
+  later.onclick = () => send('cancel');
+  bar.append(ok, no, later);
+  card.append(bar);
+  return card;
+}
+
+// questionFields draws a question's form from its flat schema: text, a
+// number, a yes or no, one of a list, or several of one. read gathers what
+// was filled in, in the types the schema asks for.
+function questionFields(id, schema, locked) {
+  const node = el('div', 'qfields');
+  const props = schema.properties || {}, required = schema.required || [];
+  const getters = [];
+  for (const key of Object.keys(props)) {
+    const p = props[key] || {};
+    const row = el('label', 'qfield');
+    const label = el('span', 'k', (p.title || key) + (required.includes(key) ? ' *' : ''));
+    row.append(label);
+    const choices = p.enum || (p.oneOf || []).map(o => o.const);
+    const titles = p.enum ? p.enum : (p.oneOf || []).map(o => o.title || o.const);
+    let input, get;
+    if (p.type === 'boolean') {
+      input = el('input', 'qinput'); input.type = 'checkbox';
+      input.checked = p.default === true;
+      get = () => input.checked;
+    } else if (choices.length) {
+      input = el('select', 'text qinput');
+      if (!required.includes(key)) input.append(Object.assign(el('option', '', ''), { value: '' }));
+      choices.forEach((c, i) => input.append(Object.assign(el('option', '', String(titles[i])), { value: String(c) })));
+      input.value = p.default != null ? String(p.default) : (required.includes(key) ? String(choices[0]) : '');
+      get = () => input.value === '' ? undefined : input.value;
+    } else if (p.type === 'array') {
+      const items = p.items || {};
+      const opts = items.enum || (items.anyOf || items.oneOf || []).map(o => o.const);
+      const boxes = opts.map(o => {
+        const b = el('input', 'qinput'); b.type = 'checkbox'; b.value = String(o);
+        b.checked = (p.default || []).includes(o);
+        const l = el('span', 'qopt'); l.append(b, el('span', '', String(o)));
+        row.append(l);
+        return b;
+      });
+      input = null;
+      get = () => boxes.filter(b => b.checked).map(b => b.value);
+      if (locked) boxes.forEach(b => { b.disabled = true; });
+    } else if (p.type === 'number' || p.type === 'integer') {
+      input = el('input', 'text qinput'); input.type = 'number';
+      if (p.minimum != null) input.min = String(p.minimum);
+      if (p.maximum != null) input.max = String(p.maximum);
+      input.step = p.type === 'integer' ? '1' : 'any';
+      input.value = p.default != null ? String(p.default) : '';
+      get = () => input.value === '' ? undefined : Number(input.value);
+    } else {
+      input = el('input', 'text qinput');
+      input.type = { email: 'email', uri: 'url', date: 'date', 'date-time': 'datetime-local' }[p.format] || 'text';
+      if (p.minLength != null) input.minLength = p.minLength;
+      if (p.maxLength != null) input.maxLength = p.maxLength;
+      input.value = p.default != null ? String(p.default) : '';
+      get = () => input.value === '' ? undefined : input.value;
+    }
+    if (input) {
+      input.name = id + '/' + key;
+      if (locked) input.disabled = true;
+      row.append(input);
+    }
+    if (p.description) row.append(el('span', 'pd', p.description));
+    node.append(row);
+    getters.push([key, get]);
+  }
+  const read = () => {
+    const out = {};
+    for (const [key, get] of getters) {
+      const v = get();
+      if (v !== undefined) out[key] = v;
+    }
+    return out;
+  };
+  return { node, read };
 }
 
 function workRun(key) {

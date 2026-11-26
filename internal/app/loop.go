@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -25,6 +26,9 @@ type turnOpts struct {
 	// differ whenever the host slept, the session was busy, or the run was
 	// retried, and the difference is what tells the agent its reminder is stale.
 	DueAt time.Time
+	// Retry is a call to try again with the operator's answers before the
+	// model is asked anything: the turn an answer to a tool's question starts.
+	Retry *questionRetry
 }
 
 // runTurn assembles a request from the session, calls the model, dispatches tool
@@ -79,6 +83,21 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 	}
 
 	tc := &ToolCtx{App: a, SessionID: s.ID, JobID: opts.JobID}
+	if opts.Retry != nil {
+		call, result := a.retryCall(ctx, tc, opts.Retry)
+		emit(Entry{Type: "message", Role: "assistant", ToolCalls: []ToolCall{call}, JobID: opts.JobID})
+		body, _ := json.Marshal(result)
+		emit(Entry{Type: "message", Role: "tool", ToolCallID: call.ID, ToolName: call.Name,
+			ToolResult: body, ToolApp: result.page, Stderr: result.stderr, Question: result.question, JobID: opts.JobID})
+		msgs = append(msgs, ChatMessage{Role: "assistant", ToolCalls: []wireCall{{ID: call.ID, Type: "function",
+			Function: wireFunction{Name: call.Name, Arguments: call.Arguments}}}},
+			ChatMessage{Role: "tool", ToolCallID: call.ID, Name: call.Name, Content: string(body)})
+		// Asked again, the turn ends again, on the new question.
+		if result.question != nil {
+			a.hub.Broadcast(wsEvent{Kind: "sessions"})
+			return nil
+		}
+	}
 	var lastRefusal string
 	repeats := 0
 
@@ -139,9 +158,15 @@ func (a *App) runTurn(ctx context.Context, s *Session, opts turnOpts) error {
 			results = append(results, result)
 			body, _ := json.Marshal(result)
 			emit(Entry{Type: "message", Role: "tool", ToolCallID: c.ID, ToolName: c.Name,
-				ToolResult: body, ToolApp: result.page, Stderr: result.stderr, JobID: opts.JobID})
+				ToolResult: body, ToolApp: result.page, Stderr: result.stderr, Question: result.question,
+				JobID: opts.JobID})
 			msgs = append(msgs, ChatMessage{Role: "tool", ToolCallID: c.ID, Name: c.Name,
 				Content: string(body)})
+		}
+		// A tool whose server waits on the operator ends the turn: there is
+		// nothing to carry on from until they answer (ADR-094).
+		if slices.ContainsFunc(results, func(r toolResult) bool { return r.question != nil }) {
+			break
 		}
 		// The results are stored before either stop, so the transcript ends on
 		// what the tools returned and the next message carries on from there.
@@ -324,6 +349,12 @@ func stoppedWhere(written []Entry) string {
 
 // SendUserMessage queues a user turn behind anything already running.
 func (a *App) SendUserMessage(sessionID, text string) error {
+	return a.sendTurn(sessionID, turnOpts{UserText: text})
+}
+
+// sendTurn queues a turn the operator started behind anything already running.
+func (a *App) sendTurn(sessionID string, opts turnOpts) error {
+	text := opts.UserText
 	s := a.store.Session(sessionID)
 	if s == nil {
 		return fmt.Errorf("no session %s", sessionID)
@@ -335,7 +366,7 @@ func (a *App) SendUserMessage(sessionID, text string) error {
 		}
 		first := a.lastUserTurn(live.ID).IsZero()
 		before := len(a.store.Entries(live.ID))
-		if err := a.runTurn(ctx, live, turnOpts{UserText: text}); err != nil {
+		if err := a.runTurn(ctx, live, opts); err != nil {
 			// A turn the operator stopped did not fail: it ended where they
 			// said. The transcript has to tell the two apart, or a stop reads
 			// as the agent breaking.

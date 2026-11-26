@@ -212,6 +212,9 @@ type toolResult struct {
 	// app is the result as the bundle's server answered it, and page the same
 	// when the tool has a page to hand it to.
 	app, page json.RawMessage
+	// question is what the tool's server asked the operator before it could
+	// answer; the turn ends on it.
+	question *ToolQuestion
 }
 
 func errResult(format string, a ...any) toolResult {

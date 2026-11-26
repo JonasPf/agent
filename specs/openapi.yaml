@@ -407,6 +407,50 @@ paths:
         "403": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
 
+  /sessions/{id}/questions/{call}:
+    parameters:
+      - $ref: "#/components/parameters/SessionID"
+      - name: call
+        in: path
+        required: true
+        description: The id of the tool call whose server asked.
+        schema: {type: string}
+    post:
+      tags: [sessions]
+      summary: Answer what a tool's server asked before it could answer (ADR-094).
+      description: >-
+        A bundle's server that needs the operator answers a call with a
+        question (MCP's multi round-trip requests): a form to fill in, or an
+        address to go to. The call's transcript entry holds it, under
+        question. The answer is accept, with each form request's content by
+        the request's id, decline, or cancel. Accepted content must fit the
+        request's schema, or it is refused with 400 and nothing is tried. A
+        taken answer is written as a question_answered event and arrives as
+        the operator's message; the agent then tries the call again with it
+        and the turn carries on. A question is answered once (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string, enum: [accept, decline, cancel]}
+                content:
+                  type: object
+                  description: For accept, each form request's answer by the request's id.
+                  additionalProperties: {type: object}
+      responses:
+        "200":
+          description: Taken; the turn that tries the call again is queued.
+          content:
+            application/json:
+              schema: {type: object, properties: {ok: {type: boolean}}}
+        "400": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+
   /sessions/{id}/files:
     parameters:
       - $ref: "#/components/parameters/SessionID"
@@ -1405,6 +1449,14 @@ components:
         tool_name: {type: string}
         tool_result: {type: object, description: "The tool's answer: ok, content, error."}
         tool_app: {type: object, description: "For a tool whose bundle gives it a page: its whole result, which the page is handed and the model is not sent."}
+        question:
+          type: object
+          description: "On a tool call whose bundle's server asked the operator before it could answer (ADR-094): the bundle, the call's arguments, what to hand back with the answers (request_state), and each request by the id the server gave it, as MCP's elicitation params (mode form or url, message, requestedSchema or url). Answered by POST /sessions/{id}/questions/{call}."
+          properties:
+            bundle: {type: string}
+            arguments: {type: object}
+            request_state: {type: string}
+            requests: {type: object, additionalProperties: {type: object}}
         stderr: {type: string}
         job_id: {type: string, description: Set when a job's wake produced the entry.}
         due_at: {type: string, format: date-time}

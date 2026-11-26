@@ -2931,6 +2931,47 @@ cut, Greek or Cyrillic say, is drawn in the next face of the stack. A newer Char
 the script again; the faces are not edited by hand.</p>
 </div>
 
+<div class="adr" id="adr-094">
+<div class="meta">ADR-094 · accepted · builds on <a href="#adr-074">ADR-074</a>, <a href="#adr-085">ADR-085</a> and <a href="#adr-092">ADR-092</a></div>
+<h3>A server's question ends the turn, and the answer tries the call again</h3>
+<h4>Context</h4>
+<p>The operator wants any MCP server to work here, and the whole of the protocol implemented (plan
+of 2026-11-26). MCP's elicitation lets a server ask the user something before its tool can answer: a
+form (a name, a choice) or an address to go to (a sign-in that must not pass through the client). In
+the 2026-07-28 revision a server no longer sends that as a request in the middle of the call; it
+answers the call with what it needs (multi round-trip requests, SEP-2322), and the client tries the
+same call again with the answers and whatever the server said to hand back. The SDK can do the retry
+itself, but only by holding the call open until it has the answers, and here the operator may answer
+from a phone days later, after a restart. <code>ask_operator</code> settled that for the agent's own
+questions: nothing is held open, and the answer arrives as the operator's next message (ADR-074); it
+is gone, and the model asks in words (ADR-092). A server cannot ask in words.</p>
+<h4>Decision</h4>
+<p>The agent declares elicitation in both modes and turns the SDK's retry off. A call answered with
+a question is a result the model reads: the tool is waiting for the operator, on what, and that it
+must not call it again for this. The call's transcript entry holds the question (the bundle, the
+call's arguments, the server's requests and request state), and the turn ends after that round, as
+there is nothing to carry on from. The conversation shows the question after the call, outside the
+folded run: a form drawn from the request's flat schema, or the address with its host named before
+it is opened, in a tab of its own. Accept, Decline and Dismiss are MCP's accept, decline and cancel.
+An answer is checked against its form, written as a <code>question_answered</code> event so it is
+taken once, and arrives as the operator's message saying what they answered. That turn first tries
+the call again with the answers, written as a call of the agent's own so that the model reads the
+tool's answer where it would have read it had nothing been asked, and then carries on as any turn
+does. Asked again, it ends again on the new question. A server that answers with no requests is too
+busy: it is tried again three times, waiting longer each time, before the call fails.</p>
+<p>The deprecated requests (a model's answer, the client's roots) are not offered, and a server that
+asks for one is refused with that said. A server on an earlier revision asks in the middle of the
+call; with one process per call there is nobody to answer then, and it is told the method is not
+there. That changes when servers outlive their calls.</p>
+<h4>Consequences</h4>
+<p>A server's question costs no rounds while it waits, survives a restart, and reaches the operator
+on any screen. What the operator types goes to the plugin and into the conversation, where the model
+reads it, so the form says never to enter a password or a key; MCP keeps those for the address mode,
+whose answer is only that it was done. A call that waits leaves its run with a result that says so,
+and the answer's turn starts with a call the model did not make: the agent's retry, directly under the
+operator's answer.</p>
+</div>
+
 <footer><a href="api.html">← API</a> · <a href="index.html">Overview</a></footer>
 </div>
 </body></html>

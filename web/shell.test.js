@@ -3730,6 +3730,71 @@ test('a file named by a message that arrives is linked when it is there', async 
   assert.deepStrictEqual(fileLinks(ctx._id('transcript')), ['/sessions/S1/files/out/final.mp4']);
 });
 
+// ---------- a tool's question ----------
+
+const askedAt = '2026-11-26T10:00:00Z';
+const greetCall = { seq: 1, type: 'message', role: 'assistant', created_at: askedAt,
+  tool_calls: [{ id: 'c1', name: 'greet', arguments: '{}' }] };
+const greetAsked = (requests) => ({ seq: 2, type: 'message', role: 'tool', tool_name: 'greet', tool_call_id: 'c1', created_at: askedAt,
+  tool_result: { ok: true, content: 'greet is waiting for the operator' },
+  question: { bundle: 'ask', arguments: {}, requests } });
+const nameForm = { name: { mode: 'form', message: 'What is your name?', requestedSchema: { type: 'object', required: ['name'], properties: {
+  name: { type: 'string', title: 'Name' },
+  times: { type: 'integer', title: 'How often', minimum: 1, default: 1 },
+  formal: { type: 'boolean', title: 'Formal' },
+  tone: { type: 'string', title: 'Tone', enum: ['warm', 'dry'] } } } } };
+
+// A server that needs the operator before its tool can answer shows its
+// question under the call, as a form drawn from what it asked, and what is
+// filled in is the answer.
+test('a tool’s question is a form under its call, and what is filled in is the answer', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }), [greetCall, greetAsked(nameForm)]);
+  await ctx.viewSession(node('div'));
+  const card = find(ctx._id('transcript'), 'question');
+  assert.ok(card, 'the question is not on screen');
+  const text = textOf(card);
+  for (const want of ['ask', 'What is your name?', 'Name', 'How often', 'Never enter a password']) {
+    assert.match(text, new RegExp(want), `the card does not say ${want}`);
+  }
+  const fields = findAll(card, 'qinput');
+  const by = name => fields.find(f => f.name === 'name/' + name);
+  by('name').value = 'Jonas';
+  by('formal').checked = true;
+  by('tone').value = 'dry';
+  await find(card, 'qsend').onclick();
+  const sent = ctx._calls.find(c => c.method === 'POST' && c.path === '/sessions/S1/questions/c1');
+  assert.ok(sent, 'nothing was sent: ' + JSON.stringify(ctx._calls));
+  assert.deepStrictEqual(JSON.parse(sent.body), { action: 'accept',
+    content: { name: { name: 'Jonas', times: 1, formal: true, tone: 'dry' } } });
+});
+
+// A sign-in somewhere else says where before it is opened, opens in a tab of
+// its own, and is answered when the operator says they are done there.
+test('a question that sends the operator elsewhere says where, and is done from the card', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }), [greetCall, greetAsked({ login: { mode: 'url',
+    message: 'Sign in to the example service.', url: 'https://example.com/authorize?client=agent' } })]);
+  await ctx.viewSession(node('div'));
+  const card = find(ctx._id('transcript'), 'question');
+  assert.match(textOf(card), /example\.com/, 'the card does not say where the operator is sent');
+  const go = find(card, 'qopen');
+  assert.strictEqual(go.href, 'https://example.com/authorize?client=agent');
+  assert.strictEqual(go.target, '_blank');
+  assert.match(String(go.rel), /noopener/);
+  await find(card, 'qsend').onclick();
+  const sent = ctx._calls.find(c => c.method === 'POST' && c.path === '/sessions/S1/questions/c1');
+  assert.deepStrictEqual(JSON.parse(sent.body), { action: 'accept', content: {} });
+});
+
+// Once answered, the card says how, and offers nothing more to send.
+test('an answered question says how it was answered, and asks nothing more', async () => {
+  const ctx = conversationScreen(session({ id: 'S1' }), [greetCall, greetAsked(nameForm),
+    { seq: 3, type: 'event', event_kind: 'question_answered', tool_call_id: 'c1', tool_name: 'greet', text: 'decline', created_at: askedAt }]);
+  await ctx.viewSession(node('div'));
+  const card = find(ctx._id('transcript'), 'question');
+  assert.match(textOf(card), /Declined/, 'the card does not say it was declined');
+  assert.ok(!find(card, 'qsend'), 'an answered question can be answered again');
+});
+
 // ---------- old panel links ----------
 
 // ask_operator is gone (ADR-092), and no tool brings a script into the
