@@ -20,7 +20,11 @@ type Entry struct {
 	// sent ToolResult, which holds the result's text.
 	ToolApp json.RawMessage `json:"tool_app,omitempty"`
 	Stderr  string          `json:"stderr,omitempty"`
-	JobID   string          `json:"job_id,omitempty"`
+	// Question is what a bundle's server asked the operator before it could
+	// answer this call (MCP's multi round-trip requests). The call waits for
+	// it: the answer tries it again.
+	Question *ToolQuestion `json:"question,omitempty"`
+	JobID    string        `json:"job_id,omitempty"`
 	// DueAt is when a wake was scheduled for, which is not when it happened. A
 	// host that sleeps takes the scheduler with it, and a reminder delivered two
 	// hours late reads as current unless it says otherwise.

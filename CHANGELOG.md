@@ -14,6 +14,11 @@
   card gives the tool's title, and marks the ones its plugin calls
   read-only, may delete, safe to repeat, or reaching outside. It's the
   plugin's word: the agent doesn't check it.
+- **A plugin can now ask you something before it goes on.** When a
+  plugin needs a name, a choice, or for you to sign in somewhere, its
+  question appears in the conversation under the call, and the agent
+  stops there. Answer it, decline it or dismiss it, whenever you like;
+  the agent then picks the call up again with your answer.
 
 ## 2026-11-25
 

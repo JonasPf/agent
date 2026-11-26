@@ -566,6 +566,22 @@ p.group-note { font-size: var(--t-xs); margin: var(--sp-2) var(--sp-1) 0; }
 .pfail, .pneeds { font-size: var(--t-sm); margin-top: 8px; padding: 7px 10px; border-radius: var(--r-sm); overflow-wrap: anywhere; }
 .pfail { color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 45%, var(--line)); }
 .pneeds { color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); }
+/* A tool's question (ADR-094): it stands in the column after its call, where
+   a folded run cannot hide it, and keeps to the reading width. */
+.question { margin: 10px 0; padding: 12px 14px; background: var(--card); border: 1px solid var(--accent); border-radius: var(--r); box-shadow: var(--shadow); max-width: 640px; }
+.question.done { border-color: var(--line); box-shadow: none; }
+.question .qhead { font-size: var(--t-xs); color: var(--muted); }
+.question .qmsg { margin: 6px 0; font-size: var(--t-sm); }
+.question .qwhere { font-size: var(--t-sm); color: var(--fg-2); margin-bottom: 6px; overflow-wrap: anywhere; }
+.question .qfields { display: flex; flex-direction: column; gap: 8px; margin: 6px 0; }
+.question .qfield { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-sm); min-width: 0; }
+.question .qfield .k { font-weight: 550; }
+.question .qfield .pd { font-size: var(--t-xs); color: var(--muted); }
+.question .qfield input[type=checkbox] { align-self: flex-start; }
+.question .qopt { display: flex; align-items: center; gap: 6px; }
+.question .qnote { font-size: var(--t-xs); color: var(--muted); margin: 6px 0; }
+.question .qbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.question .qdone { font-size: var(--t-sm); color: var(--ok); margin-top: 6px; }
 .psettings { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .pset { flex-basis: 100%; display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
 .pset .pl { display: flex; flex-direction: column; font-size: var(--t-sm); min-width: 0; }

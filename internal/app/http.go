@@ -54,6 +54,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /sessions/import", a.hImportSession)
 	mux.HandleFunc("GET /sessions/{id}/apps/{seq}", a.hApp)
 	mux.HandleFunc("POST /sessions/{id}/apps/{seq}/call", a.hAppCall)
+	mux.HandleFunc("POST /sessions/{id}/questions/{call}", a.hAnswerQuestion)
 	mux.HandleFunc("GET /search", a.hSearch)
 
 	mux.HandleFunc("GET /jobs", a.hJobs)

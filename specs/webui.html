@@ -652,6 +652,27 @@ its own instead.</p>
 </ul>
 </div>
 
+<h2>A tool's question</h2>
+
+<p>When a tool's server needs the operator before it can answer (<a href="tools.html">Tools</a>,
+<a href="adrs.html#adr-094">ADR-094</a>), its question stands in the conversation after the call,
+outside the folded run, where it cannot be folded away. It names the plugin asking and the tool that
+waits. A form question is drawn from what the server asked: text, a number, a yes or no, one of a
+list, or several of one, each with its title and whether it is required, and a line saying that what
+is entered goes to the plugin and into the conversation, so never a password or a key. A question
+that sends the operator elsewhere says where before anything opens, and opens it in a tab of its
+own. Send (Done, for an address), Decline and Dismiss answer it; once answered, the card says how,
+and offers nothing more.</p>
+
+<div class="ac">
+<h4>Acceptance criteria</h4>
+<ul>
+<li>A tool's question is a form under its call, and what is filled in is the answer, in the types its form asks for.</li>
+<li>A question that sends the operator elsewhere says where, opens it in a tab of its own, and is done from the card.</li>
+<li>An answered question says how it was answered, and asks nothing more.</li>
+</ul>
+</div>
+
 <h2>A bundle's page</h2>
 
 <p>A tool result whose tool brings a page (<a href="tools.html">Tools</a>,

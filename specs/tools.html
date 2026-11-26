@@ -191,6 +191,19 @@ should, and a result that does not match says so beside its text, which may stil
 the prompt of a conversation that has any of its tools, in a section of its own under the bundle's
 name, and into no other. A server that says nothing costs nothing.</p>
 
+<h3>A tool's question</h3>
+
+<p>A server may need the operator before its tool can answer: a name, a choice, or a sign-in at an
+address of its own. It answers the call with what it needs, as MCP's multi round-trip requests have
+it, and the agent puts that to the operator instead of a result (<a href="adrs.html#adr-094">ADR-094</a>).
+The model is told the tool is waiting for the operator, and on what, and the turn ends there. The
+conversation shows the question after the call: a form drawn from what the server asked, or the
+address it sends the operator to, with its host named before it is opened. Their answer (accept,
+decline, or dismiss) arrives as their message; the agent then tries the call again with it, and the
+turn carries on from what the tool answers. Nothing is held open while the question waits, so it can
+wait across a restart. A server too busy to answer is tried again a few times before the call fails.
+The deprecated requests, a model's answer and the client's roots, are not offered.</p>
+
 <p>A server may also give a tool a title for people, and hints: that it only reads, that it may
 destroy, that calling it twice does no more than once, that it reaches the world outside. MCP calls
 these untrusted, and they are: the Plugins screen shows the title and each hint the server gave
@@ -217,6 +230,11 @@ offers no tools until the value is set.</p>
 <li>A part of a bundle tool's result that is not text (a picture, a sound, a resource's bytes) is saved in the conversation's directory under <code>tool-output/</code>, never over an earlier one, and the model is sent its path and type; a resource's text is sent as text, and a link to a resource is named with its address.</li>
 <li>A result whose structured part does not match the output schema its tool declares says so in what the model is sent.</li>
 <li>A bundle's server instructions are in the prompt of a conversation that has any of the bundle's tools, under the bundle's name, and in no other.</li>
+<li>A tool whose server needs the operator's answer ends the turn: the model is told the tool is waiting for the operator, and the call holds the question for the screen. The operator's answer arrives as their message; the agent tries the call again with it, and the turn carries on from what the tool then answers. A question is answered once.</li>
+<li>An answer that does not fit the question's form, or is neither accept, decline nor cancel, is refused, and nothing is tried.</li>
+<li>Declining is said to the server, which answers as it will.</li>
+<li>A question that sends the operator to an address holds the address; once they say they are done there, the call is tried again.</li>
+<li>A server too busy to answer is tried again with what it said, and its answer is the result.</li>
 <li>The Plugins screen gives a bundle tool's title, and what its server says of it (read-only, destructive, idempotent, reaching outside), only where the server said it; nothing is decided from these.</li>
 <li>A bundle that cannot run here &mdash; no manifest, a server that is not a binary, another platform, a command outside the bundle, a tool name already taken, a second bundle of the same name &mdash; is not loaded, and the Plugins screen says why.</li>
 </ul>

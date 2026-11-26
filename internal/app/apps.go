@@ -26,8 +26,9 @@ const (
 )
 
 // appCapabilities is what the agent says of itself to every bundle's server.
-func appCapabilities() *mcp.ClientCapabilities {
-	c := &mcp.ClientCapabilities{}
+func clientCapabilities() *mcp.ClientCapabilities {
+	c := &mcp.ClientCapabilities{Elicitation: &mcp.ElicitationCapabilities{
+		Form: &mcp.FormElicitationCapabilities{}, URL: &mcp.URLElicitationCapabilities{}}}
 	c.AddExtension(appExtension, map[string]any{"mimeTypes": []string{appMime}})
 	return c
 }

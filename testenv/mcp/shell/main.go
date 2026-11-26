@@ -18,12 +18,18 @@
 // tools: parts, whose result holds every kind of content there is, and typed,
 // which declares an output schema and answers to it, or, asked for a bad
 // answer, does not.
+//
+// Given the one argument "ask", its tools need the operator before they can
+// answer, as MCP's multi round-trip requests have a server say so: greet asks
+// a name in a form, connect sends the operator to sign in at an address, and
+// busy is too busy the first time and answers when tried again.
 package main
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -52,6 +58,9 @@ func main() {
 	}
 	if len(os.Args) == 2 && os.Args[1] == "rich" {
 		s = richServer()
+	}
+	if len(os.Args) == 2 && os.Args[1] == "ask" {
+		s = askServer()
 	}
 	if len(os.Args) == 4 {
 		s = mcp.NewServer(&mcp.Implementation{Name: os.Args[1], Version: "0.0.1"}, nil)
@@ -201,6 +210,53 @@ func richServer() *mcp.Server {
 			text, _ := json.Marshal(map[string]any{"n": n})
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}},
 				StructuredContent: map[string]any{"n": n}}, nil
+		})
+	return s
+}
+
+func askServer() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "ask", Version: "0.0.1"}, nil)
+	text := func(t string) *mcp.CallToolResult {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: t}}}
+	}
+	none := json.RawMessage(`{"type":"object","properties":{}}`)
+	answer := func(req *mcp.CallToolRequest, id string) (*mcp.ElicitResult, bool) {
+		r, ok := req.Params.InputResponses[id].(*mcp.ElicitResult)
+		return r, ok
+	}
+	s.AddTool(&mcp.Tool{Name: "greet", Description: "Greet the operator by the name they give.", InputSchema: none},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if r, ok := answer(req, "name"); ok {
+				if r.Action != "accept" {
+					return text("No name given (" + r.Action + ")."), nil
+				}
+				return text(fmt.Sprintf("Hello, %v, %v times (state %s).", r.Content["name"], r.Content["times"], req.Params.RequestState)), nil
+			}
+			return &mcp.CallToolResult{RequestState: "asked-once", InputRequests: mcp.InputRequestMap{
+				"name": &mcp.ElicitParams{Mode: "form", Message: "What is your name?", RequestedSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name":  map[string]any{"type": "string", "title": "Name"},
+						"times": map[string]any{"type": "integer", "title": "How often", "minimum": 1, "default": 1},
+					},
+					"required": []string{"name"},
+				}}}}, nil
+		})
+	s.AddTool(&mcp.Tool{Name: "connect", Description: "Connect to the example service.", InputSchema: none},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if r, ok := answer(req, "login"); ok {
+				return text("Connected: " + r.Action + "."), nil
+			}
+			return &mcp.CallToolResult{InputRequests: mcp.InputRequestMap{
+				"login": &mcp.ElicitParams{Mode: "url", Message: "Sign in to the example service.",
+					URL: "https://example.com/authorize?client=agent"}}}, nil
+		})
+	s.AddTool(&mcp.Tool{Name: "busy", Description: "Answer once it is not busy.", InputSchema: none},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if req.Params.RequestState == "come back" {
+				return text("Done, after a wait."), nil
+			}
+			return &mcp.CallToolResult{RequestState: "come back", InputRequests: mcp.InputRequestMap{}}, nil
 		})
 	return s
 }

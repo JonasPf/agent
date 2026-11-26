@@ -234,8 +234,12 @@ func (b *bundle) serve(ctx context.Context, a *App, workspace string, reads, env
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stderr := &strings.Builder{}
 	cmd.Stderr = stderr
+	// A question a server asks comes back as the call's result, for the agent
+	// to put to the operator and to try the call again with the answer, maybe
+	// days later; the SDK's own retry would hold the call open for it.
 	client := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: Version},
-		&mcp.ClientOptions{Capabilities: appCapabilities()})
+		&mcp.ClientOptions{Capabilities: clientCapabilities(),
+			MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true}})
 	cs, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd, TerminateDuration: time.Second}, nil)
 	if err != nil {
 		if cmd.Process != nil {
@@ -366,6 +370,13 @@ func (r *Registry) serveIn(ctx context.Context, tc *ToolCtx, b *bundle) (*mcp.Cl
 // callBundle runs one call of a bundle's tool. Like any tool call it ends in a
 // result the model can read, whatever went wrong.
 func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args json.RawMessage) toolResult {
+	return r.callBundleWith(ctx, tc, t, args, nil, "")
+}
+
+// callBundleWith runs a call of a bundle's tool, handing its server the
+// answers to what it asked before and what it said to hand back with them.
+func (r *Registry) callBundleWith(ctx context.Context, tc *ToolCtx, t *Tool, args json.RawMessage,
+	responses mcp.InputResponseMap, state string) toolResult {
 	b := t.bundle
 	cctx, cancel := context.WithTimeout(ctx, time.Duration(b.timeout)*time.Second)
 	defer cancel()
@@ -387,11 +398,33 @@ func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args js
 	if len(args) == 0 {
 		args = json.RawMessage("{}")
 	}
-	out, err := cs.CallTool(cctx, &mcp.CallToolParams{Name: t.Name, Arguments: args})
+	params := &mcp.CallToolParams{Name: t.Name, Arguments: args, InputResponses: responses, RequestState: state}
+	out, err := cs.CallTool(cctx, params)
+	// A server too busy to answer asks for nothing and says to come back: it
+	// is tried again, a little later each time, with what it said.
+	for wait := busyWait; err == nil && out.NeedsInput() && len(out.InputRequests) == 0 && wait <= 4*busyWait; wait *= 2 {
+		select {
+		case <-cctx.Done():
+		case <-time.After(wait):
+		}
+		params.InputResponses, params.RequestState = nil, out.RequestState
+		out, err = cs.CallTool(cctx, params)
+	}
 	if err != nil {
 		res := fail("tool %q failed: %v", t.Name, err)
 		res.stderr = stderr.String()
 		return res
+	}
+	if out.NeedsInput() {
+		if len(out.InputRequests) == 0 {
+			return toolResult{OK: false, Error: fmt.Sprintf("tool %q: its server stayed too busy to answer; try it again later", t.Name),
+				stderr: stderr.String()}
+		}
+		q, err := questionOf(b, args, out)
+		if err != nil {
+			return toolResult{OK: false, Error: fmt.Sprintf("tool %q: %v", t.Name, err), stderr: stderr.String()}
+		}
+		return toolResult{OK: true, Content: q.toModel(t.Name), question: q, stderr: stderr.String()}
 	}
 	text := bundleText(out, saveIn(absOr(tc.App.ensureWorkspace(tc.SessionID)), t.Name))
 	if note := t.output.check(t.Name, out.StructuredContent); note != "" {
