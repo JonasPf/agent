@@ -2291,6 +2291,18 @@ const toolCard = (v, name) => findAll(v, 'tooldef').find(c => textOf(find(c, 'tn
 // flat is the text a node shows, run together as the page would show it in a <pre>.
 const flat = n => String(n._text || '') + (n.children || []).map(flat).join('');
 
+// A tool's title and its server's hints are on its card, as its server's word.
+test('a tool card gives its title and what its server says of it', async () => {
+  const PARTS = { name: 'parts', title: 'Every part', description: 'Answer with every kind of part.',
+    parameters: { type: 'object', properties: {} }, agent: { timeout_seconds: 5 },
+    hints: ['read-only', 'open-world'] };
+  PARTS.sent = sent(PARTS);
+  const { v } = await toolsScreen({ tools: [RELOAD, PARTS] });
+  const head = textOf(find(toolCard(v, 'parts'), 'tsum'));
+  for (const want of ['Every part', 'read-only', 'reaches outside']) assert.match(head, new RegExp(want), `the card does not say ${want}`);
+  assert.doesNotMatch(textOf(find(toolCard(v, 'reload_tools'), 'tsum')), /read-only|reaches outside/, 'a tool with no hints shows some');
+});
+
 // The boundary is the same for every tool program, so it is said once, where
 // the tools used to repeat it on every card.
 test('the tools screen shows the sandbox once: what a tool may read, write, and connect to', async () => {

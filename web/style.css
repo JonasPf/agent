@@ -600,6 +600,8 @@ p.group-note { font-size: var(--t-xs); margin: var(--sp-2) var(--sp-1) 0; }
 .tchip.key { background: var(--soft); border-color: transparent; color: var(--accent); }
 .tchip.reads { background: var(--code-bg); border-color: transparent; }
 .tchip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, var(--line)); }
+.tchip.hint { border-style: dashed; }
+.tname .ttitle { color: var(--fg-2); font-size: var(--t-sm); }
 .tchip.builtin { background: var(--sunk); border-color: transparent; color: var(--muted); }
 .tsum .meta { grid-row: span 2; align-self: center; display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: var(--t-xs); white-space: nowrap; }
 .tsum .tdesc { font-size: var(--t-sm); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

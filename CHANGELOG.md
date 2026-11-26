@@ -10,6 +10,10 @@
   When a plugin's server says how it is meant to be used, a conversation
   that has its tools gets that in its prompt. None of the shipped plugins
   says anything, so nothing changes for them.
+- **The Plugins screen shows what a plugin says of its tools.** A tool
+  card gives the tool's title, and marks the ones its plugin calls
+  read-only, may delete, safe to repeat, or reaching outside. It's the
+  plugin's word: the agent doesn't check it.
 
 ## 2026-11-25
 

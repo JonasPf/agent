@@ -3274,6 +3274,9 @@ function pluginInstall(close) {
   return box;
 }
 
+// A bundle tool's hints, as its card names them.
+const TOOL_HINTS = { 'read-only': 'read-only', destructive: 'may delete', idempotent: 'safe to repeat', 'open-world': 'reaches outside' };
+
 // What each ? on the Plugins screen says: the things its labels cannot.
 const TOOL_TIPS = {
   sandbox: 'Landlock, a Linux kernel feature, limits what each tool program can touch. Every list here is an allow-list: anything not named is refused by the kernel, whatever the tool tries. Built-in tools run inside the agent and are not sandboxed.',
@@ -3287,6 +3290,7 @@ const TOOL_TIPS = {
   agent: 'What the tool’s bundle says about running it. The agent reads it to run the tool, and never sends it to the model.',
   timeout: 'The program is stopped after this, and the model is told the call failed.',
   reads: 'Paths this tool may read on top of what every tool gets.',
+  hints: 'What the tool’s server says of it. The agent does not check it and decides nothing from it.',
 };
 
 // help is a ? beside a term the screen cannot explain in its label. It opens on
@@ -3450,7 +3454,13 @@ function toolCard(t) {
   const a = t.agent || {};
   const name = el('div', 'tname');
   name.append(el('span', 'n', t.name));
+  if (t.title) name.append(el('span', 'ttitle', t.title));
   if (t.builtin) name.append(el('span', 'tchip builtin', 'built in'));
+  for (const h of t.hints || []) {
+    const chip = el('span', 'tchip hint', TOOL_HINTS[h] || h);
+    chip.title = TOOL_TIPS.hints;
+    name.append(chip);
+  }
   if (t.app) name.append(el('span', 'tchip', 'opens a page'));
   if (t.page_only) name.append(el('span', 'tchip', 'for its page only'));
   if ((a.reads || []).length) name.append(el('span', 'tchip reads', 'reads ' + a.reads.join(' ')));

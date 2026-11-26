@@ -908,6 +908,13 @@ func (a *App) hTools(w http.ResponseWriter, r *http.Request) {
 			// call it, in which case the model is not sent it.
 			entry["app"] = t.app.URI != ""
 			entry["page_only"] = !t.app.forModel
+			// What its server says of it, for the operator alone.
+			if t.title != "" {
+				entry["title"] = t.title
+			}
+			if len(t.hints) > 0 {
+				entry["hints"] = t.hints
+			}
 		}
 		out = append(out, entry)
 	}

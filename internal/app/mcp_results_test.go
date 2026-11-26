@@ -132,3 +132,36 @@ func TestAServersInstructionsAreInThePromptOfAConversationWithItsTools(t *testin
 		t.Errorf("a conversation without rich's tools has its instructions: %q", text)
 	}
 }
+
+// "The Plugins screen gives a bundle tool's title, and what its server says of
+// it (read-only, destructive, idempotent, reaching outside), only where the
+// server said it; nothing is decided from these, which are its word."
+func TestAToolsTitleAndHintsAreItsServers(t *testing.T) {
+	bundles := t.TempDir()
+	writeBundle(t, bundles, "rich", richManifest)
+	writeBundle(t, bundles, "shell", shellManifest)
+	a, failures := bundleApp(t, bundles)
+	if len(failures) > 0 {
+		t.Fatalf("the bundles did not load: %+v", failures)
+	}
+	tools, _ := listedTools(t, a)
+	hints := func(name string) string {
+		raw, _ := json.Marshal(tools[name]["hints"])
+		return string(raw)
+	}
+	if got := tools["parts"]["title"]; got != "Every part" {
+		t.Errorf("parts' title = %v, want its server's", got)
+	}
+	if got := hints("parts"); got != `["read-only"]` {
+		t.Errorf("parts' hints = %s, want read-only alone (closed to the world is no warning)", got)
+	}
+	if got := hints("typed"); got != `["destructive","idempotent","open-world"]` {
+		t.Errorf("typed's hints = %s", got)
+	}
+	if _, ok := tools["sh"]["title"]; ok {
+		t.Errorf("sh has a title its server never gave: %v", tools["sh"])
+	}
+	if got := hints("sh"); got != "null" {
+		t.Errorf("sh's hints = %s, want none", got)
+	}
+}

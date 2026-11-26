@@ -297,14 +297,43 @@ func (b *bundle) tools(a *App) ([]*Tool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("tool %s: its output schema: %w", t.Name, err)
 		}
+		title, hints := toolHints(t)
 		out = append(out, &Tool{Name: t.Name, Description: t.Description, Parameters: params,
 			Agent: ToolAgent{Timeout: b.timeout, Reads: b.reads}, Dir: b.Dir, bundle: b, app: appOf(t.Meta),
-			output: output})
+			output: output, title: title, hints: hints})
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("its server lists no tools")
 	}
 	return out, nil
+}
+
+// toolHints is what a server says of a tool for the operator: its title, and
+// the hints it gave outright. A hint left out is not shown as its default,
+// which assumes the worst: a tool that says nothing is not called destructive.
+func toolHints(t *mcp.Tool) (string, []string) {
+	title := t.Title
+	an := t.Annotations
+	if an == nil {
+		return title, nil
+	}
+	if title == "" {
+		title = an.Title
+	}
+	var hints []string
+	if an.ReadOnlyHint {
+		hints = append(hints, "read-only")
+	}
+	if an.DestructiveHint != nil && *an.DestructiveHint && !an.ReadOnlyHint {
+		hints = append(hints, "destructive")
+	}
+	if an.IdempotentHint {
+		hints = append(hints, "idempotent")
+	}
+	if an.OpenWorldHint != nil && *an.OpenWorldHint {
+		hints = append(hints, "open-world")
+	}
+	return title, hints
 }
 
 // said is what a server wrote to standard error, for a failure that would
