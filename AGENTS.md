@@ -118,6 +118,38 @@ skill in this repository: change it there, release it, update the lock.
 **The agent is never rebuilt or restarted for a tool.** Install the bundle on
 the Plugins screen, or call `reload_tools` (or `task tools:reload`).
 
+## Watch: skills inside bundles
+
+The operator wants skills to stop being installed on their own (the Skills
+screen, `/skills/install`, `"kind": "skill"` in `plugins.lock`) and to arrive
+inside MCPB bundles, served by the bundle's server as the skills extension
+(SEP-2640, `io.modelcontextprotocol/skills`) describes. That waits until the
+standard and the Go SDK carry it. Keep an eye on it for them:
+
+- **When:** at the start of a session, if the date under "Last seen" is more
+  than seven days old.
+- **What:** with `gh api` and the SEP's page,
+  - the Go SDK: whether PR #1238 (SEP-2640 support) and #1240 (a filesystem
+    provider) in `modelcontextprotocol/go-sdk` are merged, and whether a
+    release carries them;
+  - releases of `modelcontextprotocol/ext-skills`;
+  - <https://modelcontextprotocol.io/seps/2640-skills-extension>: its status,
+    and the methods a host must speak;
+  - `modelcontextprotocol/mcpb`: any manifest field or proposal for skills.
+- **Then:** if anything differs from "Last seen", say so in the first lines of
+  your reply: what changed, and whether it is now enough to start. Update "Last
+  seen" in your next pull request. If nothing changed, change only its date,
+  in a commit you are making anyway, never in one of its own.
+- **Enough to start** is a Go SDK release the agent can move to that lets a
+  client call `skills/list` and read `skill://` resources.
+
+**Last seen, 2026-11-26:** SEP-2640 is Final: `skills/list` and `skills/get`,
+with `resources/directory/read` optional. ext-skills is at v0.1.0
+(2026-11-20). The Go SDK's newest release is v1.9.0-pre.1 (2026-11-17), with
+no skills support; #1238 is open with changes requested, and #1240 is open.
+The agent is on v1.7.0. MCPB has nothing on skills and has not changed since
+2026-05-26.
+
 ## Every tool ships eval cases
 
 A tool's `description` and `parameters` are the surface the model programmes
