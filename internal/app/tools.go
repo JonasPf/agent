@@ -34,6 +34,12 @@ type Tool struct {
 	// output is the schema a bundle's tool declares its structured result
 	// to follow, or nil.
 	output *outputSchema
+	// title and hints are what a bundle's server says of the tool, for the
+	// operator: its name for people, and those of read-only, destructive,
+	// idempotent and open-world it said outright. They are its word, and
+	// nothing is decided from them.
+	title string
+	hints []string
 }
 
 // ToolAgent is what a bundle's manifest says under _meta for this agent:

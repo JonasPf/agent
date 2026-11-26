@@ -174,7 +174,9 @@ func richServer() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "rich", Version: "0.0.1"},
 		&mcp.ServerOptions{Instructions: "Call parts before anything else."})
 	none := json.RawMessage(`{"type":"object","properties":{}}`)
-	s.AddTool(&mcp.Tool{Name: "parts", Description: "Answer with every kind of part.", InputSchema: none},
+	no, yes := false, true
+	s.AddTool(&mcp.Tool{Name: "parts", Title: "Every part", Description: "Answer with every kind of part.", InputSchema: none,
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &no}},
 		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return &mcp.CallToolResult{Content: []mcp.Content{
 				&mcp.TextContent{Text: "Here they are."},
@@ -186,6 +188,7 @@ func richServer() *mcp.Server {
 			}}, nil
 		})
 	s.AddTool(&mcp.Tool{Name: "typed", Description: "Answer with a number, or with a word when asked to be wrong.",
+		Annotations:  &mcp.ToolAnnotations{DestructiveHint: &yes, IdempotentHint: true, OpenWorldHint: &yes},
 		InputSchema:  json.RawMessage(`{"type":"object","properties":{"wrong":{"type":"boolean"}}}`),
 		OutputSchema: json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]}`)},
 		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
