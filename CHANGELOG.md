@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-26
+
+- **Plugins can now hand back pictures, sounds and files, not only
+  text.** What a plugin's tool answers that is not text is saved in the
+  conversation's files under `tool-output/`, and the agent is told where,
+  so it can look at it. Before, such a part was dropped with a note.
+- **A plugin's own advice on how to use it now reaches the agent.**
+  When a plugin's server says how it is meant to be used, a conversation
+  that has its tools gets that in its prompt. None of the shipped plugins
+  says anything, so nothing changes for them.
+
 ## 2026-11-25
 
 - **Without an OpenRouter key, the voice-over plugin now says at once

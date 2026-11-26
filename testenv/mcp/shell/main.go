@@ -13,6 +13,11 @@
 // Given the one argument "apps", it is a server with a page: show, whose result
 // a host that takes MCP Apps opens ui://shell/page for; refresh, which only the
 // page may call; and quiet, which only the model may.
+//
+// Given the one argument "rich", it is a server with instructions and two
+// tools: parts, whose result holds every kind of content there is, and typed,
+// which declares an output schema and answers to it, or, asked for a bad
+// answer, does not.
 package main
 
 import (
@@ -44,6 +49,9 @@ func main() {
 		})
 	if len(os.Args) == 2 && os.Args[1] == "apps" {
 		s = appsServer()
+	}
+	if len(os.Args) == 2 && os.Args[1] == "rich" {
+		s = richServer()
 	}
 	if len(os.Args) == 4 {
 		s = mcp.NewServer(&mcp.Implementation{Name: os.Args[1], Version: "0.0.1"}, nil)
@@ -151,6 +159,45 @@ func appsServer() *mcp.Server {
 		func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 			return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{
 				{URI: "ui://shell/page", MIMEType: appMime, Text: appPage}}}, nil
+		})
+	return s
+}
+
+// The bytes parts answers with, which the agent's tests compare files against.
+var (
+	richPicture = []byte("\x89PNG\r\n\x1a\n a picture")
+	richSound   = []byte("RIFF a sound")
+	richBlob    = []byte{0, 1, 2, 3}
+)
+
+func richServer() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "rich", Version: "0.0.1"},
+		&mcp.ServerOptions{Instructions: "Call parts before anything else."})
+	none := json.RawMessage(`{"type":"object","properties":{}}`)
+	s.AddTool(&mcp.Tool{Name: "parts", Description: "Answer with every kind of part.", InputSchema: none},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{
+				&mcp.TextContent{Text: "Here they are."},
+				&mcp.ImageContent{Data: richPicture, MIMEType: "image/png"},
+				&mcp.AudioContent{Data: richSound, MIMEType: "audio/wav"},
+				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{URI: "file:///notes.txt", MIMEType: "text/plain", Text: "a note"}},
+				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{URI: "file:///blob.bin", MIMEType: "application/octet-stream", Blob: richBlob}},
+				&mcp.ResourceLink{URI: "file:///far.txt", Name: "far.txt", Description: "A file far away.", MIMEType: "text/plain"},
+			}}, nil
+		})
+	s.AddTool(&mcp.Tool{Name: "typed", Description: "Answer with a number, or with a word when asked to be wrong.",
+		InputSchema:  json.RawMessage(`{"type":"object","properties":{"wrong":{"type":"boolean"}}}`),
+		OutputSchema: json.RawMessage(`{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]}`)},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			var a struct{ Wrong bool }
+			_ = json.Unmarshal(req.Params.Arguments, &a)
+			var n any = 1
+			if a.Wrong {
+				n = "one"
+			}
+			text, _ := json.Marshal(map[string]any{"n": n})
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}},
+				StructuredContent: map[string]any{"n": n}}, nil
 		})
 	return s
 }

@@ -137,8 +137,12 @@ earlier in this conversation is lost.`,
 	secs = append(secs,
 		Section{Name: "skills_index", Text: strings.TrimRight(skillText.String(), "\n")},
 		Section{Name: "platform", Text: platform},
-		Section{Name: "tool_schemas", Text: string(schemas)},
 	)
+	if said := a.tools.InstructionsFor(sess); said != "" {
+		secs = append(secs, Section{Name: "server_instructions",
+			Text: "What the servers behind these tools say about using them:\n\n" + said})
+	}
+	secs = append(secs, Section{Name: "tool_schemas", Text: string(schemas)})
 	for i := range secs {
 		secs[i].Tokens = estTokens(secs[i].Text)
 	}

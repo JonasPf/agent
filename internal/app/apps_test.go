@@ -53,7 +53,7 @@ func appPath(s *Session, e Entry) string {
 
 // "A tool that only a page may call is not sent to the model", and "the result
 // of a tool with a page is kept whole for the page, and the model is sent its
-// text only".
+// text, not its structured content".
 func TestAToolWithAPageKeepsItsResultForThePageAndItsTextForTheModel(t *testing.T) {
 	a, s, shown := appsApp(t, map[string]string{"note": "hello"})
 
