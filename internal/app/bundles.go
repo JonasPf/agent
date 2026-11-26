@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -223,8 +224,10 @@ func readBundle(dir string, config map[string]map[string]string) (*bundle, error
 }
 
 // serve starts the bundle's server confined to workspace and connects to it.
-// The caller closes what it is given, which ends the server.
-func (b *bundle) serve(ctx context.Context, a *App, workspace string, reads, env []string) (*mcp.ClientSession, *strings.Builder, func(), error) {
+// The caller closes what it is given, which ends the server. What the server
+// says of a call's progress goes to progress, when there is one.
+func (b *bundle) serve(ctx context.Context, a *App, workspace string, reads, env []string,
+	progress func(*mcp.ProgressNotificationParams)) (*mcp.ClientSession, *serverLog, func(), error) {
 	argv := a.sandbox.Wrap(b.command, workspace, b.Dir, append(append([]string(nil), b.reads...), reads...), b.args)
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = workspace
@@ -232,14 +235,19 @@ func (b *bundle) serve(ctx context.Context, a *App, workspace string, reads, env
 	// A group of its own, so that a server ended for running too long takes
 	// with it whatever it had started.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stderr := &strings.Builder{}
+	stderr := &serverLog{}
 	cmd.Stderr = stderr
 	// A question a server asks comes back as the call's result, for the agent
 	// to put to the operator and to try the call again with the answer, maybe
 	// days later; the SDK's own retry would hold the call open for it.
-	client := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: Version},
-		&mcp.ClientOptions{Capabilities: clientCapabilities(),
-			MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true}})
+	opts := &mcp.ClientOptions{Capabilities: clientCapabilities(),
+		MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: true}}
+	if progress != nil {
+		opts.ProgressNotificationHandler = func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+			progress(req.Params)
+		}
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: Version}, opts)
 	cs, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd, TerminateDuration: time.Second}, nil)
 	if err != nil {
 		if cmd.Process != nil {
@@ -247,11 +255,15 @@ func (b *bundle) serve(ctx context.Context, a *App, workspace string, reads, env
 		}
 		return nil, stderr, nil, err
 	}
+	// A call that was stopped has told its server so (the SDK sends
+	// notifications/cancelled), and closing gives the server a moment to wind
+	// down (TerminateDuration) before the group, with whatever it started, is
+	// ended.
 	stop := func() {
+		_ = cs.Close()
 		if ctx.Err() != nil && cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
-		_ = cs.Close()
 	}
 	return cs, stderr, stop, nil
 }
@@ -270,7 +282,7 @@ func (b *bundle) tools(a *App) ([]*Tool, error) {
 	defer cancel()
 	env := append(toolBaseEnv(), b.env...)
 	env = append(env, "TMPDIR="+scratch, "HOME="+scratch)
-	cs, stderr, stop, err := b.serve(ctx, a, scratch, nil, env)
+	cs, stderr, stop, err := b.serve(ctx, a, scratch, nil, env, nil)
 	if err != nil {
 		return nil, fmt.Errorf("its server did not start: %v%s", err, said(stderr))
 	}
@@ -340,9 +352,42 @@ func toolHints(t *mcp.Tool) (string, []string) {
 	return title, hints
 }
 
+// progressLine is how far a call has got, as the screen says it: the tool,
+// what its server said, and the count when it gave one.
+func progressLine(tool string, p *mcp.ProgressNotificationParams) string {
+	count := fmt.Sprintf("%g", p.Progress)
+	if p.Total > 0 {
+		count = fmt.Sprintf("%g of %g", p.Progress, p.Total)
+	}
+	if p.Message != "" {
+		return fmt.Sprintf("%s: %s (%s)", tool, p.Message, count)
+	}
+	return fmt.Sprintf("%s: %s", tool, count)
+}
+
+// serverLog is what a server writes to standard error. The command copies
+// into it while the server runs, and a call that ends early reads it before
+// the server has stopped, so the two are kept apart.
+type serverLog struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *serverLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *serverLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
 // said is what a server wrote to standard error, for a failure that would
 // otherwise say only that there was one.
-func said(stderr *strings.Builder) string {
+func said(stderr *serverLog) string {
 	if s := strings.TrimSpace(stderr.String()); s != "" {
 		return ": " + truncate(s, 300)
 	}
@@ -351,7 +396,8 @@ func said(stderr *strings.Builder) string {
 
 // serveIn starts a bundle's server for a conversation: confined to its
 // directory, with what the conversation holds in its environment.
-func (r *Registry) serveIn(ctx context.Context, tc *ToolCtx, b *bundle) (*mcp.ClientSession, *strings.Builder, func(), error) {
+func (r *Registry) serveIn(ctx context.Context, tc *ToolCtx, b *bundle,
+	progress func(*mcp.ProgressNotificationParams)) (*mcp.ClientSession, *serverLog, func(), error) {
 	workspace := absOr(tc.App.ensureWorkspace(tc.SessionID))
 	tmp := tc.App.sandbox.TempDir(workspace)
 	_ = os.MkdirAll(tmp, 0o755)
@@ -364,7 +410,7 @@ func (r *Registry) serveIn(ctx context.Context, tc *ToolCtx, b *bundle) (*mcp.Cl
 	env = append(env, sessionVars(tc.vars())...)
 	env = tc.App.withPackages(env, tc.SessionID)
 	env = append(env, tc.App.skillDirsEnv(tc.SessionID), "TMPDIR="+tmp, "HOME="+home)
-	return b.serve(ctx, tc.App, workspace, tc.App.skillFolders(tc.SessionID), env)
+	return b.serve(ctx, tc.App, workspace, tc.App.skillFolders(tc.SessionID), env, progress)
 }
 
 // callBundle runs one call of a bundle's tool. Like any tool call it ends in a
@@ -388,7 +434,12 @@ func (r *Registry) callBundleWith(ctx context.Context, tc *ToolCtx, t *Tool, arg
 		}
 		return errResult(format, a...)
 	}
-	cs, stderr, stop, err := r.serveIn(cctx, tc, b)
+	// How far a call has got is said on the conversation's screen while it
+	// runs, the latest each time; it is not kept.
+	progress := func(p *mcp.ProgressNotificationParams) {
+		tc.App.hub.Broadcast(wsEvent{Kind: "progress", SessionID: tc.SessionID, Text: progressLine(t.Name, p)})
+	}
+	cs, stderr, stop, err := r.serveIn(cctx, tc, b, progress)
 	if err != nil {
 		res := fail("tool %q: its server did not start: %v", t.Name, err)
 		res.stderr = stderr.String()
@@ -399,6 +450,7 @@ func (r *Registry) callBundleWith(ctx context.Context, tc *ToolCtx, t *Tool, arg
 		args = json.RawMessage("{}")
 	}
 	params := &mcp.CallToolParams{Name: t.Name, Arguments: args, InputResponses: responses, RequestState: state}
+	params.SetProgressToken(fmt.Sprintf("%s-%d", t.Name, time.Now().UnixNano()))
 	out, err := cs.CallTool(cctx, params)
 	// A server too busy to answer asks for nothing and says to come back: it
 	// is tried again, a little later each time, with what it said.

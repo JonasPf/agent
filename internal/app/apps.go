@@ -113,7 +113,7 @@ func (a *App) hApp(w http.ResponseWriter, r *http.Request) {
 func (a *App) readApp(ctx context.Context, sessionID string, t *Tool) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, defaultBundleTimeout*time.Second)
 	defer cancel()
-	cs, stderr, stop, err := a.tools.serveIn(ctx, &ToolCtx{App: a, SessionID: sessionID}, t.bundle)
+	cs, stderr, stop, err := a.tools.serveIn(ctx, &ToolCtx{App: a, SessionID: sessionID}, t.bundle, nil)
 	if err != nil {
 		return "", fmt.Errorf("its server did not start: %v%s", err, said(stderr))
 	}
