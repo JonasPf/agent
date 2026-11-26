@@ -997,6 +997,22 @@ test('the status line counts how long the agent has been working', async () => {
   assert.match(textOf(ctx._id('statusline')), /working\s+0s/, 'a turn that starts on screen does not show at once');
 });
 
+// What a running tool's server says of how far it has got is on the status
+// line while the agent works, the latest each time, and goes when the result
+// arrives.
+test('the status line says how far a running tool has got', async () => {
+  const ctx = conversationScreen(session({ id: 'S1', working_seconds: 3 }));
+  await ctx.viewSession(node('div'));
+  ctx.handle({ kind: 'progress', session_id: 'S1', text: 'voiceover_render: Speaking (2 of 12)' });
+  ctx.handle({ kind: 'progress', session_id: 'S1', text: 'voiceover_render: Speaking (3 of 12)' });
+  const said = textOf(ctx._id('statusline'));
+  assert.match(said, /Speaking \(3 of 12\)/, 'the latest progress is not shown');
+  assert.doesNotMatch(said, /2 of 12/, 'an earlier progress stayed');
+  ctx.handle({ kind: 'entry', session_id: 'S1', entry: { seq: 9, type: 'message', role: 'tool', tool_name: 'voiceover_render',
+    tool_call_id: 'c9', tool_result: { ok: true, content: 'done' }, created_at: new Date().toISOString() } });
+  assert.doesNotMatch(textOf(ctx._id('statusline')), /Speaking/, 'the progress stayed after the result arrived');
+});
+
 // A turn runs for as long as its work takes, so the one thing the operator
 // needs while it does is a way to end it.
 test('a working conversation can be stopped from the status line', async () => {

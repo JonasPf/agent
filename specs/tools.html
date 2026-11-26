@@ -191,6 +191,13 @@ should, and a result that does not match says so beside its text, which may stil
 the prompt of a conversation that has any of its tools, in a section of its own under the bundle's
 name, and into no other. A server that says nothing costs nothing.</p>
 
+<h3>A call while it runs</h3>
+
+<p>A call of a bundle's tool carries a progress token, and what its server says of how far it has got
+is shown on the conversation's status line while it runs, the latest each time; it is not kept. When
+the operator stops the turn, the server is told the call is cancelled, as MCP has a client do, and is
+given a moment to wind down before it and whatever it started are ended.</p>
+
 <h3>A tool's question</h3>
 
 <p>A server may need the operator before its tool can answer: a name, a choice, or a sign-in at an
@@ -230,6 +237,8 @@ offers no tools until the value is set.</p>
 <li>A part of a bundle tool's result that is not text (a picture, a sound, a resource's bytes) is saved in the conversation's directory under <code>tool-output/</code>, never over an earlier one, and the model is sent its path and type; a resource's text is sent as text, and a link to a resource is named with its address.</li>
 <li>A result whose structured part does not match the output schema its tool declares says so in what the model is sent.</li>
 <li>A bundle's server instructions are in the prompt of a conversation that has any of the bundle's tools, under the bundle's name, and in no other.</li>
+<li>While a bundle's tool runs, what its server says of how far it has got reaches the conversation's screen, the latest each time.</li>
+<li>Stopping a turn tells the server of a running call that it is cancelled, and gives it a moment to stop before it is ended.</li>
 <li>A tool whose server needs the operator's answer ends the turn: the model is told the tool is waiting for the operator, and the call holds the question for the screen. The operator's answer arrives as their message; the agent tries the call again with it, and the turn carries on from what the tool then answers. A question is answered once.</li>
 <li>An answer that does not fit the question's form, or is neither accept, decline nor cancel, is refused, and nothing is tried.</li>
 <li>Declining is said to the server, which answers as it will.</li>

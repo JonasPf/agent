@@ -19,6 +19,10 @@
   question appears in the conversation under the call, and the agent
   stops there. Answer it, decline it or dismiss it, whenever you like;
   the agent then picks the call up again with your answer.
+- **A long plugin call now says how far it has got.** While it runs,
+  the line under the conversation shows the plugin's own progress, such
+  as "Speaking (3 of 12)", when the plugin reports it. Stopping a turn
+  now also lets the plugin know, so it can tidy up before it's ended.
 
 ## 2026-11-25
 

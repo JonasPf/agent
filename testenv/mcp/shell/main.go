@@ -23,6 +23,10 @@
 // answer, as MCP's multi round-trip requests have a server say so: greet asks
 // a name in a form, connect sends the operator to sign in at an address, and
 // busy is too busy the first time and answers when tried again.
+//
+// Given the one argument "long", its tools take time: steps says how far it
+// has got three times before it answers, and wait writes waiting.txt and then
+// waits until its call is cancelled, when it writes cancelled.txt.
 package main
 
 import (
@@ -33,6 +37,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -61,6 +66,9 @@ func main() {
 	}
 	if len(os.Args) == 2 && os.Args[1] == "ask" {
 		s = askServer()
+	}
+	if len(os.Args) == 2 && os.Args[1] == "long" {
+		s = longServer()
 	}
 	if len(os.Args) == 4 {
 		s = mcp.NewServer(&mcp.Implementation{Name: os.Args[1], Version: "0.0.1"}, nil)
@@ -257,6 +265,34 @@ func askServer() *mcp.Server {
 				return text("Done, after a wait."), nil
 			}
 			return &mcp.CallToolResult{RequestState: "come back", InputRequests: mcp.InputRequestMap{}}, nil
+		})
+	return s
+}
+
+func longServer() *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "long", Version: "0.0.1"}, nil)
+	none := json.RawMessage(`{"type":"object","properties":{}}`)
+	text := func(t string) *mcp.CallToolResult {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: t}}}
+	}
+	s.AddTool(&mcp.Tool{Name: "steps", Description: "Take three steps, saying each.", InputSchema: none},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			token := req.Params.GetProgressToken()
+			for i := 1; i <= 3; i++ {
+				if token != nil {
+					_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: token,
+						Progress: float64(i), Total: 3, Message: fmt.Sprintf("step %d", i)})
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			return text(fmt.Sprintf("Done in 3 steps (token given: %v).", token != nil)), nil
+		})
+	s.AddTool(&mcp.Tool{Name: "wait", Description: "Wait until cancelled.", InputSchema: none},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			_ = os.WriteFile("waiting.txt", []byte("waiting\n"), 0o644)
+			<-ctx.Done()
+			_ = os.WriteFile("cancelled.txt", []byte("told\n"), 0o644)
+			return text("cancelled"), nil
 		})
 	return s
 }

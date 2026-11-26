@@ -98,7 +98,7 @@ const until = t => {
 
 // working holds, per session, when this page learned the agent started on it,
 // in this browser's clock.
-const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, workOpen: {}, promptOpen: {}, statusOpen: false, sort: 'recent', working: {}, push: { device: '', error: '', test: null } };
+const state = { view: null, session: null, entries: [], streaming: '', fileFolds: {}, sessions: [], models: [], modelSort: 'intelligence', status: null, collapsed: {}, workOpen: {}, promptOpen: {}, statusOpen: false, sort: 'recent', working: {}, progress: {}, push: { device: '', error: '', test: null } };
 
 // ---------- routing ----------
 
@@ -356,6 +356,11 @@ async function catchUp() {
 function handle(e) {
   if (e.kind === 'entry' || e.kind === 'transient') {
     if (e.kind === 'entry') announce(e.entry, e.session_id);
+    // A result ends the call whose progress was being said.
+    if (e.kind === 'entry' && e.entry && e.entry.role === 'tool' && state.progress[e.session_id]) {
+      delete state.progress[e.session_id];
+      if (state.view === 'session' && e.session_id === state.arg) renderStatus();
+    }
     if (state.view === 'session' && e.session_id === state.arg) {
       // Heard twice — a socket delivering it again, a catch-up that already
       // fetched it — an entry is still held, and drawn, once.
@@ -373,10 +378,14 @@ function handle(e) {
     }
   } else if (e.kind === 'turn_start') {
     state.streaming = '';
+  } else if (e.kind === 'progress') {
+    // How far a running tool has got: the latest only, and only while it runs.
+    state.progress[e.session_id] = e.text;
+    if (state.view === 'session' && e.session_id === state.arg) renderStatus();
   } else if (e.kind === 'working' || e.kind === 'idle') {
     // A wait already counting — started when the message was sent — keeps its
     // start; the server's word only confirms it.
-    if (e.kind === 'idle') delete state.working[e.session_id];
+    if (e.kind === 'idle') { delete state.working[e.session_id]; delete state.progress[e.session_id]; }
     else if (state.working[e.session_id] == null) state.working[e.session_id] = Date.now();
     // The transcript carries the thinking row, so it follows the change, and a
     // turn that has ended goes to its answer: that is what was waited for.
@@ -1060,6 +1069,7 @@ function renderStatus() {
       catch (err) { toast({ title: 'Nothing to stop', body: String(err.message) }); }
     };
     now.append(stop);
+    if (state.progress[s.id]) now.append(el('span', 'progress', state.progress[s.id]));
     tickWorking();
   }
   now.append(el('b', null, fmtMoney(s.cost)));
