@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -30,6 +31,9 @@ type Tool struct {
 	// app is the page the tool's result opens and who may call the tool
 	// (ADR-090). A builtin has no page, and is the model's to call.
 	app toolApp
+	// output is the schema a bundle's tool declares its structured result
+	// to follow, or nil.
+	output *outputSchema
 }
 
 // ToolAgent is what a bundle's manifest says under _meta for this agent:
@@ -159,6 +163,32 @@ func (r *Registry) SchemasFor(sess *Session) []ToolSchema {
 		out = append(out, t.schema())
 	}
 	return out
+}
+
+// InstructionsFor is what the servers of the bundles a session has tools of
+// say about using them, under each bundle's name, in name order; empty when
+// none says anything.
+func (r *Registry) InstructionsFor(sess *Session) string {
+	said := map[string]string{}
+	for _, t := range r.All() {
+		if t.bundle == nil || t.bundle.instructions == "" || !t.app.forModel {
+			continue
+		}
+		if sess != nil && !sess.toolEnabled(t.Name) {
+			continue
+		}
+		said[t.bundle.Name] = t.bundle.instructions
+	}
+	names := make([]string, 0, len(said))
+	for n := range said {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	var b strings.Builder
+	for _, n := range names {
+		fmt.Fprintf(&b, "### %s\n%s\n\n", n, said[n])
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // schema is the tool as the model is sent it: the manifest's standard part, and

@@ -178,6 +178,19 @@ one <code>tools/call</code>, and ends the server. So a bundle's tool is confined
 no server outlives its call. What the server answers as text is the result; an answer it marks as an
 error is an error result.</p>
 
+<p>A part of the answer that is not text &mdash; a picture, a sound, the bytes of a resource &mdash;
+is saved in the conversation's directory under <code>tool-output/</code>, as the tool's name and a
+number after the last, and the result says what it is, its size, and its path. The model then opens it
+as it opens any file, with <code>call_model</code> if it needs to see or hear it, and the operator finds
+it in Files. One way for every part and every model: a model that cannot take a picture is never sent
+one. A resource's text is part of the result, and a link to a resource is named with its address. A
+tool that declares an output schema has its structured result checked against it, as MCP says a client
+should, and a result that does not match says so beside its text, which may still be right.</p>
+
+<p>A server may say how it is meant to be used (its <code>instructions</code>). What it says goes into
+the prompt of a conversation that has any of its tools, in a section of its own under the bundle's
+name, and into no other. A server that says nothing costs nothing.</p>
+
 <p>Only what can run here is loaded. The server is one executable inside the bundle
 (<code>server.type</code> <code>binary</code>), for Linux. <code>${__dirname}</code> in its command,
 arguments, and variables is the bundle's folder; anything else in <code>${&hellip;}</code> is not
@@ -195,6 +208,9 @@ offers no tools until the value is set.</p>
 <li>A bundle's tools are the ones its server lists, described as the server describes them, and each names the bundle and version it came from.</li>
 <li>A bundle's tool called in a turn runs in the conversation's directory, and reaches nothing outside it: not another conversation's files, not the agent's settings, not the directory bundles are installed in.</li>
 <li>A tool that reports an error, or outlives its bundle's timeout, is an error result the model reads, never a failed turn; the next call works.</li>
+<li>A part of a bundle tool's result that is not text (a picture, a sound, a resource's bytes) is saved in the conversation's directory under <code>tool-output/</code>, never over an earlier one, and the model is sent its path and type; a resource's text is sent as text, and a link to a resource is named with its address.</li>
+<li>A result whose structured part does not match the output schema its tool declares says so in what the model is sent.</li>
+<li>A bundle's server instructions are in the prompt of a conversation that has any of the bundle's tools, under the bundle's name, and in no other.</li>
 <li>A bundle that cannot run here &mdash; no manifest, a server that is not a binary, another platform, a command outside the bundle, a tool name already taken, a second bundle of the same name &mdash; is not loaded, and the Plugins screen says why.</li>
 </ul>
 </div>
@@ -345,8 +361,8 @@ is said on the page's screen. It cannot open a link, change what the model is se
 message, or read another resource.</p>
 
 <p>The page is handed the call that opened it once it says it is ready: what the tool was called
-with, and the tool's whole result. The model is sent the result's text; anything else in it,
-<code>structuredContent</code> included, is the page's alone. Under
+with, and the tool's whole result. The model is sent what any result sends it, its text and where
+its other parts were saved; <code>structuredContent</code> is the page's alone. Under
 <code>_meta.ui.visibility</code> a tool says who may call it: the model, a page, or by default
 both. A tool that is only a page's is not sent to the model, and a tool that is only the model's
 is refused to a page.</p>
@@ -355,7 +371,7 @@ is refused to a page.</p>
 <h4>Acceptance criteria</h4>
 <ul>
 <li>A tool that only a page may call is not sent to the model.</li>
-<li>The result of a tool with a page is kept whole for the page, and the model is sent its text only.</li>
+<li>The result of a tool with a page is kept whole for the page, and the model is sent its text, not its structured content.</li>
 <li>A page is told nothing until it says it is ready, then what its tool was called with and the whole result, once.</li>
 <li>A page calls the tools of its own bundle that allow it, in its conversation's directory, and each call is on the transcript; a tool for the model only, another bundle's tool, and a built-in are refused.</li>
 <li>A page in a real browser cannot reach the agent or the network, and what it sends reaches the conversation as a message, which its screen says.</li>

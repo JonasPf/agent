@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -77,6 +79,9 @@ type bundle struct {
 	// it cannot run without and has no value for.
 	config []PluginSetting
 	needs  []string
+	// instructions is what the server says about using it, when it says
+	// anything: it goes into the prompt of a conversation that has its tools.
+	instructions string
 }
 
 func (b *bundle) label() string { return b.Name + " " + b.Version }
@@ -266,6 +271,9 @@ func (b *bundle) tools(a *App) ([]*Tool, error) {
 		return nil, fmt.Errorf("its server did not start: %v%s", err, said(stderr))
 	}
 	defer stop()
+	if ir := cs.InitializeResult(); ir != nil {
+		b.instructions = strings.TrimSpace(ir.Instructions)
+	}
 	var out []*Tool
 	for t, err := range cs.Tools(ctx, nil) {
 		if err != nil {
@@ -285,8 +293,13 @@ func (b *bundle) tools(a *App) ([]*Tool, error) {
 		if t.Name == "" || strings.TrimSpace(t.Description) == "" {
 			return nil, fmt.Errorf("tool %q has no name or no description, and the description is all the model has to go on", t.Name)
 		}
+		output, err := outputSchemaOf(t.OutputSchema)
+		if err != nil {
+			return nil, fmt.Errorf("tool %s: its output schema: %w", t.Name, err)
+		}
 		out = append(out, &Tool{Name: t.Name, Description: t.Description, Parameters: params,
-			Agent: ToolAgent{Timeout: b.timeout, Reads: b.reads}, Dir: b.Dir, bundle: b, app: appOf(t.Meta)})
+			Agent: ToolAgent{Timeout: b.timeout, Reads: b.reads}, Dir: b.Dir, bundle: b, app: appOf(t.Meta),
+			output: output})
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("its server lists no tools")
@@ -351,7 +364,10 @@ func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args js
 		res.stderr = stderr.String()
 		return res
 	}
-	text := bundleText(out)
+	text := bundleText(out, saveIn(absOr(tc.App.ensureWorkspace(tc.SessionID)), t.Name))
+	if note := t.output.check(t.Name, out.StructuredContent); note != "" {
+		text += "\n" + note
+	}
 	res := toolResult{OK: !out.IsError, stderr: stderr.String()}
 	res.app, _ = json.Marshal(out)
 	if t.app.URI != "" {
@@ -365,15 +381,43 @@ func (r *Registry) callBundle(ctx context.Context, tc *ToolCtx, t *Tool, args js
 	return res
 }
 
-// bundleText is what a call answered, as the text the model is sent. A result
-// that is only structured is sent as its JSON; a part that is not text is
-// named rather than dropped without a word.
-func bundleText(out *mcp.CallToolResult) string {
+// bundleText is what a call answered, as the text the model is sent. A part
+// that is not text is saved by save and named with where it went, so a model
+// that cannot take it is not sent bytes, and one that can opens the file. A
+// result that is only structured is sent as its JSON.
+func bundleText(out *mcp.CallToolResult, save func(data []byte, mimeType, uri string) (string, error)) string {
+	saved := func(what string, data []byte, mimeType, uri string) string {
+		path, err := save(data, mimeType, uri)
+		if err != nil {
+			return fmt.Sprintf("[%s, %s, %s: could not be saved: %v]", what, mimeType, byteSize(len(data)), err)
+		}
+		return fmt.Sprintf("[%s, %s, %s, saved as %s]", what, mimeType, byteSize(len(data)), path)
+	}
 	var parts []string
 	for _, c := range out.Content {
 		switch c := c.(type) {
 		case *mcp.TextContent:
 			parts = append(parts, c.Text)
+		case *mcp.ImageContent:
+			parts = append(parts, saved("a picture", c.Data, c.MIMEType, ""))
+		case *mcp.AudioContent:
+			parts = append(parts, saved("a sound", c.Data, c.MIMEType, ""))
+		case *mcp.EmbeddedResource:
+			r := c.Resource
+			if r == nil {
+				continue
+			}
+			if r.Blob != nil {
+				parts = append(parts, saved("resource "+r.URI, r.Blob, r.MIMEType, r.URI))
+			} else {
+				parts = append(parts, fmt.Sprintf("[resource %s, %s]\n%s", r.URI, orUnknown(r.MIMEType), r.Text))
+			}
+		case *mcp.ResourceLink:
+			line := fmt.Sprintf("[a link to resource %s (%s, %s)", c.URI, c.Name, orUnknown(c.MIMEType))
+			if c.Description != "" {
+				line += ": " + c.Description
+			}
+			parts = append(parts, line+"]")
 		default:
 			parts = append(parts, fmt.Sprintf("(a part that is not text was left out: %T)", c))
 		}
@@ -384,6 +428,103 @@ func bundleText(out *mcp.CallToolResult) string {
 		}
 	}
 	return strings.Join(parts, "\n")
+}
+
+func orUnknown(mimeType string) string {
+	if mimeType == "" {
+		return "type not given"
+	}
+	return mimeType
+}
+
+// saveIn saves a part of a tool's result in the conversation's directory,
+// under tool-output/, as <tool>-<n> with the first n not taken, and answers
+// the path from the directory.
+func saveIn(workspace, tool string) func(data []byte, mimeType, uri string) (string, error) {
+	return func(data []byte, mimeType, uri string) (string, error) {
+		dir := filepath.Join(workspace, toolOutputDir)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+		ext := partExtension(mimeType, uri)
+		for n := nextPart(dir, tool); ; n++ {
+			name := fmt.Sprintf("%s-%d.%s", tool, n, ext)
+			f, err := os.OpenFile(filepath.Join(dir, name), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+			if os.IsExist(err) {
+				continue
+			}
+			if err != nil {
+				return "", err
+			}
+			_, werr := f.Write(data)
+			if cerr := f.Close(); werr == nil {
+				werr = cerr
+			}
+			if werr != nil {
+				return "", werr
+			}
+			return toolOutputDir + "/" + name, nil
+		}
+	}
+}
+
+// nextPart is the number after the highest a part of tool's results has in
+// dir, whatever its extension, so parts are numbered in the order they came.
+func nextPart(dir, tool string) int {
+	entries, _ := os.ReadDir(dir)
+	last := 0
+	for _, e := range entries {
+		stem := strings.TrimSuffix(e.Name(), path.Ext(e.Name()))
+		if n, err := strconv.Atoi(strings.TrimPrefix(stem, tool+"-")); err == nil && strings.HasPrefix(stem, tool+"-") && n > last {
+			last = n
+		}
+	}
+	return last + 1
+}
+
+// toolOutputDir is where the parts of results that are not text are saved,
+// in the conversation's directory.
+const toolOutputDir = "tool-output"
+
+// partExtensions name a saved part's file by its type; a type not here takes
+// its address's extension, else bin.
+var partExtensions = map[string]string{
+	"image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "image/svg+xml": "svg",
+	"audio/wav": "wav", "audio/x-wav": "wav", "audio/wave": "wav", "audio/mpeg": "mp3", "audio/ogg": "ogg",
+	"audio/webm": "webm", "audio/mp4": "m4a", "audio/flac": "flac",
+	"application/pdf": "pdf", "application/json": "json", "text/plain": "txt", "text/csv": "csv",
+	"text/html": "html", "text/markdown": "md",
+}
+
+func partExtension(mimeType, uri string) string {
+	if ext, ok := partExtensions[strings.ToLower(strings.TrimSpace(strings.SplitN(mimeType, ";", 2)[0]))]; ok {
+		return ext
+	}
+	if ext := strings.TrimPrefix(path.Ext(uri), "."); ext != "" && len(ext) <= 8 && isAlnum(ext) {
+		return strings.ToLower(ext)
+	}
+	return "bin"
+}
+
+func isAlnum(s string) bool {
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// byteSize says a part's size as a person would.
+func byteSize(n int) string {
+	switch {
+	case n < 1000:
+		return fmt.Sprintf("%d bytes", n)
+	case n < 1_000_000:
+		return fmt.Sprintf("%d KB", (n+500)/1000)
+	default:
+		return fmt.Sprintf("%.1f MB", float64(n)/1e6)
+	}
 }
 
 // examine reads the bundle at dir and asks its server what it offers: what
